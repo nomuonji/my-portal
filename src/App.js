@@ -8,19 +8,29 @@ import {
   Container,
   CssBaseline,
   Drawer,
+  IconButton,
   List,
   ListItem,
   ListItemIcon,
   ListItemText,
   Toolbar,
-  Typography
+  Typography,
+  useMediaQuery,
+  useTheme
 } from '@mui/material';
-import { Note, Newspaper, Folder } from '@mui/icons-material';
+import { Note, Newspaper, Folder, Menu as MenuIcon } from '@mui/icons-material';
 
 const drawerWidth = 240;
 
 function App() {
   const [user, setUser] = useState(null);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const handleDrawerToggle = () => {
+    setMobileOpen(!mobileOpen);
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -46,64 +56,115 @@ function App() {
     }
   };
 
+  const drawer = (
+    <Box sx={{ overflow: 'auto' }}>
+      <Toolbar />
+      <List>
+        <ListItem button key="Memo">
+          <ListItemIcon>
+            <Note />
+          </ListItemIcon>
+          <ListItemText primary="メモ" />
+        </ListItem>
+        <ListItem button key="News">
+          <ListItemIcon>
+            <Newspaper />
+          </ListItemIcon>
+          <ListItemText primary="ニュース" />
+        </ListItem>
+        <ListItem button key="Drive">
+          <ListItemIcon>
+            <Folder />
+          </ListItemIcon>
+          <ListItemText primary="Google Drive" />
+        </ListItem>
+      </List>
+    </Box>
+  );
+
   return (
     <Box sx={{ display: 'flex' }}>
       <CssBaseline />
-      <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}>
+      <AppBar
+        position="fixed"
+        sx={{
+          width: { md: `calc(100% - ${drawerWidth}px)` },
+          ml: { md: `${drawerWidth}px` },
+        }}
+      >
         <Toolbar>
+          {isMobile && (
+            <IconButton
+              color="inherit"
+              aria-label="open drawer"
+              edge="start"
+              onClick={handleDrawerToggle}
+              sx={{ mr: 2 }}
+            >
+              <MenuIcon />
+            </IconButton>
+          )}
           <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
             My Portal
           </Typography>
           {user ? (
-            <Button color="inherit" onClick={handleLogout}>Logout</Button>
+            <Button color="inherit" onClick={handleLogout}>ログアウト</Button>
           ) : (
-            <Button color="inherit" onClick={handleLogin}>Login with Google</Button>
+            <Button color="inherit" onClick={handleLogin}>Googleでログイン</Button>
           )}
         </Toolbar>
       </AppBar>
       
       {user && (
-        <Drawer
-          variant="permanent"
-          sx={{
-            width: drawerWidth,
-            flexShrink: 0,
-            [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: 'border-box' },
-          }}
+        <Box
+          component="nav"
+          sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }}
+          aria-label="mailbox folders"
         >
-          <Toolbar />
-          <Box sx={{ overflow: 'auto' }}>
-            <List>
-              <ListItem button key="Memo">
-                <ListItemIcon>
-                  <Note />
-                </ListItemIcon>
-                <ListItemText primary="Memo" />
-              </ListItem>
-              <ListItem button key="News">
-                <ListItemIcon>
-                  <Newspaper />
-                </ListItemIcon>
-                <ListItemText primary="News" />
-              </ListItem>
-              <ListItem button key="Drive">
-                <ListItemIcon>
-                  <Folder />
-                </ListItemIcon>
-                <ListItemText primary="Google Drive" />
-              </ListItem>
-            </List>
-          </Box>
-        </Drawer>
+          {isMobile ? (
+            <Drawer
+              variant="temporary"
+              open={mobileOpen}
+              onClose={handleDrawerToggle}
+              ModalProps={{
+                keepMounted: true, // Better open performance on mobile.
+              }}
+              sx={{
+                display: { xs: 'block', md: 'none' },
+                '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
+              }}
+            >
+              {drawer}
+            </Drawer>
+          ) : (
+            <Drawer
+              variant="permanent"
+              sx={{
+                display: { xs: 'none', md: 'block' },
+                '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
+              }}
+              open
+            >
+              {drawer}
+            </Drawer>
+          )}
+        </Box>
       )}
 
-      <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          p: 3,
+          width: { md: `calc(100% - ${drawerWidth}px)` },
+        }}
+      >
         <Toolbar />
         <Container>
           {user ? (
-            <Typography variant="h4">Welcome, {user.displayName}!</Typography>
+            <Typography variant="h4">ようこそ、{user.displayName}さん！</Typography>
           ) : (
-            <Typography variant="h5">Please log in to use the portal.</Typography>
+            <Typography variant="h5">ポータルを利用するにはログインしてください。</Typography>
           )}
         </Container>
       </Box>
