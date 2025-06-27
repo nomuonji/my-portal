@@ -23,25 +23,38 @@ import {
   IconButton,
   Chip
 } from '@mui/material';
-import { Delete as DeleteIcon, Clear as ClearIcon } from '@mui/icons-material';
+import { Delete as DeleteIcon, Clear as ClearIcon, Search as SearchIcon } from '@mui/icons-material';
 
 function Memo() {
   const [memoText, setMemoText] = useState('');
   const [memos, setMemos] = useState([]);
+  const [filteredMemos, setFilteredMemos] = useState([]);
   const [selectedMemo, setSelectedMemo] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const [debounceTimer, setDebounceTimer] = useState(null);
 
   useEffect(() => {
     const q = query(collection(db, 'memos'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setMemos(snapshot.docs.map((doc) => ({
+      const fetchedMemos = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
-      })));
+      }));
+      setMemos(fetchedMemos);
+      setFilteredMemos(fetchedMemos);
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const lowercasedSearchTerm = searchTerm.toLowerCase();
+    const results = memos.filter(memo =>
+      memo.text.toLowerCase().includes(lowercasedSearchTerm) ||
+      (memo.tags && memo.tags.some(tag => tag.toLowerCase().includes(lowercasedSearchTerm)))
+    );
+    setFilteredMemos(results);
+  }, [searchTerm, memos]);
 
   const parseTags = (text) => {
     const tagRegex = /#(\w+)/g;
@@ -138,6 +151,20 @@ function Memo() {
   return (
     <Box sx={{ p: 2 }}>
       <Typography variant="h4" gutterBottom>メモ</Typography>
+      <Box sx={{ mb: 2 }}>
+        <TextField
+          label="メモを検索"
+          variant="outlined"
+          fullWidth
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          InputProps={{
+            startAdornment: (
+              <SearchIcon sx={{ mr: 1 }} />
+            ),
+          }}
+        />
+      </Box>
       <Box sx={{ display: 'flex', mb: 2, alignItems: 'flex-start' }}>
         <TextField
           label={selectedMemo ? "メモを編集" : "新しいメモ"}
@@ -168,7 +195,7 @@ function Memo() {
         </Box>
       </Box>
       <List>
-        {memos.map((memo) => (
+        {filteredMemos.map((memo) => (
           <Paper key={memo.id} sx={{ mb: 2, p: 2 }}>
             <ListItem
               button
