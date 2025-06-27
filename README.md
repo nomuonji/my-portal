@@ -15,9 +15,16 @@
 - `ListItem`の`button`属性に関する警告を解消するため、`ListItemButton`に置き換えた。
 - Firestoreのセキュリティルールを修正し、認証済みユーザーからの`memos`コレクションへのアクセスを許可した。
 - メモ機能にテキスト装飾（Markdown記法）を実装した。
+- メモ機能にGTDとアイゼンハワーマトリクスを組み合わせるための属性（ステータス、緊急度、重要度、コンテキスト、プロジェクト名）を追加し、UIを更新した。
 
 ## Implemented Features
 
 - Google Authentication
 - Basic layout with responsive sidebar
-- Memo functionality (add, display, edit, auto-save, tag, delete, search, text formatting memos)
+- Memo functionality (add, display, edit, auto-save, tag, delete, search, text formatting, extended attributes for GTD/Eisenhower Matrix)
+
+## Next Steps (Dashboard & Thought Organization)
+
+- **思考整理フレームワークの導入:** ユーザーのニーズに基づき、アイゼンハワーマトリクスとGTDを組み合わせたダッシュボードを実装します。
+- **メモ属性の拡張:** メモデータに`status`, `urgency`, `importance`, `context`, `project_name`などの属性を追加します。
+- **ダッシュボードの設計と実装:** これらの属性に基づいてメモを視覚的に整理・表示するダッシュボードコンポーネントを作成します。

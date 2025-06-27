@@ -22,7 +22,11 @@ import {
   Paper,
   IconButton,
   Chip,
-  ButtonGroup
+  ButtonGroup,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem
 } from '@mui/material';
 import {
   Delete as DeleteIcon,
@@ -42,6 +46,13 @@ function Memo() {
   const [filteredMemos, setFilteredMemos] = useState([]);
   const [selectedMemo, setSelectedMemo] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // 新しい属性のstate
+  const [status, setStatus] = useState('inbox');
+  const [urgency, setUrgency] = useState('medium');
+  const [importance, setImportance] = useState('medium');
+  const [context, setContext] = useState('');
+  const [projectName, setProjectName] = useState('');
 
   const [debounceTimer, setDebounceTimer] = useState(null);
   const memoTextFieldRef = useRef(null);
@@ -63,7 +74,9 @@ function Memo() {
     const lowercasedSearchTerm = searchTerm.toLowerCase();
     const results = memos.filter(memo =>
       memo.text.toLowerCase().includes(lowercasedSearchTerm) ||
-      (memo.tags && memo.tags.some(tag => tag.toLowerCase().includes(lowercasedSearchTerm)))
+      (memo.tags && memo.tags.some(tag => tag.toLowerCase().includes(lowercasedSearchTerm))) ||
+      (memo.context && memo.context.toLowerCase().includes(lowercasedSearchTerm)) ||
+      (memo.project_name && memo.project_name.toLowerCase().includes(lowercasedSearchTerm))
     );
     setFilteredMemos(results);
   }, [searchTerm, memos]);
@@ -84,6 +97,11 @@ function Memo() {
       text: text,
       tags: tags,
       updatedAt: serverTimestamp(),
+      status: currentSelectedMemo.status || 'inbox',
+      urgency: currentSelectedMemo.urgency || 'medium',
+      importance: currentSelectedMemo.importance || 'medium',
+      context: currentSelectedMemo.context || '',
+      project_name: currentSelectedMemo.project_name || '',
     };
 
     try {
@@ -120,6 +138,11 @@ function Memo() {
       tags: tags,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
+      status: status,
+      urgency: urgency,
+      importance: importance,
+      context: context,
+      project_name: projectName,
     };
 
     try {
@@ -132,6 +155,11 @@ function Memo() {
       }
       setMemoText('');
       setSelectedMemo(null);
+      setStatus('inbox');
+      setUrgency('medium');
+      setImportance('medium');
+      setContext('');
+      setProjectName('');
     } catch (error) {
       console.error('メモの保存に失敗しました:', error);
     }
@@ -144,6 +172,11 @@ function Memo() {
       if (selectedMemo && selectedMemo.id === id) {
         setSelectedMemo(null);
         setMemoText('');
+        setStatus('inbox');
+        setUrgency('medium');
+        setImportance('medium');
+        setContext('');
+        setProjectName('');
       }
     } catch (error) {
       console.error('メモの削除に失敗しました:', error);
@@ -153,11 +186,21 @@ function Memo() {
   const handleSelectMemo = (memo) => {
     setSelectedMemo(memo);
     setMemoText(memo.text);
+    setStatus(memo.status || 'inbox');
+    setUrgency(memo.urgency || 'medium');
+    setImportance(memo.importance || 'medium');
+    setContext(memo.context || '');
+    setProjectName(memo.project_name || '');
   };
 
   const handleClearSelection = () => {
     setSelectedMemo(null);
     setMemoText('');
+    setStatus('inbox');
+    setUrgency('medium');
+    setImportance('medium');
+    setContext('');
+    setProjectName('');
   };
 
   const applyFormatting = (prefix, suffix = '') => {
@@ -240,6 +283,67 @@ function Memo() {
           <Button onClick={() => applyFormatting('1. ')}><FormatListNumberedIcon /></Button>
         </ButtonGroup>
       </Box>
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2, mb: 2 }}>
+        <FormControl fullWidth>
+          <InputLabel id="status-label">ステータス</InputLabel>
+          <Select
+            labelId="status-label"
+            id="status-select"
+            value={status}
+            label="ステータス"
+            onChange={(e) => setStatus(e.target.value)}
+          >
+            <MenuItem value="inbox">受信箱</MenuItem>
+            <MenuItem value="next_action">次の行動</MenuItem>
+            <MenuItem value="project">プロジェクト</MenuItem>
+            <MenuItem value="someday_maybe">いつかやる/多分やる</MenuItem>
+            <MenuItem value="reference">参照資料</MenuItem>
+            <MenuItem value="done">完了</MenuItem>
+          </Select>
+        </FormControl>
+        <FormControl fullWidth>
+          <InputLabel id="urgency-label">緊急度</InputLabel>
+          <Select
+            labelId="urgency-label"
+            id="urgency-select"
+            value={urgency}
+            label="緊急度"
+            onChange={(e) => setUrgency(e.target.value)}
+          >
+            <MenuItem value="high">高</MenuItem>
+            <MenuItem value="medium">中</MenuItem>
+            <MenuItem value="low">低</MenuItem>
+          </Select>
+        </FormControl>
+        <FormControl fullWidth>
+          <InputLabel id="importance-label">重要度</InputLabel>
+          <Select
+            labelId="importance-label"
+            id="importance-select"
+            value={importance}
+            label="重要度"
+            onChange={(e) => setImportance(e.target.value)}
+          >
+            <MenuItem value="high">高</MenuItem>
+            <MenuItem value="medium">中</MenuItem>
+            <MenuItem value="low">低</MenuItem>
+          </Select>
+        </FormControl>
+        <TextField
+          label="コンテキスト (例: 自宅, オフィス)"
+          variant="outlined"
+          fullWidth
+          value={context}
+          onChange={(e) => setContext(e.target.value)}
+        />
+        <TextField
+          label="プロジェクト名"
+          variant="outlined"
+          fullWidth
+          value={projectName}
+          onChange={(e) => setProjectName(e.target.value)}
+        />
+      </Box>
       <List>
         {filteredMemos.map((memo) => (
           <Paper key={memo.id} sx={{ mb: 2, p: 2 }}>
@@ -270,6 +374,15 @@ function Memo() {
                         {memo.tags.map(tag => (
                           <Chip key={tag} label={`#${tag}`} size="small" sx={{ mr: 0.5, mb: 0.5 }} />
                         ))}
+                      </Box>
+                    )}
+                    {(memo.status || memo.urgency || memo.importance || memo.context || memo.project_name) && (
+                      <Box sx={{ mt: 1 }}>
+                        {memo.status && <Chip label={`ステータス: ${memo.status}`} size="small" sx={{ mr: 0.5, mb: 0.5 }} />}
+                        {memo.urgency && <Chip label={`緊急度: ${memo.urgency}`} size="small" sx={{ mr: 0.5, mb: 0.5 }} />}
+                        {memo.importance && <Chip label={`重要度: ${memo.importance}`} size="small" sx={{ mr: 0.5, mb: 0.5 }} />}
+                        {memo.context && <Chip label={`コンテキスト: ${memo.context}`} size="small" sx={{ mr: 0.5, mb: 0.5 }} />}
+                        {memo.project_name && <Chip label={`プロジェクト: ${memo.project_name}`} size="small" sx={{ mr: 0.5, mb: 0.5 }} />}
                       </Box>
                     )}
                   </Box>
