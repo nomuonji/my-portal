@@ -1,3 +1,5 @@
+
+
 ## Progress
 
 ### 2025-06-28
@@ -10,9 +12,10 @@
 - `App.js`を修正し、モバイルファースト・レスポンシブ対応のサイドバーを実装した。
 - `src/components/Memo.js`を作成し、メモの追加と表示の基本機能を実装した。
 - `App.js`に`Memo`コンポーネントを組み込み、サイドバーからアクセスできるようにした。
+- メモ機能に自動保存（デバウンス付き）、タグ付け、編集、削除機能を実装した。
 
 ## Implemented Features
 
 - Google Authentication
 - Basic layout with responsive sidebar
-- Memo functionality (add and display memos)
+- Memo functionality (add, display, edit, auto-save, tag, delete memos)

@@ -1,6 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '../firebase';
-import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import {
+  collection,
+  addDoc,
+  query,
+  orderBy,
+  onSnapshot,
+  serverTimestamp,
+  updateDoc,
+  doc,
+  deleteDoc
+} from 'firebase/firestore';
 import {
   Box,
   TextField,
@@ -10,77 +20,186 @@ import {
   ListItem,
   ListItemText,
   Paper,
-  IconButton
+  IconButton,
+  Chip
 } from '@mui/material';
-import { Delete as DeleteIcon } from '@mui/icons-material';
+import { Delete as DeleteIcon, Clear as ClearIcon } from '@mui/icons-material';
 
 function Memo() {
   const [memoText, setMemoText] = useState('');
   const [memos, setMemos] = useState([]);
+  const [selectedMemo, setSelectedMemo] = useState(null);
+
+  const [debounceTimer, setDebounceTimer] = useState(null);
 
   useEffect(() => {
-    const q = query(collection(db, "memos"), orderBy("createdAt", "desc"));
+    const q = query(collection(db, 'memos'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setMemos(snapshot.docs.map(doc => ({
+      setMemos(snapshot.docs.map((doc) => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
       })));
     });
     return () => unsubscribe();
   }, []);
 
-  const handleAddMemo = async () => {
-    if (memoText.trim() === '') return;
+  const parseTags = (text) => {
+    const tagRegex = /#(\w+)/g;
+    const matches = text.match(tagRegex);
+    return matches ? Array.from(new Set(matches.map(tag => tag.substring(1)))) : [];
+  };
+
+  const autoSaveMemo = useCallback(async (text, currentSelectedMemo) => {
+    if (!currentSelectedMemo || text.trim() === currentSelectedMemo.text.trim()) {
+      return; // 新規メモの場合、またはテキストが変更されていない場合は自動保存しない
+    }
+
+    const tags = parseTags(text);
+    const memoData = {
+      text: text,
+      tags: tags,
+      updatedAt: serverTimestamp(),
+    };
+
     try {
-      await addDoc(collection(db, "memos"), {
-        text: memoText,
-        createdAt: serverTimestamp()
-      });
-      setMemoText('');
+      await updateDoc(doc(db, 'memos', currentSelectedMemo.id), memoData);
+      console.log('メモを自動保存しました:', currentSelectedMemo.id);
     } catch (error) {
-      console.error("メモの追加に失敗しました: ", error);
+      console.error('メモの自動保存に失敗しました:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+    if (selectedMemo) {
+      const timer = setTimeout(() => {
+        autoSaveMemo(memoText, selectedMemo);
+      }, 1000); // 1秒間入力がなければ保存
+      setDebounceTimer(timer);
+    }
+    return () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+    };
+  }, [memoText, selectedMemo, autoSaveMemo]);
+
+  const handleSaveMemo = async () => {
+    if (memoText.trim() === '') return;
+
+    const tags = parseTags(memoText);
+    const memoData = {
+      text: memoText,
+      tags: tags,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    try {
+      if (selectedMemo) {
+        await updateDoc(doc(db, 'memos', selectedMemo.id), memoData);
+        console.log('メモを更新しました:', selectedMemo.id);
+      } else {
+        await addDoc(collection(db, 'memos'), memoData);
+        console.log('新しいメモを追加しました。');
+      }
+      setMemoText('');
+      setSelectedMemo(null);
+    } catch (error) {
+      console.error('メモの保存に失敗しました:', error);
     }
   };
 
   const handleDeleteMemo = async (id) => {
-    // TODO: Implement delete functionality
-    console.log("Delete memo with ID:", id);
+    try {
+      await deleteDoc(doc(db, 'memos', id));
+      console.log('メモを削除しました:', id);
+      if (selectedMemo && selectedMemo.id === id) {
+        setSelectedMemo(null);
+        setMemoText('');
+      }
+    } catch (error) {
+      console.error('メモの削除に失敗しました:', error);
+    }
+  };
+
+  const handleSelectMemo = (memo) => {
+    setSelectedMemo(memo);
+    setMemoText(memo.text);
+  };
+
+  const handleClearSelection = () => {
+    setSelectedMemo(null);
+    setMemoText('');
   };
 
   return (
     <Box sx={{ p: 2 }}>
       <Typography variant="h4" gutterBottom>メモ</Typography>
-      <Box sx={{ display: 'flex', mb: 2 }}>
+      <Box sx={{ display: 'flex', mb: 2, alignItems: 'flex-start' }}>
         <TextField
-          label="新しいメモ"
+          label={selectedMemo ? "メモを編集" : "新しいメモ"}
           variant="outlined"
           fullWidth
           multiline
           rows={4}
           value={memoText}
           onChange={(e) => setMemoText(e.target.value)}
+          sx={{ mr: 2 }}
         />
-        <Button
-          variant="contained"
-          sx={{ ml: 2 }}
-          onClick={handleAddMemo}
-        >
-          追加
-        </Button>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <Button
+            variant="contained"
+            onClick={handleSaveMemo}
+          >
+            {selectedMemo ? "更新" : "追加"}
+          </Button>
+          {selectedMemo && (
+            <Button
+              variant="outlined"
+              onClick={handleClearSelection}
+              startIcon={<ClearIcon />}
+            >
+              クリア
+            </Button>
+          )}
+        </Box>
       </Box>
       <List>
         {memos.map((memo) => (
           <Paper key={memo.id} sx={{ mb: 2, p: 2 }}>
             <ListItem
+              button
+              onClick={() => handleSelectMemo(memo)}
               secondaryAction={
-                <IconButton edge="end" aria-label="delete" onClick={() => handleDeleteMemo(memo.id)}>
+                <IconButton edge="end" aria-label="delete" onClick={(e) => { e.stopPropagation(); handleDeleteMemo(memo.id); }}>
                   <DeleteIcon />
                 </IconButton>
               }
             >
               <ListItemText
                 primary={memo.text}
-                secondary={memo.createdAt?.toDate().toLocaleString()}
+                secondary={
+                  <Box>
+                    <Typography variant="caption" display="block">
+                      作成日時: {memo.createdAt?.toDate().toLocaleString()}
+                    </Typography>
+                    {memo.updatedAt && (
+                      <Typography variant="caption" display="block">
+                        更新日時: {memo.updatedAt?.toDate().toLocaleString()}
+                      </Typography>
+                    )}
+                    {memo.tags && memo.tags.length > 0 && (
+                      <Box sx={{ mt: 1 }}>
+                        {memo.tags.map(tag => (
+                          <Chip key={tag} label={`#${tag}`} size="small" sx={{ mr: 0.5, mb: 0.5 }} />
+                        ))}
+                      </Box>
+                    )}
+                  </Box>
+                }
               />
             </ListItem>
           </Paper>
