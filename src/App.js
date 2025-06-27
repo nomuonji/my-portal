@@ -1,7 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { auth } from './firebase';
 import { GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth';
-import { Button, AppBar, Toolbar, Typography, Container, Box } from '@mui/material';
+import {
+  AppBar,
+  Box,
+  Button,
+  Container,
+  CssBaseline,
+  Drawer,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
+  Toolbar,
+  Typography
+} from '@mui/material';
+import { Note, Newspaper, Folder } from '@mui/icons-material';
+
+const drawerWidth = 240;
 
 function App() {
   const [user, setUser] = useState(null);
@@ -31,10 +47,11 @@ function App() {
   };
 
   return (
-    <div>
-      <AppBar position="static">
+    <Box sx={{ display: 'flex' }}>
+      <CssBaseline />
+      <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}>
         <Toolbar>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
             My Portal
           </Typography>
           {user ? (
@@ -44,16 +61,53 @@ function App() {
           )}
         </Toolbar>
       </AppBar>
-      <Container>
-        <Box sx={{ mt: 4 }}>
+      
+      {user && (
+        <Drawer
+          variant="permanent"
+          sx={{
+            width: drawerWidth,
+            flexShrink: 0,
+            [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: 'border-box' },
+          }}
+        >
+          <Toolbar />
+          <Box sx={{ overflow: 'auto' }}>
+            <List>
+              <ListItem button key="Memo">
+                <ListItemIcon>
+                  <Note />
+                </ListItemIcon>
+                <ListItemText primary="Memo" />
+              </ListItem>
+              <ListItem button key="News">
+                <ListItemIcon>
+                  <Newspaper />
+                </ListItemIcon>
+                <ListItemText primary="News" />
+              </ListItem>
+              <ListItem button key="Drive">
+                <ListItemIcon>
+                  <Folder />
+                </ListItemIcon>
+                <ListItemText primary="Google Drive" />
+              </ListItem>
+            </List>
+          </Box>
+        </Drawer>
+      )}
+
+      <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
+        <Toolbar />
+        <Container>
           {user ? (
             <Typography variant="h4">Welcome, {user.displayName}!</Typography>
           ) : (
             <Typography variant="h5">Please log in to use the portal.</Typography>
           )}
-        </Box>
-      </Container>
-    </div>
+        </Container>
+      </Box>
+    </Box>
   );
 }
 
