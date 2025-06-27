@@ -1,3 +1,5 @@
+
+
 ## Progress
 
 ### 2025-06-28
@@ -16,12 +18,15 @@
 - Firestoreのセキュリティルールを修正し、認証済みユーザーからの`memos`コレクションへのアクセスを許可した。
 - メモ機能にテキスト装飾（Markdown記法）を実装した。
 - メモ機能にGTDとアイゼンハワーマトリクスを組み合わせるための属性（ステータス、緊急度、重要度、コンテキスト、プロジェクト名）を追加し、UIを更新した。
+- `src/components/Dashboard.js`を作成し、メモをGTDとアイゼンハワーマトリクスに基づいて表示するダッシュボードの基本レイアウトを実装した。
+- `App.js`に`Dashboard`コンポーネントを組み込み、サイドバーからアクセスできるようにした。
 
 ## Implemented Features
 
 - Google Authentication
 - Basic layout with responsive sidebar
 - Memo functionality (add, display, edit, auto-save, tag, delete, search, text formatting, extended attributes for GTD/Eisenhower Matrix)
+- Dashboard (basic layout for GTD/Eisenhower Matrix visualization)
 
 ## Next Steps (Dashboard & Thought Organization)
 

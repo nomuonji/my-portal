@@ -18,8 +18,9 @@ import {
   useMediaQuery,
   useTheme
 } from '@mui/material';
-import { Note, Newspaper, Folder, Menu as MenuIcon } from '@mui/icons-material';
+import { Note, Newspaper, Folder, Menu as MenuIcon, Dashboard as DashboardIcon } from '@mui/icons-material';
 import Memo from './components/Memo';
+import Dashboard from './components/Dashboard';
 
 const drawerWidth = 240;
 
@@ -67,6 +68,8 @@ function App() {
 
   const renderContent = () => {
     switch (selectedMenuItem) {
+      case 'Dashboard':
+        return <Dashboard />;
       case 'Memo':
         return <Memo />;
       case 'News':
@@ -82,6 +85,12 @@ function App() {
     <Box sx={{ overflow: 'auto' }}>
       <Toolbar />
       <List>
+        <ListItemButton key="Dashboard" onClick={() => handleMenuItemClick('Dashboard')}>
+          <ListItemIcon>
+            <DashboardIcon />
+          </ListItemIcon>
+          <ListItemText primary="ダッシュボード" />
+        </ListItemButton>
         <ListItemButton key="Memo" onClick={() => handleMenuItemClick('Memo')}>
           <ListItemIcon>
             <Note />
