@@ -1,5 +1,3 @@
-
-
 ## Progress
 
 ### 2025-06-28
@@ -10,8 +8,11 @@
 - Firebaseの機密情報を`.env`ファイルに分離し、`.gitignore`に追加した。
 - `GEMINI.md`を作成し、開発ガイドラインと進捗管理方法を記載した。
 - `App.js`を修正し、モバイルファースト・レスポンシブ対応のサイドバーを実装した。
+- `src/components/Memo.js`を作成し、メモの追加と表示の基本機能を実装した。
+- `App.js`に`Memo`コンポーネントを組み込み、サイドバーからアクセスできるようにした。
 
 ## Implemented Features
 
 - Google Authentication
 - Basic layout with responsive sidebar
+- Memo functionality (add and display memos)

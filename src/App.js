@@ -19,6 +19,7 @@ import {
   useTheme
 } from '@mui/material';
 import { Note, Newspaper, Folder, Menu as MenuIcon } from '@mui/icons-material';
+import Memo from './components/Memo';
 
 const drawerWidth = 240;
 
@@ -27,9 +28,17 @@ function App() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [selectedMenuItem, setSelectedMenuItem] = useState('Memo'); // デフォルトでメモを選択
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
+  };
+
+  const handleMenuItemClick = (menuItem) => {
+    setSelectedMenuItem(menuItem);
+    if (isMobile) {
+      setMobileOpen(false); // モバイルの場合はメニューを閉じる
+    }
   };
 
   useEffect(() => {
@@ -56,23 +65,36 @@ function App() {
     }
   };
 
+  const renderContent = () => {
+    switch (selectedMenuItem) {
+      case 'Memo':
+        return <Memo />;
+      case 'News':
+        return <Typography variant="h4">ニュース機能はまだ実装されていません。</Typography>;
+      case 'Drive':
+        return <Typography variant="h4">Google Drive機能はまだ実装されていません。</Typography>;
+      default:
+        return <Typography variant="h4">ようこそ、{user.displayName}さん！</Typography>;
+    }
+  };
+
   const drawer = (
     <Box sx={{ overflow: 'auto' }}>
       <Toolbar />
       <List>
-        <ListItem button key="Memo">
+        <ListItem button key="Memo" onClick={() => handleMenuItemClick('Memo')}>
           <ListItemIcon>
             <Note />
           </ListItemIcon>
           <ListItemText primary="メモ" />
         </ListItem>
-        <ListItem button key="News">
+        <ListItem button key="News" onClick={() => handleMenuItemClick('News')}>
           <ListItemIcon>
             <Newspaper />
           </ListItemIcon>
           <ListItemText primary="ニュース" />
         </ListItem>
-        <ListItem button key="Drive">
+        <ListItem button key="Drive" onClick={() => handleMenuItemClick('Drive')}>
           <ListItemIcon>
             <Folder />
           </ListItemIcon>
@@ -162,7 +184,7 @@ function App() {
         <Toolbar />
         <Container>
           {user ? (
-            <Typography variant="h4">ようこそ、{user.displayName}さん！</Typography>
+            renderContent()
           ) : (
             <Typography variant="h5">ポータルを利用するにはログインしてください。</Typography>
           )}
