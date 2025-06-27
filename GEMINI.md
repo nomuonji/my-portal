@@ -1,15 +1,22 @@
-# Gemini Development Guidelines
+# Gemini 開発ガイドライン
 
-This document outlines the development guidelines and conventions for this project, as directed by the user.
+このドキュメントは、ユーザーからの指示に基づき、本プロジェクトの開発ガイドラインと規約をまとめたものです。
 
-## Project Management
+## プロジェクト管理
 
-- **Progress Tracking:** Project progress and a list of implemented features are maintained in the `README.md` file.
+- **進捗追跡:** プロジェクトの進捗と実装済みの機能リストは、`README.md`ファイルで管理されます。
 
-## Development Style
+## 開発スタイル
 
-- **UI/UX:** The user interface should be designed with a **mobile-first** approach, ensuring it is fully **responsive** for a seamless experience on both mobile and desktop devices.
+- **UI/UX:** ユーザーインターフェースは**モバイルファースト**のアプローチで設計され、モバイルとデスクトップの両方のデバイスでシームレスな体験を提供するために、完全に**レスポンシブ**であることを保証します。
 
-## General Instructions
+## ユーザー固有のニーズと優先順位
 
-- Any overarching instructions or architectural decisions like this one will be documented in this `GEMINI.md` file for future reference.
+- **核となる課題:** ユーザーは（ADHDの傾向により）思考が散漫になる経験があり、それらを効果的に管理・優先順位付けするためのツールを必要としています。
+- **主要な目標:** 今すぐ注意が必要なものと、後回しにできるものを明確に表示する「視覚化されたダッシュボード」を開発します。このダッシュボードは、素早いメモ取りと思考の視覚的な整理を可能にする必要があります。
+- **思考の整理:** 思考整理フレームワークを導入し、アプリケーションを構築し、精神的な明晰さを助けます。
+- **優先順位付け:** ユーザーの主要なニーズに最初に対応するため、視覚化されたダッシュボードと思考整理機能の開発は、他の統合機能（例：Googleニュース、Googleドライブ）よりも優先されます。
+
+## 一般的な指示
+
+- このような全体的な指示やアーキテクチャに関する決定は、将来の参照のためにこの`GEMINI.md`ファイルに文書化されます。
