@@ -17,7 +17,7 @@ import {
   Button,
   Typography,
   List,
-  ListItem,
+  ListItemButton,
   ListItemText,
   Paper,
   IconButton,
@@ -197,8 +197,7 @@ function Memo() {
       <List>
         {filteredMemos.map((memo) => (
           <Paper key={memo.id} sx={{ mb: 2, p: 2 }}>
-            <ListItem
-              button
+            <ListItemButton
               onClick={() => handleSelectMemo(memo)}
               secondaryAction={
                 <IconButton edge="end" aria-label="delete" onClick={(e) => { e.stopPropagation(); handleDeleteMemo(memo.id); }}>

@@ -10,7 +10,7 @@ import {
   Drawer,
   IconButton,
   List,
-  ListItem,
+  ListItemButton,
   ListItemIcon,
   ListItemText,
   Toolbar,
@@ -82,24 +82,24 @@ function App() {
     <Box sx={{ overflow: 'auto' }}>
       <Toolbar />
       <List>
-        <ListItem button key="Memo" onClick={() => handleMenuItemClick('Memo')}>
+        <ListItemButton key="Memo" onClick={() => handleMenuItemClick('Memo')}>
           <ListItemIcon>
             <Note />
           </ListItemIcon>
           <ListItemText primary="メモ" />
-        </ListItem>
-        <ListItem button key="News" onClick={() => handleMenuItemClick('News')}>
+        </ListItemButton>
+        <ListItemButton key="News" onClick={() => handleMenuItemClick('News')}>
           <ListItemIcon>
             <Newspaper />
           </ListItemIcon>
           <ListItemText primary="ニュース" />
-        </ListItem>
-        <ListItem button key="Drive" onClick={() => handleMenuItemClick('Drive')}>
+        </ListItemButton>
+        <ListItemButton key="Drive" onClick={() => handleMenuItemClick('Drive')}>
           <ListItemIcon>
             <Folder />
           </ListItemIcon>
           <ListItemText primary="Google Drive" />
-        </ListItem>
+        </ListItemButton>
       </List>
     </Box>
   );
