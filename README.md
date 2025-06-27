@@ -1,5 +1,3 @@
-
-
 ## Progress
 
 ### 2025-06-28
@@ -16,9 +14,10 @@
 - メモ機能にキーワード検索を実装した。
 - `ListItem`の`button`属性に関する警告を解消するため、`ListItemButton`に置き換えた。
 - Firestoreのセキュリティルールを修正し、認証済みユーザーからの`memos`コレクションへのアクセスを許可した。
+- メモ機能にテキスト装飾（Markdown記法）を実装した。
 
 ## Implemented Features
 
 - Google Authentication
 - Basic layout with responsive sidebar
-- Memo functionality (add, display, edit, auto-save, tag, delete, search memos)
+- Memo functionality (add, display, edit, auto-save, tag, delete, search, text formatting memos)

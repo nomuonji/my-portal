@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { db } from '../firebase';
 import {
   collection,
@@ -21,9 +21,20 @@ import {
   ListItemText,
   Paper,
   IconButton,
-  Chip
+  Chip,
+  ButtonGroup
 } from '@mui/material';
-import { Delete as DeleteIcon, Clear as ClearIcon, Search as SearchIcon } from '@mui/icons-material';
+import {
+  Delete as DeleteIcon,
+  Clear as ClearIcon,
+  Search as SearchIcon,
+  FormatBold as FormatBoldIcon,
+  FormatItalic as FormatItalicIcon,
+  FormatUnderlined as FormatUnderlinedIcon,
+  FormatListBulleted as FormatListBulletedIcon,
+  FormatListNumbered as FormatListNumberedIcon
+} from '@mui/icons-material';
+import { marked } from 'marked';
 
 function Memo() {
   const [memoText, setMemoText] = useState('');
@@ -33,6 +44,7 @@ function Memo() {
   const [searchTerm, setSearchTerm] = useState('');
 
   const [debounceTimer, setDebounceTimer] = useState(null);
+  const memoTextFieldRef = useRef(null);
 
   useEffect(() => {
     const q = query(collection(db, 'memos'), orderBy('createdAt', 'desc'));
@@ -148,6 +160,30 @@ function Memo() {
     setMemoText('');
   };
 
+  const applyFormatting = (prefix, suffix = '') => {
+    const textField = memoTextFieldRef.current;
+    if (!textField) return;
+
+    const start = textField.selectionStart;
+    const end = textField.selectionEnd;
+    const currentText = memoText;
+
+    const newText = currentText.substring(0, start) +
+                    prefix +
+                    currentText.substring(start, end) +
+                    suffix +
+                    currentText.substring(end);
+
+    setMemoText(newText);
+
+    // カーソル位置を調整
+    setTimeout(() => {
+      textField.selectionStart = start + prefix.length;
+      textField.selectionEnd = end + prefix.length;
+      textField.focus();
+    }, 0);
+  };
+
   return (
     <Box sx={{ p: 2 }}>
       <Typography variant="h4" gutterBottom>メモ</Typography>
@@ -175,6 +211,7 @@ function Memo() {
           value={memoText}
           onChange={(e) => setMemoText(e.target.value)}
           sx={{ mr: 2 }}
+          inputRef={memoTextFieldRef}
         />
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           <Button
@@ -194,6 +231,15 @@ function Memo() {
           )}
         </Box>
       </Box>
+      <Box sx={{ mb: 2 }}>
+        <ButtonGroup variant="outlined" aria-label="text formatting buttons">
+          <Button onClick={() => applyFormatting('**', '**')}><FormatBoldIcon /></Button>
+          <Button onClick={() => applyFormatting('*', '*')}><FormatItalicIcon /></Button>
+          <Button onClick={() => applyFormatting('__', '__')}><FormatUnderlinedIcon /></Button>
+          <Button onClick={() => applyFormatting('- ')}><FormatListBulletedIcon /></Button>
+          <Button onClick={() => applyFormatting('1. ')}><FormatListNumberedIcon /></Button>
+        </ButtonGroup>
+      </Box>
       <List>
         {filteredMemos.map((memo) => (
           <Paper key={memo.id} sx={{ mb: 2, p: 2 }}>
@@ -206,7 +252,9 @@ function Memo() {
               }
             >
               <ListItemText
-                primary={memo.text}
+                primary={
+                  <div dangerouslySetInnerHTML={{ __html: marked.parse(memo.text) }} />
+                }
                 secondary={
                   <Box>
                     <Typography variant="caption" display="block">
@@ -227,7 +275,7 @@ function Memo() {
                   </Box>
                 }
               />
-            </ListItem>
+            </ListItemButton>
           </Paper>
         ))}
       </List>
@@ -236,3 +284,4 @@ function Memo() {
 }
 
 export default Memo;
+
