@@ -1,5 +1,3 @@
-
-
 ## Progress
 
 ### 2025-06-28
@@ -20,13 +18,14 @@
 - メモ機能にGTDとアイゼンハワーマトリクスを組み合わせるための属性（ステータス、緊急度、重要度、コンテキスト、プロジェクト名）を追加し、UIを更新した。
 - `src/components/Dashboard.js`を作成し、メモをGTDとアイゼンハワーマトリクスに基づいて表示するダッシュボードの基本レイアウトを実装した。
 - `App.js`に`Dashboard`コンポーネントを組み込み、サイドバーからアクセスできるようにした。
+- ダッシュボードにメモのドラッグ＆ドロップ機能を追加し、Firestoreの属性を更新できるようにした。
 
 ## Implemented Features
 
 - Google Authentication
 - Basic layout with responsive sidebar
 - Memo functionality (add, display, edit, auto-save, tag, delete, search, text formatting, extended attributes for GTD/Eisenhower Matrix)
-- Dashboard (basic layout for GTD/Eisenhower Matrix visualization)
+- Dashboard (basic layout for GTD/Eisenhower Matrix visualization with drag and drop)
 
 ## Next Steps (Dashboard & Thought Organization)
 
