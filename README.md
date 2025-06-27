@@ -1,3 +1,5 @@
+
+
 ## Progress
 
 ### 2025-06-28
@@ -19,6 +21,9 @@
 - `src/components/Dashboard.js`を作成し、メモをGTDとアイゼンハワーマトリクスに基づいて表示するダッシュボードの基本レイアウトを実装した。
 - `App.js`に`Dashboard`コンポーネントを組み込み、サイドバーからアクセスできるようにした。
 - ダッシュボードにメモのドラッグ＆ドロップ機能を追加し、Firestoreの属性を更新できるようにした。
+- News APIキーを`.env`ファイルに追加した。
+- `src/components/News.js`を作成し、News APIから記事を取得して表示する機能と、記事をシャッフルする機能を実装した。
+- `App.js`に`News`コンポーネントを組み込み、サイドバーからアクセスできるようにした。
 
 ## Implemented Features
 
@@ -26,6 +31,7 @@
 - Basic layout with responsive sidebar
 - Memo functionality (add, display, edit, auto-save, tag, delete, search, text formatting, extended attributes for GTD/Eisenhower Matrix)
 - Dashboard (basic layout for GTD/Eisenhower Matrix visualization with drag and drop)
+- News functionality (fetch and display articles from News API, shuffle articles)
 
 ## Next Steps (Dashboard & Thought Organization)
 

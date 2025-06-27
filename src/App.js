@@ -21,6 +21,7 @@ import {
 import { Note, Newspaper, Folder, Menu as MenuIcon, Dashboard as DashboardIcon } from '@mui/icons-material';
 import Memo from './components/Memo';
 import Dashboard from './components/Dashboard';
+import News from './components/News';
 
 const drawerWidth = 240;
 
@@ -73,7 +74,7 @@ function App() {
       case 'Memo':
         return <Memo />;
       case 'News':
-        return <Typography variant="h4">ニュース機能はまだ実装されていません。</Typography>;
+        return <News />;
       case 'Drive':
         return <Typography variant="h4">Google Drive機能はまだ実装されていません。</Typography>;
       default:
