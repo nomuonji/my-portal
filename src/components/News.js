@@ -11,7 +11,8 @@ import {
   Button,
   TextField,
   Grid,
-  Chip
+  Chip,
+  Container
 } from '@mui/material';
 import { Shuffle as ShuffleIcon } from '@mui/icons-material';
 import { collection, getDocs, addDoc, deleteDoc, doc } from 'firebase/firestore';
@@ -46,10 +47,23 @@ function News() {
     if (!searchQuery) return;
     setLoading(true);
     setError(null);
+
+    const apiKey = process.env.REACT_APP_NEWS_API_KEY;
+    if (!apiKey) {
+      console.error("News API Key is not defined. Please set REACT_APP_NEWS_API_KEY in your .env file.");
+      setError("News API Key is missing.");
+      setLoading(false);
+      return;
+    }
+
     try {
-      const response = await fetch(
-        `https://newsapi.org/v2/everything?q=${encodeURIComponent(searchQuery)}&apiKey=${process.env.REACT_APP_NEWS_API_KEY}&page=${pageNum}&pageSize=${PAGE_SIZE}`
-      );
+      const apiUrl = `https://newsapi.org/v2/everything?q=${encodeURIComponent(searchQuery)}&apiKey=${apiKey}&page=${pageNum}&pageSize=${PAGE_SIZE}`;
+      console.log("Fetching news from:", apiUrl);
+      const response = await fetch(apiUrl, {
+        headers: {
+          'User-Agent': 'My-Portal/1.0' // Some APIs require a User-Agent header
+        }
+      });
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -65,6 +79,7 @@ function News() {
       }
     } catch (e) {
       setError(e.message);
+      setHasMore(false); // Stop further requests on error
     } finally {
       setLoading(false);
     }
@@ -148,8 +163,9 @@ function News() {
   }
 
   return (
-    <Box sx={{ p: 2 }}>
-      <Typography variant="h4" gutterBottom>ニュース</Typography>
+    <Container>
+      <Box sx={{ p: 2 }}>
+        <Typography variant="h4" gutterBottom>ニュース</Typography>
 
       <Box sx={{ mb: 3 }}>
         <Typography variant="h6">関心キーワード</Typography>
@@ -177,7 +193,7 @@ function News() {
         </Box>
       </Box>
 
-      <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+      <Box sx={{ display: 'flex', gap: 2, mb: 3, position: 'sticky', top: 0, zIndex: 100, bgcolor: 'background.paper', py: 2 }}>
         <TextField
           label="一時的な検索"
           variant="outlined"
@@ -195,7 +211,7 @@ function News() {
           const isLastElement = articles.length === index + 1;
           return (
             <Grid item xs={12} sm={6} md={4} key={`${article.url}-${index}`} ref={isLastElement ? lastArticleElementRef : null}>
-              <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+              <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                 <CardMedia
                   component="img"
                   height="140"
@@ -210,7 +226,7 @@ function News() {
                     sx={{
                       fontWeight: 'bold',
                       lineHeight: 1.4,
-                      height: '2.8em',
+                      height: '2.8em', // 2 lines * 1.4em/line
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       display: '-webkit-box',
@@ -229,7 +245,7 @@ function News() {
                     WebkitLineClamp: 3,
                     WebkitBoxOrient: 'vertical',
                     lineHeight: 1.5,
-                    height: '4.5em',
+                    height: '4.5em', // 3 lines * 1.5em/line
                   }}>
                     {article.description}
                   </Typography>
@@ -249,6 +265,7 @@ function News() {
       {error && <Alert severity="error" sx={{ mt: 2 }}>エラー: {error}</Alert>}
       {!hasMore && !loading && <Typography sx={{ textAlign: 'center', my: 2 }}>これ以上ニュースはありません。</Typography>}
     </Box>
+    </Container>
   );
 }
 

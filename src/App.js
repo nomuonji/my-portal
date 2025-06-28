@@ -206,17 +206,15 @@ function App() {
         sx={{
           flexGrow: 1,
           p: 3,
-          width: { md: `calc(100% - ${drawerWidth}px)` },
+          overflow: 'auto',
         }}
       >
         <Toolbar />
-        <Container>
-          {user ? (
+        {user ? (
             renderContent()
           ) : (
             <Typography variant="h5">ポータルを利用するにはログインしてください。</Typography>
           )}
-        </Container>
       </Box>
     </Box>
   );
