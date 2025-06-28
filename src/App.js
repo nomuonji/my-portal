@@ -18,10 +18,12 @@ import {
   useMediaQuery,
   useTheme
 } from '@mui/material';
-import { Note, Newspaper, Folder, Menu as MenuIcon, Dashboard as DashboardIcon } from '@mui/icons-material';
+import { Note, Newspaper, Folder, Menu as MenuIcon, Dashboard as DashboardIcon, Lightbulb as LightbulbIcon, ViewCompact as ViewCompactIcon } from '@mui/icons-material';
 import Memo from './components/Memo';
 import Dashboard from './components/Dashboard';
 import News from './components/News';
+import Idea from './components/Idea';
+import IdeaBoard from './components/IdeaBoard';
 
 const drawerWidth = 240;
 
@@ -75,6 +77,10 @@ function App() {
         return <Memo />;
       case 'News':
         return <News />;
+      case 'Idea':
+        return <Idea />;
+      case 'IdeaBoard':
+        return <IdeaBoard />;
       case 'Drive':
         return <Typography variant="h4">Google Drive機能はまだ実装されていません。</Typography>;
       default:
@@ -103,6 +109,18 @@ function App() {
             <Newspaper />
           </ListItemIcon>
           <ListItemText primary="ニュース" />
+        </ListItemButton>
+        <ListItemButton key="Idea" onClick={() => handleMenuItemClick('Idea')}>
+          <ListItemIcon>
+            <LightbulbIcon />
+          </ListItemIcon>
+          <ListItemText primary="アイデア" />
+        </ListItemButton>
+        <ListItemButton key="IdeaBoard" onClick={() => handleMenuItemClick('IdeaBoard')}>
+          <ListItemIcon>
+            <ViewCompactIcon />
+          </ListItemIcon>
+          <ListItemText primary="アイデアボード" />
         </ListItemButton>
         <ListItemButton key="Drive" onClick={() => handleMenuItemClick('Drive')}>
           <ListItemIcon>

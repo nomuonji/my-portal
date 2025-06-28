@@ -9,7 +9,8 @@ import {
   CardMedia,
   Link,
   Button,
-  TextField
+  TextField,
+  Grid
 } from '@mui/material';
 import { Shuffle as ShuffleIcon } from '@mui/icons-material';
 

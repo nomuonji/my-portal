@@ -1,5 +1,3 @@
-
-
 ## Progress
 
 ### 2025-06-28
@@ -24,6 +22,7 @@
 - News APIキーを`.env`ファイルに追加した。
 - `src/components/News.js`を作成し、News APIから記事を取得して表示する機能と、記事をシャッフルする機能を実装した。
 - `App.js`に`News`コンポーネントを組み込み、サイドバーからアクセスできるようにした。
+- プロジェクト設計書`DESIGN.md`を作成し、GitHubにプッシュした。
 
 ## Implemented Features
 
