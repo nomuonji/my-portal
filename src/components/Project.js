@@ -12,12 +12,16 @@ import {
   Paper,
   Chip,
   Divider,
+  Button
 } from '@mui/material';
+import { AddCircleOutline as AddCircleOutlineIcon } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 
 function Project() {
   const [projects, setProjects] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const q = query(collection(db, 'memos'), where('status', '==', 'project'));
@@ -61,9 +65,19 @@ function Project() {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Typography variant="h4" component="h1" gutterBottom>
-        プロジェクト一覧
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4" component="h1">
+          プロジェクト一覧
+        </Typography>
+        <Button
+          variant="contained"
+          color="primary"
+          startIcon={<AddCircleOutlineIcon />}
+          onClick={() => navigate('/memo?status=project')}
+        >
+          プロジェクト追加
+        </Button>
+      </Box>
       {Object.keys(projects).length === 0 ? (
         <Typography variant="body1">現在、進行中のプロジェクトはありません。</Typography>
       ) : (

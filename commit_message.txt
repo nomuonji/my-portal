@@ -1,9 +1,12 @@
-feat: Enhance FeatureRequests with copy and delete functionalities
+feat: Implement reading list features and fix layout issues
 
-This commit introduces significant improvements to the FeatureRequests component:
+This commit introduces the following enhancements to the reading list:
 
-- **Copy Tasks for Gemini:** Added a new button to the FeatureRequests page that allows users to copy "To Do" and "In Progress" tasks in a structured JSON format, including instructions for Gemini. This streamlines the process of providing task information to Gemini for autonomous development.
-- **Delete Task Functionality:** Implemented a delete button for each feature request card, enabling users to remove tasks directly from the UI. This enhances task management capabilities within the application.
-- **GEMINI.md Update:** Updated the GEMINI.md guidelines to reflect the new workflow for Gemini to obtain feature request tasks, emphasizing the use of the new copy functionality.
-- **Firebase Functions Setup (Partial):** Initialized Firebase Functions and added a basic HTTP function to retrieve feature requests. (Note: This part requires Blaze plan for deployment and is currently on hold, but the code is prepared.)
-- **ESLint Fixes:** Addressed and fixed ESLint errors in the `functions` directory to ensure code quality and successful deployment in the future.
+- **Reading List URLs:** Added a new "Reading List (URL)" section to manage URLs.
+- **Read/Unread Status:** Implemented read/unread status for URLs with a checkbox.
+- **Tagging:** Added functionality to add and remove tags for URLs.
+- **Filtering:** Implemented filtering by read/unread status and tags.
+- **Layout Fixes:** Addressed layout issues for long URLs and when images are not present.
+- **Firebase Rules:** Updated Firestore rules to allow read/write access to the `reading_list_urls` collection.
+- **Firebase Functions (Reverted):** Reverted changes related to Firebase Functions for URL metadata fetching due to plan limitations.
+- **External Package (Reverted):** Reverted attempts to use `react-link-preview` due to compatibility issues.

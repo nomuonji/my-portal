@@ -11,9 +11,11 @@ import {
   Typography,
   Grid,
   Paper,
-  Chip
+  Chip,
+  Button
 } from '@mui/material';
-import { Clear as ClearIcon } from '@mui/icons-material';
+import { Clear as ClearIcon, AddCircleOutline as AddCircleOutlineIcon } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 
 // Function to generate a random rotation angle
 const getRandomRotation = () => `rotate(${(Math.random() - 0.5) * 4}deg)`;
@@ -22,6 +24,7 @@ function IdeaBoard() {
   const [ideas, setIdeas] = useState([]);
   const [allTags, setAllTags] = useState([]); // All available tags from Firestore
   const [filterTag, setFilterTag] = useState(null); // New state for filtering
+  const navigate = useNavigate();
 
   // Fetch ideas from Firestore
   useEffect(() => {
@@ -50,7 +53,17 @@ function IdeaBoard() {
 
   return (
     <Box sx={{ p: 1 }}>
-      <Typography variant="h4" gutterBottom>アイデアボード</Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Typography variant="h4" gutterBottom>アイデアボード</Typography>
+        <Button
+          variant="contained"
+          color="primary"
+          startIcon={<AddCircleOutlineIcon />}
+          onClick={() => navigate('/idea')}
+        >
+          アイデア追加
+        </Button>
+      </Box>
 
       {/* Filter Tags */}
       <Typography variant="subtitle1" gutterBottom>タグでフィルタ</Typography>

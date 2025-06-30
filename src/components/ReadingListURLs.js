@@ -60,21 +60,6 @@ function ReadingListURLs() {
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const sharedUrl = urlParams.get('url');
-    const sharedTitle = urlParams.get('title') || urlParams.get('text');
-
-    if (sharedUrl) {
-      // Automatically add the shared URL
-      handleAddUrl(sharedUrl, sharedTitle || '');
-
-      // Clear the URL parameters to prevent re-adding on refresh
-      const cleanUrl = window.location.origin + window.location.pathname;
-      window.history.replaceState(null, '', cleanUrl);
-    }
-  }, []);
-
   const handleAddUrl = async (urlToAdd, titleToAdd) => {
     if (urlToAdd.trim() === '') {
       alert('URLを入力してください。');

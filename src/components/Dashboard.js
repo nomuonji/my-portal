@@ -24,6 +24,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { useNavigate } from 'react-router-dom';
 import EditIcon from '@mui/icons-material/Edit';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
+import LightbulbIcon from '@mui/icons-material/Lightbulb';
 
 // quadrantの背景色を定義
 const quadrantColors = {
@@ -221,6 +222,15 @@ function Dashboard() {
                 sx={{ mr: 1 }}
               >
                 メモ追加
+              </Button>
+              <Button
+                variant="contained"
+                color="secondary"
+                startIcon={<LightbulbIcon />}
+                onClick={() => navigate('/idea')}
+                sx={{ mr: 1 }}
+              >
+                アイデア追加
               </Button>
               <FormControl size="small" sx={{ minWidth: 150 }}>
                   <InputLabel>他のリスト</InputLabel>

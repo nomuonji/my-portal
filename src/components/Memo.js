@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { db } from '../firebase';
 import {
   collection,
@@ -36,6 +36,7 @@ import {
 function Memo() {
   const { memoId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [memoText, setMemoText] = useState('');
   const [status, setStatus] = useState('inbox');
@@ -49,29 +50,37 @@ function Memo() {
 
   useEffect(() => {
     const fetchMemo = async () => {
-      if (!memoId) return;
-      try {
-        const docRef = doc(db, 'memos', memoId);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const memoData = docSnap.data();
-          setMemoText(memoData.text || '');
-          setStatus(memoData.status || 'inbox');
-          setUrgency(memoData.urgency || 'medium');
-          setImportance(memoData.importance || 'medium');
-          setContext(memoData.context || '');
-          setProjectName(memoData.project_name || '');
-          setTags(memoData.tags || []);
-        } else {
-          console.log("No such document!");
-          navigate('/'); // メモが存在しない場合はダッシュボードに戻る
+      if (memoId) {
+        try {
+          const docRef = doc(db, 'memos', memoId);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            const memoData = docSnap.data();
+            setMemoText(memoData.text || '');
+            setStatus(memoData.status || 'inbox');
+            setUrgency(memoData.urgency || 'medium');
+            setImportance(memoData.importance || 'medium');
+            setContext(memoData.context || '');
+            setProjectName(memoData.project_name || '');
+            setTags(memoData.tags || []);
+          } else {
+            console.log("No such document!");
+            navigate('/'); // メモが存在しない場合はダッシュボードに戻る
+          }
+        } catch (error) {
+          console.error("Error fetching document:", error);
         }
-      } catch (error) {
-        console.error("Error fetching document:", error);
+      } else {
+        // 新規メモの場合、URLクエリパラメータから初期ステータスを設定
+        const queryParams = new URLSearchParams(location.search);
+        const initialStatus = queryParams.get('status');
+        if (initialStatus) {
+          setStatus(initialStatus);
+        }
       }
     };
     fetchMemo();
-  }, [memoId, navigate]);
+  }, [memoId, navigate, location.search]);
 
   const parseTags = (text) => {
     const tagRegex = /#(\w+)/g;
