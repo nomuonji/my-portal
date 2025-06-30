@@ -56,6 +56,9 @@ GitコミットとFirebaseデプロイのプロセスをスムーズに行うた
   - 短いコミットメッセージ（例: `feat: 新機能の追加`）であれば、`git commit -m "コミットメッセージ"` も使用可能です。
   - 日本語を使用し、必要最小限の情報を簡潔に記述します。
 
+- **変更の確認:**
+  - Geminiが提案する変更については、ユーザーからの明示的な指示がない限り、コミット前に`git status`や`git diff`による変更内容の確認は行いません。Geminiは自身の変更内容を把握しているため、このステップは省略されます。
+
 ### Firebaseデプロイ
 
 - **デプロイ前のビルド:**
@@ -66,6 +69,12 @@ GitコミットとFirebaseデプロイのプロセスをスムーズに行うた
   - 例: `firebase deploy --only firestore:rules` (Firestoreのルールのみ)
   - 例: `firebase deploy --only hosting` (Hostingのみ)
   - 例: `firebase deploy --only firestore:rules,hosting` (FirestoreのルールとHostingの両方)
+
+### バージョン管理
+
+- **自動バージョン更新:** デプロイ前に `npm version patch` コマンドを実行し、`package.json` のバージョンを自動的に更新します。これにより、Git タグも作成されます。
+- **ビルド時のバージョン注入:** `package.json` の `scripts.build` を修正し、ビルド時に `package.json` のバージョンを環境変数 `REACT_APP_VERSION` として React アプリケーションに注入します。
+- **UIでのバージョン表示:** `src/App.js` で `process.env.REACT_APP_VERSION` を使用して、サイドバーの最下部に現在のバージョンを表示します。
 
 ### トラブルシューティングと記録
 

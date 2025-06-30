@@ -191,31 +191,31 @@ function App() {
           </ListItemIcon>
           <ListItemText primary="ダッシュボード" />
         </ListItemButton>
-        <ListItemButton component={Link} to="/ideaboard">
+        <ListItemButton component={Link} to="/ideaboard" onClick={() => isMobile && handleDrawerToggle()}>
           <ListItemIcon>
             <ViewCompactIcon />
           </ListItemIcon>
           <ListItemText primary="アイデアボード" />
         </ListItemButton>
-        <ListItemButton component={Link} to="/project">
+        <ListItemButton component={Link} to="/project" onClick={() => isMobile && handleDrawerToggle()}>
           <ListItemIcon>
             <Folder />
           </ListItemIcon>
           <ListItemText primary="プロジェクトボード" />
         </ListItemButton>
-        <ListItemButton component={Link} to="/news">
+        <ListItemButton component={Link} to="/news" onClick={() => isMobile && handleDrawerToggle()}>
           <ListItemIcon>
             <Newspaper />
           </ListItemIcon>
           <ListItemText primary="ニュース" />
         </ListItemButton>
-        <ListItemButton component={Link} to="/feature-requests">
+        <ListItemButton component={Link} to="/feature-requests" onClick={() => isMobile && handleDrawerToggle()}>
           <ListItemIcon>
             <BuildIcon />
           </ListItemIcon>
           <ListItemText primary="機能改善" />
         </ListItemButton>
-        <ListItemButton component={Link} to="/reading-list-urls">
+        <ListItemButton component={Link} to="/reading-list-urls" onClick={() => isMobile && handleDrawerToggle()}>
           <ListItemIcon>
             <Newspaper />
           </ListItemIcon>
@@ -234,6 +234,11 @@ function App() {
           <ListItemText primary="Google Drive" />
         </ListItemButton>
       </List>
+      <Box sx={{ position: 'absolute', bottom: 0, width: '100%', p: 2, textAlign: 'center' }}>
+        <Typography variant="caption" color="textSecondary">
+          Version: {process.env.REACT_APP_VERSION}
+        </Typography>
+      </Box>
     </Box>
   );
 
