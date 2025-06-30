@@ -1,17 +1,9 @@
-feat: Implement dark mode and feature request management system
+feat: Enhance FeatureRequests with copy and delete functionalities
 
-This commit introduces the following major enhancements:
+This commit introduces significant improvements to the FeatureRequests component:
 
-- **Dark Mode Implementation:**
-  - Integrated Material-UI theming to support both light and dark modes.
-  - Users can now toggle between light and dark themes for improved visual comfort.
-- **Feature Request Management System:**
-  - Added a new "Feature Requests" section with a Kanban-style board.
-  - Users can add, track, and manage application improvement ideas (feature requests, bugs, etc.) with statuses (To Do, In Progress, Done) and priorities.
-  - This system facilitates a more structured development workflow, allowing Gemini to directly reference and act upon user-defined tasks.
-- **UI/UX Enhancements:**
-  - Refined the overall application design with updated Material-UI styling, including improved shadows, borders, and spacing for a more modern and aesthetically pleasing interface.
-  - Adjusted Dashboard quadrant colors for better visual appeal.
-- **Technical Improvements:**
-  - Corrected routing issues in `App.js` to ensure proper navigation using `react-router-dom`.
-  - Resolved various build and runtime errors related to component rendering and theme integration.
+- **Copy Tasks for Gemini:** Added a new button to the FeatureRequests page that allows users to copy "To Do" and "In Progress" tasks in a structured JSON format, including instructions for Gemini. This streamlines the process of providing task information to Gemini for autonomous development.
+- **Delete Task Functionality:** Implemented a delete button for each feature request card, enabling users to remove tasks directly from the UI. This enhances task management capabilities within the application.
+- **GEMINI.md Update:** Updated the GEMINI.md guidelines to reflect the new workflow for Gemini to obtain feature request tasks, emphasizing the use of the new copy functionality.
+- **Firebase Functions Setup (Partial):** Initialized Firebase Functions and added a basic HTTP function to retrieve feature requests. (Note: This part requires Blaze plan for deployment and is currently on hold, but the code is prepared.)
+- **ESLint Fixes:** Addressed and fixed ESLint errors in the `functions` directory to ensure code quality and successful deployment in the future.
