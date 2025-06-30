@@ -75,7 +75,10 @@ const drawerWidth = 240;
 function App() {
   const [user, setUser] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [mode, setMode] = useState('light'); // 'light' or 'dark'
+  const [mode, setMode] = useState(() => {
+    const savedMode = localStorage.getItem('themeMode');
+    return savedMode || 'light';
+  }); // 'light' or 'dark'
 
   const appTheme = useMemo(() => getAppTheme(mode), [mode]);
   const isMobile = useMediaQuery(appTheme.breakpoints.down('md'));
@@ -85,7 +88,11 @@ function App() {
   };
 
   const handleModeChange = () => {
-    setMode((prevMode) => (prevMode === 'light' ? 'dark' : 'light'));
+    setMode((prevMode) => {
+      const newMode = prevMode === 'light' ? 'dark' : 'light';
+      localStorage.setItem('themeMode', newMode);
+      return newMode;
+    });
   };
 
   useEffect(() => {
@@ -178,7 +185,7 @@ function App() {
     <Box sx={{ overflow: 'auto' }}>
       <Toolbar />
       <List>
-        <ListItemButton component={Link} to="/">
+        <ListItemButton component={Link} to="/" onClick={() => isMobile && handleDrawerToggle()}>
           <ListItemIcon>
             <DashboardIcon />
           </ListItemIcon>
@@ -220,7 +227,7 @@ function App() {
           </ListItemIcon>
           <ListItemText primary="後で見る (YouTube)" />
         </ListItemButton>
-        <ListItemButton component={Link} to="/drive">
+        <ListItemButton component={Link} to="/drive" onClick={() => isMobile && handleDrawerToggle()}>
           <ListItemIcon>
             <Folder />
           </ListItemIcon>
@@ -242,7 +249,7 @@ function App() {
               ml: { md: `${drawerWidth}px` },
             }}
           >
-            <Toolbar>
+            <Toolbar sx={{ minHeight: { xs: 56, sm: 64 } }}>
               {isMobile && (
                 <IconButton
                   color="inherit"
@@ -254,7 +261,7 @@ function App() {
                   <MenuIcon />
                 </IconButton>
               )}
-              <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
+              <Typography noWrap component="div" sx={{ flexGrow: 1, typography: { xs: 'subtitle1', md: 'h6' } }}>
                 My Portal
               </Typography>
               <IconButton color="inherit" onClick={handleModeChange}>

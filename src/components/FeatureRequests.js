@@ -26,7 +26,6 @@ import { marked } from 'marked';
 
 const listTitles = {
   todo: 'To Do',
-  in_progress: 'In Progress',
   done: 'Done'
 };
 
@@ -72,7 +71,7 @@ function FeatureRequests() {
   };
 
   const handleAddRequest = async () => {
-    if (newRequest.title.trim() === '' || newRequest.description.trim() === '') return;
+    if (newRequest.title.trim() === '') return;
 
     try {
       await addDoc(collection(db, 'featureRequests'), {
@@ -97,7 +96,7 @@ function FeatureRequests() {
   };
 
   const handleCopyTasksForGemini = () => {
-    const tasksToCopy = requests.filter(req => req.status === 'todo' || req.status === 'in_progress')
+    const tasksToCopy = requests.filter(req => req.status === 'todo')
       .map(({ id, title, description, priority, status, createdAt }) => ({
         id,
         title,
@@ -200,7 +199,6 @@ function FeatureRequests() {
       <DragDropContext onDragEnd={onDragEnd}>
         <Box sx={{ display: 'flex', flexGrow: 1, gap: '18px', flexDirection: { xs: 'column', md: 'row' } }}>
           <KanbanColumn droppableId="todo" title="To Do" requests={getRequestsByStatus('todo')} />
-          <KanbanColumn droppableId="in_progress" title="In Progress" requests={getRequestsByStatus('in_progress')} />
           <KanbanColumn droppableId="done" title="Done" requests={getRequestsByStatus('done')} />
         </Box>
       </DragDropContext>
