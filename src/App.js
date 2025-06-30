@@ -221,7 +221,7 @@ function App() {
           </ListItemIcon>
           <ListItemText primary="後で読む (Web)" />
         </ListItemButton>
-        <ListItemButton component={Link} to="/reading-list-youtube">
+        <ListItemButton component={Link} to="/reading-list-youtube" onClick={() => isMobile && handleDrawerToggle()}>
           <ListItemIcon>
             <Newspaper />
           </ListItemIcon>
