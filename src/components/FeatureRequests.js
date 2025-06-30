@@ -1,0 +1,207 @@
+import React, { useState, useEffect } from 'react';
+import { db } from '../firebase';
+import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import {
+  Box,
+  Typography,
+  Paper,
+  useTheme,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  IconButton,
+  DialogActions
+} from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import CloseIcon from '@mui/icons-material/Close';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import { marked } from 'marked';
+
+const listTitles = {
+  todo: 'To Do',
+  in_progress: 'In Progress',
+  done: 'Done'
+};
+
+function FeatureRequests() {
+  const [requests, setRequests] = useState([]);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [newRequest, setNewRequest] = useState({ title: '', description: '', priority: 'medium' });
+  const theme = useTheme();
+
+  useEffect(() => {
+    const q = query(collection(db, 'featureRequests'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setRequests(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const getRequestsByStatus = (status) => requests.filter(req => req.status === status);
+
+  const onDragEnd = async (result) => {
+    const { source, destination, draggableId } = result;
+    if (!destination || (source.droppableId === destination.droppableId && source.index === destination.index)) return;
+
+    const draggedRequest = requests.find(req => req.id === draggableId);
+    if (!draggedRequest) return;
+
+    const updatedRequestData = {
+      ...draggedRequest,
+      status: destination.droppableId
+    };
+
+    try {
+      await updateDoc(doc(db, 'featureRequests', draggableId), updatedRequestData);
+    } catch (error) {
+      console.error('Failed to update feature request:', error);
+    }
+  };
+
+  const handleOpenDialog = () => setDialogOpen(true);
+  const handleCloseDialog = () => {
+    setDialogOpen(false);
+    setNewRequest({ title: '', description: '', priority: 'medium' });
+  };
+
+  const handleAddRequest = async () => {
+    if (newRequest.title.trim() === '' || newRequest.description.trim() === '') return;
+
+    try {
+      await addDoc(collection(db, 'featureRequests'), {
+        ...newRequest,
+        status: 'todo',
+        createdAt: serverTimestamp(),
+      });
+      handleCloseDialog();
+    } catch (error) {
+      console.error('Failed to add feature request:', error);
+    }
+  };
+
+  const renderRequestCard = (request, index) => (
+    <Draggable key={request.id} draggableId={request.id} index={index}>
+      {(provided, snapshot) => (
+        <Paper
+          ref={provided.innerRef}
+          {...provided.draggableProps}
+          {...provided.dragHandleProps}
+          elevation={snapshot.isDragging ? 8 : 1}
+          sx={{ p: 1.5, mb: 1.5, transition: 'box-shadow 0.2s ease' }}
+        >
+          <Typography variant="h6" sx={{ fontSize: '1rem', fontWeight: 'bold', mb: 1 }}>{request.title}</Typography>
+          <Box dangerouslySetInnerHTML={{ __html: marked.parse(request.description || '') }} sx={{ fontSize: '0.85rem', mb: 1 }} />
+          <Box>
+            <Typography variant="caption" sx={{
+              p: '2px 6px',
+              borderRadius: '4px',
+              color: 'white',
+              backgroundColor: request.priority === 'high' ? theme.palette.error.main : (request.priority === 'medium' ? theme.palette.warning.main : theme.palette.info.main)
+            }}>
+              {request.priority}
+            </Typography>
+          </Box>
+        </Paper>
+      )}
+    </Draggable>
+  );
+
+  const KanbanColumn = ({ droppableId, title, requests }) => (
+    <Box sx={{ width: { xs: '100%', md: 'calc(33.33% - 12px)' }, display: 'flex', flexDirection: 'column' }}>
+      <Typography variant="h6" sx={{ p: 1, mb: 1, borderBottom: `2px solid ${theme.palette.primary.main}` }}>{title}</Typography>
+      <Droppable droppableId={droppableId}>
+        {(provided, snapshot) => (
+          <Paper
+            ref={provided.innerRef}
+            {...provided.droppableProps}
+            elevation={snapshot.isDraggingOver ? 4 : 0}
+            sx={{
+              p: 1.5,
+              flexGrow: 1,
+              overflowY: 'auto',
+              backgroundColor: snapshot.isDraggingOver ? theme.palette.action.hover : theme.palette.background.paper,
+              transition: 'background-color 0.2s ease, box-shadow 0.2s ease',
+              border: `1px solid ${theme.palette.divider}`,
+            }}
+          >
+            {requests.map(renderRequestCard)}
+            {provided.placeholder}
+          </Paper>
+        )}
+      </Droppable>
+    </Box>
+  );
+
+  return (
+    <Box sx={{ p: { xs: 2, sm: 3 }, height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4" component="h1" sx={{ fontWeight: 'bold', color: 'primary.main' }}>機能改善</Typography>
+        <Button variant="contained" color="primary" startIcon={<AddIcon />} onClick={handleOpenDialog}>
+          新しいリクエスト
+        </Button>
+      </Box>
+
+      <DragDropContext onDragEnd={onDragEnd}>
+        <Box sx={{ display: 'flex', flexGrow: 1, gap: '18px', flexDirection: { xs: 'column', md: 'row' } }}>
+          <KanbanColumn droppableId="todo" title="To Do" requests={getRequestsByStatus('todo')} />
+          <KanbanColumn droppableId="in_progress" title="In Progress" requests={getRequestsByStatus('in_progress')} />
+          <KanbanColumn droppableId="done" title="Done" requests={getRequestsByStatus('done')} />
+        </Box>
+      </DragDropContext>
+
+      <Dialog open={dialogOpen} onClose={handleCloseDialog} fullWidth maxWidth="sm">
+        <DialogTitle>
+          新しい機能リクエスト
+          <IconButton aria-label="close" onClick={handleCloseDialog} sx={{ position: 'absolute', right: 8, top: 8 }}><CloseIcon /></IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="タイトル"
+            fullWidth
+            variant="outlined"
+            value={newRequest.title}
+            onChange={(e) => setNewRequest({ ...newRequest, title: e.target.value })}
+            sx={{ mb: 2 }}
+          />
+          <TextField
+            margin="dense"
+            label="詳細 (Markdown対応)"
+            fullWidth
+            multiline
+            rows={6}
+            variant="outlined"
+            value={newRequest.description}
+            onChange={(e) => setNewRequest({ ...newRequest, description: e.target.value })}
+            sx={{ mb: 2 }}
+          />
+          <FormControl fullWidth>
+            <InputLabel>優先度</InputLabel>
+            <Select
+              value={newRequest.priority}
+              label="優先度"
+              onChange={(e) => setNewRequest({ ...newRequest, priority: e.target.value })}
+            >
+              <MenuItem value="high">高</MenuItem>
+              <MenuItem value="medium">中</MenuItem>
+              <MenuItem value="low">低</MenuItem>
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDialog}>キャンセル</Button>
+          <Button onClick={handleAddRequest} variant="contained">追加</Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+}
+
+export default FeatureRequests;

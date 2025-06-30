@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, query, orderBy, onSnapshot, updateDoc, doc } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, updateDoc, doc, deleteDoc } from 'firebase/firestore';
 import {
   Box,
   Typography,
-  Grid,
   Paper,
   Chip,
   useTheme,
@@ -15,17 +14,33 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
+  DialogActions,
+  Button,
   IconButton
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { marked } from 'marked';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import { useNavigate } from 'react-router-dom';
+import EditIcon from '@mui/icons-material/Edit';
+import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
+
+// quadrantの背景色を定義
+const quadrantColors = {
+  'high-high': '#FF7043', // 緊急かつ重要 (ディープオレンジ)
+  'high-low': '#FFCA28', // 緊急だが重要ではない (アンバー)
+  'low-high': '#4DB6AC', // 緊急ではないが重要 (ミディアムアクア)
+  'low-low': '#90A4AE', // 緊急でも重要でもない (ブルースグレー)
+};
 
 function Dashboard() {
   const [memos, setMemos] = useState([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedList, setSelectedList] = useState('');
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [memoToDelete, setMemoToDelete] = useState(null);
   const theme = useTheme();
+  const navigate = useNavigate();
 
   useEffect(() => {
     const q = query(collection(db, 'memos'), orderBy('createdAt', 'desc'));
@@ -79,13 +94,38 @@ function Dashboard() {
     setSelectedList('');
   };
 
+  const openDeleteConfirm = (id) => {
+    setMemoToDelete(id);
+    setDeleteConfirmOpen(true);
+  };
+
+  const closeDeleteConfirm = () => {
+    setMemoToDelete(null);
+    setDeleteConfirmOpen(false);
+  };
+
+  const handleDeleteMemo = async () => {
+    if (!memoToDelete) return;
+    try {
+      await deleteDoc(doc(db, 'memos', memoToDelete));
+      console.log('Memo deleted:', memoToDelete);
+      closeDeleteConfirm();
+    } catch (error) {
+      console.error('Failed to delete memo:', error);
+    }
+  };
+
+  const handleEditMemo = (id) => {
+    navigate(`/memo/${id}`);
+  };
+
   const renderMemoContent = (memo) => (
     <>
-      <Typography variant="body2" sx={{ fontSize: '0.8rem' }} dangerouslySetInnerHTML={{ __html: marked.parse(memo.text) }} />
-      <Box sx={{ mt: 0.5, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-        {memo.tags && memo.tags.map(tag => <Chip key={tag} label={`#${tag}`} size="small" sx={{ fontSize: '0.65rem', height: '18px' }} />)}
-        {memo.context && <Chip label={`@${memo.context}`} size="small" variant="outlined" sx={{ fontSize: '0.65rem', height: '18px' }} />}
-        {memo.project_name && <Chip label={`P: ${memo.project_name}`} size="small" variant="outlined" color="secondary" sx={{ fontSize: '0.65rem', height: '18px' }} />}
+      <Typography variant="body2" sx={{ fontSize: '0.75rem', lineHeight: 1.4, mb: 0.5 }} dangerouslySetInnerHTML={{ __html: marked.parse(memo.text) }} />
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+        {memo.tags && memo.tags.map(tag => <Chip key={tag} label={`#${tag}`} size="small" sx={{ fontSize: '0.6rem', height: '16px' }} />)}
+        {memo.context && <Chip label={`@${memo.context}`} size="small" variant="outlined" sx={{ fontSize: '0.6rem', height: '16px' }} />}
+        {memo.project_name && <Chip label={`P: ${memo.project_name}`} size="small" variant="outlined" color="secondary" sx={{ fontSize: '0.6rem', height: '16px' }} />}
       </Box>
     </>
   );
@@ -97,9 +137,18 @@ function Dashboard() {
           ref={provided.innerRef}
           {...provided.draggableProps}
           {...provided.dragHandleProps}
-          sx={{ p: 1, mb: 1, boxShadow: snapshot.isDragging ? '0px 5px 15px rgba(0,0,0,0.3)' : '0px 1px 2px rgba(0,0,0,0.1)', transition: 'box-shadow 0.2s ease' }}
+          elevation={snapshot.isDragging ? 8 : 1}
+          sx={{
+            p: 0.8, mb: 0.8, position: 'relative',
+            transition: 'box-shadow 0.2s ease',
+            '&:hover .memo-actions': { opacity: 1 }
+          }}
         >
           {renderMemoContent(memo)}
+          <Box className="memo-actions" sx={{ position: 'absolute', top: 2, right: 2, display: 'flex', opacity: 0, transition: 'opacity 0.2s ease' }}>
+            <IconButton size="small" onClick={() => handleEditMemo(memo.id)} sx={{ p: 0.2 }}><EditIcon sx={{ fontSize: '0.9rem' }} /></IconButton>
+            <IconButton size="small" onClick={() => openDeleteConfirm(memo.id)} sx={{ p: 0.2 }}><CloseIcon sx={{ fontSize: '0.9rem' }} /></IconButton>
+          </Box>
         </Paper>
       )}
     </Draggable>
@@ -108,9 +157,20 @@ function Dashboard() {
   const renderHorizontalMemoCard = (memo, index) => (
     <Draggable key={memo.id} draggableId={memo.id} index={index}>
         {(provided, snapshot) => (
-            <Box ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps} sx={{ mr: 1, flexShrink: 0, width: 220 }}>
-                <Paper sx={{ p: 1, boxShadow: snapshot.isDragging ? '0px 5px 15px rgba(0,0,0,0.3)' : '0px 1px 2px rgba(0,0,0,0.1)' }}>
+            <Box ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps} sx={{ mr: 1, flexShrink: 0, width: 200 }}>
+                <Paper
+                  elevation={snapshot.isDragging ? 8 : 1}
+                  sx={{
+                    p: 0.8, position: 'relative',
+                    transition: 'box-shadow 0.2s ease',
+                    '&:hover .memo-actions': { opacity: 1 }
+                  }}
+                >
                     {renderMemoContent(memo)}
+                    <Box className="memo-actions" sx={{ position: 'absolute', top: 2, right: 2, display: 'flex', opacity: 0, transition: 'opacity 0.2s ease' }}>
+                      <IconButton size="small" onClick={() => handleEditMemo(memo.id)} sx={{ p: 0.2 }}><EditIcon sx={{ fontSize: '0.9rem' }} /></IconButton>
+                      <IconButton size="small" onClick={() => openDeleteConfirm(memo.id)} sx={{ p: 0.2 }}><CloseIcon sx={{ fontSize: '0.9rem' }} /></IconButton>
+                    </Box>
                 </Paper>
             </Box>
         )}
@@ -125,15 +185,21 @@ function Dashboard() {
   };
 
   const Quadrant = ({ droppableId, title, bgColor, memos }) => (
-    <Box sx={{ width: 'calc(50% - 4px)', height: 'calc(50% - 4px)', m: '2px' }}>
+    <Box sx={{ width: { xs: '100%', sm: 'calc(50% - 8px)' }, height: { xs: '250px', sm: 'calc(50% - 8px)' }, m: { xs: '4px 0', sm: '4px' } }}>
         <Droppable droppableId={droppableId}>
             {(provided, snapshot) => (
                 <Paper
                     ref={provided.innerRef}
                     {...provided.droppableProps}
-                    sx={{ p: 1.5, height: '100%', overflowY: 'auto', backgroundColor: snapshot.isDraggingOver ? theme.palette.action.hover : bgColor, transition: 'background-color 0.2s ease' }}
+                    elevation={snapshot.isDraggingOver ? 4 : 0}
+                    sx={{
+                      p: 1.5, height: '100%', overflowY: 'auto',
+                      backgroundColor: snapshot.isDraggingOver ? theme.palette.action.hover : bgColor,
+                      transition: 'background-color 0.3s ease, box-shadow 0.2s ease',
+                      border: `1px solid ${theme.palette.divider}`,
+                    }}
                 >
-                    <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }} gutterBottom>{title}</Typography>
+                    <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1, textAlign: 'center', color: theme.palette.getContrastText(bgColor) }}>{title}</Typography>
                     {memos.map(renderVerticalMemoCard)}
                     {provided.placeholder}
                 </Paper>
@@ -143,29 +209,49 @@ function Dashboard() {
   );
 
   return (
-    <Box sx={{ p: 1, height: 'calc(100vh - 56px)', display: 'flex', flexDirection: 'column' }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-            <Typography variant="h5" gutterBottom sx={{ mb: 0 }}>ダッシュボード</Typography>
-            <FormControl size="small" sx={{ minWidth: 150 }}>
-                <InputLabel>他のリストを表示</InputLabel>
-                <Select value={selectedList} label="他のリストを表示" onChange={(e) => { e.target.value && handleOpenDialog(e.target.value) }}>
-                    <MenuItem value=""><em>選択解除</em></MenuItem>
-                    <MenuItem value="project">プロジェクト</MenuItem>
-                    <MenuItem value="someday_maybe">いつかやる/多分やる</MenuItem>
-                    <MenuItem value="reference">参照資料</MenuItem>
-                    <MenuItem value="done">完了</MenuItem>
-                </Select>
-            </FormControl>
+    <Box sx={{ p: { xs: 2, sm: 3 }, height: '100%', display: 'flex', flexDirection: 'column' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+            <Typography variant="h4" component="h1" sx={{ fontWeight: 'bold', color: 'primary.main' }}>ダッシュボード</Typography>
+            <Box>
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={<AddCircleOutlineIcon />}
+                onClick={() => navigate('/memo')}
+                sx={{ mr: 1 }}
+              >
+                メモ追加
+              </Button>
+              <FormControl size="small" sx={{ minWidth: 150 }}>
+                  <InputLabel>他のリスト</InputLabel>
+                  <Select value={selectedList} label="他のリスト" onChange={(e) => { e.target.value && handleOpenDialog(e.target.value) }}>
+                      <MenuItem value=""><em>選択解除</em></MenuItem>
+                      <MenuItem value="project">プロジェクト</MenuItem>
+                      <MenuItem value="someday_maybe">いつかやる/多分やる</MenuItem>
+                      <MenuItem value="reference">参照資料</MenuItem>
+                      <MenuItem value="done">完了</MenuItem>
+                  </Select>
+              </FormControl>
+            </Box>
         </Box>
 
       <DragDropContext onDragEnd={onDragEnd}>
-        <Box sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1, height: '100%' }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
             {/* Inbox Top Bar */}
-            <Box sx={{ mb: 1 }}>
+            <Box sx={{ mb: 3 }}>
                 <Droppable droppableId="inbox" direction="horizontal">
                     {(provided, snapshot) => (
-                        <Paper ref={provided.innerRef} {...provided.droppableProps} sx={{ p: 1, backgroundColor: snapshot.isDraggingOver ? theme.palette.action.hover : '#f5f5f5', display: 'flex', alignItems: 'flex-start', overflowX: 'auto', minHeight: 120 }}>
-                            <Typography variant="h6" sx={{ p: 1, mr: 1, alignSelf: 'center' }}>受信箱</Typography>
+                        <Paper
+                          ref={provided.innerRef}
+                          {...provided.droppableProps}
+                          elevation={snapshot.isDraggingOver ? 4 : 0}
+                          sx={{
+                            p: 1.5, backgroundColor: snapshot.isDraggingOver ? theme.palette.action.hover : theme.palette.background.paper,
+                            display: 'flex', alignItems: 'center', overflowX: 'auto', minHeight: 130,
+                            border: `1px solid ${theme.palette.divider}`,
+                          }}
+                        >
+                            <Typography variant="h6" sx={{ p: 1, mr: 1, fontWeight: 'bold', color: 'text.secondary', flexShrink: 0 }}>受信箱</Typography>
                             <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
                                 {getMemosByStatus('inbox').map(renderHorizontalMemoCard)}
                                 {provided.placeholder}
@@ -176,11 +262,11 @@ function Dashboard() {
             </Box>
 
             {/* Main Quadrants Area */}
-            <Box sx={{ flexGrow: 1, display: 'flex', flexWrap: 'wrap' }}>
-              <Quadrant droppableId="eisenhower-high-high" title="緊急かつ重要" bgColor="#ffebee" memos={getMemosByEisenhower('high', 'high')} />
-              <Quadrant droppableId="eisenhower-low-high" title="緊急ではないが重要" bgColor="#e8f5e9" memos={getMemosByEisenhower('low', 'high')} />
-              <Quadrant droppableId="eisenhower-high-low" title="緊急だが重要ではない" bgColor="#fffde7" memos={getMemosByEisenhower('high', 'low')} />
-              <Quadrant droppableId="eisenhower-low-low" title="緊急でも重要でもない" bgColor="#e0f2f7" memos={getMemosByEisenhower('low', 'low')} />
+            <Box sx={{ flexGrow: 1, display: 'flex', flexWrap: 'wrap', justifyContent: 'center' }}>
+              <Quadrant droppableId="eisenhower-high-high" title="緊急かつ重要" bgColor={quadrantColors['high-high']} memos={getMemosByEisenhower('high', 'high')} />
+              <Quadrant droppableId="eisenhower-high-low" title="緊急だが重要ではない" bgColor={quadrantColors['high-low']} memos={getMemosByEisenhower('high', 'low')} />
+              <Quadrant droppableId="eisenhower-low-high" title="緊急ではないが重要" bgColor={quadrantColors['low-high']} memos={getMemosByEisenhower('low', 'high')} />
+              <Quadrant droppableId="eisenhower-low-low" title="緊急でも重要でもない" bgColor={quadrantColors['low-low']} memos={getMemosByEisenhower('low', 'low')} />
             </Box>
         </Box>
       </DragDropContext>
@@ -197,6 +283,17 @@ function Dashboard() {
                 ))}
             </Box>
         </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteConfirmOpen} onClose={closeDeleteConfirm}>
+        <DialogTitle>メモの削除</DialogTitle>
+        <DialogContent>
+          <Typography>本当にこのメモを削除しますか？</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeDeleteConfirm}>キャンセル</Button>
+          <Button onClick={handleDeleteMemo} color="error">削除</Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );
