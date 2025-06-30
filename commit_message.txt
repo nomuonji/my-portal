@@ -1,1 +1,17 @@
-refactor: Separate Firebase credentials into environment variables
+feat: Implement dark mode and feature request management system
+
+This commit introduces the following major enhancements:
+
+- **Dark Mode Implementation:**
+  - Integrated Material-UI theming to support both light and dark modes.
+  - Users can now toggle between light and dark themes for improved visual comfort.
+- **Feature Request Management System:**
+  - Added a new "Feature Requests" section with a Kanban-style board.
+  - Users can add, track, and manage application improvement ideas (feature requests, bugs, etc.) with statuses (To Do, In Progress, Done) and priorities.
+  - This system facilitates a more structured development workflow, allowing Gemini to directly reference and act upon user-defined tasks.
+- **UI/UX Enhancements:**
+  - Refined the overall application design with updated Material-UI styling, including improved shadows, borders, and spacing for a more modern and aesthetically pleasing interface.
+  - Adjusted Dashboard quadrant colors for better visual appeal.
+- **Technical Improvements:**
+  - Corrected routing issues in `App.js` to ensure proper navigation using `react-router-dom`.
+  - Resolved various build and runtime errors related to component rendering and theme integration.

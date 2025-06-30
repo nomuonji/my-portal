@@ -25,6 +25,7 @@ import News from './components/News';
 import Idea from './components/Idea';
 import IdeaBoard from './components/IdeaBoard';
 import FeatureRequests from './components/FeatureRequests';
+import Project from './components/Project';
 import getAppTheme from './theme';
 
 const drawerWidth = 240;
@@ -108,6 +109,12 @@ function App() {
             <BuildIcon />
           </ListItemIcon>
           <ListItemText primary="機能改善" />
+        </ListItemButton>
+        <ListItemButton component={Link} to="/project">
+          <ListItemIcon>
+            <Folder />
+          </ListItemIcon>
+          <ListItemText primary="プロジェクト" />
         </ListItemButton>
         <ListItemButton component={Link} to="/drive">
           <ListItemIcon>
@@ -218,6 +225,7 @@ function App() {
                     <Route path="/idea" element={<Idea />} />
                     <Route path="/ideaboard" element={<IdeaBoard />} />
                     <Route path="/feature-requests" element={<FeatureRequests />} />
+                    <Route path="/project" element={<Project />} />
                     <Route path="/drive" element={<Typography variant="h4">Google Drive機能はまだ実装されていません。</Typography>} />
                   </Routes>
                 ) : (

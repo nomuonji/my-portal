@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, serverTimestamp, deleteDoc } from 'firebase/firestore';
 import {
   Box,
   Typography,
@@ -20,6 +20,7 @@ import {
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
+import DeleteIcon from '@mui/icons-material/Delete';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { marked } from 'marked';
 
@@ -85,6 +86,40 @@ function FeatureRequests() {
     }
   };
 
+  const handleDeleteRequest = async (id) => {
+    if (window.confirm('このリクエストを削除してもよろしいですか？')) {
+      try {
+        await deleteDoc(doc(db, 'featureRequests', id));
+      } catch (error) {
+        console.error('Failed to delete feature request:', error);
+      }
+    }
+  };
+
+  const handleCopyTasksForGemini = () => {
+    const tasksToCopy = requests.filter(req => req.status === 'todo' || req.status === 'in_progress')
+      .map(({ id, title, description, priority, status, createdAt }) => ({
+        id,
+        title,
+        description,
+        priority,
+        status,
+        // createdAtはFirestoreのTimestampオブジェクトなので、必要に応じて変換
+        createdAt: createdAt ? createdAt.toDate().toISOString() : null,
+      }));
+    
+    const jsonString = JSON.stringify(tasksToCopy, null, 2);
+    const instructionText = "ここにアプリケーションからの機能改善リクエストがあります。GEMINI.mdのガイドラインに従って処理してください:\n\n";
+    navigator.clipboard.writeText(instructionText + jsonString)
+      .then(() => {
+        alert('Gemini用タスクがクリップボードにコピーされました！');
+      })
+      .catch(err => {
+        console.error('クリップボードへのコピーに失敗しました:', err);
+        alert('クリップボードへのコピーに失敗しました。コンソールを確認してください。');
+      });
+  };
+
   const renderRequestCard = (request, index) => (
     <Draggable key={request.id} draggableId={request.id} index={index}>
       {(provided, snapshot) => (
@@ -95,7 +130,17 @@ function FeatureRequests() {
           elevation={snapshot.isDragging ? 8 : 1}
           sx={{ p: 1.5, mb: 1.5, transition: 'box-shadow 0.2s ease' }}
         >
-          <Typography variant="h6" sx={{ fontSize: '1rem', fontWeight: 'bold', mb: 1 }}>{request.title}</Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+            <Typography variant="h6" sx={{ fontSize: '1rem', fontWeight: 'bold' }}>{request.title}</Typography>
+            <IconButton
+              aria-label="delete"
+              size="small"
+              onClick={() => handleDeleteRequest(request.id)}
+              sx={{ p: 0.5 }}
+            >
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          </Box>
           <Box dangerouslySetInnerHTML={{ __html: marked.parse(request.description || '') }} sx={{ fontSize: '0.85rem', mb: 1 }} />
           <Box>
             <Typography variant="caption" sx={{
@@ -142,9 +187,14 @@ function FeatureRequests() {
     <Box sx={{ p: { xs: 2, sm: 3 }, height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4" component="h1" sx={{ fontWeight: 'bold', color: 'primary.main' }}>機能改善</Typography>
-        <Button variant="contained" color="primary" startIcon={<AddIcon />} onClick={handleOpenDialog}>
-          新しいリクエスト
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button variant="contained" color="primary" startIcon={<AddIcon />} onClick={handleOpenDialog}>
+            新しいリクエスト
+          </Button>
+          <Button variant="outlined" color="secondary" onClick={handleCopyTasksForGemini}>
+            Gemini用タスクをコピー
+          </Button>
+        </Box>
       </Box>
 
       <DragDropContext onDragEnd={onDragEnd}>
