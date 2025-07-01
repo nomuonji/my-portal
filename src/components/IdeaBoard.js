@@ -17,13 +17,29 @@ import {
   Button,
   IconButton,
   Menu,
-  MenuItem
+  MenuItem,
+  useTheme
 } from '@mui/material';
+import { getContrastRatio } from '@mui/material/styles';
 import { Clear as ClearIcon, AddCircleOutline as AddCircleOutlineIcon, ContentCopy as ContentCopyIcon, Edit as EditIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
 // Function to generate a random rotation angle
 const getRandomRotation = () => `rotate(${(Math.random() - 0.5) * 4}deg)`;
+
+// Function to generate a consistent color from a string (tag)
+const getTagColor = (tag) => {
+  let hash = 0;
+  for (let i = 0; i < tag.length; i++) {
+    hash = tag.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  let color = '#';
+  for (let i = 0; i < 3; i++) {
+    const value = (hash >> (i * 8)) & 0xFF;
+    color += ('00' + value.toString(16)).substr(-2);
+  }
+  return color;
+};
 
 function IdeaBoard() {
   const [ideas, setIdeas] = useState([]);
@@ -144,6 +160,8 @@ function IdeaBoard() {
                 '&:hover': { transform: 'scale(1.05)' },
                 overflow: 'hidden', // Hide overflow text
                 position: 'relative', // For positioning the copy button
+                backgroundColor: idea.tags && idea.tags.length > 0 ? getTagColor(idea.tags[0]) : '#f0f0f0', // Apply color based on first tag
+                color: idea.tags && idea.tags.length > 0 ? (getContrastRatio(getTagColor(idea.tags[0]), '#fff') > 4.5 ? '#fff' : '#000') : '#000', // Adjust text color for contrast
               }}
               onContextMenu={(event) => handleCardClick(event, idea)} // 右クリックイベントを処理
             >

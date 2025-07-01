@@ -22,12 +22,28 @@ import {
   Paper,
   Chip,
   IconButton,
-  Grid
+  Grid,
+  useTheme
 } from '@mui/material';
+import { getContrastRatio } from '@mui/material/styles';
 import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Clear as ClearIcon, Cancel as CancelIcon, ContentCopy as ContentCopyIcon } from '@mui/icons-material';
 
 // Function to generate a random rotation angle
 const getRandomRotation = () => `rotate(${(Math.random() - 0.5) * 4}deg)`;
+
+// Function to generate a consistent color from a string (tag)
+const getTagColor = (tag) => {
+  let hash = 0;
+  for (let i = 0; i < tag.length; i++) {
+    hash = tag.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  let color = '#';
+  for (let i = 0; i < 3; i++) {
+    const value = (hash >> (i * 8)) & 0xFF;
+    color += ('00' + value.toString(16)).substr(-2);
+  }
+  return color;
+};
 
 function Idea() {
   const [ideas, setIdeas] = useState([]);
@@ -37,6 +53,7 @@ function Idea() {
   const [newTagInput, setNewTagInput] = useState(''); // For adding new tags
   const [editingIdea, setEditingIdea] = useState(null);
   const [filterTag, setFilterTag] = useState(null); // New state for filtering
+  const theme = useTheme();
 
   // Fetch ideas from Firestore
   useEffect(() => {
@@ -256,7 +273,17 @@ function Idea() {
       <Grid container spacing={3}>
         {filteredIdeas.map(idea => (
           <Grid item xs={12} sm={6} md={4} key={idea.id}>
-            <Paper sx={{ p: 2, height: '100%', transform: getRandomRotation(), transition: 'transform 0.2s ease-in-out', '&:hover': { transform: 'scale(1.05)' } }}>
+            <Paper
+              sx={{
+                p: 2,
+                height: '100%',
+                transform: getRandomRotation(),
+                transition: 'transform 0.2s ease-in-out',
+                '&:hover': { transform: 'scale(1.05)' },
+                backgroundColor: idea.tags && idea.tags.length > 0 ? getTagColor(idea.tags[0]) : '#f0f0f0', // Apply color based on first tag
+                color: idea.tags && idea.tags.length > 0 ? (getContrastRatio(getTagColor(idea.tags[0]), '#fff') > 4.5 ? '#fff' : '#000') : '#000', // Adjust text color for contrast
+              }}
+            >
               <Typography variant="body2" sx={{ my: 2, whiteSpace: 'pre-wrap' }}>{idea.content}</Typography>
               <Box sx={{ mb: 1 }}>
                 {idea.tags && idea.tags.map(tag => <Chip key={tag} label={tag} size="small" sx={{ mr: 0.5 }} />)}
