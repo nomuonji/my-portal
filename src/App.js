@@ -100,69 +100,71 @@ function App() {
       setUser(currentUser);
     });
 
-    const urlParams = new URLSearchParams(window.location.search);
-    const sharedUrl = urlParams.get('url');
-    const sharedTitle = urlParams.get('title') || urlParams.get('text');
+    if (user) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const sharedUrl = urlParams.get('url');
+      const sharedTitle = urlParams.get('title') || urlParams.get('text');
 
-    const handleSharedUrl = async () => {
-      if (sharedUrl) {
-        const videoId = getYouTubeVideoId(sharedUrl);
-        if (videoId) {
-          // YouTube動画の場合
-          let docData = {
-            url: sharedUrl,
-            title: sharedTitle || '',
-            description: '',
-            thumbnail: '',
-            read: false,
-            tags: [],
-            createdAt: serverTimestamp(),
-            videoId: videoId,
-          };
-
-          const videoDetails = await fetchYouTubeVideoDetails(videoId, YOUTUBE_API_KEY);
-          if (videoDetails) {
-            docData = {
-              ...docData,
-              title: videoDetails.title,
-              description: videoDetails.description,
-              thumbnail: videoDetails.thumbnail,
-            };
-          }
-          try {
-            await addDoc(collection(db, 'reading_list_youtube'), docData);
-            console.log('YouTube動画をリストに追加しました。');
-          } catch (e) {
-            console.error('YouTube動画の追加に失敗しました。', e);
-          }
-        } else {
-          // 通常のURLの場合
-          try {
-            await addDoc(collection(db, 'reading_list_urls'), {
+      const handleSharedUrl = async () => {
+        if (sharedUrl) {
+          const videoId = getYouTubeVideoId(sharedUrl);
+          if (videoId) {
+            // YouTube動画の場合
+            let docData = {
               url: sharedUrl,
               title: sharedTitle || '',
               description: '',
-              image: '',
+              thumbnail: '',
               read: false,
               tags: [],
               createdAt: serverTimestamp(),
-            });
-            console.log('URLをリストに追加しました。');
-          } catch (e) {
-            console.error('URLの追加に失敗しました。', e);
+              videoId: videoId,
+            };
+
+            const videoDetails = await fetchYouTubeVideoDetails(videoId, YOUTUBE_API_KEY);
+            if (videoDetails) {
+              docData = {
+                ...docData,
+                title: videoDetails.title,
+                description: videoDetails.description,
+                thumbnail: videoDetails.thumbnail,
+              };
+            }
+            try {
+              await addDoc(collection(db, 'reading_list_youtube'), docData);
+              console.log('YouTube動画をリストに追加しました。');
+            } catch (e) {
+              console.error('YouTube動画の追加に失敗しました。', e);
+            }
+          } else {
+            // 通常のURLの場合
+            try {
+              await addDoc(collection(db, 'reading_list_urls'), {
+                url: sharedUrl,
+                title: sharedTitle || '',
+                description: '',
+                image: '',
+                read: false,
+                tags: [],
+                createdAt: serverTimestamp(),
+              });
+              console.log('URLをリストに追加しました。');
+            } catch (e) {
+              console.error('URLの追加に失敗しました。', e);
+            }
           }
+
+          // URLパラメータをクリアして、リフレッシュ時に再度追加されないようにする
+          const cleanUrl = window.location.origin;
+          window.history.replaceState(null, '', cleanUrl);
         }
+      };
 
-        // URLパラメータをクリアして、リフレッシュ時に再度追加されないようにする
-        const cleanUrl = window.location.origin + window.location.pathname;
-        window.history.replaceState(null, '', cleanUrl);
-      }
-    };
-
-    handleSharedUrl();
+      handleSharedUrl();
+    }
 
     return () => unsubscribe();
-  }, []);
+  }, [user]);
 
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
