@@ -27,6 +27,54 @@ import { useNavigate } from 'react-router-dom';
 // Function to generate a random rotation angle
 const getRandomRotation = () => `rotate(${(Math.random() - 0.5) * 4}deg)`;
 
+// Helper to convert hex to HSL
+function hexToHsl(hex) {
+  let r = 0, g = 0, b = 0;
+  // handle 3-digit hex
+  if (hex.length === 4) {
+    r = parseInt(hex[1] + hex[1], 16);
+    g = parseInt(hex[2] + hex[2], 16);
+    b = parseInt(hex[3] + hex[3], 16);
+  } else if (hex.length === 7) {
+    r = parseInt(hex.substring(1, 3), 16);
+    g = parseInt(hex.substring(3, 5), 16);
+    b = parseInt(hex.substring(5, 7), 16);
+  }
+  r /= 255;
+  g /= 255;
+  b /= 255;
+
+  let max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h, s, l = (max + min) / 2;
+
+  if (max === min) {
+    h = s = 0; // achromatic
+  } else {
+    let d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+
+  return [h * 360, s * 100, l * 100];
+}
+
+// Helper to convert HSL to hex
+function hslToHex(h, s, l) {
+  l /= 100;
+  const a = s * Math.min(l, 1 - l) / 100;
+  const f = n => {
+    const k = (n + h / 30) % 12;
+    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+    return Math.round(255 * color).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
 // Function to generate a consistent color from a string (tag)
 const getTagColor = (tag) => {
   let hash = 0;
@@ -133,12 +181,12 @@ function IdeaBoard() {
             label={tag}
             onClick={() => setFilterTag(filterTag === tag ? null : tag)} // Toggle filter
             sx={{
-              backgroundColor: getTagColor(tag),
-              color: getContrastRatio(getTagColor(tag), '#fff') > 4.5 ? '#fff' : '#000',
+              backgroundColor: hslToHex(...hexToHsl(getTagColor(tag)).map((val, i) => i === 2 ? Math.min(100, val + 30) : val)), // 薄くする
+              color: getContrastRatio(hslToHex(...hexToHsl(getTagColor(tag)).map((val, i) => i === 2 ? Math.min(100, val + 30) : val)), '#fff') > 4.5 ? '#fff' : '#000',
               fontWeight: 'bold',
               '&:hover': {
-                backgroundColor: getTagColor(tag),
-                opacity: 0.8,
+                backgroundColor: hslToHex(...hexToHsl(getTagColor(tag)).map((val, i) => i === 2 ? Math.min(100, val + 20) : val)), // ホバー時は少し濃く
+                opacity: 0.9,
               },
             }}
             variant={filterTag === tag ? 'filled' : 'outlined'}
