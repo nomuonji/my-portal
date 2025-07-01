@@ -18,6 +18,10 @@ import {
   Toolbar,
   Typography,
   Badge,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme, ThemeProvider } from '@mui/material/styles';
@@ -82,6 +86,7 @@ function App() {
   }); // 'light' or 'dark'
   const [unreadUrlsCount, setUnreadUrlsCount] = useState(0);
   const [unreadYoutubeCount, setUnreadYoutubeCount] = useState(0);
+  const [notificationModalOpen, setNotificationModalOpen] = useState(false);
 
   const appTheme = useMemo(() => getAppTheme(mode), [mode]);
   const isMobile = useMediaQuery(appTheme.breakpoints.down('md'));
@@ -309,7 +314,7 @@ function App() {
               <Typography noWrap component="div" sx={{ flexGrow: 1, typography: { xs: 'subtitle1', md: 'h6' } }}>
                 My Portal
               </Typography>
-              <IconButton color="inherit">
+              <IconButton color="inherit" onClick={() => setNotificationModalOpen(true)}>
                 <Badge badgeContent={unreadUrlsCount + unreadYoutubeCount} color="error">
                   <NotificationsIcon />
                 </Badge>
@@ -389,9 +394,21 @@ function App() {
             </Box>
           </Box>
         </Box>
+        <Dialog open={notificationModalOpen} onClose={() => setNotificationModalOpen(false)}>
+          <DialogTitle>未読アイテム</DialogTitle>
+          <DialogContent>
+            <Typography>Web記事: {unreadUrlsCount}件</Typography>
+            <Typography>YouTube動画: {unreadYoutubeCount}件</Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setNotificationModalOpen(false)}>閉じる</Button>
+          </DialogActions>
+        </Dialog>
       </Router>
     </ThemeProvider>
   );
 }
+
+export default App;
 
 export default App;
