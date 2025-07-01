@@ -61,7 +61,7 @@ function IdeaBoard() {
           startIcon={<AddCircleOutlineIcon />}
           onClick={() => navigate('/idea')}
         >
-          アイデア追加
+          アイデア管理
         </Button>
       </Box>
 
