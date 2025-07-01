@@ -4,37 +4,37 @@ const getAppTheme = (mode) => createTheme({
   palette: {
     mode,
     ...(mode === 'light'
-      ? { // Light Mode Palette
+      ? { // Light Mode Palette (Subdued)
           primary: {
-            main: '#424242', // Dark Grey
+            main: '#546E7A', // Blue Grey 700
           },
           secondary: {
-            main: '#ffb300', // Amber
+            main: '#78909C', // Blue Grey 500
           },
           background: {
-            default: '#f5f5f5', // Light Grey
-            paper: '#ffffff', // White
+            default: '#ECEFF1', // Blue Grey 50
+            paper: '#FFFFFF', // White
           },
           text: {
-            primary: '#212121', // Very Dark Grey
-            secondary: '#757575', // Medium Grey
+            primary: '#263238', // Blue Grey 900
+            secondary: '#546E7A', // Blue Grey 700
           },
           divider: 'rgba(0, 0, 0, 0.12)',
         }
-      : { // Dark Mode Palette
+      : { // Dark Mode Palette (Subdued)
           primary: {
-            main: '#90CAF9', // Light Blue
+            main: '#90A4AE', // Blue Grey 300
           },
           secondary: {
-            main: '#FFCC80', // Light Orange
+            main: '#B0BEC5', // Blue Grey 200
           },
           background: {
-            default: '#121212', // Dark Grey
-            paper: '#1E1E1E', // Slightly Lighter Dark Grey
+            default: '#263238', // Blue Grey 900
+            paper: '#37474F', // Blue Grey 800
           },
           text: {
-            primary: '#E0E0E0', // Light Grey
-            secondary: '#B0B0B0', // Medium Light Grey
+            primary: '#ECEFF1', // Blue Grey 50
+            secondary: '#B0BEC5', // Blue Grey 200
           },
           divider: 'rgba(255, 255, 255, 0.12)',
         }),

@@ -209,7 +209,15 @@ function Idea() {
               label={tag}
               onClick={() => handleTagClick(tag)}
               onDelete={() => handleDeleteTag(tag)} // Add onDelete handler
-              color={selectedTags.includes(tag) ? 'primary' : 'default'}
+              sx={{
+                backgroundColor: getTagColor(tag),
+                color: getContrastRatio(getTagColor(tag), '#fff') > 4.5 ? '#fff' : '#000',
+                fontWeight: 'bold',
+                '&:hover': {
+                  backgroundColor: getTagColor(tag),
+                  opacity: 0.8,
+                },
+              }}
               variant={selectedTags.includes(tag) ? 'filled' : 'outlined'}
               deleteIcon={<CancelIcon />}
             />
@@ -253,7 +261,15 @@ function Idea() {
             key={`filter-${tag}`}
             label={tag}
             onClick={() => setFilterTag(filterTag === tag ? null : tag)} // Toggle filter
-            color={filterTag === tag ? 'secondary' : 'default'}
+            sx={{
+              backgroundColor: getTagColor(tag),
+              color: getContrastRatio(getTagColor(tag), '#fff') > 4.5 ? '#fff' : '#000',
+              fontWeight: 'bold',
+              '&:hover': {
+                backgroundColor: getTagColor(tag),
+                opacity: 0.8,
+              },
+            }}
             variant={filterTag === tag ? 'filled' : 'outlined'}
           />
         ))}
@@ -265,6 +281,7 @@ function Idea() {
             color="info"
             variant="outlined"
             deleteIcon={<ClearIcon />}
+            sx={{ fontWeight: 'bold' }}
           />
         )}
       </Box>

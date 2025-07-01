@@ -132,7 +132,15 @@ function IdeaBoard() {
             key={`filter-${tag}`}
             label={tag}
             onClick={() => setFilterTag(filterTag === tag ? null : tag)} // Toggle filter
-            color={filterTag === tag ? 'primary' : 'default'}
+            sx={{
+              backgroundColor: getTagColor(tag),
+              color: getContrastRatio(getTagColor(tag), '#fff') > 4.5 ? '#fff' : '#000',
+              fontWeight: 'bold',
+              '&:hover': {
+                backgroundColor: getTagColor(tag),
+                opacity: 0.8,
+              },
+            }}
             variant={filterTag === tag ? 'filled' : 'outlined'}
           />
         ))}
@@ -144,6 +152,7 @@ function IdeaBoard() {
             color="info"
             variant="outlined"
             deleteIcon={<ClearIcon />}
+            sx={{ fontWeight: 'bold' }}
           />
         )}
       </Box>
