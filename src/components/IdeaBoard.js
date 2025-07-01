@@ -14,7 +14,7 @@ import {
   Chip,
   Button
 } from '@mui/material';
-import { Clear as ClearIcon, AddCircleOutline as AddCircleOutlineIcon } from '@mui/icons-material';
+import { Clear as ClearIcon, AddCircleOutline as AddCircleOutlineIcon, ContentCopy as ContentCopyIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
 // Function to generate a random rotation angle
@@ -100,11 +100,21 @@ function IdeaBoard() {
                 transition: 'transform 0.2s ease-in-out',
                 '&:hover': { transform: 'scale(1.05)' },
                 overflow: 'hidden', // Hide overflow text
+                position: 'relative', // For positioning the copy button
               }}
             >
               <Typography variant="body2" sx={{ fontSize: '0.75rem', mb: 0.5, whiteSpace: 'pre-wrap', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 5, WebkitBoxOrient: 'vertical' }}>
                 {idea.content}
               </Typography>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<ContentCopyIcon />}
+                onClick={() => navigator.clipboard.writeText(idea.content)}
+                sx={{ position: 'absolute', bottom: 8, right: 8 }}
+              >
+                コピー
+              </Button>
               {/* Tags are removed from here */}
             </Paper>
           </Grid>
