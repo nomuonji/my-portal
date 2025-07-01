@@ -59,6 +59,7 @@ function IdeaBoard() {
     : ideas;
 
   const handleCardClick = (event, idea) => {
+    event.preventDefault(); // デフォルトの右クリックメニューを無効化
     setSelectedIdea(idea);
     setAnchorEl(event.currentTarget);
   };
@@ -144,7 +145,7 @@ function IdeaBoard() {
                 overflow: 'hidden', // Hide overflow text
                 position: 'relative', // For positioning the copy button
               }}
-              onClick={(event) => handleCardClick(event, idea)}
+              onContextMenu={(event) => handleCardClick(event, idea)} // 右クリックイベントを処理
             >
               <Typography variant="body2" sx={{ fontSize: '0.75rem', mb: 0.5, whiteSpace: 'pre-wrap', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 5, WebkitBoxOrient: 'vertical' }}>
                 {idea.content}
