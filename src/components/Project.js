@@ -7,7 +7,7 @@ import {
   CircularProgress,
   Alert,
   List,
-  ListItem,
+  ListItemButton,
   ListItemText,
   Paper,
   Chip,
@@ -89,7 +89,7 @@ function Project() {
             <List>
               {projects[projectName].map((memo) => (
                 <React.Fragment key={memo.id}>
-                  <ListItem alignItems="flex-start">
+                  <ListItemButton key={memo.id} onClick={() => navigate(`/memo/${memo.id}`)}>
                     <ListItemText
                       primary={memo.text}
                       secondary={
@@ -109,7 +109,7 @@ function Project() {
                         </Box>
                       }
                     />
-                  </ListItem>
+                  </ListItemButton>
                   <Divider component="li" />
                 </React.Fragment>
               ))}
