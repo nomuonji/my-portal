@@ -211,27 +211,25 @@ function Dashboard() {
 
   return (
     <Box sx={{ p: { xs: 2, sm: 3 }, height: '100%', display: 'flex', flexDirection: 'column' }}>
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', mb: 3 }}>
-            <Box>
-              <Button
-                variant="contained"
-                color="primary"
-                startIcon={<AddCircleOutlineIcon />}
-                onClick={() => navigate('/memo')}
-                sx={{ mr: 1, transform: 'scale(1.2)' }}
-              >
-                メモ追加
-              </Button>
-              <Button
-                variant="contained"
-                color="secondary"
-                startIcon={<LightbulbIcon />}
-                onClick={() => navigate('/idea')}
-                sx={{ transform: 'scale(1.2)' }}
-              >
-                アイデア追加
-              </Button>
-            </Box>
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', mb: 3, gap: 2 }}>
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={<AddCircleOutlineIcon />}
+              onClick={() => navigate('/memo')}
+              sx={{ flexGrow: 1, py: 2, fontSize: '1.2rem' }}
+            >
+              メモ追加
+            </Button>
+            <Button
+              variant="contained"
+              color="secondary"
+              startIcon={<LightbulbIcon />}
+              onClick={() => navigate('/idea')}
+              sx={{ flexGrow: 1, py: 2, fontSize: '1.2rem' }}
+            >
+              アイデア追加
+            </Button>
         </Box>
 
       <DragDropContext onDragEnd={onDragEnd}>
