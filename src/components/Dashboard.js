@@ -211,15 +211,14 @@ function Dashboard() {
 
   return (
     <Box sx={{ p: { xs: 2, sm: 3 }, height: '100%', display: 'flex', flexDirection: 'column' }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-            <Typography variant="h4" component="h1" sx={{ fontWeight: 'bold', color: 'primary.main' }}>ダッシュボード</Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', mb: 3 }}>
             <Box>
               <Button
                 variant="contained"
                 color="primary"
                 startIcon={<AddCircleOutlineIcon />}
                 onClick={() => navigate('/memo')}
-                sx={{ mr: 1 }}
+                sx={{ mr: 1, transform: 'scale(1.2)' }}
               >
                 メモ追加
               </Button>
@@ -228,20 +227,10 @@ function Dashboard() {
                 color="secondary"
                 startIcon={<LightbulbIcon />}
                 onClick={() => navigate('/idea')}
-                sx={{ mr: 1 }}
+                sx={{ transform: 'scale(1.2)' }}
               >
                 アイデア追加
               </Button>
-              <FormControl size="small" sx={{ minWidth: 150 }}>
-                  <InputLabel>他のリスト</InputLabel>
-                  <Select value={selectedList} label="他のリスト" onChange={(e) => { e.target.value && handleOpenDialog(e.target.value) }}>
-                      <MenuItem value=""><em>選択解除</em></MenuItem>
-                      <MenuItem value="project">プロジェクト</MenuItem>
-                      <MenuItem value="someday_maybe">いつかやる/多分やる</MenuItem>
-                      <MenuItem value="reference">参照資料</MenuItem>
-                      <MenuItem value="done">完了</MenuItem>
-                  </Select>
-              </FormControl>
             </Box>
         </Box>
 
