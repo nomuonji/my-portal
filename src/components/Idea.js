@@ -270,15 +270,16 @@ function Idea() {
               onClick={() => handleTagClick(tag)}
               onDelete={() => handleDeleteTag(tag)} // Add onDelete handler
               sx={{
-                backgroundColor: hslToHex(...hexToHsl(getTagColor(tag)).map((val, i) => i === 2 ? Math.min(100, val + 30) : val)), // 薄くする
-                color: getContrastRatio(hslToHex(...hexToHsl(getTagColor(tag)).map((val, i) => i === 2 ? Math.min(100, val + 30) : val)), '#fff') > 4.5 ? '#fff' : '#000',
+                backgroundColor: selectedTags.includes(tag) ? hslToHex(...hexToHsl(getTagColor(tag)).map((val, i) => i === 2 ? Math.min(100, val + 30) : val)) : 'transparent', // 選択時は背景色あり
+                color: selectedTags.includes(tag) ? (getContrastRatio(hslToHex(...hexToHsl(getTagColor(tag)).map((val, i) => i === 2 ? Math.min(100, val + 30) : val)), '#fff') > 4.5 ? '#fff' : '#000') : 'inherit', // 選択時はコントラスト調整、非選択時はデフォルト
                 fontWeight: 'bold',
+                borderColor: getTagColor(tag), // アウトラインの色をタグの色に合わせる
                 '&:hover': {
-                  backgroundColor: hslToHex(...hexToHsl(getTagColor(tag)).map((val, i) => i === 2 ? Math.min(100, val + 20) : val)), // ホバー時は少し濃く
+                  backgroundColor: selectedTags.includes(tag) ? hslToHex(...hexToHsl(getTagColor(tag)).map((val, i) => i === 2 ? Math.min(100, val + 20) : val)) : 'rgba(0, 0, 0, 0.04)', // ホバー時は少し濃く、非選択時はデフォルトのホバー
                   opacity: 0.9,
                 },
               }}
-              variant={selectedTags.includes(tag) ? 'filled' : 'outlined'}
+              variant="outlined" // 常にアウトライン
               deleteIcon={<CancelIcon />}
             />
           ))}
@@ -307,15 +308,16 @@ function Idea() {
             label={tag}
             onClick={() => setFilterTag(filterTag === tag ? null : tag)} // Toggle filter
             sx={{
-              backgroundColor: hslToHex(...hexToHsl(getTagColor(tag)).map((val, i) => i === 2 ? Math.min(100, val + 30) : val)), // 薄くする
-              color: getContrastRatio(hslToHex(...hexToHsl(getTagColor(tag)).map((val, i) => i === 2 ? Math.min(100, val + 30) : val)), '#fff') > 4.5 ? '#fff' : '#000',
+              backgroundColor: filterTag === tag ? hslToHex(...hexToHsl(getTagColor(tag)).map((val, i) => i === 2 ? Math.min(100, val + 30) : val)) : 'transparent', // 選択時は背景色あり
+              color: filterTag === tag ? (getContrastRatio(hslToHex(...hexToHsl(getTagColor(tag)).map((val, i) => i === 2 ? Math.min(100, val + 30) : val)), '#fff') > 4.5 ? '#fff' : '#000') : 'inherit', // 選択時はコントラスト調整、非選択時はデフォルト
               fontWeight: 'bold',
+              borderColor: getTagColor(tag), // アウトラインの色をタグの色に合わせる
               '&:hover': {
-                backgroundColor: hslToHex(...hexToHsl(getTagColor(tag)).map((val, i) => i === 2 ? Math.min(100, val + 20) : val)), // ホバー時は少し濃く
+                                backgroundColor: filterTag === tag ? hslToHex(...hexToHsl(getTagColor(tag)).map((val, i) => i === 2 ? Math.min(100, val + 20) : val)) : 'rgba(0, 0, 0, 0.04)', // ホバー時は少し濃く、非選択時はデフォルトのホバー
                 opacity: 0.9,
               },
             }}
-            variant={filterTag === tag ? 'filled' : 'outlined'}
+            variant="outlined" // 常にアウトライン
           />
         ))}
         {filterTag && (
@@ -339,11 +341,11 @@ function Idea() {
               sx={{
                 p: 2,
                 height: '100%',
-                transform: getRandomRotation(),
-                transition: 'transform 0.2s ease-in-out',
-                '&:hover': { transform: 'scale(1.05)' },
-                backgroundColor: idea.tags && idea.tags.length > 0 ? getTagColor(idea.tags[0]) : '#f0f0f0', // Apply color based on first tag
-                color: idea.tags && idea.tags.length > 0 ? (getContrastRatio(getTagColor(idea.tags[0]), '#fff') > 4.5 ? '#fff' : '#000') : '#000', // Adjust text color for contrast
+                // transform: getRandomRotation(), // 回転を無効化
+                // transition: 'transform 0.2s ease-in-out', // トランジションを無効化
+                // '&:hover': { transform: 'scale(1.05)' }, // ホバー時の拡大を無効化
+                backgroundColor: idea.tags && idea.tags.length > 0 ? hslToHex(...hexToHsl(getTagColor(idea.tags[0])).map((val, i) => i === 2 ? Math.min(95, val + 15) : val)) : '#f0f0f0', // Apply subdued color based on first tag
+                color: idea.tags && idea.tags.length > 0 ? (getContrastRatio(hslToHex(...hexToHsl(getTagColor(idea.tags[0])).map((val, i) => i === 2 ? Math.min(95, val + 15) : val)), '#fff') > 4.5 ? '#fff' : '#000') : '#000', // Adjust text color for contrast
               }}
             >
               <Typography variant="body2" sx={{ my: 2, whiteSpace: 'pre-wrap' }}>{idea.content}</Typography>
