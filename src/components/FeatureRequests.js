@@ -20,7 +20,7 @@ import {
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
-import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { marked } from 'marked';
 
@@ -32,6 +32,7 @@ const listTitles = {
 function FeatureRequests() {
   const [requests, setRequests] = useState([]);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingRequest, setEditingRequest] = useState(null);
   const [newRequest, setNewRequest] = useState({ title: '', description: '', priority: 'later' });
   const theme = useTheme();
 
@@ -64,24 +65,34 @@ function FeatureRequests() {
     }
   };
 
-  const handleOpenDialog = () => setDialogOpen(true);
+  const handleOpenDialog = (request = null) => {
+    setEditingRequest(request);
+    setNewRequest(request ? { title: request.title, description: request.description, priority: request.priority } : { title: '', description: '', priority: 'later' });
+    setDialogOpen(true);
+  };
+
   const handleCloseDialog = () => {
     setDialogOpen(false);
+    setEditingRequest(null);
     setNewRequest({ title: '', description: '', priority: 'later' });
   };
 
-  const handleAddRequest = async () => {
+  const handleSaveRequest = async () => {
     if (newRequest.title.trim() === '') return;
 
     try {
-      await addDoc(collection(db, 'featureRequests'), {
-        ...newRequest,
-        status: 'todo', // statusはtodoで固定
-        createdAt: serverTimestamp(),
-      });
+      if (editingRequest) {
+        await updateDoc(doc(db, 'featureRequests', editingRequest.id), newRequest);
+      } else {
+        await addDoc(collection(db, 'featureRequests'), {
+          ...newRequest,
+          status: 'todo', // statusはtodoで固定
+          createdAt: serverTimestamp(),
+        });
+      }
       handleCloseDialog();
     } catch (error) {
-      console.error('Failed to add feature request:', error);
+      console.error('Failed to save feature request:', error);
     }
   };
 
@@ -130,14 +141,10 @@ function FeatureRequests() {
         >
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
             <Typography variant="h6" sx={{ fontSize: '1rem', fontWeight: 'bold' }}>{request.title}</Typography>
-            <IconButton
-              aria-label="delete"
-              size="small"
-              onClick={() => handleDeleteRequest(request.id)}
-              sx={{ p: 0.5 }}
-            >
-              <DeleteIcon fontSize="small" />
-            </IconButton>
+            <Box>
+              <IconButton aria-label="edit" size="small" onClick={() => handleOpenDialog(request)} sx={{ p: 0.5 }}><EditIcon fontSize="small" /></IconButton>
+              <IconButton aria-label="delete" size="small" onClick={() => handleDeleteRequest(request.id)} sx={{ p: 0.5 }}><DeleteIcon fontSize="small" /></IconButton>
+            </Box>
           </Box>
           <Box dangerouslySetInnerHTML={{ __html: marked.parse(request.description || '') }} sx={{ fontSize: '0.85rem', mb: 1 }} />
           <Box>
@@ -204,7 +211,7 @@ function FeatureRequests() {
 
       <Dialog open={dialogOpen} onClose={handleCloseDialog} fullWidth maxWidth="sm">
         <DialogTitle>
-          新しい機能リクエスト
+          {editingRequest ? 'リクエストの編集' : '新しい機能リクエスト'}
           <IconButton aria-label="close" onClick={handleCloseDialog} sx={{ position: 'absolute', right: 8, top: 8 }}><CloseIcon /></IconButton>
         </DialogTitle>
         <DialogContent dividers>
@@ -243,7 +250,7 @@ function FeatureRequests() {
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseDialog}>キャンセル</Button>
-          <Button onClick={handleAddRequest} variant="contained">追加</Button>
+          <Button onClick={handleSaveRequest} variant="contained">{editingRequest ? '更新' : '追加'}</Button>
         </DialogActions>
       </Dialog>
     </Box>
