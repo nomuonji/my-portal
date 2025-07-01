@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import { auth } from './firebase';
 import { GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
 import {
   AppBar,
@@ -17,10 +17,11 @@ import {
   ListItemText,
   Toolbar,
   Typography,
+  Badge,
 } from '@mui/material';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme, ThemeProvider } from '@mui/material/styles';
-import { Note, Newspaper, Folder, Menu as MenuIcon, Dashboard as DashboardIcon, Lightbulb as LightbulbIcon, ViewCompact as ViewCompactIcon, Build as BuildIcon, Brightness4 as Brightness4Icon, Brightness7 as Brightness7Icon } from '@mui/icons-material';
+import { Note, Newspaper, Folder, Menu as MenuIcon, Dashboard as DashboardIcon, Lightbulb as LightbulbIcon, ViewCompact as ViewCompactIcon, Build as BuildIcon, Brightness4 as Brightness4Icon, Brightness7 as Brightness7Icon, Notifications as NotificationsIcon } from '@mui/icons-material';
 import Memo from './components/Memo';
 import Dashboard from './components/Dashboard';
 import News from './components/News';
@@ -79,6 +80,8 @@ function App() {
     const savedMode = localStorage.getItem('themeMode');
     return savedMode || 'light';
   }); // 'light' or 'dark'
+  const [unreadUrlsCount, setUnreadUrlsCount] = useState(0);
+  const [unreadYoutubeCount, setUnreadYoutubeCount] = useState(0);
 
   const appTheme = useMemo(() => getAppTheme(mode), [mode]);
   const isMobile = useMediaQuery(appTheme.breakpoints.down('md'));
@@ -161,6 +164,20 @@ function App() {
       };
 
       handleSharedUrl();
+
+      // 未読数をリアルタイムで取得
+      const unsubscribeUrls = onSnapshot(query(collection(db, 'reading_list_urls'), where('read', '==', false)), (snapshot) => {
+        setUnreadUrlsCount(snapshot.size);
+      });
+
+      const unsubscribeYoutube = onSnapshot(query(collection(db, 'reading_list_youtube'), where('read', '==', false)), (snapshot) => {
+        setUnreadYoutubeCount(snapshot.size);
+      });
+
+      return () => {
+        unsubscribeUrls();
+        unsubscribeYoutube();
+      };
     }
 
     return () => unsubscribe();
@@ -235,6 +252,27 @@ function App() {
           </ListItemIcon>
           <ListItemText primary="Google Drive" />
         </ListItemButton>
+        <ListItemButton onClick={handleModeChange}>
+          <ListItemIcon>
+            {mode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
+          </ListItemIcon>
+          <ListItemText primary={mode === 'dark' ? 'ライトモード' : 'ダークモード'} />
+        </ListItemButton>
+        {user ? (
+          <ListItemButton onClick={handleLogout}>
+            <ListItemIcon>
+              <i className="fas fa-sign-out-alt"></i>
+            </ListItemIcon>
+            <ListItemText primary="ログアウト" />
+          </ListItemButton>
+        ) : (
+          <ListItemButton onClick={handleLogin}>
+            <ListItemIcon>
+              <i className="fas fa-sign-in-alt"></i>
+            </ListItemIcon>
+            <ListItemText primary="Googleでログイン" />
+          </ListItemButton>
+        )}
       </List>
       <Box sx={{ position: 'absolute', bottom: 0, width: '100%', p: 2, textAlign: 'center' }}>
         <Typography variant="caption" color="textSecondary">
@@ -271,14 +309,11 @@ function App() {
               <Typography noWrap component="div" sx={{ flexGrow: 1, typography: { xs: 'subtitle1', md: 'h6' } }}>
                 My Portal
               </Typography>
-              <IconButton color="inherit" onClick={handleModeChange}>
-                {mode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
+              <IconButton color="inherit">
+                <Badge badgeContent={unreadUrlsCount + unreadYoutubeCount} color="error">
+                  <NotificationsIcon />
+                </Badge>
               </IconButton>
-              {user ? (
-                <Button color="inherit" onClick={handleLogout}>ログアウト</Button>
-              ) : (
-                <Button color="inherit" onClick={handleLogin}>Googleでログイン</Button>
-              )}
             </Toolbar>
           </AppBar>
           
