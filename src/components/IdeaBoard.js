@@ -13,9 +13,11 @@ import {
   Paper,
   Chip,
   Button,
-  IconButton
+  IconButton,
+  Menu,
+  MenuItem
 } from '@mui/material';
-import { Clear as ClearIcon, AddCircleOutline as AddCircleOutlineIcon, ContentCopy as ContentCopyIcon } from '@mui/icons-material';
+import { Clear as ClearIcon, AddCircleOutline as AddCircleOutlineIcon, ContentCopy as ContentCopyIcon, Edit as EditIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
 // Function to generate a random rotation angle
@@ -25,6 +27,8 @@ function IdeaBoard() {
   const [ideas, setIdeas] = useState([]);
   const [allTags, setAllTags] = useState([]); // All available tags from Firestore
   const [filterTag, setFilterTag] = useState(null); // New state for filtering
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [selectedIdea, setSelectedIdea] = useState(null);
   const navigate = useNavigate();
 
   // Fetch ideas from Firestore
@@ -51,6 +55,41 @@ function IdeaBoard() {
   const filteredIdeas = filterTag
     ? ideas.filter(idea => idea.tags && idea.tags.includes(filterTag))
     : ideas;
+
+  const handleCardClick = (event, idea) => {
+    setSelectedIdea(idea);
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+    setSelectedIdea(null);
+  };
+
+  const handleCopy = () => {
+    if (selectedIdea) {
+      navigator.clipboard.writeText(selectedIdea.content);
+      handleMenuClose();
+    }
+  };
+
+  const handleEdit = () => {
+    if (selectedIdea) {
+      navigate(`/idea?id=${selectedIdea.id}`);
+      handleMenuClose();
+    }
+  };
+
+  const handleDelete = async () => {
+    if (selectedIdea && window.confirm('本当にこのアイデアを削除しますか？')) {
+      try {
+        await deleteDoc(doc(db, 'ideas', selectedIdea.id));
+        handleMenuClose();
+      } catch (error) {
+        console.error("Error deleting idea: ", error);
+      }
+    }
+  };
 
   return (
     <Box sx={{ p: 1 }}>
@@ -103,22 +142,26 @@ function IdeaBoard() {
                 overflow: 'hidden', // Hide overflow text
                 position: 'relative', // For positioning the copy button
               }}
+              onClick={(event) => handleCardClick(event, idea)}
             >
               <Typography variant="body2" sx={{ fontSize: '0.75rem', mb: 0.5, whiteSpace: 'pre-wrap', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 5, WebkitBoxOrient: 'vertical' }}>
                 {idea.content}
               </Typography>
-              <IconButton
-                size="small"
-                onClick={() => navigator.clipboard.writeText(idea.content)}
-                sx={{ position: 'absolute', bottom: 4, right: 4 }}
-              >
-                <ContentCopyIcon fontSize="small" />
-              </IconButton>
               {/* Tags are removed from here */}
             </Paper>
           </Grid>
         ))}
       </Grid>
+
+      <Menu
+        anchorEl={anchorEl}
+        open={Boolean(anchorEl)}
+        onClose={handleMenuClose}
+      >
+        <MenuItem onClick={handleCopy}>コピー</MenuItem>
+        <MenuItem onClick={handleEdit}>編集</MenuItem>
+        <MenuItem onClick={handleDelete}>削除</MenuItem>
+      </Menu>
     </Box>
   );
 }
