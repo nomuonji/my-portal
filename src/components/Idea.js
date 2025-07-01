@@ -238,7 +238,19 @@ function Idea() {
 
       {/* Input Form */}
       <Paper sx={{ p: 2, mb: 4 }}>
-        <Typography variant="h6">{editingIdea ? 'アイデアを編集' : '新しいアイデアを追加'}</Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Typography variant="h6">{editingIdea ? 'アイデアを編集' : '新しいアイデアを追加'}</Typography>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button variant="contained" onClick={handleSaveIdea} startIcon={<AddIcon />}>
+                {editingIdea ? '更新' : '保存'}
+              </Button>
+              {editingIdea && (
+                  <Button variant="outlined" onClick={cancelEdit} startIcon={<ClearIcon />}>
+                      キャンセル
+                  </Button>
+              )}
+          </Box>
+        </Box>
         <TextField
           label="アイデア内容"
           fullWidth
@@ -270,34 +282,6 @@ function Idea() {
               deleteIcon={<CancelIcon />}
             />
           ))}
-        </Box>
-
-        <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
-          <TextField
-            label="新しいタグを追加"
-            fullWidth
-            value={newTagInput}
-            onChange={(e) => setNewTagInput(e.target.value)}
-            onKeyPress={(e) => {
-              if (e.key === 'Enter') {
-                handleAddNewTag();
-              }
-            }}
-          />
-          <Button variant="outlined" onClick={handleAddNewTag}>
-            追加
-          </Button>
-        </Box>
-
-        <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button variant="contained" onClick={handleSaveIdea} startIcon={<AddIcon />}>
-              {editingIdea ? '更新' : '保存'}
-            </Button>
-            {editingIdea && (
-                <Button variant="outlined" onClick={cancelEdit} startIcon={<ClearIcon />}>
-                    キャンセル
-                </Button>
-            )}
         </Box>
       </Paper>
 
@@ -362,7 +346,8 @@ function Idea() {
           </Grid>
         ))}
       </Grid>
-    </Box>
+
+      </Box>
   );
 }
 
