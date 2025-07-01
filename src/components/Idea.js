@@ -24,7 +24,7 @@ import {
   IconButton,
   Grid
 } from '@mui/material';
-import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Clear as ClearIcon, Cancel as CancelIcon } from '@mui/icons-material';
+import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Clear as ClearIcon, Cancel as CancelIcon, ContentCopy as ContentCopyIcon } from '@mui/icons-material';
 
 // Function to generate a random rotation angle
 const getRandomRotation = () => `rotate(${(Math.random() - 0.5) * 4}deg)`;
@@ -262,6 +262,7 @@ function Idea() {
                 {idea.tags && idea.tags.map(tag => <Chip key={tag} label={tag} size="small" sx={{ mr: 0.5 }} />)}
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+                <IconButton size="small" onClick={() => navigator.clipboard.writeText(idea.content)}><ContentCopyIcon /></IconButton>
                 <IconButton size="small" onClick={() => handleEdit(idea)}><EditIcon /></IconButton>
                 <IconButton size="small" onClick={() => handleDelete(idea.id)}><DeleteIcon /></IconButton>
               </Box>

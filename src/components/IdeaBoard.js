@@ -12,7 +12,8 @@ import {
   Grid,
   Paper,
   Chip,
-  Button
+  Button,
+  IconButton
 } from '@mui/material';
 import { Clear as ClearIcon, AddCircleOutline as AddCircleOutlineIcon, ContentCopy as ContentCopyIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
@@ -106,15 +107,13 @@ function IdeaBoard() {
               <Typography variant="body2" sx={{ fontSize: '0.75rem', mb: 0.5, whiteSpace: 'pre-wrap', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 5, WebkitBoxOrient: 'vertical' }}>
                 {idea.content}
               </Typography>
-              <Button
-                variant="outlined"
+              <IconButton
                 size="small"
-                startIcon={<ContentCopyIcon />}
                 onClick={() => navigator.clipboard.writeText(idea.content)}
-                sx={{ position: 'absolute', bottom: 8, right: 8 }}
+                sx={{ position: 'absolute', bottom: 4, right: 4 }}
               >
-                コピー
-              </Button>
+                <ContentCopyIcon fontSize="small" />
+              </IconButton>
               {/* Tags are removed from here */}
             </Paper>
           </Grid>
