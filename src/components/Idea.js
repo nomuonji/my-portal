@@ -344,8 +344,8 @@ function Idea() {
                 // transform: getRandomRotation(), // 回転を無効化
                 // transition: 'transform 0.2s ease-in-out', // トランジションを無効化
                 // '&:hover': { transform: 'scale(1.05)' }, // ホバー時の拡大を無効化
-                backgroundColor: idea.tags && idea.tags.length > 0 ? hslToHex(...hexToHsl(getTagColor(idea.tags[0])).map((val, i) => i === 2 ? Math.min(95, val + 15) : val)) : '#f0f0f0', // Apply subdued color based on first tag
-                color: idea.tags && idea.tags.length > 0 ? (getContrastRatio(hslToHex(...hexToHsl(getTagColor(idea.tags[0])).map((val, i) => i === 2 ? Math.min(95, val + 15) : val)), '#fff') > 4.5 ? '#fff' : '#000') : '#000', // Adjust text color for contrast
+                backgroundColor: idea.tags && idea.tags.length > 0 ? hslToHex(...hexToHsl(getTagColor(idea.tags[0])).map((val, i) => i === 2 ? Math.max(20, val - 30) : val)) : '#f0f0f0', // Apply subdued color based on first tag
+                color: idea.tags && idea.tags.length > 0 ? (getContrastRatio(hslToHex(...hexToHsl(getTagColor(idea.tags[0])).map((val, i) => i === 2 ? Math.max(20, val - 30) : val)), '#fff') > 4.5 ? '#fff' : '#000') : '#000', // Adjust text color for contrast
               }}
             >
               <Typography variant="body2" sx={{ my: 2, whiteSpace: 'pre-wrap' }}>{idea.content}</Typography>
