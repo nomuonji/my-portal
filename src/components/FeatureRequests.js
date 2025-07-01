@@ -25,14 +25,14 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { marked } from 'marked';
 
 const listTitles = {
-  todo: 'To Do',
-  done: 'Done'
+  now: 'すぐやる',
+  later: 'あとで'
 };
 
 function FeatureRequests() {
   const [requests, setRequests] = useState([]);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [newRequest, setNewRequest] = useState({ title: '', description: '', priority: 'medium' });
+  const [newRequest, setNewRequest] = useState({ title: '', description: '', priority: 'later' });
   const theme = useTheme();
 
   useEffect(() => {
@@ -43,7 +43,7 @@ function FeatureRequests() {
     return () => unsubscribe();
   }, []);
 
-  const getRequestsByStatus = (status) => requests.filter(req => req.status === status);
+  const getRequestsByPriority = (priority) => requests.filter(req => req.priority === priority);
 
   const onDragEnd = async (result) => {
     const { source, destination, draggableId } = result;
@@ -54,7 +54,7 @@ function FeatureRequests() {
 
     const updatedRequestData = {
       ...draggedRequest,
-      status: destination.droppableId
+      priority: destination.droppableId
     };
 
     try {
@@ -67,7 +67,7 @@ function FeatureRequests() {
   const handleOpenDialog = () => setDialogOpen(true);
   const handleCloseDialog = () => {
     setDialogOpen(false);
-    setNewRequest({ title: '', description: '', priority: 'medium' });
+    setNewRequest({ title: '', description: '', priority: 'later' });
   };
 
   const handleAddRequest = async () => {
@@ -76,7 +76,7 @@ function FeatureRequests() {
     try {
       await addDoc(collection(db, 'featureRequests'), {
         ...newRequest,
-        status: 'todo',
+        status: 'todo', // statusはtodoで固定
         createdAt: serverTimestamp(),
       });
       handleCloseDialog();
@@ -96,14 +96,13 @@ function FeatureRequests() {
   };
 
   const handleCopyTasksForGemini = () => {
-    const tasksToCopy = requests.filter(req => req.status === 'todo')
+    const tasksToCopy = requests.filter(req => req.priority === 'now')
       .map(({ id, title, description, priority, status, createdAt }) => ({
         id,
         title,
         description,
         priority,
         status,
-        // createdAtはFirestoreのTimestampオブジェクトなので、必要に応じて変換
         createdAt: createdAt ? createdAt.toDate().toISOString() : null,
       }));
     
@@ -146,9 +145,9 @@ function FeatureRequests() {
               p: '2px 6px',
               borderRadius: '4px',
               color: 'white',
-              backgroundColor: request.priority === 'high' ? theme.palette.error.main : (request.priority === 'medium' ? theme.palette.warning.main : theme.palette.info.main)
+              backgroundColor: request.priority === 'now' ? theme.palette.error.main : theme.palette.info.main
             }}>
-              {request.priority}
+              {request.priority === 'now' ? 'すぐやる' : 'あとで'}
             </Typography>
           </Box>
         </Paper>
@@ -198,8 +197,8 @@ function FeatureRequests() {
 
       <DragDropContext onDragEnd={onDragEnd}>
         <Box sx={{ display: 'flex', flexGrow: 1, gap: '18px', flexDirection: { xs: 'column', md: 'row' } }}>
-          <KanbanColumn droppableId="todo" title="To Do" requests={getRequestsByStatus('todo')} />
-          <KanbanColumn droppableId="done" title="Done" requests={getRequestsByStatus('done')} />
+          <KanbanColumn droppableId="now" title="すぐやる" requests={getRequestsByPriority('now')} />
+          <KanbanColumn droppableId="later" title="あとで" requests={getRequestsByPriority('later')} />
         </Box>
       </DragDropContext>
 
@@ -237,9 +236,8 @@ function FeatureRequests() {
               label="優先度"
               onChange={(e) => setNewRequest({ ...newRequest, priority: e.target.value })}
             >
-              <MenuItem value="high">高</MenuItem>
-              <MenuItem value="medium">中</MenuItem>
-              <MenuItem value="low">低</MenuItem>
+              <MenuItem value="now">すぐやる</MenuItem>
+              <MenuItem value="later">あとで</MenuItem>
             </Select>
           </FormControl>
         </DialogContent>
