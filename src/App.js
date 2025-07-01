@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import { auth } from './firebase';
 import { GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp, query, where, onSnapshot } from 'firebase/firestore';
@@ -22,6 +22,8 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  BottomNavigation,
+  BottomNavigationAction,
 } from '@mui/material';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme, ThemeProvider } from '@mui/material/styles';
@@ -78,6 +80,7 @@ const fetchYouTubeVideoDetails = async (videoId, apiKey) => {
 const drawerWidth = 240;
 
 function App() {
+  const location = useLocation();
   const [user, setUser] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mode, setMode] = useState(() => {
@@ -289,7 +292,6 @@ function App() {
 
   return (
     <ThemeProvider theme={appTheme}>
-      <Router>
         <Box sx={{ display: 'flex', height: '100vh' }}>
           <CssBaseline />
           <AppBar
@@ -321,14 +323,14 @@ function App() {
               </IconButton>
             </Toolbar>
           </AppBar>
-          
+
           {user && (
             <Box
               component="nav"
               sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }}
               aria-label="mailbox folders"
             >
-              {isMobile ? (
+              {isMobile && (
                 <Drawer
                   variant="temporary"
                   open={mobileOpen}
@@ -343,7 +345,8 @@ function App() {
                 >
                   {drawer}
                 </Drawer>
-              ) : (
+              )}
+              {!isMobile && (
                 <Drawer
                   variant="permanent"
                   sx={{
@@ -364,6 +367,7 @@ function App() {
               flexGrow: 1,
               display: 'flex',
               flexDirection: 'column',
+              pb: isMobile ? '56px' : '0', // フッターの高さ分だけパディングを追加
             }}
           >
             <Toolbar />
@@ -393,7 +397,47 @@ function App() {
                 )}
             </Box>
           </Box>
-        </Box>
+        {isMobile && user && (
+          <>
+            <BottomNavigation
+              showLabels
+              sx={{
+              width: '100%',
+              position: 'fixed',
+              bottom: 0,
+              left: 0,
+              boxShadow: '0px -2px 4px rgba(0, 0, 0, 0.1)',
+              zIndex: 1200, // AppBarより少し高く設定
+            }}
+            value={location.pathname} // 現在のパスに基づいて選択状態を管理
+          >
+            <BottomNavigationAction
+              label="ダッシュボード"
+              icon={<DashboardIcon />}
+              component={Link}
+              to="/"
+            />
+            <BottomNavigationAction
+              label="アイデアボード"
+              icon={<LightbulbIcon />}
+              component={Link}
+              to="/ideaboard"
+            />
+            <BottomNavigationAction
+              label="プロジェクト"
+              icon={<Folder />}
+              component={Link}
+              to="/project"
+            />
+            <BottomNavigationAction
+              label="機能改善"
+              icon={<BuildIcon />}
+              component={Link}
+              to="/feature-requests"
+            />
+          </BottomNavigation>
+          </>
+        )}
         <Dialog open={notificationModalOpen} onClose={() => setNotificationModalOpen(false)}>
           <DialogTitle>未読アイテム</DialogTitle>
           <DialogContent>
@@ -404,9 +448,10 @@ function App() {
             <Button onClick={() => setNotificationModalOpen(false)}>閉じる</Button>
           </DialogActions>
         </Dialog>
-      </Router>
+      </Box>
     </ThemeProvider>
   );
 }
 
 export default App;
+              
