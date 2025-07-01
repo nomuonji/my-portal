@@ -283,6 +283,19 @@ function Idea() {
             />
           ))}
         </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <TextField
+            label="新しいタグ"
+            value={newTagInput}
+            onChange={(e) => setNewTagInput(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && handleAddNewTag()}
+            size="small"
+            variant="outlined"
+          />
+          <Button onClick={handleAddNewTag} variant="contained" size="small">
+            追加
+          </Button>
+        </Box>
       </Paper>
 
       {/* Filter Tags */}

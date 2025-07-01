@@ -25,16 +25,11 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { marked } from 'marked';
 
-const listTitles = {
-  now: 'すぐやる',
-  later: 'あとで'
-};
-
 function FeatureRequests() {
   const [requests, setRequests] = useState([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRequest, setEditingRequest] = useState(null);
-  const [newRequest, setNewRequest] = useState({ title: '', description: '', priority: 'later' });
+  const [newRequest, setNewRequest] = useState({ title: '', description: '', priority: 'now' });
   const theme = useTheme();
 
   useEffect(() => {
@@ -45,8 +40,6 @@ function FeatureRequests() {
     return () => unsubscribe();
   }, []);
 
-  const getRequestsByPriority = (priority) => requests.filter(req => req.priority === priority);
-
   const onDragEnd = async (result) => {
     const { source, destination, draggableId } = result;
     if (!destination || (source.droppableId === destination.droppableId && source.index === destination.index)) return;
@@ -54,10 +47,17 @@ function FeatureRequests() {
     const draggedRequest = requests.find(req => req.id === draggableId);
     if (!draggedRequest) return;
 
-    const updatedRequestData = {
-      ...draggedRequest,
-      priority: destination.droppableId
-    };
+    let updatedRequestData;
+
+    if (destination.droppableId === 'done') {
+      updatedRequestData = { ...draggedRequest, status: 'done' };
+    } else {
+      updatedRequestData = {
+        ...draggedRequest,
+        status: 'todo',
+        priority: destination.droppableId
+      };
+    }
 
     try {
       await updateDoc(doc(db, 'featureRequests', draggableId), updatedRequestData);
@@ -68,14 +68,14 @@ function FeatureRequests() {
 
   const handleOpenDialog = (request = null) => {
     setEditingRequest(request);
-    setNewRequest(request ? { title: request.title, description: request.description, priority: request.priority } : { title: '', description: '', priority: 'later' });
+    setNewRequest(request ? { title: request.title, description: request.description, priority: request.priority } : { title: '', description: '', priority: 'now' });
     setDialogOpen(true);
   };
 
   const handleCloseDialog = () => {
     setDialogOpen(false);
     setEditingRequest(null);
-    setNewRequest({ title: '', description: '', priority: 'later' });
+    setNewRequest({ title: '', description: '', priority: 'now' });
   };
 
   const handleSaveRequest = async () => {
@@ -87,7 +87,7 @@ function FeatureRequests() {
       } else {
         await addDoc(collection(db, 'featureRequests'), {
           ...newRequest,
-          status: 'todo', // statusはtodoで固定
+          status: 'todo',
           createdAt: serverTimestamp(),
         });
       }
@@ -108,7 +108,8 @@ function FeatureRequests() {
   };
 
   const handleCopyTasksForGemini = () => {
-    const tasksToCopy = requests.filter(req => req.priority === 'now')
+    const tasksToCopy = requests
+      .filter(req => req.priority === 'now' && (req.status === 'todo' || req.status === 'in_progress'))
       .map(({ id, title, description, priority, status, createdAt }) => ({
         id,
         title,
@@ -138,7 +139,7 @@ function FeatureRequests() {
           {...provided.draggableProps}
           {...provided.dragHandleProps}
           elevation={snapshot.isDragging ? 8 : 1}
-          sx={{ p: 1.5, mb: 1.5, transition: 'box-shadow 0.2s ease' }}
+          sx={{ p: 1.5, mb: 1.5, transition: 'box-shadow 0.2s ease, opacity 0.2s ease', opacity: request.status === 'done' ? 0.6 : 1 }}
         >
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
             <Typography variant="h6" sx={{ fontSize: '1rem', fontWeight: 'bold' }}>{request.title}</Typography>
@@ -148,7 +149,7 @@ function FeatureRequests() {
             </Box>
           </Box>
           <Box dangerouslySetInnerHTML={{ __html: marked.parse(request.description || '') }} sx={{ fontSize: '0.85rem', mb: 1 }} />
-          <Box>
+          <Box sx={{ display: 'flex', gap: 1 }}>
             <Typography variant="caption" sx={{
               p: '2px 6px',
               borderRadius: '4px',
@@ -157,6 +158,16 @@ function FeatureRequests() {
             }}>
               {request.priority === 'now' ? 'すぐやる' : 'あとで'}
             </Typography>
+            {request.status === 'done' && (
+              <Typography variant="caption" sx={{
+                p: '2px 6px',
+                borderRadius: '4px',
+                color: 'white',
+                backgroundColor: theme.palette.success.main
+              }}>
+                完了
+              </Typography>
+            )}
           </Box>
         </Paper>
       )}
@@ -194,7 +205,7 @@ function FeatureRequests() {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4" component="h1" sx={{ fontWeight: 'bold', color: 'primary.main' }}>機能改善</Typography>
         <Box sx={{ display: 'flex', gap: 2 }}>
-          <Button variant="contained" color="primary" startIcon={<AddIcon />} onClick={handleOpenDialog}>
+          <Button variant="contained" color="primary" startIcon={<AddIcon />} onClick={() => handleOpenDialog()}>
             新しいリクエスト
           </Button>
           <Button variant="outlined" color="secondary" onClick={handleCopyTasksForGemini}>
@@ -205,8 +216,9 @@ function FeatureRequests() {
 
       <DragDropContext onDragEnd={onDragEnd}>
         <Box sx={{ display: 'flex', flexGrow: 1, gap: '18px', flexDirection: { xs: 'column', md: 'row' } }}>
-          <KanbanColumn droppableId="now" title="すぐやる" requests={getRequestsByPriority('now')} />
-          <KanbanColumn droppableId="later" title="あとで" requests={getRequestsByPriority('later')} />
+          <KanbanColumn droppableId="now" title="すぐやる" requests={requests.filter(req => req.priority === 'now' && req.status !== 'done')} />
+          <KanbanColumn droppableId="later" title="あとで" requests={requests.filter(req => req.priority === 'later' && req.status !== 'done')} />
+          <KanbanColumn droppableId="done" title="完了" requests={requests.filter(req => req.status === 'done')} />
         </Box>
       </DragDropContext>
 
