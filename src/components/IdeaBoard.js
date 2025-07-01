@@ -208,7 +208,7 @@ function IdeaBoard() {
 
       <Grid container spacing={1}>
         {filteredIdeas.map(idea => (
-          <Grid item xs={12} sm={6} md={4} lg={3} xl={2} key={idea.id}>
+          <Grid item xs={12} sm={6} md={6} lg={6} xl={6} key={idea.id}>
             <Paper
               sx={{
                 p: 1,
