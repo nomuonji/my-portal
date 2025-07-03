@@ -212,54 +212,58 @@ function App() {
     <Box sx={{ overflow: 'auto' }}>
       <Toolbar />
       <List>
-        <ListItemButton component={Link} to="/" onClick={() => isMobile && handleDrawerToggle()}>
-          <ListItemIcon>
-            <DashboardIcon />
-          </ListItemIcon>
-          <ListItemText primary="ダッシュボード" />
-        </ListItemButton>
-        <ListItemButton component={Link} to="/ideaboard" onClick={() => isMobile && handleDrawerToggle()}>
-          <ListItemIcon>
-            <ViewCompactIcon />
-          </ListItemIcon>
-          <ListItemText primary="アイデアボード" />
-        </ListItemButton>
-        <ListItemButton component={Link} to="/project" onClick={() => isMobile && handleDrawerToggle()}>
-          <ListItemIcon>
-            <Folder />
-          </ListItemIcon>
-          <ListItemText primary="プロジェクトボード" />
-        </ListItemButton>
-        <ListItemButton component={Link} to="/news" onClick={() => isMobile && handleDrawerToggle()}>
-          <ListItemIcon>
-            <Newspaper />
-          </ListItemIcon>
-          <ListItemText primary="ニュース" />
-        </ListItemButton>
-        <ListItemButton component={Link} to="/feature-requests" onClick={() => isMobile && handleDrawerToggle()}>
-          <ListItemIcon>
-            <BuildIcon />
-          </ListItemIcon>
-          <ListItemText primary="機能改善" />
-        </ListItemButton>
-        <ListItemButton component={Link} to="/reading-list-urls" onClick={() => isMobile && handleDrawerToggle()}>
-          <ListItemIcon>
-            <Newspaper />
-          </ListItemIcon>
-          <ListItemText primary="後で読む (Web)" />
-        </ListItemButton>
-        <ListItemButton component={Link} to="/reading-list-youtube" onClick={() => isMobile && handleDrawerToggle()}>
-          <ListItemIcon>
-            <Newspaper />
-          </ListItemIcon>
-          <ListItemText primary="後で見る (YouTube)" />
-        </ListItemButton>
-        <ListItemButton component={Link} to="/drive" onClick={() => isMobile && handleDrawerToggle()}>
-          <ListItemIcon>
-            <Folder />
-          </ListItemIcon>
-          <ListItemText primary="Google Drive" />
-        </ListItemButton>
+        {user && (
+          <>
+            <ListItemButton component={Link} to="/" onClick={() => isMobile && handleDrawerToggle()}>
+              <ListItemIcon>
+                <DashboardIcon />
+              </ListItemIcon>
+              <ListItemText primary="ダッシュボード" />
+            </ListItemButton>
+            <ListItemButton component={Link} to="/ideaboard" onClick={() => isMobile && handleDrawerToggle()}>
+              <ListItemIcon>
+                <ViewCompactIcon />
+              </ListItemIcon>
+              <ListItemText primary="アイデアボード" />
+            </ListItemButton>
+            <ListItemButton component={Link} to="/project" onClick={() => isMobile && handleDrawerToggle()}>
+              <ListItemIcon>
+                <Folder />
+              </ListItemIcon>
+              <ListItemText primary="プロジェクトボード" />
+            </ListItemButton>
+            <ListItemButton component={Link} to="/news" onClick={() => isMobile && handleDrawerToggle()}>
+              <ListItemIcon>
+                <Newspaper />
+              </ListItemIcon>
+              <ListItemText primary="ニュース" />
+            </ListItemButton>
+            <ListItemButton component={Link} to="/feature-requests" onClick={() => isMobile && handleDrawerToggle()}>
+              <ListItemIcon>
+                <BuildIcon />
+              </ListItemIcon>
+              <ListItemText primary="機能改善" />
+            </ListItemButton>
+            <ListItemButton component={Link} to="/reading-list-urls" onClick={() => isMobile && handleDrawerToggle()}>
+              <ListItemIcon>
+                <Newspaper />
+              </ListItemIcon>
+              <ListItemText primary="後で読む (Web)" />
+            </ListItemButton>
+            <ListItemButton component={Link} to="/reading-list-youtube" onClick={() => isMobile && handleDrawerToggle()}>
+              <ListItemIcon>
+                <Newspaper />
+              </ListItemIcon>
+              <ListItemText primary="後で見る (YouTube)" />
+            </ListItemButton>
+            <ListItemButton component={Link} to="/drive" onClick={() => isMobile && handleDrawerToggle()}>
+              <ListItemIcon>
+                <Folder />
+              </ListItemIcon>
+              <ListItemText primary="Google Drive" />
+            </ListItemButton>
+          </>
+        )}
         <ListItemButton onClick={handleModeChange}>
           <ListItemIcon>
             {mode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
@@ -302,17 +306,15 @@ function App() {
             }}
           >
             <Toolbar sx={{ minHeight: { xs: 56, sm: 64 } }}>
-              {isMobile && (
-                <IconButton
-                  color="inherit"
-                  aria-label="open drawer"
-                  edge="start"
-                  onClick={handleDrawerToggle}
-                  sx={{ mr: 2 }}
-                >
-                  <MenuIcon />
-                </IconButton>
-              )}
+              <IconButton
+                color="inherit"
+                aria-label="open drawer"
+                edge="start"
+                onClick={handleDrawerToggle}
+                sx={{ mr: 2, display: { md: 'none' } }}
+              >
+                <MenuIcon />
+              </IconButton>
               <Typography noWrap component="div" sx={{ flexGrow: 1, typography: { xs: 'subtitle1', md: 'h6' } }}>
                 My Portal
               </Typography>
@@ -324,42 +326,39 @@ function App() {
             </Toolbar>
           </AppBar>
 
-          {user && (
-            <Box
-              component="nav"
-              sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }}
-              aria-label="mailbox folders"
-            >
-              {isMobile && (
-                <Drawer
-                  variant="temporary"
-                  open={mobileOpen}
-                  onClose={handleDrawerToggle}
-                  ModalProps={{
-                    keepMounted: true, // Better open performance on mobile.
-                  }}
-                  sx={{
-                    display: { xs: 'block', md: 'none' },
-                    '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
-                  }}
-                >
-                  {drawer}
-                </Drawer>
-              )}
-              {!isMobile && (
-                <Drawer
-                  variant="permanent"
-                  sx={{
-                    display: { xs: 'none', md: 'block' },
-                    '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
-                  }}
-                  open
-                >
-                  {drawer}
-                </Drawer>
-              )}
-            </Box>
-          )}
+          <Box
+            component="nav"
+            sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }}
+            aria-label="mailbox folders"
+          >
+            {isMobile ? (
+              <Drawer
+                variant="temporary"
+                open={mobileOpen}
+                onClose={handleDrawerToggle}
+                ModalProps={{
+                  keepMounted: true, // Better open performance on mobile.
+                }}
+                sx={{
+                  display: { xs: 'block', md: 'none' },
+                  '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
+                }}
+              >
+                {drawer}
+              </Drawer>
+            ) : (
+              <Drawer
+                variant="permanent"
+                sx={{
+                  display: { xs: 'none', md: 'block' },
+                  '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
+                }}
+                open
+              >
+                {drawer}
+              </Drawer>
+            )}
+          </Box>
 
           <Box
             component="main"
