@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { db } from '../firebase';
 import { collection, addDoc, serverTimestamp, updateDoc, doc, getDoc, deleteDoc, getDocs } from 'firebase/firestore';
@@ -37,7 +37,7 @@ function Memo() {
   const [context, setContext] = useState('');
   const [projectId, setProjectId] = useState('');
   const [projects, setProjects] = useState([]);
-  const [tags, setTags] = useState([]);
+  
 
   const memoTextFieldRef = useRef(null);
 
@@ -55,7 +55,6 @@ function Memo() {
             setImportance(memoData.importance || 'medium');
             setContext(memoData.context || '');
             setProjectId(memoData.projectId || ''); // Use projectId
-            setTags(memoData.tags || []);
           } else {
             console.log("No such document!");
             navigate('/'); // メモが存在しない場合はダッシュボードに戻る

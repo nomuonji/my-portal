@@ -22,15 +22,13 @@ import {
   Paper,
   Chip,
   IconButton,
-  Grid,
-  useTheme
+  Grid
 } from '@mui/material';
 import { getContrastRatio } from '@mui/material/styles';
 import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Clear as ClearIcon, Cancel as CancelIcon, ContentCopy as ContentCopyIcon } from '@mui/icons-material';
 import { useLocation } from 'react-router-dom';
 
-// Function to generate a random rotation angle
-const getRandomRotation = () => `rotate(${(Math.random() - 0.5) * 4}deg)`;
+
 
 // Helper to convert hex to HSL
 function hexToHsl(hex) {
@@ -61,6 +59,7 @@ function hexToHsl(hex) {
       case r: h = (g - b) / d + (g < b ? 6 : 0); break;
       case g: h = (b - r) / d + 2; break;
       case b: h = (r - g) / d + 4; break;
+      default: break; // Add default case
     }
     h /= 6;
   }
@@ -102,7 +101,6 @@ function Idea() {
   const [newTagInput, setNewTagInput] = useState(''); // For adding new tags
   const [editingIdea, setEditingIdea] = useState(null);
   const [filterTag, setFilterTag] = useState(null); // New state for filtering
-  const theme = useTheme();
   const location = useLocation();
 
   // Fetch ideas from Firestore

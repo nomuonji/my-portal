@@ -7,10 +7,6 @@ import {
   Paper,
   Chip,
   useTheme,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -36,8 +32,6 @@ const quadrantColors = {
 
 function Dashboard() {
   const [memos, setMemos] = useState([]);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedList, setSelectedList] = useState('');
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [memoToDelete, setMemoToDelete] = useState(null);
   const theme = useTheme();
@@ -85,15 +79,7 @@ function Dashboard() {
     }
   };
 
-  const handleOpenDialog = (list) => {
-    setSelectedList(list);
-    setDialogOpen(true);
-  };
-
-  const handleCloseDialog = () => {
-    setDialogOpen(false);
-    setSelectedList('');
-  };
+  
 
   const openDeleteConfirm = (id) => {
     setMemoToDelete(id);
@@ -178,13 +164,6 @@ function Dashboard() {
     </Draggable>
   );
 
-  const listTitles = {
-    project: 'プロジェクト',
-    someday_maybe: 'いつかやる/多分やる',
-    reference: '参照資料',
-    done: '完了'
-  };
-
   const Quadrant = ({ droppableId, title, bgColor, memos }) => (
     <Box sx={{ width: { xs: '100%', sm: 'calc(50% - 8px)' }, height: { xs: '250px', sm: 'calc(50% - 8px)' }, m: { xs: '4px 0', sm: '4px' } }}>
         <Droppable droppableId={droppableId}>
@@ -268,19 +247,7 @@ function Dashboard() {
         </Box>
       </DragDropContext>
 
-      <Dialog open={dialogOpen} onClose={handleCloseDialog} fullWidth maxWidth="md">
-        <DialogTitle>
-          {listTitles[selectedList]}
-          <IconButton aria-label="close" onClick={handleCloseDialog} sx={{ position: 'absolute', right: 8, top: 8 }}><CloseIcon /></IconButton>
-        </DialogTitle>
-        <DialogContent dividers>
-            <Box sx={{ minHeight: '400px', p:1 }}>
-                {selectedList && getMemosByStatus(selectedList).map((memo, index) => (
-                    <Paper key={memo.id} sx={{ p: 1, mb: 1 }}>{renderMemoContent(memo)}</Paper>
-                ))}
-            </Box>
-        </DialogContent>
-      </Dialog>
+      
 
       <Dialog open={deleteConfirmOpen} onClose={closeDeleteConfirm}>
         <DialogTitle>メモの削除</DialogTitle>

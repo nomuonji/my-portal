@@ -16,13 +16,9 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  TextField,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemButton
+  TextField
 } from '@mui/material';
-import { ArrowBack as ArrowBackIcon, AddCircleOutline as AddCircleOutlineIcon, Link as LinkIcon, LinkOff as LinkOffIcon, ContentCopy as ContentCopyIcon, Edit as EditIcon, Delete as DeleteIcon, Clear as ClearIcon } from '@mui/icons-material';
+import { ArrowBack as ArrowBackIcon, AddCircleOutline as AddCircleOutlineIcon, Link as LinkIcon, LinkOff as LinkOffIcon, Edit as EditIcon, Clear as ClearIcon } from '@mui/icons-material';
 import { getContrastRatio, useTheme } from '@mui/material/styles';
 
 // Helper to convert hex to HSL
@@ -49,6 +45,7 @@ function hexToHsl(hex) {
       case r: h = (g - b) / d + (g < b ? 6 : 0); break;
       case g: h = (b - r) / d + 2; break;
       case b: h = (r - g) / d + 4; break;
+      default: break; // Add default case
     }
     h /= 6;
   }

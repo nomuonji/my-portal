@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
   Typography,
@@ -10,7 +10,6 @@ import {
   ListItemButton,
   ListItemText,
   Paper,
-  Chip,
   Divider,
   Button
 } from '@mui/material';

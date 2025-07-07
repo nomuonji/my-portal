@@ -26,9 +26,9 @@ import {
   BottomNavigationAction,
 } from '@mui/material';
 import useMediaQuery from '@mui/material/useMediaQuery';
-import { useTheme, ThemeProvider } from '@mui/material/styles';
+import { ThemeProvider } from '@mui/material/styles';
 import { useSwipeable } from 'react-swipeable';
-import { Note, Newspaper, Folder, Menu as MenuIcon, Dashboard as DashboardIcon, Lightbulb as LightbulbIcon, ViewCompact as ViewCompactIcon, Build as BuildIcon, Brightness4 as Brightness4Icon, Brightness7 as Brightness7Icon, Notifications as NotificationsIcon } from '@mui/icons-material';
+import { Newspaper, Folder, Menu as MenuIcon, Dashboard as DashboardIcon, Lightbulb as LightbulbIcon, ViewCompact as ViewCompactIcon, Build as BuildIcon, Brightness4 as Brightness4Icon, Brightness7 as Brightness7Icon, Notifications as NotificationsIcon } from '@mui/icons-material';
 import Memo from './components/Memo';
 import Dashboard from './components/Dashboard';
 import News from './components/News';
@@ -50,7 +50,7 @@ const YOUTUBE_API_KEY = 'YOUR_YOUTUBE_API_KEY'; // TODO: Replace with actual API
 
 // Helper to extract YouTube video ID
 const getYouTubeVideoId = (url) => {
-  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
   const match = url.match(regExp);
   return (match && match[2].length === 11) ? match[2] : null;
 };

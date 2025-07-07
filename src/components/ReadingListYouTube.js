@@ -33,7 +33,7 @@ const YOUTUBE_API_KEY = 'YOUR_YOUTUBE_API_KEY'; // TODO: Replace with actual API
 
 // Helper to extract YouTube video ID
 const getYouTubeVideoId = (url) => {
-  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
   const match = url.match(regExp);
   return (match && match[2].length === 11) ? match[2] : null;
 };

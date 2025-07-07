@@ -15,17 +15,14 @@ import {
   Paper,
   Chip,
   Button,
-  IconButton,
   Menu,
-  MenuItem,
-  useTheme
+  MenuItem
 } from '@mui/material';
 import { getContrastRatio } from '@mui/material/styles';
-import { Clear as ClearIcon, AddCircleOutline as AddCircleOutlineIcon, ContentCopy as ContentCopyIcon, Edit as EditIcon, Delete as DeleteIcon } from '@mui/icons-material';
+import { Clear as ClearIcon, AddCircleOutline as AddCircleOutlineIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
-// Function to generate a random rotation angle
-const getRandomRotation = () => `rotate(${(Math.random() - 0.5) * 4}deg)`;
+
 
 // Helper to convert hex to HSL
 function hexToHsl(hex) {
@@ -56,6 +53,7 @@ function hexToHsl(hex) {
       case r: h = (g - b) / d + (g < b ? 6 : 0); break;
       case g: h = (b - r) / d + 2; break;
       case b: h = (r - g) / d + 4; break;
+      default: break; // Add default case
     }
     h /= 6;
   }
