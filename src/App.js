@@ -418,7 +418,7 @@ function App() {
                     <Route path="/project" element={<Project />} />
                     <Route path="/project/new" element={<ProjectForm />} />
                     <Route path="/project/edit/:projectId" element={<ProjectForm />} />
-                    <Route path="/projects/:projectName" element={<ProjectDetails />} />
+                    <Route path="/project/details/:projectId" element={<ProjectDetails />} />
                     <Route path="/reading-list-urls" element={<ReadingListURLs />} />
                     <Route path="/reading-list-youtube" element={<ReadingListYouTube />} />
                     <Route path="/drive" element={<Typography variant="h4">Google Drive機能はまだ実装されていません。</Typography>} />

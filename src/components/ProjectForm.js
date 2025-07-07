@@ -62,6 +62,7 @@ function ProjectForm() {
       name: projectName,
       description: projectDescription,
       status: projectStatus,
+      ideaIds: [], // Initialize with an empty array for new projects
       updatedAt: serverTimestamp(),
     };
 

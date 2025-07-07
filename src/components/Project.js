@@ -80,7 +80,7 @@ function Project() {
           <List>
             {projects.map((project) => (
               <React.Fragment key={project.id}>
-                <ListItemButton onClick={() => navigate(`/project/edit/${project.id}`)}>
+                <ListItemButton onClick={() => navigate(`/project/details/${project.id}`)}>
                   <ListItemText primary={project.name} secondary={project.description} />
                 </ListItemButton>
                 <Divider />
