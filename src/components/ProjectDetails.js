@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
   Typography,
@@ -18,35 +18,63 @@ import {
 import { ArrowBack as ArrowBackIcon } from '@mui/icons-material';
 
 function ProjectDetails() {
-  const { projectName: encodedProjectName } = useParams();
-  const projectName = decodeURIComponent(encodedProjectName);
+  const { projectId } = useParams();
+  const [project, setProject] = useState(null);
   const [memos, setMemos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const q = query(collection(db, 'memos'), where('project_name', '==', projectName));
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const fetchedMemos = [];
-        snapshot.forEach((doc) => {
-          fetchedMemos.push({ id: doc.id, ...doc.data() });
-        });
-        setMemos(fetchedMemos);
+    const fetchProjectAndMemos = async () => {
+      if (!projectId) {
+        setError("プロジェクトIDが指定されていません。");
         setLoading(false);
-      },
-      (err) => {
-        console.error(`Error fetching memos for project ${projectName}:`, err);
-        setError('メモの読み込み中にエラーが発生しました。');
+        return;
+      }
+
+      try {
+        // Fetch project details
+        const projectDocRef = doc(db, 'projects', projectId);
+        const projectDocSnap = await getDoc(projectDocRef);
+        if (projectDocSnap.exists()) {
+          setProject({ id: projectDocSnap.id, ...projectDocSnap.data() });
+        } else {
+          setError("プロジェクトが見つかりませんでした。");
+          setLoading(false);
+          return;
+        }
+
+        // Fetch memos related to the project
+        const q = query(collection(db, 'memos'), where('projectId', '==', projectId));
+
+        const unsubscribe = onSnapshot(
+          q,
+          (snapshot) => {
+            const fetchedMemos = [];
+            snapshot.forEach((doc) => {
+              fetchedMemos.push({ id: doc.id, ...doc.data() });
+            });
+            setMemos(fetchedMemos);
+            setLoading(false);
+          },
+          (err) => {
+            console.error(`Error fetching memos for project ${projectId}:`, err);
+            setError('メモの読み込み中にエラーが発生しました。');
+            setLoading(false);
+          }
+        );
+
+        return () => unsubscribe();
+      } catch (err) {
+        console.error("Error fetching project or memos:", err);
+        setError('データの読み込み中にエラーが発生しました。');
         setLoading(false);
       }
-    );
+    };
 
-    return () => unsubscribe();
-  }, [projectName]);
+    fetchProjectAndMemos();
+  }, [projectId]);
 
   if (loading) {
     return (
@@ -66,8 +94,13 @@ function ProjectDetails() {
         プロジェクト一覧に戻る
       </Button>
       <Typography variant="h4" component="h1" gutterBottom>
-        {projectName}
+        {project ? project.name : 'プロジェクト詳細'}
       </Typography>
+      {project && project.description && (
+        <Typography variant="body1" color="text.secondary" gutterBottom>
+          {project.description}
+        </Typography>
+      )}
       {memos.length === 0 ? (
         <Typography variant="body1">このプロジェクトにはまだメモがありません。</Typography>
       ) : (

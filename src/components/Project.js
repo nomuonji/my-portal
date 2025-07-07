@@ -24,19 +24,14 @@ function Project() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const q = query(collection(db, 'memos'), where('status', '==', 'project'));
+    const q = query(collection(db, 'projects'));
 
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const fetchedProjects = {};
+        const fetchedProjects = [];
         snapshot.forEach((doc) => {
-          const memo = { id: doc.id, ...doc.data() };
-          const projectName = memo.project_name || '未分類'; // Default to '未分類' if no project name
-          if (!fetchedProjects[projectName]) {
-            fetchedProjects[projectName] = [];
-          }
-          fetchedProjects[projectName].push(memo);
+          fetchedProjects.push({ id: doc.id, ...doc.data() });
         });
         setProjects(fetchedProjects);
         setLoading(false);
@@ -73,20 +68,20 @@ function Project() {
           variant="contained"
           color="primary"
           startIcon={<AddCircleOutlineIcon />}
-          onClick={() => navigate('/memo?status=project')}
+          onClick={() => navigate('/project/new')}
         >
-          プロジェクト追加
+          新しいプロジェクト
         </Button>
       </Box>
-      {Object.keys(projects).length === 0 ? (
+      {projects.length === 0 ? (
         <Typography variant="body1">現在、進行中のプロジェクトはありません。</Typography>
       ) : (
         <Paper sx={{ p: 2 }}>
           <List>
-            {Object.keys(projects).map((projectName) => (
-              <React.Fragment key={projectName}>
-                <ListItemButton onClick={() => navigate(`/projects/${encodeURIComponent(projectName)}`)}>
-                  <ListItemText primary={projectName} />
+            {projects.map((project) => (
+              <React.Fragment key={project.id}>
+                <ListItemButton onClick={() => navigate(`/project/edit/${project.id}`)}>
+                  <ListItemText primary={project.name} secondary={project.description} />
                 </ListItemButton>
                 <Divider />
               </React.Fragment>

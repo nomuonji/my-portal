@@ -39,6 +39,7 @@ import Project from './components/Project';
 import ProjectDetails from './components/ProjectDetails';
 import ReadingListURLs from './components/ReadingListURLs';
 import ReadingListYouTube from './components/ReadingListYouTube';
+import ProjectForm from './components/ProjectForm';
 
 import getAppTheme from './theme';
 
@@ -415,6 +416,8 @@ function App() {
                     <Route path="/ideaboard" element={<IdeaBoard />} />
                     <Route path="/feature-requests" element={<FeatureRequests />} />
                     <Route path="/project" element={<Project />} />
+                    <Route path="/project/new" element={<ProjectForm />} />
+                    <Route path="/project/edit/:projectId" element={<ProjectForm />} />
                     <Route path="/projects/:projectName" element={<ProjectDetails />} />
                     <Route path="/reading-list-urls" element={<ReadingListURLs />} />
                     <Route path="/reading-list-youtube" element={<ReadingListYouTube />} />

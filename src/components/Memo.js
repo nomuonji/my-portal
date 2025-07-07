@@ -1,15 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { db } from '../firebase';
-import {
-  collection,
-  addDoc,
-  serverTimestamp,
-  updateDoc,
-  doc,
-  getDoc,
-  deleteDoc
-} from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, updateDoc, doc, getDoc, deleteDoc, getDocs } from 'firebase/firestore';
 import {
   Box,
   TextField,
@@ -43,7 +35,8 @@ function Memo() {
   const [urgency, setUrgency] = useState('medium');
   const [importance, setImportance] = useState('medium');
   const [context, setContext] = useState('');
-  const [projectName, setProjectName] = useState('');
+  const [projectId, setProjectId] = useState('');
+  const [projects, setProjects] = useState([]);
   const [tags, setTags] = useState([]);
 
   const memoTextFieldRef = useRef(null);
@@ -61,7 +54,7 @@ function Memo() {
             setUrgency(memoData.urgency || 'medium');
             setImportance(memoData.importance || 'medium');
             setContext(memoData.context || '');
-            setProjectName(memoData.project_name || '');
+            setProjectId(memoData.projectId || ''); // Use projectId
             setTags(memoData.tags || []);
           } else {
             console.log("No such document!");
@@ -79,7 +72,20 @@ function Memo() {
         }
       }
     };
+
+    const fetchProjects = async () => {
+      try {
+        const projectsCollection = collection(db, 'projects');
+        const projectSnapshot = await getDocs(projectsCollection);
+        const projectsList = projectSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setProjects(projectsList);
+      } catch (error) {
+        console.error("Error fetching projects:", error);
+      }
+    };
+
     fetchMemo();
+    fetchProjects();
   }, [memoId, navigate, location.search]);
 
   const parseTags = (text) => {
@@ -100,7 +106,7 @@ function Memo() {
       urgency: urgency,
       importance: importance,
       context: context,
-      project_name: projectName,
+      projectId: projectId,
     };
 
     try {
@@ -241,13 +247,22 @@ function Memo() {
           value={context}
           onChange={(e) => setContext(e.target.value)}
         />
-        <TextField
-          label="プロジェクト名"
-          variant="outlined"
-          fullWidth
-          value={projectName}
-          onChange={(e) => setProjectName(e.target.value)}
-        />
+        <FormControl fullWidth>
+          <InputLabel id="project-label">プロジェクト</InputLabel>
+          <Select
+            labelId="project-label"
+            value={projectId}
+            label="プロジェクト"
+            onChange={(e) => setProjectId(e.target.value)}
+          >
+            <MenuItem value="">なし</MenuItem>
+            {projects.map((project) => (
+              <MenuItem key={project.id} value={project.id}>
+                {project.name}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
       </Box>
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
           <Button
