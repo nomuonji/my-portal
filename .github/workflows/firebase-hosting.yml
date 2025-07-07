@@ -24,13 +24,13 @@ jobs:
     - name: Build project
       run: npm run build
       env:
-        REACT_APP_FIREBASE_API_KEY: AIzaSyCpKln3maCKW1MQLWhOp_hgqfqZQhQcrqs
-        REACT_APP_FIREBASE_AUTH_DOMAIN: my-portal-d05fd.firebaseapp.com
-        REACT_APP_FIREBASE_PROJECT_ID: my-portal-d05fd
-        REACT_APP_FIREBASE_STORAGE_BUCKET: my-portal-d05fd.firebasestorage.app
-        REACT_APP_FIREBASE_MESSAGING_SENDER_ID: 82448283366
-        REACT_APP_FIREBASE_APP_ID: 1:82448283366:web:4775ad22c0b8165e796d27
-        REACT_APP_FIREBASE_MEASUREMENT_ID: G-TECM1R4GKC
+        REACT_APP_FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+        REACT_APP_FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
+        REACT_APP_FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+        REACT_APP_FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+        REACT_APP_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
+        REACT_APP_FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+        REACT_APP_FIREBASE_MEASUREMENT_ID: ${{ secrets.FIREBASE_MEASUREMENT_ID }}
 
     - name: Deploy to Firebase Hosting
       uses: FirebaseExtended/action-hosting-deploy@v0
