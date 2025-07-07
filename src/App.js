@@ -341,40 +341,47 @@ function App() {
             </Toolbar>
           </AppBar>
 
-          {user && (
+          {/* Mobile Drawer: Rendered on mobile devices regardless of login state. */}
+          {isMobile && (
             <Box
               component="nav"
               sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }}
               aria-label="mailbox folders"
             >
-              {isMobile && (
-                <Drawer
-                  variant="temporary"
-                  open={mobileOpen}
-                  onClose={handleDrawerToggle}
-                  ModalProps={{
-                    keepMounted: true, // Better open performance on mobile.
-                  }}
-                  sx={{
-                    display: { xs: 'block', md: 'none' },
-                    '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
-                  }}
-                >
-                  {drawer}
-                </Drawer>
-              )}
-              {!isMobile && (
-                <Drawer
-                  variant="permanent"
-                  sx={{
-                    display: { xs: 'none', md: 'block' },
-                    '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
-                  }}
-                  open
-                >
-                  {drawer}
-                </Drawer>
-              )}
+              <Drawer
+                variant="temporary"
+                open={mobileOpen}
+                onClose={handleDrawerToggle}
+                ModalProps={{
+                  keepMounted: true, // Better open performance on mobile.
+                }}
+                sx={{
+                  display: { xs: 'block', md: 'none' },
+                  '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
+                }}
+              >
+                {drawer}
+              </Drawer>
+            </Box>
+          )}
+
+          {/* Desktop Drawer: Rendered on desktop only when logged in. */}
+          {!isMobile && user && (
+            <Box
+              component="nav"
+              sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }}
+              aria-label="mailbox folders"
+            >
+              <Drawer
+                variant="permanent"
+                sx={{
+                  display: { xs: 'none', md: 'block' },
+                  '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
+                }}
+                open
+              >
+                {drawer}
+              </Drawer>
             </Box>
           )}
 
