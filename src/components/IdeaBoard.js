@@ -212,18 +212,18 @@ function IdeaBoard() {
             <Paper
               sx={{
                 p: 1,
-                height: '100%',
+                // height: '100%', // 削除
                 // transform: getRandomRotation(), // 回転を無効化
                 // transition: 'transform 0.2s ease-in-out', // トランジションを無効化
                 // '&:hover': { transform: 'scale(1.05)' }, // ホバー時の拡大を無効化
-                overflow: 'hidden', // Hide overflow text
+                // overflow: 'hidden', // Hide overflow text // 削除
                 position: 'relative', // For positioning the copy button
                 backgroundColor: idea.tags && idea.tags.length > 0 ? hslToHex(...hexToHsl(getTagColor(idea.tags[0])).map((val, i) => i === 2 ? Math.max(20, val - 30) : val)) : '#f0f0f0', // Apply subdued color based on first tag
                 color: idea.tags && idea.tags.length > 0 ? (getContrastRatio(hslToHex(...hexToHsl(getTagColor(idea.tags[0])).map((val, i) => i === 2 ? Math.max(20, val - 30) : val)), '#fff') > 4.5 ? '#fff' : '#000') : '#000', // Adjust text color for contrast
               }}
               onContextMenu={(event) => handleCardClick(event, idea)} // 右クリックイベントを処理
             >
-              <Typography variant="body2" sx={{ fontSize: '0.75rem', mb: 0.5, whiteSpace: 'pre-wrap', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 5, WebkitBoxOrient: 'vertical' }}>
+              <Typography variant="body2" sx={{ fontSize: '0.75rem', mb: 0.5, whiteSpace: 'pre-wrap' }}>
                 {idea.content}
               </Typography>
               {/* Tags are removed from here */}

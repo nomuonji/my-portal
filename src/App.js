@@ -27,6 +27,7 @@ import {
 } from '@mui/material';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme, ThemeProvider } from '@mui/material/styles';
+import { useSwipeable } from 'react-swipeable';
 import { Note, Newspaper, Folder, Menu as MenuIcon, Dashboard as DashboardIcon, Lightbulb as LightbulbIcon, ViewCompact as ViewCompactIcon, Build as BuildIcon, Brightness4 as Brightness4Icon, Brightness7 as Brightness7Icon, Notifications as NotificationsIcon } from '@mui/icons-material';
 import Memo from './components/Memo';
 import Dashboard from './components/Dashboard';
@@ -35,6 +36,7 @@ import Idea from './components/Idea';
 import IdeaBoard from './components/IdeaBoard';
 import FeatureRequests from './components/FeatureRequests';
 import Project from './components/Project';
+import ProjectDetails from './components/ProjectDetails';
 import ReadingListURLs from './components/ReadingListURLs';
 import ReadingListYouTube from './components/ReadingListYouTube';
 
@@ -97,6 +99,21 @@ function App() {
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
   };
+
+  const handlers = useSwipeable({
+    onSwipedRight: () => {
+      if (isMobile) {
+        setMobileOpen(true);
+      }
+    },
+    onSwipedLeft: () => {
+      if (isMobile) {
+        setMobileOpen(false);
+      }
+    },
+    preventScrollOnSwipe: true,
+    trackMouse: true
+  });
 
   const handleModeChange = () => {
     setMode((prevMode) => {
@@ -369,6 +386,7 @@ function App() {
               flexDirection: 'column',
               pb: isMobile ? '56px' : '0', // フッターの高さ分だけパディングを追加
             }}
+            {...handlers}
           >
             <Toolbar />
             <Box
@@ -388,6 +406,7 @@ function App() {
                     <Route path="/ideaboard" element={<IdeaBoard />} />
                     <Route path="/feature-requests" element={<FeatureRequests />} />
                     <Route path="/project" element={<Project />} />
+                    <Route path="/projects/:projectName" element={<ProjectDetails />} />
                     <Route path="/reading-list-urls" element={<ReadingListURLs />} />
                     <Route path="/reading-list-youtube" element={<ReadingListYouTube />} />
                     <Route path="/drive" element={<Typography variant="h4">Google Drive機能はまだ実装されていません。</Typography>} />
@@ -416,24 +435,28 @@ function App() {
               icon={<DashboardIcon />}
               component={Link}
               to="/"
+              sx={{ '& .MuiBottomNavigationAction-label': { fontSize: '0.6rem' } }}
             />
             <BottomNavigationAction
               label="アイデアボード"
               icon={<LightbulbIcon />}
               component={Link}
               to="/ideaboard"
+              sx={{ '& .MuiBottomNavigationAction-label': { fontSize: '0.6rem' } }}
             />
             <BottomNavigationAction
               label="プロジェクト"
               icon={<Folder />}
               component={Link}
               to="/project"
+              sx={{ '& .MuiBottomNavigationAction-label': { fontSize: '0.6rem' } }}
             />
             <BottomNavigationAction
               label="機能改善"
               icon={<BuildIcon />}
               component={Link}
               to="/feature-requests"
+              sx={{ '& .MuiBottomNavigationAction-label': { fontSize: '0.6rem' } }}
             />
           </BottomNavigation>
           </>

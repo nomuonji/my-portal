@@ -27,6 +27,7 @@ import {
 } from '@mui/material';
 import { getContrastRatio } from '@mui/material/styles';
 import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Clear as ClearIcon, Cancel as CancelIcon, ContentCopy as ContentCopyIcon } from '@mui/icons-material';
+import { useLocation } from 'react-router-dom';
 
 // Function to generate a random rotation angle
 const getRandomRotation = () => `rotate(${(Math.random() - 0.5) * 4}deg)`;
@@ -102,6 +103,7 @@ function Idea() {
   const [editingIdea, setEditingIdea] = useState(null);
   const [filterTag, setFilterTag] = useState(null); // New state for filtering
   const theme = useTheme();
+  const location = useLocation();
 
   // Fetch ideas from Firestore
   useEffect(() => {
@@ -112,6 +114,18 @@ function Idea() {
     });
     return () => unsubscribe();
   }, []);
+
+  // Effect to check for idea ID in URL and set form for editing
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const ideaId = params.get('id');
+    if (ideaId && ideas.length > 0) {
+      const ideaToEdit = ideas.find(idea => idea.id === ideaId);
+      if (ideaToEdit) {
+        handleEdit(ideaToEdit);
+      }
+    }
+  }, [location.search, ideas]);
 
   // Fetch all tags from Firestore in real-time
   useEffect(() => {

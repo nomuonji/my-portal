@@ -81,41 +81,18 @@ function Project() {
       {Object.keys(projects).length === 0 ? (
         <Typography variant="body1">現在、進行中のプロジェクトはありません。</Typography>
       ) : (
-        Object.keys(projects).map((projectName) => (
-          <Paper key={projectName} sx={{ mb: 4, p: 3 }}>
-            <Typography variant="h5" component="h2" gutterBottom>
-              {projectName}
-            </Typography>
-            <List>
-              {projects[projectName].map((memo) => (
-                <React.Fragment key={memo.id}>
-                  <ListItemButton key={memo.id} onClick={() => navigate(`/memo/${memo.id}`)}>
-                    <ListItemText
-                      primary={memo.text}
-                      secondary={
-                        <Box sx={{ mt: 1 }}>
-                          {memo.tags && memo.tags.map((tag) => (
-                            <Chip key={tag} label={`#${tag}`} size="small" sx={{ mr: 0.5, mb: 0.5 }} />
-                          ))}
-                          {memo.context && (
-                            <Chip label={`@${memo.context}`} size="small" sx={{ mr: 0.5, mb: 0.5 }} />
-                          )}
-                          {memo.urgency && (
-                            <Chip label={`緊急度: ${memo.urgency}`} size="small" sx={{ mr: 0.5, mb: 0.5 }} />
-                          )}
-                          {memo.importance && (
-                            <Chip label={`重要度: ${memo.importance}`} size="small" sx={{ mr: 0.5, mb: 0.5 }} />
-                          )}
-                        </Box>
-                      }
-                    />
-                  </ListItemButton>
-                  <Divider component="li" />
-                </React.Fragment>
-              ))}
-            </List>
-          </Paper>
-        ))
+        <Paper sx={{ p: 2 }}>
+          <List>
+            {Object.keys(projects).map((projectName) => (
+              <React.Fragment key={projectName}>
+                <ListItemButton onClick={() => navigate(`/projects/${encodeURIComponent(projectName)}`)}>
+                  <ListItemText primary={projectName} />
+                </ListItemButton>
+                <Divider />
+              </React.Fragment>
+            ))}
+          </List>
+        </Paper>
       )}
     </Box>
   );
