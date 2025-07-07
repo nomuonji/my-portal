@@ -1,7 +1,0 @@
-feat: Improve PWA cache update and mobile sidebar behavior
-
-This commit addresses two key feature improvement requests:
-
-- **PWA Cache Update:** Modified `serviceWorkerRegistration.js` to automatically reload the page when a new service worker is installed, ensuring users always see the latest deployed version.
-- **Mobile Sidebar Behavior:** Enhanced `App.js` to automatically close the sidebar on mobile devices when navigating to a new page.
-- **404 Error on Reload:** Added `rewrites` configuration to `firebase.json` to correctly handle SPA routing, resolving 404 errors when reloading pages other than the root.

@@ -324,16 +324,15 @@ function ProjectDetails() {
         </Typography>
       )}
 
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 4, mb: 2 }}>
-        <Typography variant="h5" component="h2">
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'center' }, mt: 4, mb: 2 }}>
+        <Typography variant="h6" component="h2" sx={{ mb: { xs: 2, md: 0 } }}>
           関連アイデア
         </Typography>
-        <Box>
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: { xs: 1, md: 1 } }}>
           <Button
             variant="outlined"
             startIcon={<LinkIcon />}
             onClick={handleOpenLinkDialog}
-            sx={{ mr: 1 }}
           >
             アイデアを紐付ける
           </Button>
@@ -344,6 +343,14 @@ function ProjectDetails() {
             onClick={() => navigate('/idea')}
           >
             新しいアイデア
+          </Button>
+          <Button
+            variant="outlined"
+            color="secondary"
+            startIcon={<EditIcon />}
+            onClick={() => navigate(`/project/edit/${projectId}`)}
+          >
+            プロジェクトを編集
           </Button>
         </Box>
       </Box>
