@@ -435,28 +435,28 @@ function App() {
               icon={<DashboardIcon />}
               component={Link}
               to="/"
-              sx={{ '& .MuiBottomNavigationAction-label': { fontSize: '0.6rem' } }}
+              sx={{ '& .MuiBottomNavigationAction-label': { fontSize: '0.5rem' } }}
             />
             <BottomNavigationAction
               label="アイデアボード"
               icon={<LightbulbIcon />}
               component={Link}
               to="/ideaboard"
-              sx={{ '& .MuiBottomNavigationAction-label': { fontSize: '0.6rem' } }}
+              sx={{ '& .MuiBottomNavigationAction-label': { fontSize: '0.5rem' } }}
             />
             <BottomNavigationAction
               label="プロジェクト"
               icon={<Folder />}
               component={Link}
               to="/project"
-              sx={{ '& .MuiBottomNavigationAction-label': { fontSize: '0.6rem' } }}
+              sx={{ '& .MuiBottomNavigationAction-label': { fontSize: '0.5rem' } }}
             />
             <BottomNavigationAction
               label="機能改善"
               icon={<BuildIcon />}
               component={Link}
               to="/feature-requests"
-              sx={{ '& .MuiBottomNavigationAction-label': { fontSize: '0.6rem' } }}
+              sx={{ '& .MuiBottomNavigationAction-label': { fontSize: '0.5rem' } }}
             />
           </BottomNavigation>
           </>
