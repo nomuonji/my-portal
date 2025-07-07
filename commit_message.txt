@@ -1,12 +1,1 @@
-feat: Implement reading list features and fix layout issues
-
-This commit introduces the following enhancements to the reading list:
-
-- **Reading List URLs:** Added a new "Reading List (URL)" section to manage URLs.
-- **Read/Unread Status:** Implemented read/unread status for URLs with a checkbox.
-- **Tagging:** Added functionality to add and remove tags for URLs.
-- **Filtering:** Implemented filtering by read/unread status and tags.
-- **Layout Fixes:** Addressed layout issues for long URLs and when images are not present.
-- **Firebase Rules:** Updated Firestore rules to allow read/write access to the `reading_list_urls` collection.
-- **Firebase Functions (Reverted):** Reverted changes related to Firebase Functions for URL metadata fetching due to plan limitations.
-- **External Package (Reverted):** Reverted attempts to use `react-link-preview` due to compatibility issues.
+fix: PWAの更新時に再読み込みを促すプロンプトを表示
