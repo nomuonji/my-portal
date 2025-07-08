@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { marked } from 'marked';
 import { useParams, useNavigate } from 'react-router-dom';
 import { collection, query, where, onSnapshot, doc, getDoc, getDocs, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -316,9 +317,42 @@ function ProjectDetails() {
         {project ? project.name : 'プロジェクト詳細'}
       </Typography>
       {project && project.description && (
-        <Typography variant="body1" color="text.secondary" gutterBottom>
-          {project.description}
-        </Typography>
+        <Box
+          component="div"
+          sx={{
+            whiteSpace: 'pre-wrap', // This will respect newlines and spaces
+            wordBreak: 'break-word', // Prevents long strings from overflowing
+            mb: 2,
+            '& h1, & h2, & h3, & h4, & h5, & h6': {
+              mt: 2,
+              mb: 1,
+            },
+            '& p': {
+              mb: 1,
+            },
+            '& ul, & ol': {
+              pl: 2,
+              mb: 1,
+            },
+            '& li': {
+              mb: 0.5,
+            },
+            '& a': {
+              color: 'primary.main',
+              textDecoration: 'underline',
+            },
+            '& pre': {
+              backgroundColor: 'grey.200',
+              p: 1,
+              borderRadius: 1,
+              overflowX: 'auto',
+            },
+            '& code': {
+              fontFamily: 'monospace',
+            },
+          }}
+          dangerouslySetInnerHTML={{ __html: marked(project.description) }}
+        />
       )}
 
       <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'center' }, mt: 4, mb: 2 }}>

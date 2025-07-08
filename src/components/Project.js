@@ -6,12 +6,11 @@ import {
   Box,
   CircularProgress,
   Alert,
-  List,
-  ListItemButton,
-  ListItemText,
-  Paper,
-  Divider,
-  Button
+  Button,
+  Grid,
+  Card,
+  CardContent,
+  CardActionArea
 } from '@mui/material';
 import { AddCircleOutline as AddCircleOutlineIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
@@ -75,18 +74,31 @@ function Project() {
       {projects.length === 0 ? (
         <Typography variant="body1">現在、進行中のプロジェクトはありません。</Typography>
       ) : (
-        <Paper sx={{ p: 2 }}>
-          <List>
-            {projects.map((project) => (
-              <React.Fragment key={project.id}>
-                <ListItemButton onClick={() => navigate(`/project/details/${project.id}`)}>
-                  <ListItemText primary={project.name} secondary={project.description} />
-                </ListItemButton>
-                <Divider />
-              </React.Fragment>
-            ))}
-          </List>
-        </Paper>
+        <Grid container spacing={3}>
+          {projects.map((project) => (
+            <Grid item xs={12} sm={6} md={4} key={project.id}>
+              <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <CardActionArea onClick={() => navigate(`/project/details/${project.id}`)} sx={{ flexGrow: 1 }}>
+                  <CardContent>
+                    <Typography gutterBottom variant="h5" component="div">
+                      {project.name}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{
+                      display: '-webkit-box',
+                      '-webkit-line-clamp': '3',
+                      '-webkit-box-orient': 'vertical',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      minHeight: '4.5em', // 3 lines * 1.5em line-height
+                    }}>
+                      {project.description}
+                    </Typography>
+                  </CardContent>
+                </CardActionArea>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
       )}
     </Box>
   );
