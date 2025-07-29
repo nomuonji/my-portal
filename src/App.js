@@ -24,11 +24,13 @@ import {
   DialogActions,
   BottomNavigation,
   BottomNavigationAction,
+  Collapse,
 } from '@mui/material';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { ThemeProvider } from '@mui/material/styles';
 import { useSwipeable } from 'react-swipeable';
-import { Newspaper, Folder, Menu as MenuIcon, Dashboard as DashboardIcon, Lightbulb as LightbulbIcon, ViewCompact as ViewCompactIcon, Build as BuildIcon, Brightness4 as Brightness4Icon, Brightness7 as Brightness7Icon, Notifications as NotificationsIcon } from '@mui/icons-material';
+import { Newspaper, Folder, Menu as MenuIcon, Dashboard as DashboardIcon, Lightbulb as LightbulbIcon, ViewCompact as ViewCompactIcon, Build as BuildIcon, Brightness4 as Brightness4Icon, Brightness7 as Brightness7Icon, Notifications as NotificationsIcon, ExpandLess, ExpandMore } from '@mui/icons-material';
+
 import Memo from './components/Memo';
 import Dashboard from './components/Dashboard';
 import News from './components/News';
@@ -98,6 +100,7 @@ function App() {
   const [unreadUrlsCount, setUnreadUrlsCount] = useState(0);
   const [unreadYoutubeCount, setUnreadYoutubeCount] = useState(0);
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
+  const [openOthers, setOpenOthers] = useState(false); // その他メニューの開閉状態
 
   const appTheme = useMemo(() => getAppTheme(mode), [mode]);
   const isMobile = useMediaQuery(appTheme.breakpoints.down('md'));
@@ -255,42 +258,58 @@ function App() {
               </ListItemIcon>
               <ListItemText primary="プロジェクトボード" />
             </ListItemButton>
-            <ListItemButton component={Link} to="/news" onClick={() => isMobile && handleDrawerToggle()}>
+            <ListItemButton
+              onClick={() => setOpenOthers(!openOthers)}
+            >
               <ListItemIcon>
-                <Newspaper />
+                <ViewCompactIcon />
               </ListItemIcon>
-              <ListItemText primary="ニュース" />
+              <ListItemText primary="その他" />
+              {openOthers ? <ExpandLess /> : <ExpandMore />}
             </ListItemButton>
-            <ListItemButton component={Link} to="/feature-requests" onClick={() => isMobile && handleDrawerToggle()}>
-              <ListItemIcon>
-                <BuildIcon />
-              </ListItemIcon>
-              <ListItemText primary="機能改善" />
-            </ListItemButton>
-            <ListItemButton component={Link} to="/reading-list-urls" onClick={() => isMobile && handleDrawerToggle()}>
-              <ListItemIcon>
-                <Newspaper />
-              </ListItemIcon>
-              <ListItemText primary="後で読む (Web)" />
-            </ListItemButton>
-            <ListItemButton component={Link} to="/reading-list-youtube" onClick={() => isMobile && handleDrawerToggle()}>
-              <ListItemIcon>
-                <Newspaper />
-              </ListItemIcon>
-              <ListItemText primary="後で見る (YouTube)" />
-            </ListItemButton>
-            <ListItemButton component={Link} to="/drive" onClick={() => isMobile && handleDrawerToggle()}>
-              <ListItemIcon>
-                <Folder />
-              </ListItemIcon>
-              <ListItemText primary="Google Drive" />
-            </ListItemButton>
-            <ListItemButton component={Link} to="/decks" onClick={() => isMobile && handleDrawerToggle()}>
-              <ListItemIcon>
-                <i className="fas fa-layer-group"></i>
-              </ListItemIcon>
-              <ListItemText primary="暗記カード" />
-            </ListItemButton>
+            <Collapse in={openOthers} timeout="auto" unmountOnExit>
+              <List component="div" disablePadding>
+                <ListItemButton sx={{ pl: 4 }} component={Link} to="/news" onClick={() => isMobile && handleDrawerToggle()}>
+                  <ListItemIcon>
+                    <Newspaper />
+                  </ListItemIcon>
+                  <ListItemText primary="ニュース" />
+                </ListItemButton>
+                <ListItemButton sx={{ pl: 4 }} component={Link} to="/feature-requests" onClick={() => isMobile && handleDrawerToggle()}>
+                  <ListItemIcon>
+                    <BuildIcon />
+                  </ListItemIcon>
+                  <ListItemText primary="機能改善" />
+                </ListItemButton>
+                <ListItemButton sx={{ pl: 4 }} component={Link} to="/reading-list-urls" onClick={() => isMobile && handleDrawerToggle()}>
+                  <ListItemIcon>
+                    <Newspaper />
+                  </ListItemIcon>
+                  <ListItemText primary="後で読む (Web)" />
+                </ListItemButton>
+                <ListItemButton sx={{ pl: 4 }} component={Link} to="/reading-list-youtube" onClick={() => isMobile && handleDrawerToggle()}>
+                  <ListItemIcon>
+                    <Newspaper />
+                  </ListItemIcon>
+                  <ListItemText primary="後で見る (YouTube)" />
+                  {unreadYoutubeCount > 0 && (
+                    <Badge badgeContent={unreadYoutubeCount} color="error" sx={{ ml: 1 }} />
+                  )}
+                </ListItemButton>
+                <ListItemButton sx={{ pl: 4 }} component={Link} to="/drive" onClick={() => isMobile && handleDrawerToggle()}>
+                  <ListItemIcon>
+                    <Folder />
+                  </ListItemIcon>
+                  <ListItemText primary="Google Drive" />
+                </ListItemButton>
+                <ListItemButton sx={{ pl: 4 }} component={Link} to="/decks" onClick={() => isMobile && handleDrawerToggle()}>
+                  <ListItemIcon>
+                    <i className="fas fa-layer-group"></i>
+                  </ListItemIcon>
+                  <ListItemText primary="暗記カード" />
+                </ListItemButton>
+              </List>
+            </Collapse>
           </>
         )}
         <ListItemButton onClick={handleModeChange}>
@@ -380,7 +399,7 @@ function App() {
           )}
 
           {/* Desktop Drawer: Rendered on desktop only when logged in. */}
-          {!isMobile && user && (
+          {!isMobile && (
             <Box
               component="nav"
               sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }}
