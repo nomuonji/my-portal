@@ -1,1 +1,1 @@
-fix: PWAの更新時に再読み込みを促すプロンプトを表示
+feat: Implement global flashcard management and refactor deck/group structure

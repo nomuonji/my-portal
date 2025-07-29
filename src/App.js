@@ -40,6 +40,11 @@ import ProjectDetails from './components/ProjectDetails';
 import ReadingListURLs from './components/ReadingListURLs';
 import ReadingListYouTube from './components/ReadingListYouTube';
 import ProjectForm from './components/ProjectForm';
+import FlashcardList from './components/FlashcardList';
+import Flashcard from './components/Flashcard';
+import FlashcardForm from './components/FlashcardForm';
+import GroupAndDeckList from './components/GroupAndDeckList';
+import GlobalFlashcardManagement from './components/GlobalFlashcardManagement';
 
 import getAppTheme from './theme';
 
@@ -280,6 +285,12 @@ function App() {
               </ListItemIcon>
               <ListItemText primary="Google Drive" />
             </ListItemButton>
+            <ListItemButton component={Link} to="/decks" onClick={() => isMobile && handleDrawerToggle()}>
+              <ListItemIcon>
+                <i className="fas fa-layer-group"></i>
+              </ListItemIcon>
+              <ListItemText primary="暗記カード" />
+            </ListItemButton>
           </>
         )}
         <ListItemButton onClick={handleModeChange}>
@@ -421,6 +432,11 @@ function App() {
                     <Route path="/project/details/:projectId" element={<ProjectDetails />} />
                     <Route path="/reading-list-urls" element={<ReadingListURLs />} />
                     <Route path="/reading-list-youtube" element={<ReadingListYouTube />} />
+                    <Route path="/flashcards/new" element={<FlashcardForm />} />
+                    <Route path="/flashcards/:cardId" element={<Flashcard />} />
+                    <Route path="/decks" element={<GroupAndDeckList />} />
+                    <Route path="/deck/:deckId/flashcards" element={<FlashcardList />} />
+                    <Route path="/flashcards/manage" element={<GlobalFlashcardManagement />} />
                     <Route path="/drive" element={<Typography variant="h4">Google Drive機能はまだ実装されていません。</Typography>} />
                   </Routes>
                 ) : (

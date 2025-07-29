@@ -40,5 +40,20 @@ service cloud.firestore {
     match /projects/{document=**} {
       allow read, write: if request.auth != null;
     }
+
+    // Allow read/write access for authenticated users to the 'flashcards' collection
+    match /flashcards/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Allow read/write access for authenticated users to the 'decks' collection
+    match /decks/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Allow read/write access for authenticated users to the 'groups' collection
+    match /groups/{document=**} {
+      allow read, write: if request.auth != null;
+    }
   }
 }
