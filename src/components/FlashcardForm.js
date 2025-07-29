@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { collection, addDoc, doc, getDoc, updateDoc, serverTimestamp, query, where, getDocs, onSnapshot, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Button, TextField, Typography, Box, Select, MenuItem, InputLabel, FormControl } from '@mui/material';
@@ -12,7 +12,6 @@ const FlashcardForm = () => {
   const [decks, setDecks] = useState([]);
   const navigate = useNavigate();
   const { cardId } = useParams();
-  const location = useLocation();
 
   useEffect(() => {
     // Fetch decks

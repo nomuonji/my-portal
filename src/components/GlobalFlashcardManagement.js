@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, query, onSnapshot, orderBy, where, doc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { collection, doc, deleteDoc, onSnapshot, orderBy, writeBatch, query } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Button, List, ListItem, ListItemText, Typography, Box, IconButton, Checkbox, FormControl, InputLabel, Select, MenuItem, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
 import { Edit, Delete } from '@mui/icons-material';

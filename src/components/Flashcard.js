@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { doc, getDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { doc, deleteDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Button, Card, CardContent, Typography, Box, IconButton } from '@mui/material';
 import { Edit, Delete } from '@mui/icons-material';
