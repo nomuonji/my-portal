@@ -29,7 +29,7 @@ import {
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { ThemeProvider } from '@mui/material/styles';
 import { useSwipeable } from 'react-swipeable';
-import { Newspaper, Folder, Menu as MenuIcon, Dashboard as DashboardIcon, Lightbulb as LightbulbIcon, ViewCompact as ViewCompactIcon, Build as BuildIcon, Brightness4 as Brightness4Icon, Brightness7 as Brightness7Icon, Notifications as NotificationsIcon, ExpandLess, ExpandMore } from '@mui/icons-material';
+import { Newspaper, Folder, Menu as MenuIcon, Dashboard as DashboardIcon, Lightbulb as LightbulbIcon, ViewCompact as ViewCompactIcon, Build as BuildIcon, Brightness4 as Brightness4Icon, Brightness7 as Brightness7Icon, Notifications as NotificationsIcon, ExpandLess, ExpandMore, MoreHoriz as MoreHorizIcon } from '@mui/icons-material';
 
 import Memo from './components/Memo';
 import Dashboard from './components/Dashboard';
@@ -46,6 +46,8 @@ import FlashcardList from './components/FlashcardList';
 import Flashcard from './components/Flashcard';
 import FlashcardForm from './components/FlashcardForm';
 import GroupAndDeckList from './components/GroupAndDeckList';
+import Stock from './components/Stock';
+import StockBoard from './components/StockBoard';
 import GlobalFlashcardManagement from './components/GlobalFlashcardManagement';
 
 import getAppTheme from './theme';
@@ -248,7 +250,7 @@ function App() {
             </ListItemButton>
             <ListItemButton component={Link} to="/ideaboard" onClick={() => isMobile && handleDrawerToggle()}>
               <ListItemIcon>
-                <ViewCompactIcon />
+                <LightbulbIcon />
               </ListItemIcon>
               <ListItemText primary="アイデアボード" />
             </ListItemButton>
@@ -258,11 +260,17 @@ function App() {
               </ListItemIcon>
               <ListItemText primary="プロジェクトボード" />
             </ListItemButton>
+            <ListItemButton component={Link} to="/stockboard" onClick={() => isMobile && handleDrawerToggle()}>
+              <ListItemIcon>
+                <ViewCompactIcon />
+              </ListItemIcon>
+              <ListItemText primary="ストックボード" />
+            </ListItemButton>
             <ListItemButton
               onClick={() => setOpenOthers(!openOthers)}
             >
               <ListItemIcon>
-                <ViewCompactIcon />
+                <MoreHorizIcon />
               </ListItemIcon>
               <ListItemText primary="その他" />
               {openOthers ? <ExpandLess /> : <ExpandMore />}
@@ -442,6 +450,8 @@ function App() {
                     <Route path="/memo" element={<Memo />} />
                     <Route path="/memo/:memoId" element={<Memo />} />
                     <Route path="/news" element={<News />} />
+                    <Route path="/stock" element={<Stock />} />
+                    <Route path="/stockboard" element={<StockBoard />} />
                     <Route path="/idea" element={<Idea />} />
                     <Route path="/ideaboard" element={<IdeaBoard />} />
                     <Route path="/feature-requests" element={<FeatureRequests />} />
@@ -499,10 +509,10 @@ function App() {
               sx={{ '& .MuiBottomNavigationAction-label': { fontSize: '0.5rem' } }}
             />
             <BottomNavigationAction
-              label="機能改善"
-              icon={<BuildIcon />}
+              label="ストックボード"
+              icon={<ViewCompactIcon />}
               component={Link}
-              to="/feature-requests"
+              to="/stockboard"
               sx={{ '& .MuiBottomNavigationAction-label': { fontSize: '0.5rem' } }}
             />
           </BottomNavigation>
