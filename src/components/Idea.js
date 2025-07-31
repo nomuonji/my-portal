@@ -122,8 +122,10 @@ function Idea() {
       if (ideaToEdit) {
         handleEdit(ideaToEdit);
       }
+    } else if (location.state && location.state.selectedTag) {
+      setSelectedTags([location.state.selectedTag]);
     }
-  }, [location.search, ideas]);
+  }, [location.search, location.state, ideas]);
 
   // Fetch all tags from Firestore in real-time
   useEffect(() => {

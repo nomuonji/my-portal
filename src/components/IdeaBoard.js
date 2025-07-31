@@ -164,7 +164,7 @@ function IdeaBoard() {
           variant="contained"
           color="primary"
           startIcon={<AddCircleOutlineIcon />}
-          onClick={() => navigate('/idea')}
+          onClick={() => navigate('/idea', { state: { selectedTag: filterTag } })}
         >
           アイデア管理
         </Button>
