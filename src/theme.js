@@ -4,37 +4,37 @@ const getAppTheme = (mode) => createTheme({
   palette: {
     mode,
     ...(mode === 'light'
-      ? { // Light Mode Palette (Subdued)
+      ? { // Light Mode Palette (Vibrant)
           primary: {
-            main: '#546E7A', // Blue Grey 700
+            main: '#673ab7', // Deep Purple 500
           },
           secondary: {
-            main: '#78909C', // Blue Grey 500
+            main: '#00bcd4', // Cyan 500
           },
           background: {
-            default: '#ECEFF1', // Blue Grey 50
-            paper: '#FFFFFF', // White
+            default: '#f3e5f5', // Deep Purple 50
+            paper: '#ffffff', // White
           },
           text: {
-            primary: '#263238', // Blue Grey 900
-            secondary: '#546E7A', // Blue Grey 700
+            primary: '#212121', // Grey 900
+            secondary: '#5e35b1', // Deep Purple 600
           },
           divider: 'rgba(0, 0, 0, 0.12)',
         }
-      : { // Dark Mode Palette (Subdued)
+      : { // Dark Mode Palette (Vibrant)
           primary: {
-            main: '#90A4AE', // Blue Grey 300
+            main: '#b39ddb', // Deep Purple 200
           },
           secondary: {
-            main: '#B0BEC5', // Blue Grey 200
+            main: '#80deea', // Cyan 200
           },
           background: {
-            default: '#263238', // Blue Grey 900
-            paper: '#37474F', // Blue Grey 800
+            default: '#121212', // Dark background
+            paper: '#1e1e1e',
           },
           text: {
-            primary: '#ECEFF1', // Blue Grey 50
-            secondary: '#B0BEC5', // Blue Grey 200
+            primary: '#e0e0e0', // Grey 300
+            secondary: '#b39ddb', // Deep Purple 200
           },
           divider: 'rgba(255, 255, 255, 0.12)',
         }),
@@ -62,10 +62,30 @@ const getAppTheme = (mode) => createTheme({
   },
   spacing: 8, // Default spacing unit
   components: {
+    MuiCssBaseline: {
+      styleOverrides: {
+        body: {
+          ...(mode === 'light'
+            ? {
+                background: 'linear-gradient(135deg, #e0f7fa 0%, #e1bee7 100%)',
+                backgroundAttachment: 'fixed',
+                backgroundColor: '#f3e5f5',
+              }
+            : {
+                background: 'linear-gradient(135deg, #311b92 0%, #006064 100%)',
+                backgroundAttachment: 'fixed',
+                backgroundColor: '#121212',
+              }),
+        },
+      },
+    },
     MuiAppBar: {
       styleOverrides: {
         root: {
           boxShadow: '0px 2px 4px -1px rgba(0,0,0,0.05), 0px 4px 5px 0px rgba(0,0,0,0.03), 0px 1px 10px 0px rgba(0,0,0,0.02)',
+          ...(mode === 'light'
+            ? { background: 'linear-gradient(90deg, #673ab7 0%, #00bcd4 100%)' }
+            : { background: 'linear-gradient(90deg, #311b92 0%, #006064 100%)' }),
         },
       },
     },
