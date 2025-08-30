@@ -29,13 +29,15 @@ import {
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { ThemeProvider } from '@mui/material/styles';
 import { useSwipeable } from 'react-swipeable';
-import { Newspaper, Folder, Menu as MenuIcon, Dashboard as DashboardIcon, Lightbulb as LightbulbIcon, ViewCompact as ViewCompactIcon, Build as BuildIcon, Brightness4 as Brightness4Icon, Brightness7 as Brightness7Icon, Notifications as NotificationsIcon, ExpandLess, ExpandMore, MoreHoriz as MoreHorizIcon } from '@mui/icons-material';
+import { Newspaper, Folder, Menu as MenuIcon, Dashboard as DashboardIcon, Lightbulb as LightbulbIcon, ViewCompact as ViewCompactIcon, Build as BuildIcon, Brightness4 as Brightness4Icon, Brightness7 as Brightness7Icon, Notifications as NotificationsIcon, ExpandLess, ExpandMore, MoreHoriz as MoreHorizIcon, Interests as InterestsIcon } from '@mui/icons-material';
 
 import Memo from './components/Memo';
 import Dashboard from './components/Dashboard';
 import News from './components/News';
 import Idea from './components/Idea';
 import IdeaBoard from './components/IdeaBoard';
+import Hobby from './components/Hobby';
+import HobbyBoard from './components/HobbyBoard';
 import FeatureRequests from './components/FeatureRequests';
 import Project from './components/Project';
 import ProjectDetails from './components/ProjectDetails';
@@ -254,6 +256,12 @@ function App() {
               </ListItemIcon>
               <ListItemText primary="アイデアボード" />
             </ListItemButton>
+            <ListItemButton component={Link} to="/hobbyboard" onClick={() => isMobile && handleDrawerToggle()}>
+              <ListItemIcon>
+                <InterestsIcon />
+              </ListItemIcon>
+              <ListItemText primary="趣味ボード" />
+            </ListItemButton>
             <ListItemButton component={Link} to="/project" onClick={() => isMobile && handleDrawerToggle()}>
               <ListItemIcon>
                 <Folder />
@@ -454,6 +462,8 @@ function App() {
                     <Route path="/stockboard" element={<StockBoard />} />
                     <Route path="/idea" element={<Idea />} />
                     <Route path="/ideaboard" element={<IdeaBoard />} />
+                    <Route path="/hobby" element={<Hobby />} />
+                    <Route path="/hobbyboard" element={<HobbyBoard />} />
                     <Route path="/feature-requests" element={<FeatureRequests />} />
                     <Route path="/project" element={<Project />} />
                     <Route path="/project/new" element={<ProjectForm />} />
@@ -502,10 +512,10 @@ function App() {
               sx={{ '& .MuiBottomNavigationAction-label': { fontSize: '0.5rem' } }}
             />
             <BottomNavigationAction
-              label="プロジェクト"
-              icon={<Folder />}
+              label="趣味ボード"
+              icon={<InterestsIcon />}
               component={Link}
-              to="/project"
+              to="/hobbyboard"
               sx={{ '& .MuiBottomNavigationAction-label': { fontSize: '0.5rem' } }}
             />
             <BottomNavigationAction
