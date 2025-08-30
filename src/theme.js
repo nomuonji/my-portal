@@ -4,43 +4,55 @@ const getAppTheme = (mode) => createTheme({
   palette: {
     mode,
     ...(mode === 'light'
-      ? { // Light Mode Palette (Vibrant)
+      ? { // Light Mode Palette (calmer, neutral)
           primary: {
-            main: '#673ab7', // Deep Purple 500
+            main: '#3f51b5', // Indigo 500
           },
           secondary: {
-            main: '#00bcd4', // Cyan 500
+            main: '#26a69a', // Teal 400
           },
           background: {
-            default: '#f3e5f5', // Deep Purple 50
-            paper: '#ffffff', // White
+            default: '#f6f7fb', // soft neutral
+            paper: '#ffffff',
           },
           text: {
-            primary: '#212121', // Grey 900
-            secondary: '#5e35b1', // Deep Purple 600
+            primary: '#1f2937', // slate-800
+            secondary: '#6b7280', // slate-500
           },
           divider: 'rgba(0, 0, 0, 0.12)',
         }
-      : { // Dark Mode Palette (Vibrant)
+      : { // Dark Mode Palette (calmer, neutral)
           primary: {
-            main: '#b39ddb', // Deep Purple 200
+            main: '#8ab4f8', // soft blue
           },
           secondary: {
-            main: '#80deea', // Cyan 200
+            main: '#7fd1c9', // soft teal
           },
           background: {
-            default: '#121212', // Dark background
-            paper: '#1e1e1e',
+            default: '#0f1115',
+            paper: '#141821',
           },
           text: {
-            primary: '#e0e0e0', // Grey 300
-            secondary: '#b39ddb', // Deep Purple 200
+            primary: '#e5e7eb',
+            secondary: '#9ca3af',
           },
           divider: 'rgba(255, 255, 255, 0.12)',
         }),
   },
   typography: {
-    fontFamily: ['Noto Sans JP', 'Roboto', 'Arial', 'sans-serif'].join(','),
+    fontFamily: [
+      'M PLUS Rounded 1c',
+      'Zen Maru Gothic',
+      'Nunito',
+      'Noto Sans JP',
+      'Roboto',
+      'Hiragino Kaku Gothic ProN',
+      'Meiryo',
+      'Yu Gothic',
+      'YuGothic',
+      'Arial',
+      'sans-serif',
+    ].join(','),
     h4: {
       fontWeight: 600,
       fontSize: '1.8rem',
@@ -67,14 +79,14 @@ const getAppTheme = (mode) => createTheme({
         body: {
           ...(mode === 'light'
             ? {
-                background: 'linear-gradient(135deg, #e0f7fa 0%, #e1bee7 100%)',
+                background: 'linear-gradient(180deg, #fafbff 0%, #f6f7fb 100%)',
                 backgroundAttachment: 'fixed',
-                backgroundColor: '#f3e5f5',
+                backgroundColor: '#f6f7fb',
               }
             : {
-                background: 'linear-gradient(135deg, #311b92 0%, #006064 100%)',
+                background: 'linear-gradient(180deg, #0d1117 0%, #0f1115 100%)',
                 backgroundAttachment: 'fixed',
-                backgroundColor: '#121212',
+                backgroundColor: '#0f1115',
               }),
         },
       },
@@ -82,31 +94,47 @@ const getAppTheme = (mode) => createTheme({
     MuiAppBar: {
       styleOverrides: {
         root: {
-          boxShadow: '0px 2px 4px -1px rgba(0,0,0,0.05), 0px 4px 5px 0px rgba(0,0,0,0.03), 0px 1px 10px 0px rgba(0,0,0,0.02)',
-          ...(mode === 'light'
-            ? { background: 'linear-gradient(90deg, #673ab7 0%, #00bcd4 100%)' }
-            : { background: 'linear-gradient(90deg, #311b92 0%, #006064 100%)' }),
+          boxShadow: '0px 2px 8px rgba(0,0,0,0.06)',
+          backgroundColor: mode === 'light' ? '#ffffffcc' : '#0f1115cc',
+          backdropFilter: 'saturate(180%) blur(8px)',
         },
       },
     },
     MuiDrawer: {
       styleOverrides: {
         paper: {
-          boxShadow: '0px 8px 10px -5px rgba(0,0,0,0.1), 0px 16px 24px 2px rgba(0,0,0,0.07), 0px 6px 30px 5px rgba(0,0,0,0.06)',
+          boxShadow: '0px 8px 24px rgba(0,0,0,0.08)',
+          backgroundColor: mode === 'light' ? '#ffffff' : '#141821',
         },
       },
     },
     MuiPaper: {
       styleOverrides: {
         root: {
-          borderRadius: 8, // Slightly rounded corners for cards/papers
+          borderRadius: 12,
+          backgroundImage: 'none',
+          backgroundColor: mode === 'light' ? '#ffffff' : '#141821',
+          boxShadow: mode === 'light'
+            ? '0 2px 8px rgba(0,0,0,0.06)'
+            : '0 2px 12px rgba(0,0,0,0.5)',
+        },
+      },
+    },
+    MuiCard: {
+      defaultProps: {
+        elevation: 1,
+      },
+      styleOverrides: {
+        root: {
+          borderRadius: 12,
+          backgroundImage: 'none',
         },
       },
     },
     MuiButton: {
       styleOverrides: {
         root: {
-          borderRadius: 8,
+          borderRadius: 10,
           textTransform: 'none', // Keep button text as is
         },
       },
@@ -114,7 +142,7 @@ const getAppTheme = (mode) => createTheme({
     MuiChip: {
       styleOverrides: {
         root: {
-          borderRadius: 4,
+          borderRadius: 6,
         },
       },
     },

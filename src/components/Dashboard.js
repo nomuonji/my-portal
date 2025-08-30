@@ -21,14 +21,9 @@ import { useNavigate } from 'react-router-dom';
 import EditIcon from '@mui/icons-material/Edit';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
+import { alpha } from '@mui/material/styles';
 
-// quadrantの背景色を定義
-const quadrantColors = {
-  'high-high': '#FF7043', // 緊急かつ重要 (ディープオレンジ)
-  'high-low': '#FFCA28', // 緊急だが重要ではない (アンバー)
-  'low-high': '#4DB6AC', // 緊急ではないが重要 (ミディアムアクア)
-  'low-low': '#90A4AE', // 緊急でも重要でもない (ブルースグレー)
-};
+// quadrant邵ｺ・ｮ髢ｭ譴ｧ蜍ｹ豼ｶ・ｲ郢ｧ雋橸ｽｮ螟ゑｽｾ・ｩ
 
 function Dashboard() {
   const [memos, setMemos] = useState([]);
@@ -36,6 +31,13 @@ function Dashboard() {
   const [memoToDelete, setMemoToDelete] = useState(null);
   const theme = useTheme();
   const navigate = useNavigate();
+  const tint = theme.palette.mode === 'light' ? 0.45 : 0.38;
+  const quadrantColors = {
+    'high-high': alpha(theme.palette.error.main, tint),
+    'high-low': alpha(theme.palette.warning.main, tint),
+    'low-high': alpha(theme.palette.success.main, tint),
+    'low-low': alpha(theme.palette.info.main, tint),
+  };
 
   useEffect(() => {
     const q = query(collection(db, 'memos'), orderBy('createdAt', 'desc'));
@@ -179,7 +181,7 @@ function Dashboard() {
                       border: `1px solid ${theme.palette.divider}`,
                     }}
                 >
-                    <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1, textAlign: 'center', color: theme.palette.getContrastText(bgColor) }}>{title}</Typography>
+                    <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1, textAlign: 'center', color: theme.palette.text.primary }}>{title}</Typography>
                     {memos.map(renderVerticalMemoCard)}
                     {provided.placeholder}
                 </Paper>
@@ -198,7 +200,7 @@ function Dashboard() {
               onClick={() => navigate('/memo')}
               sx={{ flexGrow: 1, py: 2, fontSize: '1.2rem' }}
             >
-              メモ追加
+              {'\u30E1\u30E2\u8FFD\u52A0'}
             </Button>
             <Button
               variant="contained"
@@ -207,7 +209,7 @@ function Dashboard() {
               onClick={() => navigate('/idea')}
               sx={{ flexGrow: 1, py: 2, fontSize: '1.2rem' }}
             >
-              アイデア追加
+              {'\u30A2\u30A4\u30C7\u30A2\u8FFD\u52A0'}
             </Button>
         </Box>
 
@@ -227,7 +229,7 @@ function Dashboard() {
                             border: `1px solid ${theme.palette.divider}`,
                           }}
                         >
-                            <Typography variant="h6" sx={{ p: 1, mr: 1, fontWeight: 'bold', color: 'text.secondary', flexShrink: 0 }}>受信箱</Typography>
+                            <Typography variant="h6" sx={{ p: 1, mr: 1, fontWeight: 'bold', color: 'text.secondary', flexShrink: 0 }}>{'\u53D7\u4FE1\u7BB1'}</Typography>
                             <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
                                 {getMemosByStatus('inbox').map(renderHorizontalMemoCard)}
                                 {provided.placeholder}
@@ -239,10 +241,30 @@ function Dashboard() {
 
             {/* Main Quadrants Area */}
             <Box sx={{ flexGrow: 1, display: 'flex', flexWrap: 'wrap', justifyContent: 'center' }}>
-              <Quadrant droppableId="eisenhower-high-high" title="緊急かつ重要" bgColor={quadrantColors['high-high']} memos={getMemosByEisenhower('high', 'high')} />
-              <Quadrant droppableId="eisenhower-high-low" title="緊急だが重要ではない" bgColor={quadrantColors['high-low']} memos={getMemosByEisenhower('high', 'low')} />
-              <Quadrant droppableId="eisenhower-low-high" title="緊急ではないが重要" bgColor={quadrantColors['low-high']} memos={getMemosByEisenhower('low', 'high')} />
-              <Quadrant droppableId="eisenhower-low-low" title="緊急でも重要でもない" bgColor={quadrantColors['low-low']} memos={getMemosByEisenhower('low', 'low')} />
+              <Quadrant
+                droppableId="eisenhower-high-high"
+                title={'\u7DCA\u6025\u304B\u3064\u91CD\u8981'}
+                bgColor={quadrantColors['high-high']}
+                memos={getMemosByEisenhower('high', 'high')}
+              />
+              <Quadrant
+                droppableId="eisenhower-high-low"
+                title={'\u7DCA\u6025\u3060\u304C\u91CD\u8981\u3067\u306F\u306A\u3044'}
+                bgColor={quadrantColors['high-low']}
+                memos={getMemosByEisenhower('high', 'low')}
+              />
+              <Quadrant
+                droppableId="eisenhower-low-high"
+                title={'\u7DCA\u6025\u3067\u306F\u306A\u3044\u304C\u91CD\u8981'}
+                bgColor={quadrantColors['low-high']}
+                memos={getMemosByEisenhower('low', 'high')}
+              />
+              <Quadrant
+                droppableId="eisenhower-low-low"
+                title={'\u7DCA\u6025\u3067\u3082\u91CD\u8981\u3067\u3082\u306A\u3044'}
+                bgColor={quadrantColors['low-low']}
+                memos={getMemosByEisenhower('low', 'low')}
+              />
             </Box>
         </Box>
       </DragDropContext>
@@ -250,13 +272,13 @@ function Dashboard() {
       
 
       <Dialog open={deleteConfirmOpen} onClose={closeDeleteConfirm}>
-        <DialogTitle>メモの削除</DialogTitle>
+        <DialogTitle>郢晢ｽ｡郢晢ｽ｢邵ｺ・ｮ陷台ｼ∝求</DialogTitle>
         <DialogContent>
-          <Typography>本当にこのメモを削除しますか？</Typography>
+          <Typography>{'\u672C\u5F53\u306B\u3053\u306E\u30E1\u30E2\u3092\u524A\u9664\u3057\u307E\u3059\u304B\uFF1F'}</Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={closeDeleteConfirm}>キャンセル</Button>
-          <Button onClick={handleDeleteMemo} color="error">削除</Button>
+          <Button onClick={closeDeleteConfirm}>郢ｧ・ｭ郢晢ｽ｣郢晢ｽｳ郢ｧ・ｻ郢晢ｽｫ</Button>
+          <Button onClick={handleDeleteMemo} color="error">陷台ｼ∝求</Button>
         </DialogActions>
       </Dialog>
     </Box>
@@ -264,3 +286,5 @@ function Dashboard() {
 }
 
 export default Dashboard;
+
+
