@@ -22,81 +22,23 @@ import {
 import { ArrowBack as ArrowBackIcon, AddCircleOutline as AddCircleOutlineIcon, Link as LinkIcon, LinkOff as LinkOffIcon, Edit as EditIcon, Clear as ClearIcon } from '@mui/icons-material';
 import { getContrastRatio, useTheme } from '@mui/material/styles';
 
-// Helper to convert hex to HSL
-function hexToHsl(hex) {
-  let r = 0, g = 0, b = 0;
-  if (hex.length === 4) {
-    r = parseInt(hex[1] + hex[1], 16);
-    g = parseInt(hex[2] + hex[2], 16);
-    b = parseInt(hex[3] + hex[3], 16);
-  } else if (hex.length === 7) {
-    r = parseInt(hex.substring(1, 3), 16);
-    g = parseInt(hex.substring(3, 5), 16);
-    b = parseInt(hex.substring(5, 7), 16);
-  }
-  r /= 255; g /= 255; b /= 255;
-
-  let max = Math.max(r, g, b), min = Math.min(r, g, b);
-  let h, s, l = (max + min) / 2;
-
-  if (max === min) { h = s = 0; } else {
-    let d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-    switch (max) {
-      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-      case g: h = (b - r) / d + 2; break;
-      case b: h = (r - g) / d + 4; break;
-      default: break; // Add default case
-    }
-    h /= 6;
-  }
-  return [h * 360, s * 100, l * 100];
-}
-
-// Helper to convert HSL to hex
-function hslToHex(h, s, l) {
-  l /= 100;
-  const a = s * Math.min(l, 1 - l) / 100;
-  const f = n => {
-    const k = (n + h / 30) % 12;
-    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
-    return Math.round(255 * color).toString(16).padStart(2, '0');
-  };
-  return `#${f(0)}${f(8)}${f(4)}`;
-}
-
-// Function to generate a consistent color from a string (tag)
-const getTagColor = (tag) => {
-  let hash = 0;
-  for (let i = 0; i < tag.length; i++) {
-    hash = tag.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  let color = '#';
-  for (let i = 0; i < 3; i++) {
-    const value = (hash >> (i * 8)) & 0xFF;
-    color += ('00' + value.toString(16)).substr(-2);
-  }
-  return color;
-};
+import { getBackgroundStyle, getTagColor, hexToHsl, hslToHex } from '../utils/color';
 
 // IdeaCard Component
 const IdeaCard = ({ idea, onLink, onUnlink, onEdit, onDelete, isLinked }) => {
   const theme = useTheme();
-  const cardColor = idea.tags && idea.tags.length > 0
-    ? hslToHex(...hexToHsl(getTagColor(idea.tags[0])).map((val, i) => i === 2 ? Math.max(20, val - 30) : val))
-    : theme.palette.background.paper;
-  const textColor = getContrastRatio(cardColor, '#fff') > 4.5 ? '#fff' : '#000';
+  const defaultStyle = { backgroundColor: theme.palette.background.paper, color: theme.palette.text.primary };
+  const cardStyle = getBackgroundStyle(idea.tags, defaultStyle);
 
   return (
     <Paper
       sx={{
         p: 2,
         height: '100%',
-        backgroundColor: cardColor,
-        color: textColor,
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
+        ...cardStyle,
       }}
     >
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -105,11 +47,11 @@ const IdeaCard = ({ idea, onLink, onUnlink, onEdit, onDelete, isLinked }) => {
         </Typography>
         <Box sx={{ flexShrink: 0, ml: 1 }}>
           {isLinked ? (
-            <IconButton size="small" onClick={() => onUnlink(idea.id)} sx={{ color: textColor }}>
+            <IconButton size="small" onClick={() => onUnlink(idea.id)} sx={{ color: cardStyle.color }}>
               <LinkOffIcon />
             </IconButton>
           ) : (
-            <IconButton size="small" onClick={() => onLink(idea.id)} sx={{ color: textColor }}>
+            <IconButton size="small" onClick={() => onLink(idea.id)} sx={{ color: cardStyle.color }}>
               <LinkIcon />
             </IconButton>
           )}
