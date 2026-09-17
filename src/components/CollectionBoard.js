@@ -32,7 +32,6 @@ import {
 import { useNavigate } from 'react-router-dom';
 
 const UNTAGGED = '__untagged__';
-
 const compactText = (value = '') => String(value).trim();
 
 const colorFromTag = (tag, theme) => {
@@ -187,15 +186,15 @@ function CollectionBoard({
       <Box
         sx={{
           display: 'flex',
-          alignItems: { xs: 'flex-start', sm: 'center' },
+          alignItems: { xs: 'center', sm: 'center' },
           justifyContent: 'space-between',
-          gap: 1.25,
-          mb: 1.2,
+          gap: 1,
+          mb: { xs: 0.8, sm: 1.2 },
           px: 0.25,
         }}
       >
         <Box sx={{ minWidth: 0 }}>
-          <Typography variant="overline" sx={{ color: 'text.secondary', fontWeight: 800, letterSpacing: '0.12em' }}>
+          <Typography variant="overline" sx={{ color: 'text.secondary', fontWeight: 800, letterSpacing: '0.12em', display: { xs: 'none', sm: 'block' } }}>
             {eyebrow}
           </Typography>
           <Typography variant="h4">{title}</Typography>
@@ -211,8 +210,9 @@ function CollectionBoard({
           variant="contained"
           size="small"
           startIcon={<AddIcon />}
+          aria-label={manageLabel}
           onClick={() => navigate(manageRoute, { state: { selectedTag: selectedTag === UNTAGGED ? null : selectedTag } })}
-          sx={{ flexShrink: 0, minWidth: { xs: 40, sm: 'auto' } }}
+          sx={{ flexShrink: 0, minWidth: { xs: 44, sm: 'auto' }, px: { xs: 1.25, sm: 1.75 } }}
         >
           <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{manageLabel}</Box>
         </Button>
@@ -231,7 +231,7 @@ function CollectionBoard({
           sx={{
             display: 'grid',
             gridTemplateColumns: { xs: '1fr', md: '210px minmax(0, 1fr)' },
-            gap: 1.2,
+            gap: { xs: 0.8, md: 1.2 },
             minHeight: { md: 'calc(100vh - 180px)' },
           }}
         >
@@ -239,15 +239,28 @@ function CollectionBoard({
             elevation={0}
             sx={{
               border: `1px solid ${border}`,
-              backgroundColor: isDark ? alpha(theme.palette.background.paper, 0.90) : 'rgba(255,255,255,0.78)',
+              backgroundColor: isDark ? alpha(theme.palette.background.paper, 0.96) : 'rgba(255,255,255,0.94)',
+              backdropFilter: 'blur(14px)',
               overflow: 'hidden',
               alignSelf: 'start',
-              position: { md: 'sticky' },
-              top: { md: 76 },
+              position: 'sticky',
+              top: { xs: 0, md: 76 },
+              zIndex: { xs: 8, md: 1 },
+              borderRadius: { xs: 2, md: 2.5 },
             }}
           >
-            <Box sx={{ px: 1.2, pt: 1.2, pb: 0.8 }}>
-              <Typography sx={{ fontWeight: 850, fontSize: '0.9rem' }}>タグ一覧</Typography>
+            <Box
+              sx={{
+                px: { xs: 1, md: 1.2 },
+                pt: { xs: 0.75, md: 1.2 },
+                pb: { xs: 0.35, md: 0.8 },
+                display: 'flex',
+                alignItems: 'baseline',
+                justifyContent: 'space-between',
+                gap: 1,
+              }}
+            >
+              <Typography sx={{ fontWeight: 850, fontSize: { xs: '0.82rem', md: '0.9rem' } }}>タグ</Typography>
               <Typography variant="caption" color="text.secondary">
                 {orderedTags.length}タグ / {items.length}件
               </Typography>
@@ -255,13 +268,15 @@ function CollectionBoard({
 
             <Box
               sx={{
-                px: { xs: 0.8, md: 0.7 },
-                pb: 0.8,
+                px: { xs: 0.65, md: 0.7 },
+                pb: { xs: 0.65, md: 0.8 },
                 display: { xs: 'flex', md: 'block' },
-                gap: 0.55,
+                gap: 0.45,
                 overflowX: { xs: 'auto', md: 'visible' },
+                overflowY: { xs: 'hidden', md: 'auto' },
                 maxHeight: { md: 'calc(100vh - 260px)' },
-                overflowY: { md: 'auto' },
+                scrollbarWidth: { xs: 'none', md: 'auto' },
+                '&::-webkit-scrollbar': { display: { xs: 'none', md: 'block' } },
               }}
             >
               {orderedTags.map((tag) => {
@@ -279,22 +294,23 @@ function CollectionBoard({
                     }}
                     sx={{
                       width: { xs: 'auto', md: '100%' },
-                      minWidth: { xs: 128, md: 0 },
-                      border: 0,
+                      minWidth: { xs: 108, md: 0 },
+                      minHeight: { xs: 42, md: 0 },
+                      border: active ? `1px solid ${alpha(tagColor, 0.26)}` : '1px solid transparent',
                       borderRadius: 1.7,
-                      px: 1,
-                      py: 0.9,
+                      px: { xs: 0.85, md: 1 },
+                      py: { xs: 0.65, md: 0.9 },
                       mb: { md: 0.35 },
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 0.8,
+                      gap: 0.65,
                       textAlign: 'left',
                       cursor: 'pointer',
                       color: 'text.primary',
                       backgroundColor: active
                         ? alpha(tagColor, isDark ? 0.20 : 0.11)
                         : 'transparent',
-                      transition: 'background-color 120ms ease',
+                      transition: 'background-color 120ms ease, border-color 120ms ease',
                       '&:hover': {
                         backgroundColor: alpha(tagColor, isDark ? 0.13 : 0.07),
                       },
@@ -305,7 +321,7 @@ function CollectionBoard({
                       sx={{
                         flex: 1,
                         minWidth: 0,
-                        fontSize: '0.84rem',
+                        fontSize: { xs: '0.82rem', md: '0.84rem' },
                         fontWeight: active ? 850 : 700,
                         whiteSpace: 'nowrap',
                         overflow: 'hidden',
@@ -332,11 +348,11 @@ function CollectionBoard({
               minWidth: 0,
             }}
           >
-            <Box sx={{ p: { xs: 1.2, sm: 1.5 }, borderBottom: `1px solid ${border}` }}>
+            <Box sx={{ p: { xs: 1, sm: 1.5 }, borderBottom: `1px solid ${border}` }}>
               <Box sx={{ display: 'flex', alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
                 <Box sx={{ minWidth: 0 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, flexWrap: 'wrap' }}>
-                    <Typography sx={{ fontSize: { xs: '1.35rem', sm: '1.7rem' }, fontWeight: 900, lineHeight: 1.1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.7, flexWrap: 'wrap' }}>
+                    <Typography sx={{ fontSize: { xs: '1.22rem', sm: '1.7rem' }, fontWeight: 900, lineHeight: 1.15 }}>
                       #{selectedLabel}
                     </Typography>
                     <Chip
@@ -346,7 +362,7 @@ function CollectionBoard({
                     />
                   </Box>
                   {relatedTags.length > 0 && (
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.5, mt: 0.85 }}>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.5, mt: 0.8 }}>
                       <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800, mr: 0.15 }}>
                         関連タグ
                       </Typography>
@@ -360,7 +376,7 @@ function CollectionBoard({
                             setSelectedTag(tag);
                             setSearchText('');
                           }}
-                          sx={{ height: 24, fontSize: '0.66rem', fontWeight: 750 }}
+                          sx={{ height: 26, fontSize: '0.7rem', fontWeight: 750 }}
                         />
                       ))}
                     </Box>
@@ -394,7 +410,7 @@ function CollectionBoard({
             ) : (
               <Box
                 sx={{
-                  p: { xs: 1, sm: 1.3 },
+                  p: { xs: 0.8, sm: 1.3 },
                   display: 'grid',
                   gridTemplateColumns: {
                     xs: '1fr',
@@ -402,7 +418,7 @@ function CollectionBoard({
                     lg: 'repeat(3, minmax(0, 1fr))',
                     xl: 'repeat(4, minmax(0, 1fr))',
                   },
-                  gap: 0.75,
+                  gap: { xs: 0.6, sm: 0.75 },
                   alignItems: 'start',
                 }}
               >
@@ -416,10 +432,10 @@ function CollectionBoard({
                       onDoubleClick={() => navigate(`${manageRoute}?id=${item.id}`)}
                       sx={{
                         position: 'relative',
-                        minHeight: 54,
-                        px: 1.15,
-                        py: 0.95,
-                        pr: 3.2,
+                        minHeight: { xs: 52, sm: 54 },
+                        px: { xs: 1.05, sm: 1.15 },
+                        py: { xs: 0.9, sm: 0.95 },
+                        pr: { xs: 4.5, sm: 3.2 },
                         border: `1px solid ${border}`,
                         borderRadius: 2,
                         backgroundColor: isDark ? alpha(theme.palette.background.paper, 0.96) : '#fff',
@@ -436,9 +452,9 @@ function CollectionBoard({
                       <Typography
                         sx={{
                           color: 'text.primary',
-                          fontSize: '0.93rem',
+                          fontSize: { xs: '1rem', sm: '0.93rem' },
                           fontWeight: 700,
-                          lineHeight: 1.42,
+                          lineHeight: 1.48,
                           whiteSpace: 'pre-wrap',
                           wordBreak: 'break-word',
                         }}
@@ -450,15 +466,16 @@ function CollectionBoard({
                         <IconButton
                           className="memo-actions"
                           size="small"
+                          aria-label="メモの操作"
                           onClick={(event) => openMenu(event, item)}
                           sx={{
                             position: 'absolute',
-                            top: 6,
+                            top: { xs: 5, sm: 6 },
                             right: 4,
-                            width: 27,
-                            height: 27,
+                            width: { xs: 38, sm: 27 },
+                            height: { xs: 38, sm: 27 },
                             color: 'text.secondary',
-                            opacity: { xs: 0.72, md: 0.12 },
+                            opacity: { xs: 0.82, md: 0.12 },
                           }}
                         >
                           <MoreHorizIcon fontSize="small" />
@@ -474,13 +491,13 @@ function CollectionBoard({
       )}
 
       <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={closeMenu}>
-        <MenuItem onClick={copyItem}>
+        <MenuItem onClick={copyItem} sx={{ minHeight: 46 }}>
           <ContentCopyIcon fontSize="small" sx={{ mr: 1 }} />コピー
         </MenuItem>
-        <MenuItem onClick={editItem}>
+        <MenuItem onClick={editItem} sx={{ minHeight: 46 }}>
           <EditOutlinedIcon fontSize="small" sx={{ mr: 1 }} />編集
         </MenuItem>
-        <MenuItem onClick={removeItem} sx={{ color: 'error.main' }}>削除</MenuItem>
+        <MenuItem onClick={removeItem} sx={{ color: 'error.main', minHeight: 46 }}>削除</MenuItem>
       </Menu>
     </Box>
   );
