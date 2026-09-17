@@ -42,7 +42,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { agentDb } from '../firebase';
 
 const MATURITY = [
   { id: 'seed', label: 'Seed', accent: '#5d8be8' },
@@ -54,26 +54,15 @@ const MATURITY = [
 
 const AGENT_COLLECTIONS = {
   ideas: 'ideas',
+  runs: 'runs',
   relations: 'relations',
   sources: 'sources',
   evaluations: 'evaluations',
   artifacts: 'artifacts',
 };
 
-// Portal sessions live below /ideas so the existing My Portal Firestore rule
-// already covers them. They are continuation bookmarks for ChatGPT sessions;
-// the MCP can create its own durable run when the copied prompt is resumed.
-const portalRuns = () => collection(db, 'ideas', '__agent', 'runs');
-const portalRunDoc = (id) => doc(db, 'ideas', '__agent', 'runs', id);
-
-function isAgentIdea(idea) {
-  return Boolean(
-    idea?.createdBy?.type === 'agent' ||
-    idea?.createdBy?.agent ||
-    idea?.createdInRunId ||
-    idea?.maturity
-  );
-}
+const runsCollection = () => collection(agentDb, AGENT_COLLECTIONS.runs);
+const runDoc = (id) => doc(agentDb, AGENT_COLLECTIONS.runs, id);
 
 function toDate(value) {
   if (!value) return null;
@@ -97,9 +86,6 @@ async function safeGetDocs(targetQuery) {
   try {
     return await getDocs(targetQuery);
   } catch (error) {
-    // Optional graph metadata may still be server-only on older deployments.
-    // The core integrated UI should remain usable even when those collections
-    // are not readable by the browser yet.
     console.debug('Agent Idea Space optional metadata unavailable:', error);
     return { docs: [] };
   }
@@ -111,7 +97,7 @@ function IdeaCard({ idea, onClick }) {
       variant="outlined"
       onClick={() => onClick(idea)}
       sx={{
-        p: 1.4,
+        p: 1.35,
         borderRadius: 2.5,
         cursor: 'pointer',
         bgcolor: 'background.paper',
@@ -119,7 +105,7 @@ function IdeaCard({ idea, onClick }) {
         '&:hover': { transform: 'translateY(-1px)', boxShadow: 3 },
       }}
     >
-      <Typography variant="subtitle2" fontWeight={800} sx={{ lineHeight: 1.4 }}>
+      <Typography variant="subtitle2" fontWeight={850} sx={{ lineHeight: 1.4 }}>
         {idea.title || 'Untitled'}
       </Typography>
       {(idea.summary || idea.content) && (
@@ -127,7 +113,7 @@ function IdeaCard({ idea, onClick }) {
           variant="body2"
           color="text.secondary"
           sx={{
-            mt: 0.7,
+            mt: 0.6,
             lineHeight: 1.55,
             display: '-webkit-box',
             WebkitLineClamp: 3,
@@ -143,14 +129,14 @@ function IdeaCard({ idea, onClick }) {
           <Chip key={tag} label={`#${tag}`} size="small" sx={{ height: 21, fontSize: 10 }} />
         ))}
       </Stack>
-      <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 1 }}>
+      <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 0.8 }}>
         {idea.createdBy?.agent || 'agent'} · {formatDate(idea.updatedAt || idea.createdAt)}
       </Typography>
     </Paper>
   );
 }
 
-function AgentIdeaSpace() {
+export default function AgentIdeaSpace() {
   const [tab, setTab] = useState(0);
   const [ideas, setIdeas] = useState([]);
   const [runs, setRuns] = useState([]);
@@ -173,11 +159,10 @@ function AgentIdeaSpace() {
   useEffect(() => {
     setLoading(true);
     const unsubscribeIdeas = onSnapshot(
-      collection(db, AGENT_COLLECTIONS.ideas),
+      collection(agentDb, AGENT_COLLECTIONS.ideas),
       (snapshot) => {
         const items = snapshot.docs
           .map((item) => ({ id: item.id, ...item.data() }))
-          .filter(isAgentIdea)
           .sort((a, b) => {
             const aDate = toDate(a.updatedAt || a.createdAt)?.getTime() || 0;
             const bDate = toDate(b.updatedAt || b.createdAt)?.getTime() || 0;
@@ -193,10 +178,8 @@ function AgentIdeaSpace() {
     );
 
     const unsubscribeRuns = onSnapshot(
-      query(portalRuns(), orderBy('updatedAt', 'desc'), limit(100)),
-      (snapshot) => {
-        setRuns(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
-      },
+      query(runsCollection(), orderBy('updatedAt', 'desc'), limit(100)),
+      (snapshot) => setRuns(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))),
       (err) => setError(err.message),
     );
 
@@ -211,29 +194,23 @@ function AgentIdeaSpace() {
     return ideas.filter((idea) => {
       if (status && idea.status !== status) return false;
       if (!needle) return true;
-      const haystack = [
-        idea.title,
-        idea.summary,
-        idea.content,
-        ...(idea.tags || []),
-        ...(idea.domains || []),
-      ].join(' ').toLowerCase();
-      return haystack.includes(needle);
+      return [idea.title, idea.summary, idea.content, ...(idea.tags || []), ...(idea.domains || [])]
+        .join(' ')
+        .toLowerCase()
+        .includes(needle);
     });
   }, [ideas, search, status]);
 
   const openIdea = async (idea) => {
     setSelectedIdea(idea);
     setIdeaContext({ loading: true, relations: [], sources: [], evaluations: [], artifacts: [] });
-
     const [outgoing, incoming, sources, evaluations, artifacts] = await Promise.all([
-      safeGetDocs(query(collection(db, AGENT_COLLECTIONS.relations), where('fromIdeaId', '==', idea.id), limit(50))),
-      safeGetDocs(query(collection(db, AGENT_COLLECTIONS.relations), where('toIdeaId', '==', idea.id), limit(50))),
-      safeGetDocs(query(collection(db, AGENT_COLLECTIONS.sources), where('ideaId', '==', idea.id), limit(50))),
-      safeGetDocs(query(collection(db, AGENT_COLLECTIONS.evaluations), where('ideaId', '==', idea.id), limit(50))),
-      safeGetDocs(query(collection(db, AGENT_COLLECTIONS.artifacts), where('ideaId', '==', idea.id), limit(50))),
+      safeGetDocs(query(collection(agentDb, AGENT_COLLECTIONS.relations), where('fromIdeaId', '==', idea.id), limit(50))),
+      safeGetDocs(query(collection(agentDb, AGENT_COLLECTIONS.relations), where('toIdeaId', '==', idea.id), limit(50))),
+      safeGetDocs(query(collection(agentDb, AGENT_COLLECTIONS.sources), where('ideaId', '==', idea.id), limit(50))),
+      safeGetDocs(query(collection(agentDb, AGENT_COLLECTIONS.evaluations), where('ideaId', '==', idea.id), limit(50))),
+      safeGetDocs(query(collection(agentDb, AGENT_COLLECTIONS.artifacts), where('ideaId', '==', idea.id), limit(50))),
     ]);
-
     const relationMap = new Map();
     [...outgoing.docs, ...incoming.docs].forEach((item) => relationMap.set(item.id, { id: item.id, ...item.data() }));
     setIdeaContext({
@@ -256,7 +233,7 @@ function AgentIdeaSpace() {
   const createSession = async () => {
     if (!objective.trim()) return;
     try {
-      const ref = await addDoc(portalRuns(), {
+      const ref = await addDoc(runsCollection(), {
         agent: 'portal-session',
         model: null,
         objective: objective.trim(),
@@ -264,14 +241,18 @@ function AgentIdeaSpace() {
         trigger: 'manual',
         status: 'active',
         seedIdeaIds: seedIdeaId ? [seedIdeaId] : [],
+        createdIdeaIds: [],
+        updatedIdeaIds: [],
         findings: [],
         nextActions: [],
-        metadata: { source: 'my-portal-ui', kind: 'continuation-bookmark' },
+        metadata: { source: 'my-portal-ui' },
         revision: 1,
         startedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-      const newRun = {
+      setSessionOpen(false);
+      setTab(1);
+      setSelectedRun({
         id: ref.id,
         objective: objective.trim(),
         instructions: instructions.trim(),
@@ -280,11 +261,8 @@ function AgentIdeaSpace() {
         findings: [],
         nextActions: [],
         revision: 1,
-      };
-      setSessionOpen(false);
-      setTab(1);
-      setSelectedRun(newRun);
-      setNotice('セッションを開始しました。ChatGPT再開文をコピーして @my-portal に渡せます。');
+      });
+      setNotice('セッションを開始しました。');
     } catch (err) {
       setError(err.message);
     }
@@ -295,7 +273,7 @@ function AgentIdeaSpace() {
     try {
       const findings = [...(selectedRun.findings || []), ...(finding.trim() ? [finding.trim()] : [])];
       const nextActions = [...(selectedRun.nextActions || []), ...(nextAction.trim() ? [nextAction.trim()] : [])];
-      await updateDoc(portalRunDoc(selectedRun.id), {
+      await updateDoc(runDoc(selectedRun.id), {
         status: 'completed',
         findings,
         nextActions,
@@ -314,12 +292,12 @@ function AgentIdeaSpace() {
 
   const copyRunPrompt = async (run) => {
     const prompt = [
-      '@my-portal この作業セッションを継続してください。',
-      `Portal Session ID: ${run.id}`,
+      '@my-portal このAgent Idea Spaceの作業セッションを継続してください。',
+      `Run ID: ${run.id}`,
       `目的: ${run.objective || ''}`,
       `指示: ${run.instructions || ''}`,
       `Seed Idea IDs: ${(run.seedIdeaIds || []).join(', ')}`,
-      '必要なら idea_run_start でMCP側のdurable runを開始し、seed ideaのcontextを取得して続きから作業してください。',
+      'idea_get_context と idea_run_finish を使い、agent-ideas DB上の続きとして作業してください。',
     ].join('\n');
     try {
       await navigator.clipboard.writeText(prompt);
@@ -336,10 +314,10 @@ function AgentIdeaSpace() {
           <Stack direction="row" spacing={1} alignItems="center">
             <AutoAwesomeIcon color="primary" />
             <Typography variant="h5" fontWeight={900}>Agent Idea Space</Typography>
-            <Chip label="Agent memory" size="small" color="primary" variant="outlined" />
+            <Chip label="agent-ideas DB" size="small" color="primary" variant="outlined" />
           </Stack>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            ChatGPT / MCP が育てたアイデアと、継続作業用のセッションをMy Portal内で確認します。
+            Agent専用DBにあるアイデア・関係・セッションを、My Portalの中から確認します。
           </Typography>
         </Box>
         <Button startIcon={<RefreshIcon />} onClick={() => window.location.reload()} variant="outlined">更新</Button>
@@ -359,16 +337,10 @@ function AgentIdeaSpace() {
         {tab === 0 && (
           <Box sx={{ p: { xs: 1.5, md: 2 } }}>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mb: 2 }}>
-              <TextField
-                size="small"
-                fullWidth
-                placeholder="タイトル・本文・タグを検索"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
+              <TextField size="small" fullWidth placeholder="タイトル・本文・タグを検索" value={search} onChange={(e) => setSearch(e.target.value)} />
               <FormControl size="small" sx={{ minWidth: 150 }}>
                 <InputLabel>状態</InputLabel>
-                <Select value={status} label="状態" onChange={(event) => setStatus(event.target.value)}>
+                <Select value={status} label="状態" onChange={(e) => setStatus(e.target.value)}>
                   <MenuItem value="">すべて</MenuItem>
                   <MenuItem value="active">active</MenuItem>
                   <MenuItem value="paused">paused</MenuItem>
@@ -377,7 +349,6 @@ function AgentIdeaSpace() {
                 </Select>
               </FormControl>
             </Stack>
-
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(230px, 1fr))', gap: 1.25, overflowX: 'auto', pb: 1 }}>
               {MATURITY.map((lane) => {
                 const laneIdeas = filteredIdeas.filter((idea) => (idea.maturity || 'seed') === lane.id);
@@ -401,35 +372,15 @@ function AgentIdeaSpace() {
 
         {tab === 1 && (
           <Box sx={{ p: { xs: 1.5, md: 2 }, display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) 380px' }, gap: 2 }}>
-            <Box>
-              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-                {runs.filter((run) => run.status === 'active').length} active / {runs.length} total
-              </Typography>
-              <Stack spacing={1}>
-                {runs.map((run) => (
-                  <Paper
-                    key={run.id}
-                    variant="outlined"
-                    onClick={() => setSelectedRun(run)}
-                    sx={{
-                      p: 1.5,
-                      borderRadius: 2.5,
-                      cursor: 'pointer',
-                      borderLeft: 4,
-                      borderLeftColor: run.status === 'active' ? 'success.main' : run.status === 'failed' ? 'error.main' : 'primary.main',
-                      bgcolor: selectedRun?.id === run.id ? 'action.selected' : 'background.paper',
-                    }}
-                  >
-                    <Typography fontWeight={850}>{run.objective || 'Untitled session'}</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {run.agent || 'portal-session'} · {run.status || 'active'} · {formatDate(run.updatedAt || run.startedAt)}
-                    </Typography>
-                  </Paper>
-                ))}
-                {!runs.length && <Typography color="text.secondary" textAlign="center" sx={{ py: 5 }}>セッションはまだありません</Typography>}
-              </Stack>
-            </Box>
-
+            <Stack spacing={1}>
+              {runs.map((run) => (
+                <Paper key={run.id} variant="outlined" onClick={() => setSelectedRun(run)} sx={{ p: 1.5, borderRadius: 2.5, cursor: 'pointer', borderLeft: 4, borderLeftColor: run.status === 'active' ? 'success.main' : 'primary.main', bgcolor: selectedRun?.id === run.id ? 'action.selected' : 'background.paper' }}>
+                  <Typography fontWeight={850}>{run.objective || 'Untitled session'}</Typography>
+                  <Typography variant="caption" color="text.secondary">{run.agent || 'portal-session'} · {run.status || 'active'} · {formatDate(run.updatedAt || run.startedAt)}</Typography>
+                </Paper>
+              ))}
+              {!runs.length && <Typography color="text.secondary" textAlign="center" sx={{ py: 5 }}>セッションはまだありません</Typography>}
+            </Stack>
             <Paper variant="outlined" sx={{ p: 2, borderRadius: 2.5, alignSelf: 'start', position: { lg: 'sticky' }, top: { lg: 8 } }}>
               {selectedRun ? (
                 <>
@@ -442,66 +393,43 @@ function AgentIdeaSpace() {
                   <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', mb: 1.5 }}>{selectedRun.instructions || '—'}</Typography>
                   <Typography variant="overline" color="text.secondary">Findings</Typography>
                   {(selectedRun.findings || []).map((item, index) => <Typography key={index} variant="body2">• {item}</Typography>)}
-                  {!(selectedRun.findings || []).length && <Typography variant="body2" color="text.disabled">なし</Typography>}
                   <Typography variant="overline" color="text.secondary" sx={{ mt: 1.5, display: 'block' }}>Next actions</Typography>
                   {(selectedRun.nextActions || []).map((item, index) => <Typography key={index} variant="body2">• {item}</Typography>)}
-                  {!(selectedRun.nextActions || []).length && <Typography variant="body2" color="text.disabled">なし</Typography>}
                   <Divider sx={{ my: 2 }} />
                   <Stack spacing={1}>
                     <Button startIcon={<ContentCopyIcon />} variant="outlined" onClick={() => copyRunPrompt(selectedRun)}>ChatGPT再開文をコピー</Button>
-                    {selectedRun.status === 'active' && (
-                      <Button startIcon={<DoneAllIcon />} variant="contained" color="success" onClick={() => setFinishOpen(true)}>セッションを完了</Button>
-                    )}
+                    {selectedRun.status === 'active' && <Button startIcon={<DoneAllIcon />} variant="contained" color="success" onClick={() => setFinishOpen(true)}>セッションを完了</Button>}
                   </Stack>
                 </>
-              ) : (
-                <Typography color="text.secondary">左のセッションを選択してください。</Typography>
-              )}
+              ) : <Typography color="text.secondary">左のセッションを選択してください。</Typography>}
             </Paper>
           </Box>
         )}
       </Paper>
 
-      <Drawer
-        anchor="right"
-        open={Boolean(selectedIdea)}
-        onClose={() => setSelectedIdea(null)}
-        PaperProps={{ sx: { width: { xs: '100%', sm: 440 }, p: 2.5 } }}
-      >
+      <Drawer anchor="right" open={Boolean(selectedIdea)} onClose={() => setSelectedIdea(null)} PaperProps={{ sx: { width: { xs: '100%', sm: 440 }, p: 2.5 } }}>
         {selectedIdea && (
           <>
             <Typography variant="h6" fontWeight={900}>{selectedIdea.title || 'Untitled'}</Typography>
             <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ my: 1 }}>
               <Chip label={selectedIdea.status || 'active'} size="small" />
               <Chip label={selectedIdea.maturity || 'seed'} size="small" variant="outlined" />
-              {(selectedIdea.domains || []).map((domain) => <Chip key={domain} label={domain} size="small" variant="outlined" />)}
+              {(selectedIdea.tags || []).map((tag) => <Chip key={tag} label={`#${tag}`} size="small" variant="outlined" />)}
             </Stack>
             {selectedIdea.summary && <Typography color="text.secondary" sx={{ mb: 1.5 }}>{selectedIdea.summary}</Typography>}
             <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.75 }}>{selectedIdea.content || ''}</Typography>
             <Button variant="contained" startIcon={<AutoAwesomeIcon />} sx={{ mt: 2 }} onClick={() => startSession(selectedIdea)}>このアイデアでセッション開始</Button>
-
             {ideaContext?.loading && <LinearProgress sx={{ my: 2 }} />}
             {!ideaContext?.loading && ideaContext && (
               <>
                 <Typography variant="overline" color="text.secondary" sx={{ mt: 2.5, display: 'block' }}>Relations</Typography>
-                {ideaContext.relations.map((relation) => (
-                  <Typography key={relation.id} variant="body2" sx={{ py: 0.5 }}>
-                    {relation.type} → {relation.fromIdeaId === selectedIdea.id ? relation.toIdeaId : relation.fromIdeaId}
-                  </Typography>
-                ))}
-                {!ideaContext.relations.length && <Typography variant="body2" color="text.disabled">なし / 未取得</Typography>}
-
+                {ideaContext.relations.map((relation) => <Typography key={relation.id} variant="body2">{relation.type} → {relation.fromIdeaId === selectedIdea.id ? relation.toIdeaId : relation.fromIdeaId}</Typography>)}
                 <Typography variant="overline" color="text.secondary" sx={{ mt: 2, display: 'block' }}>Sources</Typography>
-                {ideaContext.sources.map((source) => <Typography key={source.id} variant="body2" sx={{ py: 0.5 }}>{source.title || source.url || source.type}</Typography>)}
-                {!ideaContext.sources.length && <Typography variant="body2" color="text.disabled">なし / 未取得</Typography>}
-
+                {ideaContext.sources.map((source) => <Typography key={source.id} variant="body2">{source.title || source.url || source.type}</Typography>)}
                 <Typography variant="overline" color="text.secondary" sx={{ mt: 2, display: 'block' }}>Evaluations</Typography>
-                {ideaContext.evaluations.map((evaluation) => <Typography key={evaluation.id} variant="body2" sx={{ py: 0.5 }}><b>{evaluation.evaluator || 'agent'}</b> {evaluation.comment || ''}</Typography>)}
-                {!ideaContext.evaluations.length && <Typography variant="body2" color="text.disabled">なし / 未取得</Typography>}
-
+                {ideaContext.evaluations.map((evaluation) => <Typography key={evaluation.id} variant="body2"><b>{evaluation.evaluator || 'agent'}</b> {evaluation.comment || ''}</Typography>)}
                 <Typography variant="overline" color="text.secondary" sx={{ mt: 2, display: 'block' }}>Artifacts</Typography>
-                {ideaContext.artifacts.map((artifact) => <Typography key={artifact.id} variant="body2" sx={{ py: 0.5 }}>{artifact.title || artifact.type}</Typography>)}
-                {!ideaContext.artifacts.length && <Typography variant="body2" color="text.disabled">なし / 未取得</Typography>}
+                {ideaContext.artifacts.map((artifact) => <Typography key={artifact.id} variant="body2">{artifact.title || artifact.type}</Typography>)}
               </>
             )}
           </>
@@ -512,10 +440,10 @@ function AgentIdeaSpace() {
         <DialogTitle>Agent セッション開始</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
-            <TextField label="目的" value={objective} onChange={(event) => setObjective(event.target.value)} autoFocus required />
-            <TextField label="作業指示・制約" value={instructions} onChange={(event) => setInstructions(event.target.value)} multiline minRows={4} />
+            <TextField label="目的" value={objective} onChange={(e) => setObjective(e.target.value)} autoFocus required />
+            <TextField label="作業指示・制約" value={instructions} onChange={(e) => setInstructions(e.target.value)} multiline minRows={4} />
             {seedIdeaId && <TextField label="Seed Idea ID" value={seedIdeaId} disabled />}
-            <Alert severity="info">追加ログインは不要です。My Portalのログイン状態のまま保存されます。</Alert>
+            <Alert severity="info">My PortalのGoogleログインをそのまま利用し、Agent専用DBへ保存します。</Alert>
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -528,8 +456,8 @@ function AgentIdeaSpace() {
         <DialogTitle>セッションを完了</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
-            <TextField label="今回の主な発見（任意）" value={finding} onChange={(event) => setFinding(event.target.value)} multiline minRows={3} />
-            <TextField label="次にやること（任意）" value={nextAction} onChange={(event) => setNextAction(event.target.value)} multiline minRows={3} />
+            <TextField label="今回の主な発見（任意）" value={finding} onChange={(e) => setFinding(e.target.value)} multiline minRows={3} />
+            <TextField label="次にやること（任意）" value={nextAction} onChange={(e) => setNextAction(e.target.value)} multiline minRows={3} />
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -540,5 +468,3 @@ function AgentIdeaSpace() {
     </Box>
   );
 }
-
-export default AgentIdeaSpace;
