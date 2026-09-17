@@ -1,6 +1,13 @@
 {
   "short_name": "My Portal",
-  "name": "My Portal App",
+  "name": "My Portal",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#edf4f8",
+  "background_color": "#edf4f8",
   "icons": [
     {
       "src": "favicon.ico",
@@ -10,18 +17,16 @@
     {
       "src": "logo192.png",
       "type": "image/png",
-      "sizes": "192x192"
+      "sizes": "192x192",
+      "purpose": "any maskable"
     },
     {
       "src": "logo512.png",
       "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "any maskable"
     }
   ],
-  "start_url": ".",
-  "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff",
   "share_target": {
     "action": "/share-target/",
     "method": "GET",
