@@ -8,3 +8,8 @@
 
 [functions]
   directory = "netlify/functions"
+
+[[redirects]]
+  from = "/agent-ideas"
+  to = "/index.html"
+  status = 200
