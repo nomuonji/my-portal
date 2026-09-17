@@ -27,15 +27,21 @@ const objectSchema = {
   additionalProperties: true,
 };
 
+const confirmSchema = {
+  type: 'boolean',
+  description: 'My Portal本体DBへの書き込みを明示的に確定する場合のみtrue。ユーザーがこの具体的な変更を明示的に依頼・承認していない限りtrueにしないこと。通常のエージェント作業はAgent Idea Spaceへ保存する。',
+};
+
 const TOOLS = [
   {
     name: 'portal_status',
-    description: 'My Portal本体DBの接続状態と、MCPから操作可能なコレクション一覧を返します。',
+    description: 'My Portal本体DBの接続状態と、MCPから読み取り可能なコレクション一覧を返します。Portalはread-mostlyで、通常のエージェント作業領域ではありません。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true },
   },
   {
     name: 'portal_get',
-    description: 'My Portal本体DBの指定コレクションから、IDが分かっている1件を取得します。',
+    description: 'My Portal本体DBの指定コレクションから、IDが分かっている1件を読み取ります。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -45,10 +51,11 @@ const TOOLS = [
       required: ['collection', 'id'],
       additionalProperties: false,
     },
+    annotations: { readOnlyHint: true },
   },
   {
     name: 'portal_search',
-    description: 'My Portal本体DBを検索します。短文メモ、アイデア、ストック、趣味、プロジェクト等を横断的に扱うための読み取りツールです。',
+    description: 'My Portal本体DBを検索します。短文メモ、アイデア、ストック、趣味、プロジェクト等を参照するための読み取り専用ツールです。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -61,10 +68,11 @@ const TOOLS = [
       required: ['collection'],
       additionalProperties: false,
     },
+    annotations: { readOnlyHint: true },
   },
   {
     name: 'portal_create',
-    description: 'My Portal本体DBにデータを新規作成します。ideas/stocks/hobbies/projects等の既存UIと同じFirestoreへ保存されます。',
+    description: 'My Portal本体DBへ新規作成します。通常のエージェント保存先には使わず、ユーザーがPortal本体への具体的な追加を明示的に依頼・承認した場合のみconfirm=trueで実行してください。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -72,38 +80,43 @@ const TOOLS = [
         data: objectSchema,
         id: { type: 'string', maxLength: 500, description: '明示的なIDが必要な場合のみ指定。タグコレクション等で利用。' },
         overwrite: { type: 'boolean', default: false, description: '指定IDが既に存在するときに置換を許可するか。通常はfalse。' },
+        confirm: confirmSchema,
       },
-      required: ['collection', 'data'],
+      required: ['collection', 'data', 'confirm'],
       additionalProperties: false,
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: 'portal_update',
-    description: 'My Portal本体DBの既存データを部分更新します。既存フィールドは保持され、patchの内容だけが更新されます。',
+    description: 'My Portal本体DBの既存データを部分更新します。通常のエージェント作業では使用せず、ユーザーがこの変更を明示的に依頼・承認した場合のみconfirm=trueで実行してください。',
     inputSchema: {
       type: 'object',
       properties: {
         collection: collectionSchema,
         id: { type: 'string', minLength: 1, maxLength: 500 },
         patch: objectSchema,
+        confirm: confirmSchema,
       },
-      required: ['collection', 'id', 'patch'],
+      required: ['collection', 'id', 'patch', 'confirm'],
       additionalProperties: false,
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: 'portal_delete',
-    description: 'My Portal本体DBの1件を削除します。破壊的操作のためconfirm=trueが必須です。',
+    description: 'My Portal本体DBの1件を削除します。破壊的操作であり、ユーザーがこの削除を明示的に依頼・承認した場合のみconfirm=trueで実行してください。',
     inputSchema: {
       type: 'object',
       properties: {
         collection: collectionSchema,
         id: { type: 'string', minLength: 1, maxLength: 500 },
-        confirm: { type: 'boolean', description: '削除を確定するときだけtrue。' },
+        confirm: confirmSchema,
       },
       required: ['collection', 'id', 'confirm'],
       additionalProperties: false,
     },
+    annotations: { readOnlyHint: false, destructiveHint: true },
   },
 ];
 
