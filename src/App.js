@@ -28,7 +28,6 @@ import {
 } from '@mui/material';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { ThemeProvider } from '@mui/material/styles';
-import { useSwipeable } from 'react-swipeable';
 import {
   Newspaper,
   Folder,
@@ -72,6 +71,7 @@ import GlobalFlashcardManagement from './components/GlobalFlashcardManagement';
 import getAppTheme from './theme';
 
 const YOUTUBE_API_KEY = 'YOUR_YOUTUBE_API_KEY';
+const drawerWidth = 240;
 
 const getYouTubeVideoId = (url) => {
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
@@ -103,8 +103,6 @@ const fetchYouTubeVideoDetails = async (videoId, apiKey) => {
   return null;
 };
 
-const drawerWidth = 240;
-
 function App() {
   const location = useLocation();
   const [user, setUser] = useState(null);
@@ -121,20 +119,43 @@ function App() {
   const appTheme = useMemo(() => getAppTheme(mode), [mode]);
   const isMobile = useMediaQuery(appTheme.breakpoints.down('md'));
 
+  const pageTitle = useMemo(() => {
+    const path = location.pathname;
+    if (path.startsWith('/agent-ideas')) return 'Agent Ideas';
+    if (path.startsWith('/ideaboard') || path.startsWith('/idea')) return 'アイデア';
+    if (path.startsWith('/hobbyboard') || path.startsWith('/hobby')) return '趣味';
+    if (path.startsWith('/stockboard') || path.startsWith('/stock')) return 'ストック';
+    if (path.startsWith('/project')) return 'プロジェクト';
+    if (path.startsWith('/news')) return 'ニュース';
+    if (path.startsWith('/feature-requests')) return '機能改善';
+    if (path.startsWith('/reading-list-youtube')) return '後で見る';
+    if (path.startsWith('/reading-list-urls')) return '後で読む';
+    if (path.startsWith('/deck') || path.startsWith('/flashcard')) return '暗記カード';
+    if (path.startsWith('/memo')) return 'メモ';
+    return 'My Portal';
+  }, [location.pathname]);
+
+  const mobileNavValue = useMemo(() => {
+    const path = location.pathname;
+    if (path === '/') return '/';
+    if (path.startsWith('/ideaboard') || path.startsWith('/idea')) return '/ideaboard';
+    if (path.startsWith('/agent-ideas')) return '/agent-ideas';
+    if (path.startsWith('/hobbyboard') || path.startsWith('/hobby')) return '/hobbyboard';
+    if (path.startsWith('/stockboard') || path.startsWith('/stock')) return '/stockboard';
+    return false;
+  }, [location.pathname]);
+
   const handleDrawerToggle = () => {
-    setMobileOpen(!mobileOpen);
+    setMobileOpen((open) => !open);
   };
 
-  const handlers = useSwipeable({
-    onSwipedRight: () => {
-      if (isMobile) setMobileOpen(true);
-    },
-    onSwipedLeft: () => {
-      if (isMobile) setMobileOpen(false);
-    },
-    preventScrollOnSwipe: true,
-    trackMouse: true,
-  });
+  const closeMobileDrawer = () => {
+    setMobileOpen(false);
+  };
+
+  useEffect(() => {
+    if (isMobile) closeMobileDrawer();
+  }, [location.pathname, isMobile]);
 
   const handleModeChange = () => {
     setMode((prevMode) => {
@@ -244,65 +265,78 @@ function App() {
     }
   };
 
+  const navClick = () => {
+    if (isMobile) closeMobileDrawer();
+  };
+
   const drawer = (
-    <Box sx={{ overflow: 'auto' }}>
-      <Toolbar />
-      <List>
+    <Box
+      sx={{
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        pt: { xs: 'env(safe-area-inset-top)', md: 0 },
+        pb: { xs: 'env(safe-area-inset-bottom)', md: 0 },
+      }}
+    >
+      <Toolbar sx={{ flexShrink: 0 }} />
+      <List sx={{ flexGrow: 1, overflowY: 'auto', overscrollBehavior: 'contain', py: 1 }}>
         {user && (
           <>
-            <ListItemButton component={Link} to="/" onClick={() => isMobile && handleDrawerToggle()}>
+            <ListItemButton selected={location.pathname === '/'} component={Link} to="/" onClick={navClick}>
               <ListItemIcon><DashboardIcon /></ListItemIcon>
               <ListItemText primary="ダッシュボード" />
             </ListItemButton>
-            <ListItemButton component={Link} to="/ideaboard" onClick={() => isMobile && handleDrawerToggle()}>
+            <ListItemButton selected={location.pathname.startsWith('/ideaboard')} component={Link} to="/ideaboard" onClick={navClick}>
               <ListItemIcon><LightbulbIcon /></ListItemIcon>
               <ListItemText primary="アイデアボード" />
             </ListItemButton>
-            <ListItemButton component={Link} to="/agent-ideas" onClick={() => isMobile && handleDrawerToggle()}>
+            <ListItemButton selected={location.pathname.startsWith('/agent-ideas')} component={Link} to="/agent-ideas" onClick={navClick}>
               <ListItemIcon><SmartToyIcon /></ListItemIcon>
               <ListItemText primary="Agent Ideas" secondary="AIの発想・セッション" />
             </ListItemButton>
-            <ListItemButton component={Link} to="/hobbyboard" onClick={() => isMobile && handleDrawerToggle()}>
+            <ListItemButton selected={location.pathname.startsWith('/hobbyboard')} component={Link} to="/hobbyboard" onClick={navClick}>
               <ListItemIcon><InterestsIcon /></ListItemIcon>
               <ListItemText primary="趣味ボード" />
             </ListItemButton>
-            <ListItemButton component={Link} to="/project" onClick={() => isMobile && handleDrawerToggle()}>
+            <ListItemButton selected={location.pathname.startsWith('/project')} component={Link} to="/project" onClick={navClick}>
               <ListItemIcon><Folder /></ListItemIcon>
               <ListItemText primary="プロジェクトボード" />
             </ListItemButton>
-            <ListItemButton component={Link} to="/stockboard" onClick={() => isMobile && handleDrawerToggle()}>
+            <ListItemButton selected={location.pathname.startsWith('/stockboard')} component={Link} to="/stockboard" onClick={navClick}>
               <ListItemIcon><ViewCompactIcon /></ListItemIcon>
               <ListItemText primary="ストックボード" />
             </ListItemButton>
-            <ListItemButton onClick={() => setOpenOthers(!openOthers)}>
+            <ListItemButton onClick={() => setOpenOthers((open) => !open)}>
               <ListItemIcon><MoreHorizIcon /></ListItemIcon>
               <ListItemText primary="その他" />
               {openOthers ? <ExpandLess /> : <ExpandMore />}
             </ListItemButton>
             <Collapse in={openOthers} timeout="auto" unmountOnExit>
               <List component="div" disablePadding>
-                <ListItemButton sx={{ pl: 4 }} component={Link} to="/news" onClick={() => isMobile && handleDrawerToggle()}>
+                <ListItemButton sx={{ pl: 4 }} component={Link} to="/news" onClick={navClick}>
                   <ListItemIcon><Newspaper /></ListItemIcon>
                   <ListItemText primary="ニュース" />
                 </ListItemButton>
-                <ListItemButton sx={{ pl: 4 }} component={Link} to="/feature-requests" onClick={() => isMobile && handleDrawerToggle()}>
+                <ListItemButton sx={{ pl: 4 }} component={Link} to="/feature-requests" onClick={navClick}>
                   <ListItemIcon><BuildIcon /></ListItemIcon>
                   <ListItemText primary="機能改善" />
                 </ListItemButton>
-                <ListItemButton sx={{ pl: 4 }} component={Link} to="/reading-list-urls" onClick={() => isMobile && handleDrawerToggle()}>
+                <ListItemButton sx={{ pl: 4 }} component={Link} to="/reading-list-urls" onClick={navClick}>
                   <ListItemIcon><Newspaper /></ListItemIcon>
                   <ListItemText primary="後で読む (Web)" />
                 </ListItemButton>
-                <ListItemButton sx={{ pl: 4 }} component={Link} to="/reading-list-youtube" onClick={() => isMobile && handleDrawerToggle()}>
+                <ListItemButton sx={{ pl: 4 }} component={Link} to="/reading-list-youtube" onClick={navClick}>
                   <ListItemIcon><Newspaper /></ListItemIcon>
                   <ListItemText primary="後で見る (YouTube)" />
                   {unreadYoutubeCount > 0 && <Badge badgeContent={unreadYoutubeCount} color="error" sx={{ ml: 1 }} />}
                 </ListItemButton>
-                <ListItemButton sx={{ pl: 4 }} component={Link} to="/drive" onClick={() => isMobile && handleDrawerToggle()}>
+                <ListItemButton sx={{ pl: 4 }} component={Link} to="/drive" onClick={navClick}>
                   <ListItemIcon><Folder /></ListItemIcon>
                   <ListItemText primary="Google Drive" />
                 </ListItemButton>
-                <ListItemButton sx={{ pl: 4 }} component={Link} to="/decks" onClick={() => isMobile && handleDrawerToggle()}>
+                <ListItemButton sx={{ pl: 4 }} component={Link} to="/decks" onClick={navClick}>
                   <ListItemIcon><i className="fas fa-layer-group"></i></ListItemIcon>
                   <ListItemText primary="暗記カード" />
                 </ListItemButton>
@@ -326,7 +360,7 @@ function App() {
           </ListItemButton>
         )}
       </List>
-      <Box sx={{ position: 'absolute', bottom: 0, width: '100%', p: 2, textAlign: 'center' }}>
+      <Box sx={{ flexShrink: 0, p: 1.5, textAlign: 'center' }}>
         <Typography variant="caption" color="textSecondary">
           Version: {process.env.REACT_APP_VERSION}
         </Typography>
@@ -336,29 +370,35 @@ function App() {
 
   return (
     <ThemeProvider theme={appTheme}>
-      <Box sx={{ display: 'flex', height: '100vh' }}>
+      <Box sx={{ display: 'flex', height: '100dvh', minHeight: '100vh', overflow: 'hidden' }}>
         <CssBaseline />
         <AppBar
           position="fixed"
           sx={{
             width: { md: `calc(100% - ${drawerWidth}px)` },
             ml: { md: `${drawerWidth}px` },
+            pt: { xs: 'env(safe-area-inset-top)', md: 0 },
           }}
         >
-          <Toolbar sx={{ minHeight: { xs: 56, sm: 64 } }}>
+          <Toolbar sx={{ minHeight: { xs: 56, sm: 64 }, px: { xs: 1, sm: 2 } }}>
             <IconButton
               color="inherit"
-              aria-label="open drawer"
+              aria-label="メニューを開く"
               edge="start"
               onClick={handleDrawerToggle}
-              sx={{ mr: 2, display: { md: 'none' } }}
+              sx={{ mr: 1, display: { md: 'none' }, width: 44, height: 44 }}
             >
               <MenuIcon />
             </IconButton>
-            <Typography noWrap component="div" sx={{ flexGrow: 1, typography: { xs: 'subtitle1', md: 'h6' } }}>
-              My Portal
+            <Typography noWrap component="div" sx={{ flexGrow: 1, fontWeight: 850, typography: { xs: 'subtitle1', md: 'h6' } }}>
+              {isMobile ? pageTitle : 'My Portal'}
             </Typography>
-            <IconButton color="inherit" onClick={() => setNotificationModalOpen(true)}>
+            <IconButton
+              color="inherit"
+              aria-label="通知"
+              onClick={() => setNotificationModalOpen(true)}
+              sx={{ width: 44, height: 44 }}
+            >
               <Badge badgeContent={unreadUrlsCount + unreadYoutubeCount} color="error">
                 <NotificationsIcon />
               </Badge>
@@ -367,13 +407,20 @@ function App() {
         </AppBar>
 
         {isMobile && (
-          <Box component="nav" sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }} aria-label="portal navigation">
+          <Box component="nav" sx={{ flexShrink: 0 }} aria-label="portal navigation">
             <Drawer
               variant="temporary"
               open={mobileOpen}
-              onClose={handleDrawerToggle}
+              onClose={closeMobileDrawer}
               ModalProps={{ keepMounted: true }}
-              sx={{ display: { xs: 'block', md: 'none' }, '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth } }}
+              sx={{
+                display: { xs: 'block', md: 'none' },
+                '& .MuiDrawer-paper': {
+                  boxSizing: 'border-box',
+                  width: { xs: 'min(86vw, 320px)', sm: drawerWidth },
+                  maxWidth: '100vw',
+                },
+              }}
             >
               {drawer}
             </Drawer>
@@ -398,13 +445,24 @@ function App() {
             flexGrow: 1,
             display: 'flex',
             flexDirection: 'column',
-            pb: isMobile ? '56px' : '0',
+            pb: isMobile ? 'calc(64px + env(safe-area-inset-bottom))' : 0,
             minWidth: 0,
+            minHeight: 0,
+            overflow: 'hidden',
           }}
-          {...handlers}
         >
-          <Toolbar />
-          <Box sx={{ flexGrow: 1, p: { xs: 1.5, md: 3 }, overflow: 'auto' }}>
+          <Toolbar sx={{ minHeight: { xs: 'calc(56px + env(safe-area-inset-top))', sm: 64 } }} />
+          <Box
+            sx={{
+              flexGrow: 1,
+              minHeight: 0,
+              p: { xs: 1, sm: 1.5, md: 3 },
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              WebkitOverflowScrolling: 'touch',
+              overscrollBehavior: 'contain',
+            }}
+          >
             {user ? (
               <Routes>
                 <Route path="/" element={<Dashboard />} />
@@ -443,59 +501,49 @@ function App() {
             showLabels
             sx={{
               width: '100%',
+              height: 'calc(64px + env(safe-area-inset-bottom))',
+              pb: 'env(safe-area-inset-bottom)',
               position: 'fixed',
               bottom: 0,
               left: 0,
-              boxShadow: '0px -2px 4px rgba(0, 0, 0, 0.1)',
+              boxShadow: '0 -5px 18px rgba(30, 62, 82, 0.10)',
               zIndex: 1200,
+              '& .MuiBottomNavigationAction-root': {
+                minWidth: 0,
+                px: 0.25,
+                pt: 0.65,
+              },
+              '& .MuiBottomNavigationAction-label': {
+                fontSize: '0.68rem',
+                lineHeight: 1.1,
+                mt: 0.2,
+              },
+              '& .MuiBottomNavigationAction-label.Mui-selected': {
+                fontSize: '0.68rem',
+              },
+              '& .MuiSvgIcon-root': { fontSize: 23 },
             }}
-            value={location.pathname}
+            value={mobileNavValue}
           >
-            <BottomNavigationAction
-              label="ホーム"
-              icon={<DashboardIcon />}
-              component={Link}
-              to="/"
-              sx={{ '& .MuiBottomNavigationAction-label': { fontSize: '0.5rem' } }}
-            />
-            <BottomNavigationAction
-              label="アイデア"
-              icon={<LightbulbIcon />}
-              component={Link}
-              to="/ideaboard"
-              sx={{ '& .MuiBottomNavigationAction-label': { fontSize: '0.5rem' } }}
-            />
-            <BottomNavigationAction
-              label="Agent"
-              icon={<SmartToyIcon />}
-              component={Link}
-              to="/agent-ideas"
-              sx={{ '& .MuiBottomNavigationAction-label': { fontSize: '0.5rem' } }}
-            />
-            <BottomNavigationAction
-              label="趣味"
-              icon={<InterestsIcon />}
-              component={Link}
-              to="/hobbyboard"
-              sx={{ '& .MuiBottomNavigationAction-label': { fontSize: '0.5rem' } }}
-            />
-            <BottomNavigationAction
-              label="ストック"
-              icon={<ViewCompactIcon />}
-              component={Link}
-              to="/stockboard"
-              sx={{ '& .MuiBottomNavigationAction-label': { fontSize: '0.5rem' } }}
-            />
+            <BottomNavigationAction label="ホーム" icon={<DashboardIcon />} component={Link} to="/" />
+            <BottomNavigationAction label="アイデア" icon={<LightbulbIcon />} component={Link} to="/ideaboard" />
+            <BottomNavigationAction label="Agent" icon={<SmartToyIcon />} component={Link} to="/agent-ideas" />
+            <BottomNavigationAction label="趣味" icon={<InterestsIcon />} component={Link} to="/hobbyboard" />
+            <BottomNavigationAction label="ストック" icon={<ViewCompactIcon />} component={Link} to="/stockboard" />
           </BottomNavigation>
         )}
 
-        <Dialog open={notificationModalOpen} onClose={() => setNotificationModalOpen(false)}>
+        <Dialog
+          open={notificationModalOpen}
+          onClose={() => setNotificationModalOpen(false)}
+          fullScreen={isMobile}
+        >
           <DialogTitle>未読アイテム</DialogTitle>
           <DialogContent>
             <Typography>Web記事: {unreadUrlsCount}件</Typography>
             <Typography>YouTube動画: {unreadYoutubeCount}件</Typography>
           </DialogContent>
-          <DialogActions>
+          <DialogActions sx={{ pb: { xs: 'calc(8px + env(safe-area-inset-bottom))', md: 1 } }}>
             <Button onClick={() => setNotificationModalOpen(false)}>閉じる</Button>
           </DialogActions>
         </Dialog>
