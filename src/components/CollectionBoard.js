@@ -51,7 +51,7 @@ const colorFromTag = (tag, theme) => {
   let hash = 0;
   for (let i = 0; i < tag.length; i += 1) hash = tag.charCodeAt(i) + ((hash << 5) - hash);
   const hue = Math.abs(hash) % 360;
-  return `hsl(${hue} 55% ${theme.palette.mode === 'dark' ? '66%' : '48%'})`;
+  return `hsl(${hue} 58% ${theme.palette.mode === 'dark' ? '68%' : '43%'})`;
 };
 
 const compactText = (value = '') => String(value).trim();
@@ -91,6 +91,23 @@ function CollectionBoard({
       setAllTags(snapshot.docs.map((snapshotDoc) => snapshotDoc.id));
     });
   }, [database, tagsCollectionName]);
+
+  const tagCounts = useMemo(() => {
+    const counts = new Map();
+    items.forEach((item) => {
+      (item.tags || []).forEach((tag) => counts.set(tag, (counts.get(tag) || 0) + 1));
+    });
+    return counts;
+  }, [items]);
+
+  const orderedTags = useMemo(() => {
+    const known = new Set(allTags);
+    tagCounts.forEach((_, tag) => known.add(tag));
+    return [...known].sort((a, b) => {
+      const diff = (tagCounts.get(b) || 0) - (tagCounts.get(a) || 0);
+      return diff || a.localeCompare(b, 'ja');
+    });
+  }, [allTags, tagCounts]);
 
   const filteredItems = useMemo(() => {
     const keyword = searchText.trim().toLowerCase();
@@ -136,8 +153,8 @@ function CollectionBoard({
   };
 
   const border = isDark
-    ? alpha(theme.palette.common.white, 0.09)
-    : 'rgba(83, 124, 149, 0.15)';
+    ? alpha(theme.palette.common.white, 0.11)
+    : 'rgba(62, 96, 119, 0.18)';
 
   return (
     <Box sx={{ minHeight: '100%', p: { xs: 0, sm: 0.5 } }}>
@@ -160,10 +177,10 @@ function CollectionBoard({
             <Chip
               size="small"
               label={`${filteredItems.length}`}
-              sx={{ height: 22, minWidth: 32, fontSize: '0.65rem', fontWeight: 800 }}
+              sx={{ height: 24, minWidth: 34, fontSize: '0.72rem', fontWeight: 800 }}
             />
           </Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.35, lineHeight: 1.5 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.35, lineHeight: 1.55, fontSize: '0.84rem' }}>
             {description}
           </Typography>
         </Box>
@@ -181,64 +198,70 @@ function CollectionBoard({
       <Paper
         elevation={0}
         sx={{
-          mb: 1.2,
-          p: 0.9,
+          mb: 1.4,
+          p: 1.15,
           border: `1px solid ${border}`,
-          background: isDark ? alpha(theme.palette.background.paper, 0.68) : 'rgba(255,255,255,0.45)',
-          backdropFilter: 'blur(12px)',
+          background: isDark ? alpha(theme.palette.background.paper, 0.78) : 'rgba(255,255,255,0.72)',
+          backdropFilter: 'blur(14px)',
         }}
       >
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={0.8} alignItems={{ xs: 'stretch', md: 'center' }}>
-          <TextField
-            size="small"
-            value={searchText}
-            onChange={(event) => setSearchText(event.target.value)}
-            placeholder="メモを検索"
-            sx={{ width: { xs: '100%', md: 240 } }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon fontSize="small" />
-                </InputAdornment>
-              ),
-            }}
-          />
-          <Box
-            sx={{
-              display: 'flex',
-              gap: 0.55,
-              overflowX: 'auto',
-              minWidth: 0,
-              pb: 0.15,
-              '&::-webkit-scrollbar': { height: 4 },
-            }}
-          >
+        <Stack spacing={1.05}>
+          <Box sx={{ display: 'flex', gap: 1, alignItems: { xs: 'stretch', sm: 'center' }, flexDirection: { xs: 'column', sm: 'row' } }}>
+            <TextField
+              size="small"
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              placeholder="メモ・タグを検索"
+              sx={{ width: { xs: '100%', sm: 260 } }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon fontSize="small" />
+                  </InputAdornment>
+                ),
+              }}
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800, letterSpacing: '0.08em' }}>
+              TAGS
+            </Typography>
+          </Box>
+
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.7 }}>
             <Chip
-              label="すべて"
+              label={`すべて ${items.length}`}
               size="small"
               onClick={() => setFilterTag(null)}
               color={!filterTag ? 'primary' : 'default'}
               variant={!filterTag ? 'filled' : 'outlined'}
-              sx={{ flexShrink: 0, height: 25, fontWeight: 700 }}
+              sx={{ height: 30, fontWeight: 800, fontSize: '0.74rem' }}
             />
-            {allTags.map((tag) => {
+            {orderedTags.map((tag) => {
               const selected = filterTag === tag;
               const tagColor = colorFromTag(tag, theme);
               return (
                 <Chip
                   key={tag}
-                  label={tag}
+                  label={`${tag} ${tagCounts.get(tag) || 0}`}
                   size="small"
                   onClick={() => setFilterTag(selected ? null : tag)}
                   variant={selected ? 'filled' : 'outlined'}
                   sx={{
-                    flexShrink: 0,
-                    height: 25,
-                    fontSize: '0.68rem',
-                    fontWeight: 700,
-                    borderColor: alpha(tagColor, 0.5),
-                    backgroundColor: selected ? alpha(tagColor, isDark ? 0.25 : 0.12) : 'transparent',
-                    color: selected ? tagColor : 'text.secondary',
+                    height: 30,
+                    fontSize: '0.74rem',
+                    fontWeight: 800,
+                    borderColor: alpha(tagColor, selected ? 0.75 : 0.45),
+                    backgroundColor: selected ? alpha(tagColor, isDark ? 0.28 : 0.14) : 'transparent',
+                    color: selected ? tagColor : 'text.primary',
+                    '& .MuiChip-label': { px: 1.15 },
+                    '&::before': {
+                      content: '""',
+                      width: 7,
+                      height: 7,
+                      borderRadius: '50%',
+                      backgroundColor: tagColor,
+                      marginLeft: '9px',
+                      marginRight: '-5px',
+                    },
                   }}
                 />
               );
@@ -255,7 +278,7 @@ function CollectionBoard({
             px: 2,
             textAlign: 'center',
             border: `1px dashed ${border}`,
-            background: isDark ? alpha(theme.palette.background.paper, 0.4) : 'rgba(255,255,255,0.30)',
+            background: isDark ? alpha(theme.palette.background.paper, 0.5) : 'rgba(255,255,255,0.58)',
           }}
         >
           <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>メモがありません</Typography>
@@ -266,20 +289,19 @@ function CollectionBoard({
           sx={{
             display: 'grid',
             gridTemplateColumns: {
-              xs: 'repeat(2, minmax(0, 1fr))',
-              sm: 'repeat(auto-fill, minmax(150px, 1fr))',
-              lg: 'repeat(auto-fill, minmax(165px, 1fr))',
+              xs: '1fr',
+              sm: 'repeat(2, minmax(0, 1fr))',
+              md: 'repeat(auto-fill, minmax(220px, 1fr))',
             },
-            gap: { xs: 0.7, sm: 0.85 },
+            gap: 1,
             alignItems: 'stretch',
           }}
         >
           {filteredItems.map((item) => {
             const content = compactText(item.content) || '内容なし';
             const tags = item.tags || [];
+            const primaryTag = tags[0] || '未分類';
             const accent = colorFromTag(tags[0], theme);
-            const veryShort = content.length <= 24;
-            const short = content.length <= 60;
             const date = formatDate(item.updatedAt || item.createdAt);
 
             return (
@@ -290,34 +312,53 @@ function CollectionBoard({
                 onDoubleClick={() => navigate(`${manageRoute}?id=${item.id}`)}
                 sx={{
                   position: 'relative',
-                  minHeight: veryShort ? 88 : short ? 104 : 126,
-                  p: 1.1,
-                  pr: 3.2,
+                  minHeight: 128,
+                  p: 1.35,
+                  pt: 1.15,
                   overflow: 'hidden',
-                  cursor: 'default',
-                  border: `1px solid ${alpha(accent, isDark ? 0.22 : 0.17)}`,
-                  background: isDark
-                    ? `linear-gradient(145deg, ${alpha(accent, 0.10)}, ${alpha(theme.palette.background.paper, 0.90)} 42%)`
-                    : `linear-gradient(145deg, ${alpha(accent, 0.07)}, rgba(255,255,255,0.88) 44%)`,
+                  border: `1px solid ${border}`,
+                  backgroundColor: isDark ? alpha(theme.palette.background.paper, 0.94) : 'rgba(255,255,255,0.94)',
+                  boxShadow: isDark ? '0 6px 18px rgba(0,0,0,.18)' : '0 5px 16px rgba(43,82,106,.07)',
                   transition: 'transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease',
+                  '&::before': {
+                    content: '""',
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    height: 4,
+                    backgroundColor: accent,
+                  },
                   '&:hover': {
                     transform: 'translateY(-1px)',
-                    borderColor: alpha(accent, 0.38),
-                    boxShadow: '0 8px 20px rgba(43, 82, 106, 0.10)',
+                    borderColor: alpha(accent, 0.48),
+                    boxShadow: isDark ? '0 10px 24px rgba(0,0,0,.24)' : '0 10px 24px rgba(43,82,106,.12)',
                     '& .memo-actions': { opacity: 1 },
                   },
                 }}
               >
-                <Box
-                  sx={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                    backgroundColor: accent,
-                    boxShadow: `0 0 0 3px ${alpha(accent, 0.10)}`,
-                    mb: 0.9,
-                  }}
-                />
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.65, pr: 3.3, mb: 1.05, minWidth: 0 }}>
+                  <Chip
+                    label={primaryTag}
+                    size="small"
+                    onClick={() => tags[0] && setFilterTag(primaryTag)}
+                    sx={{
+                      height: 26,
+                      maxWidth: '72%',
+                      fontSize: '0.7rem',
+                      fontWeight: 850,
+                      backgroundColor: alpha(accent, isDark ? 0.22 : 0.11),
+                      color: accent,
+                      border: `1px solid ${alpha(accent, 0.28)}`,
+                      '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' },
+                    }}
+                  />
+                  {tags.length > 1 && (
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.66rem', fontWeight: 800 }}>
+                      +{tags.length - 1}
+                    </Typography>
+                  )}
+                </Box>
 
                 <Tooltip title="操作">
                   <IconButton
@@ -326,12 +367,12 @@ function CollectionBoard({
                     onClick={(event) => openMenu(event, item)}
                     sx={{
                       position: 'absolute',
-                      top: 5,
-                      right: 5,
-                      width: 27,
-                      height: 27,
+                      top: 8,
+                      right: 7,
+                      width: 29,
+                      height: 29,
                       color: 'text.secondary',
-                      opacity: { xs: 1, md: 0.16 },
+                      opacity: { xs: 1, md: 0.32 },
                     }}
                   >
                     <MoreHorizIcon fontSize="small" />
@@ -342,12 +383,13 @@ function CollectionBoard({
                   sx={{
                     whiteSpace: 'pre-wrap',
                     wordBreak: 'break-word',
-                    lineHeight: veryShort ? 1.35 : 1.5,
-                    fontSize: veryShort ? '0.98rem' : short ? '0.86rem' : '0.76rem',
-                    fontWeight: veryShort ? 800 : 700,
-                    letterSpacing: veryShort ? '0.01em' : 0,
+                    color: 'text.primary',
+                    lineHeight: 1.55,
+                    fontSize: '0.96rem',
+                    fontWeight: 750,
+                    letterSpacing: '0.005em',
                     display: '-webkit-box',
-                    WebkitLineClamp: veryShort ? 3 : short ? 4 : 6,
+                    WebkitLineClamp: 4,
                     WebkitBoxOrient: 'vertical',
                     overflow: 'hidden',
                   }}
@@ -355,34 +397,37 @@ function CollectionBoard({
                   {content}
                 </Typography>
 
-                {(tags.length > 0 || date) && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.45, flexWrap: 'wrap', mt: 1 }}>
-                    {tags.slice(0, 2).map((tag) => (
-                      <Typography
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.55, flexWrap: 'wrap', mt: 1.2, minHeight: 22 }}>
+                  {tags.slice(1, 4).map((tag) => {
+                    const tagColor = colorFromTag(tag, theme);
+                    return (
+                      <Chip
                         key={tag}
-                        variant="caption"
+                        label={tag}
+                        size="small"
+                        onClick={() => setFilterTag(tag)}
+                        variant="outlined"
                         sx={{
-                          fontSize: '0.58rem',
-                          fontWeight: 700,
-                          color: colorFromTag(tag, theme),
-                          opacity: 0.88,
+                          height: 22,
+                          fontSize: '0.64rem',
+                          fontWeight: 750,
+                          borderColor: alpha(tagColor, 0.35),
+                          color: 'text.secondary',
                         }}
-                      >
-                        #{tag}
-                      </Typography>
-                    ))}
-                    {tags.length > 2 && (
-                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.56rem' }}>
-                        +{tags.length - 2}
-                      </Typography>
-                    )}
-                    {date && (
-                      <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto', fontSize: '0.55rem', opacity: 0.72 }}>
-                        {date}
-                      </Typography>
-                    )}
-                  </Box>
-                )}
+                      />
+                    );
+                  })}
+                  {tags.length > 4 && (
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', fontWeight: 700 }}>
+                      +{tags.length - 4}
+                    </Typography>
+                  )}
+                  {date && (
+                    <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto', fontSize: '0.64rem', fontWeight: 650 }}>
+                      {date}
+                    </Typography>
+                  )}
+                </Box>
               </Paper>
             );
           })}
