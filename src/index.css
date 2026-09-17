@@ -1,11 +1,45 @@
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  overflow-x: hidden;
+}
+
+html {
+  height: 100%;
+  background: #edf4f8;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
+  min-height: 100dvh;
   margin: 0;
   font-family: 'M PLUS Rounded 1c', 'Zen Maru Gothic', 'Nunito', 'Noto Sans JP', 'Roboto', 'Hiragino Kaku Gothic ProN', 'Meiryo', 'Yu Gothic', 'YuGothic', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior-x: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  touch-action: manipulation;
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+}
+
+@media (max-width: 899px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
 }
