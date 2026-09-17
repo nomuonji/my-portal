@@ -1,0 +1,474 @@
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { cert, getApps, initializeApp } from "firebase-admin/app";
+import * as mcpImport from "../../functions/agentIdeasMcp.js";
+import * as storeImport from "../../functions/agentIdeasStore.js";
+
+const mcpModule: any = (mcpImport as any).default ?? mcpImport;
+const store: any = (storeImport as any).default ?? storeImport;
+const TOOLS: any[] = mcpModule.TOOLS;
+
+const SERVER_NAME = "my-portal-agent-ideas";
+const SERVER_VERSION = "0.2.0-netlify";
+const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
+const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
+const DEFAULT_ACCESS_KEY_HASH = "f174c5b44462f5b25b12902b20bca1cf24e1153c9a2baec7db89a9b436a07618";
+const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
+
+function env(name: string): string | undefined {
+  try {
+    const value = (globalThis as any).Netlify?.env?.get(name);
+    if (value) return String(value);
+  } catch {}
+  return undefined;
+}
+
+function json(value: unknown, status = 200, headers: HeadersInit = {}) {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { "Content-Type": "application/json; charset=utf-8", ...headers },
+  });
+}
+
+function safeEqual(leftValue: string, rightValue: string) {
+  const left = Buffer.from(String(leftValue));
+  const right = Buffer.from(String(rightValue));
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+function sha256(value: string) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function accessKeyHash() {
+  return (env("AGENT_IDEAS_MCP_ACCESS_KEY_HASH") || DEFAULT_ACCESS_KEY_HASH).trim();
+}
+
+function signingKey() {
+  return (env("AGENT_IDEAS_MCP_SIGNING_KEY") || accessKeyHash()).trim();
+}
+
+function sameAccessKey(value: string) {
+  return Boolean(value) && safeEqual(sha256(value), accessKeyHash());
+}
+
+function b64(value: string) {
+  return Buffer.from(value).toString("base64url");
+}
+
+function unb64(value: string) {
+  return Buffer.from(value, "base64url").toString("utf8");
+}
+
+function sign(kind: string, claims: Record<string, unknown> = {}) {
+  const ttl = kind === "refresh"
+    ? 60 * 60 * 24 * 30
+    : kind === "access"
+      ? 60 * 60
+      : kind === "client"
+        ? 60 * 60 * 24 * 365
+        : 5 * 60;
+  const body = b64(JSON.stringify({
+    kind,
+    exp: Math.floor(Date.now() / 1000) + ttl,
+    ...claims,
+  }));
+  const signature = createHmac("sha256", signingKey()).update(body).digest("base64url");
+  return `${body}.${signature}`;
+}
+
+function verifySigned(value: unknown, expectedKind: string): any | null {
+  const [body, signature] = String(value || "").split(".");
+  if (!body || !signature) return null;
+  const expected = createHmac("sha256", signingKey()).update(body).digest("base64url");
+  if (!safeEqual(expected, signature)) return null;
+  try {
+    const payload = JSON.parse(unb64(body));
+    if (payload.kind !== expectedKind) return null;
+    if (typeof payload.exp !== "number" || payload.exp <= Math.floor(Date.now() / 1000)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function safeRedirect(value: unknown): URL | null {
+  try {
+    const url = new URL(String(value || ""));
+    if (url.protocol === "https:") return url;
+    if (url.protocol === "http:" && ["localhost", "127.0.0.1", "::1"].includes(url.hostname)) return url;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function requestedScopes(value: unknown) {
+  const scopes = String(value || "agent-ideas")
+    .split(/\s+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!scopes.length) scopes.push("agent-ideas");
+  if (scopes.some((scope) => !ALLOWED_SCOPES.has(scope))) return null;
+  return [...new Set(scopes)].join(" ");
+}
+
+function origin(request: Request) {
+  return new URL(request.url).origin;
+}
+
+function escapeHtml(value: unknown) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function authorizeForm(request: Request, params: Record<string, string>) {
+  const hidden = Object.entries(params)
+    .map(([key, value]) => `<input type="hidden" name="${escapeHtml(key)}" value="${escapeHtml(value)}">`)
+    .join("");
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Agent Idea Space</title><style>body{font-family:system-ui,-apple-system,sans-serif;background:#eef5f8;color:#18324a;margin:0}.card{max-width:34rem;margin:8vh auto;background:#fff;padding:2rem;border:1px solid #d9e7ef;border-radius:16px;box-shadow:0 18px 60px rgba(39,76,99,.13)}h1{margin-top:0}input,button{box-sizing:border-box;width:100%;padding:.8rem;margin:.45rem 0;font:inherit;border-radius:10px}input{border:1px solid #b9cdd9}button{border:0;background:#5577e8;color:white;font-weight:700;cursor:pointer}small{color:#6e8294}</style></head><body><div class="card"><h1>Agent Idea Space を接続</h1><p>ChatGPT に、独立したアイデアDBの読み書きとグラフ展開を許可します。</p><form method="post" action="${origin(request)}/oauth/authorize">${hidden}<label>アクセスキー<input name="access_key" type="password" autocomplete="current-password" required autofocus></label><small>my-portal の Agent Idea Space 用アクセスキーです。</small><button type="submit">許可して接続</button></form></div></body></html>`;
+}
+
+async function bodyObject(request: Request): Promise<Record<string, any>> {
+  const raw = await request.text();
+  if (!raw) return {};
+  const contentType = request.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    try { return JSON.parse(raw); } catch { return {}; }
+  }
+  return Object.fromEntries(new URLSearchParams(raw));
+}
+
+function ensureFirebaseAdmin() {
+  if (getApps().length) return;
+  const raw = env("FIREBASE_SERVICE_ACCOUNT_JSON");
+  if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is not configured on Netlify");
+  let serviceAccount: any;
+  try {
+    serviceAccount = JSON.parse(raw);
+  } catch {
+    throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON");
+  }
+  initializeApp({
+    credential: cert(serviceAccount),
+    projectId: serviceAccount.project_id || "my-portal-d05fd",
+  });
+}
+
+function structured(value: unknown) {
+  const normalized = value === undefined ? null : value;
+  return {
+    content: [{ type: "text", text: JSON.stringify(normalized, null, 2) }],
+    structuredContent: Array.isArray(normalized)
+      ? { items: normalized }
+      : normalized && typeof normalized === "object"
+        ? normalized
+        : { value: normalized },
+  };
+}
+
+async function invokeTool(name: string, args: Record<string, any> = {}) {
+  ensureFirebaseAdmin();
+  switch (name) {
+    case "agent_ideas_status":
+      return structured({
+        service: SERVER_NAME,
+        serverVersion: SERVER_VERSION,
+        databaseId: store.DATABASE_ID,
+        collections: store.COLLECTIONS,
+        toolCount: TOOLS.length,
+        tools: TOOLS.map((tool) => tool.name),
+        database: await store.healthCheck(),
+      });
+    case "idea_create": return structured(await store.ideaCreate(args));
+    case "idea_get": return structured(await store.ideaGet(args));
+    case "idea_search": return structured(await store.ideaSearch(args));
+    case "idea_update": return structured(await store.ideaUpdate(args));
+    case "idea_expand": return structured(await store.ideaExpand(args));
+    case "idea_link": return structured(await store.ideaLink(args));
+    case "idea_get_context": return structured(await store.ideaGetContext(args));
+    case "idea_merge": return structured(await store.ideaMerge(args));
+    case "idea_archive": return structured(await store.ideaArchive(args));
+    case "idea_run_start": return structured(await store.runStart(args));
+    case "idea_run_finish": return structured(await store.runFinish(args));
+    case "idea_add_source": return structured(await store.sourceAdd(args));
+    case "idea_evaluate": return structured(await store.evaluationAdd(args));
+    case "idea_add_artifact": return structured(await store.artifactAdd(args));
+    default: throw new Error(`Unknown tool: ${name}`);
+  }
+}
+
+function authorizeBearer(request: Request) {
+  const raw = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
+  if (sameAccessKey(raw)) return { kind: "access-key", clientId: "direct", scope: "agent-ideas" };
+  return verifySigned(raw, "access");
+}
+
+async function handleRpc(message: any) {
+  if (!message || message.jsonrpc !== "2.0" || typeof message.method !== "string") {
+    return { jsonrpc: "2.0", id: message?.id ?? null, error: { code: -32600, message: "Invalid Request" } };
+  }
+  const id = message.id;
+  if (message.method.startsWith("notifications/")) return null;
+  if (message.method === "initialize") {
+    const requested = message.params?.protocolVersion;
+    const protocolVersion = SUPPORTED_PROTOCOLS.includes(requested) ? requested : DEFAULT_PROTOCOL;
+    return {
+      jsonrpc: "2.0",
+      id,
+      result: {
+        protocolVersion,
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
+        instructions: "Use idea_get_context before continuing an existing idea. Preserve rough branches, rejected ideas, contradictions, evidence, and provenance. Use idea_run_start/finish for substantial exploration.",
+      },
+    };
+  }
+  if (message.method === "ping") return { jsonrpc: "2.0", id, result: {} };
+  if (message.method === "tools/list") return { jsonrpc: "2.0", id, result: { tools: TOOLS } };
+  if (message.method === "tools/call") {
+    const name = message.params?.name;
+    if (!name) return { jsonrpc: "2.0", id, error: { code: -32602, message: "tools/call requires params.name" } };
+    try {
+      return { jsonrpc: "2.0", id, result: await invokeTool(name, message.params?.arguments || {}) };
+    } catch (error) {
+      return {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          isError: true,
+          content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+        },
+      };
+    }
+  }
+  if (id === undefined || id === null) return null;
+  return { jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${message.method}` } };
+}
+
+async function handleMcp(request: Request) {
+  const auth = authorizeBearer(request);
+  if (!auth) {
+    return json({ error: "Unauthorized" }, 401, {
+      "WWW-Authenticate": `Bearer resource_metadata="${origin(request)}/.well-known/oauth-protected-resource", scope="agent-ideas"`,
+    });
+  }
+  if (request.method === "GET") return json({ error: "Use POST for Streamable HTTP MCP requests." }, 405, { Allow: "POST, OPTIONS" });
+  if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
+  let body: any;
+  try { body = await request.json(); } catch { return json({ error: "JSON-RPC body required" }, 400); }
+  const messages = Array.isArray(body) ? body : [body];
+  const responses = [];
+  for (const message of messages) {
+    const response = await handleRpc(message);
+    if (response) responses.push(response);
+  }
+  if (!responses.length) return new Response(null, { status: 202 });
+  const requestedProtocol = request.headers.get("mcp-protocol-version") || "";
+  const protocol = SUPPORTED_PROTOCOLS.includes(requestedProtocol) ? requestedProtocol : DEFAULT_PROTOCOL;
+  return json(Array.isArray(body) ? responses : responses[0], 200, { "Mcp-Protocol-Version": protocol });
+}
+
+async function handleRegister(request: Request) {
+  if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+  const body = await bodyObject(request);
+  const redirectUris = Array.isArray(body.redirect_uris)
+    ? body.redirect_uris.map((value: unknown) => safeRedirect(value)).filter(Boolean) as URL[]
+    : [];
+  if (!redirectUris.length) return json({ error: "invalid_client_metadata", error_description: "redirect_uris is required" }, 400);
+  const authMethod = body.token_endpoint_auth_method || "none";
+  if (authMethod !== "none") return json({ error: "invalid_client_metadata", error_description: "Only public PKCE clients are supported" }, 400);
+  const clientId = sign("client", {
+    redirectUris: redirectUris.map((url) => url.toString()),
+    clientName: String(body.client_name || "ChatGPT MCP client").slice(0, 200),
+  });
+  return json({
+    client_id: clientId,
+    client_id_issued_at: Math.floor(Date.now() / 1000),
+    redirect_uris: redirectUris.map((url) => url.toString()),
+    client_name: String(body.client_name || "ChatGPT MCP client").slice(0, 200),
+    token_endpoint_auth_method: "none",
+    grant_types: ["authorization_code", "refresh_token"],
+    response_types: ["code"],
+    scope: "agent-ideas offline_access",
+  }, 201);
+}
+
+async function handleAuthorize(request: Request) {
+  if (request.method === "GET") {
+    const url = new URL(request.url);
+    const redirectUri = safeRedirect(url.searchParams.get("redirect_uri"));
+    const clientId = url.searchParams.get("client_id") || "";
+    const client = verifySigned(clientId, "client");
+    const challenge = url.searchParams.get("code_challenge") || "";
+    const scope = requestedScopes(url.searchParams.get("scope"));
+    if (
+      url.searchParams.get("response_type") !== "code" ||
+      !redirectUri ||
+      !client ||
+      !Array.isArray(client.redirectUris) ||
+      !client.redirectUris.includes(redirectUri.toString()) ||
+      !challenge ||
+      url.searchParams.get("code_challenge_method") !== "S256" ||
+      !scope
+    ) {
+      return new Response("Invalid OAuth authorization request", { status: 400 });
+    }
+    const html = authorizeForm(request, {
+      redirect_uri: redirectUri.toString(),
+      client_id: clientId,
+      state: url.searchParams.get("state") || "",
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+      scope,
+    });
+    return new Response(html, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
+  }
+
+  if (request.method === "POST") {
+    const body = await bodyObject(request);
+    const redirectUri = safeRedirect(body.redirect_uri);
+    const clientId = String(body.client_id || "");
+    const client = verifySigned(clientId, "client");
+    const challenge = String(body.code_challenge || "");
+    const scope = requestedScopes(body.scope);
+    if (
+      !redirectUri ||
+      !client ||
+      !Array.isArray(client.redirectUris) ||
+      !client.redirectUris.includes(redirectUri.toString()) ||
+      !challenge ||
+      !scope ||
+      !sameAccessKey(String(body.access_key || ""))
+    ) {
+      return new Response("Authorization denied", { status: 401 });
+    }
+    const code = sign("code", { redirectUri: redirectUri.toString(), clientId, challenge, scope });
+    redirectUri.searchParams.set("code", code);
+    if (body.state) redirectUri.searchParams.set("state", String(body.state));
+    return Response.redirect(redirectUri.toString(), 302);
+  }
+
+  return new Response("Method not allowed", { status: 405 });
+}
+
+async function handleToken(request: Request) {
+  if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+  const body = await bodyObject(request);
+  const grant = String(body.grant_type || "");
+
+  if (grant === "refresh_token") {
+    const refresh = verifySigned(body.refresh_token, "refresh");
+    if (!refresh) return json({ error: "invalid_grant" }, 400);
+    if (body.client_id && String(body.client_id) !== refresh.clientId) return json({ error: "invalid_client" }, 400);
+    const scope = requestedScopes(refresh.scope) || "agent-ideas";
+    return json({
+      access_token: sign("access", { clientId: refresh.clientId, scope }),
+      refresh_token: sign("refresh", { clientId: refresh.clientId, scope }),
+      token_type: "Bearer",
+      expires_in: 3600,
+      scope,
+    });
+  }
+
+  const code = verifySigned(body.code, "code");
+  const verifier = String(body.code_verifier || "");
+  const redirectUri = String(body.redirect_uri || "");
+  const clientId = String(body.client_id || "");
+  const actualChallenge = createHash("sha256").update(verifier).digest("base64url");
+  const client = verifySigned(clientId, "client");
+  if (
+    grant !== "authorization_code" ||
+    !code ||
+    !client ||
+    code.redirectUri !== redirectUri ||
+    code.clientId !== clientId ||
+    code.challenge !== actualChallenge
+  ) {
+    return json({ error: "invalid_grant" }, 400);
+  }
+  const scope = requestedScopes(code.scope) || "agent-ideas";
+  return json({
+    access_token: sign("access", { clientId, scope }),
+    refresh_token: sign("refresh", { clientId, scope }),
+    token_type: "Bearer",
+    expires_in: 3600,
+    scope,
+  });
+}
+
+export default async (request: Request) => {
+  if (request.method === "OPTIONS") return new Response(null, { status: 204 });
+  const url = new URL(request.url);
+  const path = url.pathname.replace(/\/+$/, "") || "/";
+  const base = origin(request);
+
+  if (path === "/.well-known/oauth-protected-resource" && request.method === "GET") {
+    return json({
+      resource: `${base}/mcp`,
+      authorization_servers: [base],
+      bearer_methods_supported: ["header"],
+      scopes_supported: ["agent-ideas", "offline_access"],
+    });
+  }
+
+  if (path === "/.well-known/oauth-authorization-server" && request.method === "GET") {
+    return json({
+      issuer: base,
+      authorization_endpoint: `${base}/oauth/authorize`,
+      token_endpoint: `${base}/oauth/token`,
+      registration_endpoint: `${base}/oauth/register`,
+      response_types_supported: ["code"],
+      grant_types_supported: ["authorization_code", "refresh_token"],
+      token_endpoint_auth_methods_supported: ["none"],
+      code_challenge_methods_supported: ["S256"],
+      scopes_supported: ["agent-ideas", "offline_access"],
+    });
+  }
+
+  if (path === "/oauth/register") return handleRegister(request);
+  if (path === "/oauth/authorize") return handleAuthorize(request);
+  if (path === "/oauth/token") return handleToken(request);
+
+  if (path === "/health" || path === "/mcp/health") {
+    const credentialsConfigured = Boolean(env("FIREBASE_SERVICE_ACCOUNT_JSON"));
+    let database: unknown = { ok: false, reason: "Firebase credentials are not configured" };
+    if (credentialsConfigured) {
+      try {
+        ensureFirebaseAdmin();
+        database = await store.healthCheck();
+      } catch (error) {
+        database = { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }
+    return json({
+      ok: credentialsConfigured && Boolean((database as any)?.ok ?? true),
+      service: SERVER_NAME,
+      serverVersion: SERVER_VERSION,
+      databaseId: store.DATABASE_ID || "agent-ideas",
+      toolCount: TOOLS.length,
+      oauth: { dcr: true, pkce: "S256" },
+      firebaseCredentialsConfigured: credentialsConfigured,
+      database,
+    }, credentialsConfigured ? 200 : 503);
+  }
+
+  if (path === "/mcp") return handleMcp(request);
+  return json({ error: "Not found" }, 404);
+};
+
+export const config = {
+  path: [
+    "/mcp",
+    "/mcp/health",
+    "/health",
+    "/oauth/register",
+    "/oauth/authorize",
+    "/oauth/token",
+    "/.well-known/oauth-protected-resource",
+    "/.well-known/oauth-authorization-server",
+  ],
+};
