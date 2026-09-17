@@ -1,5 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
+import "firebase-admin/firestore";
 import * as mcpImport from "../../functions/agentIdeasMcp.js";
 import * as storeImport from "../../functions/agentIdeasStore.js";
 
