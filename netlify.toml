@@ -9,7 +9,14 @@
 [functions]
   directory = "netlify/functions"
 
+# React Router is client-side. Keep the explicit Agent Ideas rewrite for clarity,
+# then fall back every other non-function route to the SPA entry point.
 [[redirects]]
   from = "/agent-ideas"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/*"
   to = "/index.html"
   status = 200
