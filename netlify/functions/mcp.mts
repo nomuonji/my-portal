@@ -1,26 +1,38 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import "firebase-admin/firestore";
-import * as mcpImport from "../../functions/agentIdeasMcp.js";
-import * as storeImport from "../../functions/agentIdeasStore.js";
+import * as agentStoreImport from "../../functions/agentIdeasStoreAgentDb.js";
+import * as portalStoreImport from "../../functions/portalStore.js";
+import * as agentToolsImport from "../../functions/agentIdeasToolSchemas.js";
+import * as portalToolsImport from "../../functions/portalMcpTools.js";
+import * as migrationImport from "../../functions/agentIdeasMigration.js";
 
-const mcpModule: any = (mcpImport as any).default ?? mcpImport;
-const store: any = (storeImport as any).default ?? storeImport;
-const TOOLS: any[] = mcpModule.TOOLS;
+const agentStore: any = (agentStoreImport as any).default ?? agentStoreImport;
+const portalStore: any = (portalStoreImport as any).default ?? portalStoreImport;
+const agentToolsModule: any = (agentToolsImport as any).default ?? agentToolsImport;
+const portalToolsModule: any = (portalToolsImport as any).default ?? portalToolsImport;
+const migration: any = (migrationImport as any).default ?? migrationImport;
+const TOOLS: any[] = [...agentToolsModule.TOOLS, ...portalToolsModule.TOOLS];
 
-const SERVER_NAME = "my-portal-agent-ideas";
-const SERVER_VERSION = "0.2.0-netlify";
+const SERVER_NAME = "my-portal";
+const SERVER_VERSION = "0.3.0-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
-const DEFAULT_ACCESS_KEY_HASH = "f174c5b44462f5b25b12902b20bca1cf24e1153c9a2baec7db89a9b436a07618";
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
 
 function env(name: string): string | undefined {
   try {
     const value = (globalThis as any).Netlify?.env?.get(name);
-    if (value) return String(value);
-  } catch {}
-  return undefined;
+    return value ? String(value) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function requiredEnv(name: string) {
+  const value = env(name)?.trim();
+  if (!value) throw new Error(`${name} is not configured on Netlify`);
+  return value;
 }
 
 function json(value: unknown, status = 200, headers: HeadersInit = {}) {
@@ -41,11 +53,11 @@ function sha256(value: string) {
 }
 
 function accessKeyHash() {
-  return (env("AGENT_IDEAS_MCP_ACCESS_KEY_HASH") || DEFAULT_ACCESS_KEY_HASH).trim();
+  return requiredEnv("AGENT_IDEAS_MCP_ACCESS_KEY_HASH");
 }
 
 function signingKey() {
-  return (env("AGENT_IDEAS_MCP_SIGNING_KEY") || accessKeyHash()).trim();
+  return requiredEnv("AGENT_IDEAS_MCP_SIGNING_KEY");
 }
 
 function sameAccessKey(value: string) {
@@ -80,7 +92,12 @@ function sign(kind: string, claims: Record<string, unknown> = {}) {
 function verifySigned(value: unknown, expectedKind: string): any | null {
   const [body, signature] = String(value || "").split(".");
   if (!body || !signature) return null;
-  const expected = createHmac("sha256", signingKey()).update(body).digest("base64url");
+  let expected: string;
+  try {
+    expected = createHmac("sha256", signingKey()).update(body).digest("base64url");
+  } catch {
+    return null;
+  }
   if (!safeEqual(expected, signature)) return null;
   try {
     const payload = JSON.parse(unb64(body));
@@ -130,7 +147,7 @@ function authorizeForm(request: Request, params: Record<string, string>) {
   const hidden = Object.entries(params)
     .map(([key, value]) => `<input type="hidden" name="${escapeHtml(key)}" value="${escapeHtml(value)}">`)
     .join("");
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Agent Idea Space</title><style>body{font-family:system-ui,-apple-system,sans-serif;background:#eef5f8;color:#18324a;margin:0}.card{max-width:34rem;margin:8vh auto;background:#fff;padding:2rem;border:1px solid #d9e7ef;border-radius:16px;box-shadow:0 18px 60px rgba(39,76,99,.13)}h1{margin-top:0}input,button{box-sizing:border-box;width:100%;padding:.8rem;margin:.45rem 0;font:inherit;border-radius:10px}input{border:1px solid #b9cdd9}button{border:0;background:#5577e8;color:white;font-weight:700;cursor:pointer}small{color:#6e8294}</style></head><body><div class="card"><h1>Agent Idea Space を接続</h1><p>ChatGPT に、独立したアイデアDBの読み書きとグラフ展開を許可します。</p><form method="post" action="${origin(request)}/oauth/authorize">${hidden}<label>アクセスキー<input name="access_key" type="password" autocomplete="current-password" required autofocus></label><small>my-portal の Agent Idea Space 用アクセスキーです。</small><button type="submit">許可して接続</button></form></div></body></html>`;
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>My Portal MCP</title><style>body{font-family:system-ui,-apple-system,sans-serif;background:#eef5f8;color:#18324a;margin:0}.card{max-width:34rem;margin:8vh auto;background:#fff;padding:2rem;border:1px solid #d9e7ef;border-radius:16px;box-shadow:0 18px 60px rgba(39,76,99,.13)}h1{margin-top:0}input,button{box-sizing:border-box;width:100%;padding:.8rem;margin:.45rem 0;font:inherit;border-radius:10px}input{border:1px solid #b9cdd9}button{border:0;background:#5577e8;color:white;font-weight:700;cursor:pointer}small{color:#6e8294}</style></head><body><div class="card"><h1>My Portal を接続</h1><p>ChatGPT に、Agent Idea Space と My Portal 本体データの読み書きを許可します。</p><form method="post" action="${origin(request)}/oauth/authorize">${hidden}<label>アクセスキー<input name="access_key" type="password" autocomplete="current-password" required autofocus></label><small>My Portal MCP 用アクセスキーです。</small><button type="submit">許可して接続</button></form></div></body></html>`;
 }
 
 async function bodyObject(request: Request): Promise<Record<string, any>> {
@@ -145,8 +162,7 @@ async function bodyObject(request: Request): Promise<Record<string, any>> {
 
 function ensureFirebaseAdmin() {
   if (getApps().length) return;
-  const raw = env("FIREBASE_SERVICE_ACCOUNT_JSON");
-  if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is not configured on Netlify");
+  const raw = requiredEnv("FIREBASE_SERVICE_ACCOUNT_JSON");
   let serviceAccount: any;
   try {
     serviceAccount = JSON.parse(raw);
@@ -171,40 +187,58 @@ function structured(value: unknown) {
   };
 }
 
+async function ensureAgentData() {
+  return migration.bootstrapLegacyAgentData("agent-ideas");
+}
+
 async function invokeTool(name: string, args: Record<string, any> = {}) {
   ensureFirebaseAdmin();
+
+  if (name === "portal_status") return structured(await portalStore.status());
+  if (name === "portal_get") return structured(await portalStore.get(args));
+  if (name === "portal_search") return structured(await portalStore.search(args));
+  if (name === "portal_create") return structured(await portalStore.create(args));
+  if (name === "portal_update") return structured(await portalStore.update(args));
+  if (name === "portal_delete") return structured(await portalStore.remove(args));
+
+  await ensureAgentData();
   switch (name) {
     case "agent_ideas_status":
       return structured({
         service: SERVER_NAME,
         serverVersion: SERVER_VERSION,
-        databaseId: store.DATABASE_ID,
-        collections: store.COLLECTIONS,
+        databaseId: agentStore.DATABASE_ID,
+        collections: agentStore.COLLECTIONS,
         toolCount: TOOLS.length,
-        tools: TOOLS.map((tool) => tool.name),
-        database: await store.healthCheck(),
+        agentToolCount: agentToolsModule.TOOLS.length,
+        portalToolCount: portalToolsModule.TOOLS.length,
+        database: await agentStore.healthCheck(),
       });
-    case "idea_create": return structured(await store.ideaCreate(args));
-    case "idea_get": return structured(await store.ideaGet(args));
-    case "idea_search": return structured(await store.ideaSearch(args));
-    case "idea_update": return structured(await store.ideaUpdate(args));
-    case "idea_expand": return structured(await store.ideaExpand(args));
-    case "idea_link": return structured(await store.ideaLink(args));
-    case "idea_get_context": return structured(await store.ideaGetContext(args));
-    case "idea_merge": return structured(await store.ideaMerge(args));
-    case "idea_archive": return structured(await store.ideaArchive(args));
-    case "idea_run_start": return structured(await store.runStart(args));
-    case "idea_run_finish": return structured(await store.runFinish(args));
-    case "idea_add_source": return structured(await store.sourceAdd(args));
-    case "idea_evaluate": return structured(await store.evaluationAdd(args));
-    case "idea_add_artifact": return structured(await store.artifactAdd(args));
+    case "idea_create": return structured(await agentStore.ideaCreate(args));
+    case "idea_get": return structured(await agentStore.ideaGet(args));
+    case "idea_search": return structured(await agentStore.ideaSearch(args));
+    case "idea_update": return structured(await agentStore.ideaUpdate(args));
+    case "idea_expand": return structured(await agentStore.ideaExpand(args));
+    case "idea_link": return structured(await agentStore.ideaLink(args));
+    case "idea_get_context": return structured(await agentStore.ideaGetContext(args));
+    case "idea_merge": return structured(await agentStore.ideaMerge(args));
+    case "idea_archive": return structured(await agentStore.ideaArchive(args));
+    case "idea_run_start": return structured(await agentStore.runStart(args));
+    case "idea_run_finish": return structured(await agentStore.runFinish(args));
+    case "idea_add_source": return structured(await agentStore.sourceAdd(args));
+    case "idea_evaluate": return structured(await agentStore.evaluationAdd(args));
+    case "idea_add_artifact": return structured(await agentStore.artifactAdd(args));
     default: throw new Error(`Unknown tool: ${name}`);
   }
 }
 
 function authorizeBearer(request: Request) {
   const raw = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
-  if (sameAccessKey(raw)) return { kind: "access-key", clientId: "direct", scope: "agent-ideas" };
+  try {
+    if (sameAccessKey(raw)) return { kind: "access-key", clientId: "direct", scope: "agent-ideas" };
+  } catch {
+    return null;
+  }
   return verifySigned(raw, "access");
 }
 
@@ -224,7 +258,7 @@ async function handleRpc(message: any) {
         protocolVersion,
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
-        instructions: "Use idea_get_context before continuing an existing idea. Preserve rough branches, rejected ideas, contradictions, evidence, and provenance. Use idea_run_start/finish for substantial exploration.",
+        instructions: "Agent Idea Space is isolated in the named agent-ideas database. Use idea_* tools for autonomous agent ideation and provenance. Use portal_* tools for the user's existing My Portal data such as ideas, stocks, hobbies, projects, memos, reading lists, and feature requests. Never use idea_* tools to modify portal data. portal_delete requires explicit confirm=true.",
       },
     };
   }
@@ -315,9 +349,8 @@ async function handleAuthorize(request: Request) {
       !challenge ||
       url.searchParams.get("code_challenge_method") !== "S256" ||
       !scope
-    ) {
-      return new Response("Invalid OAuth authorization request", { status: 400 });
-    }
+    ) return new Response("Invalid OAuth authorization request", { status: 400 });
+
     const html = authorizeForm(request, {
       redirect_uri: redirectUri.toString(),
       client_id: clientId,
@@ -336,23 +369,18 @@ async function handleAuthorize(request: Request) {
     const client = verifySigned(clientId, "client");
     const challenge = String(body.code_challenge || "");
     const scope = requestedScopes(body.scope);
+    let accessGranted = false;
+    try { accessGranted = sameAccessKey(String(body.access_key || "")); } catch { accessGranted = false; }
     if (
-      !redirectUri ||
-      !client ||
-      !Array.isArray(client.redirectUris) ||
-      !client.redirectUris.includes(redirectUri.toString()) ||
-      !challenge ||
-      !scope ||
-      !sameAccessKey(String(body.access_key || ""))
-    ) {
-      return new Response("Authorization denied", { status: 401 });
-    }
+      !redirectUri || !client || !Array.isArray(client.redirectUris) ||
+      !client.redirectUris.includes(redirectUri.toString()) || !challenge || !scope || !accessGranted
+    ) return new Response("Authorization denied", { status: 401 });
+
     const code = sign("code", { redirectUri: redirectUri.toString(), clientId, challenge, scope });
     redirectUri.searchParams.set("code", code);
     if (body.state) redirectUri.searchParams.set("state", String(body.state));
     return Response.redirect(redirectUri.toString(), 302);
   }
-
   return new Response("Method not allowed", { status: 405 });
 }
 
@@ -382,15 +410,10 @@ async function handleToken(request: Request) {
   const actualChallenge = createHash("sha256").update(verifier).digest("base64url");
   const client = verifySigned(clientId, "client");
   if (
-    grant !== "authorization_code" ||
-    !code ||
-    !client ||
-    code.redirectUri !== redirectUri ||
-    code.clientId !== clientId ||
-    code.challenge !== actualChallenge
-  ) {
-    return json({ error: "invalid_grant" }, 400);
-  }
+    grant !== "authorization_code" || !code || !client ||
+    code.redirectUri !== redirectUri || code.clientId !== clientId || code.challenge !== actualChallenge
+  ) return json({ error: "invalid_grant" }, 400);
+
   const scope = requestedScopes(code.scope) || "agent-ideas";
   return json({
     access_token: sign("access", { clientId, scope }),
@@ -436,24 +459,31 @@ export default async (request: Request) => {
 
   if (path === "/health" || path === "/mcp/health") {
     const credentialsConfigured = Boolean(env("FIREBASE_SERVICE_ACCOUNT_JSON"));
-    let database: unknown = { ok: false, reason: "Firebase credentials are not configured" };
+    const oauthConfigured = Boolean(env("AGENT_IDEAS_MCP_ACCESS_KEY_HASH") && env("AGENT_IDEAS_MCP_SIGNING_KEY"));
+    let agentDatabase: any = { ok: false, reason: "Firebase credentials are not configured" };
+    let portalDatabase: any = { ok: false, reason: "Firebase credentials are not configured" };
+    let migrationResult: any = null;
     if (credentialsConfigured) {
       try {
         ensureFirebaseAdmin();
-        database = await store.healthCheck();
+        migrationResult = await ensureAgentData();
+        [agentDatabase, portalDatabase] = await Promise.all([agentStore.healthCheck(), portalStore.status()]);
       } catch (error) {
-        database = { ok: false, error: error instanceof Error ? error.message : String(error) };
+        const failure = { ok: false, error: error instanceof Error ? error.message : String(error) };
+        agentDatabase = failure;
+        portalDatabase = failure;
       }
     }
+    const ok = credentialsConfigured && oauthConfigured && Boolean(agentDatabase?.ok) && Boolean(portalDatabase?.ok);
     return json({
-      ok: credentialsConfigured && Boolean((database as any)?.ok ?? true),
+      ok,
       service: SERVER_NAME,
       serverVersion: SERVER_VERSION,
-      databaseId: store.DATABASE_ID || "(default)",
       toolCount: TOOLS.length,
-      oauth: { dcr: true, pkce: "S256" },
+      agentIdeas: { databaseId: agentStore.DATABASE_ID, database: agentDatabase, migration: migrationResult },
+      portal: { databaseId: portalStore.DATABASE_ID, database: portalDatabase },
+      oauth: { configured: oauthConfigured, dcr: true, pkce: "S256" },
       firebaseCredentialsConfigured: credentialsConfigured,
-      database,
     }, credentialsConfigured ? 200 : 503);
   }
 
