@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -29,20 +29,7 @@ import {
   DoneAll as DoneAllIcon,
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
-import {
-  addDoc,
-  collection,
-  doc,
-  getDocs,
-  limit,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  updateDoc,
-  where,
-} from 'firebase/firestore';
-import { agentDb } from '../firebase';
+import { auth } from '../firebase';
 
 const MATURITY = [
   { id: 'seed', label: 'Seed', accent: '#5d8be8' },
@@ -52,21 +39,8 @@ const MATURITY = [
   { id: 'execution_ready', label: 'Ready', accent: '#d95d75' },
 ];
 
-const AGENT_COLLECTIONS = {
-  ideas: 'ideas',
-  runs: 'runs',
-  relations: 'relations',
-  sources: 'sources',
-  evaluations: 'evaluations',
-  artifacts: 'artifacts',
-};
-
-const runsCollection = () => collection(agentDb, AGENT_COLLECTIONS.runs);
-const runDoc = (id) => doc(agentDb, AGENT_COLLECTIONS.runs, id);
-
 function toDate(value) {
   if (!value) return null;
-  if (typeof value.toDate === 'function') return value.toDate();
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
@@ -82,13 +56,21 @@ function formatDate(value) {
   }).format(date);
 }
 
-async function safeGetDocs(targetQuery) {
-  try {
-    return await getDocs(targetQuery);
-  } catch (error) {
-    console.debug('Agent Idea Space optional metadata unavailable:', error);
-    return { docs: [] };
-  }
+async function agentApi(path = '', options = {}) {
+  const user = auth.currentUser;
+  if (!user) throw new Error('My Portal にログインしてください');
+  const token = await user.getIdToken();
+  const response = await fetch(`/api/agent-ideas${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      ...(options.headers || {}),
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || `Agent Idea API error (${response.status})`);
+  return payload;
 }
 
 function IdeaCard({ idea, onClick }) {
@@ -156,38 +138,26 @@ export default function AgentIdeaSpace() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
-  useEffect(() => {
+  const refresh = useCallback(async () => {
     setLoading(true);
-    const unsubscribeIdeas = onSnapshot(
-      collection(agentDb, AGENT_COLLECTIONS.ideas),
-      (snapshot) => {
-        const items = snapshot.docs
-          .map((item) => ({ id: item.id, ...item.data() }))
-          .sort((a, b) => {
-            const aDate = toDate(a.updatedAt || a.createdAt)?.getTime() || 0;
-            const bDate = toDate(b.updatedAt || b.createdAt)?.getTime() || 0;
-            return bDate - aDate;
-          });
-        setIdeas(items);
-        setLoading(false);
-      },
-      (err) => {
-        setError(err.message);
-        setLoading(false);
-      },
-    );
-
-    const unsubscribeRuns = onSnapshot(
-      query(runsCollection(), orderBy('updatedAt', 'desc'), limit(100)),
-      (snapshot) => setRuns(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))),
-      (err) => setError(err.message),
-    );
-
-    return () => {
-      unsubscribeIdeas();
-      unsubscribeRuns();
-    };
+    setError('');
+    try {
+      const [ideaResult, runResult] = await Promise.all([
+        agentApi('?resource=ideas'),
+        agentApi('?resource=runs'),
+      ]);
+      setIdeas(ideaResult.items || []);
+      setRuns(runResult.items || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   const filteredIdeas = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -204,22 +174,19 @@ export default function AgentIdeaSpace() {
   const openIdea = async (idea) => {
     setSelectedIdea(idea);
     setIdeaContext({ loading: true, relations: [], sources: [], evaluations: [], artifacts: [] });
-    const [outgoing, incoming, sources, evaluations, artifacts] = await Promise.all([
-      safeGetDocs(query(collection(agentDb, AGENT_COLLECTIONS.relations), where('fromIdeaId', '==', idea.id), limit(50))),
-      safeGetDocs(query(collection(agentDb, AGENT_COLLECTIONS.relations), where('toIdeaId', '==', idea.id), limit(50))),
-      safeGetDocs(query(collection(agentDb, AGENT_COLLECTIONS.sources), where('ideaId', '==', idea.id), limit(50))),
-      safeGetDocs(query(collection(agentDb, AGENT_COLLECTIONS.evaluations), where('ideaId', '==', idea.id), limit(50))),
-      safeGetDocs(query(collection(agentDb, AGENT_COLLECTIONS.artifacts), where('ideaId', '==', idea.id), limit(50))),
-    ]);
-    const relationMap = new Map();
-    [...outgoing.docs, ...incoming.docs].forEach((item) => relationMap.set(item.id, { id: item.id, ...item.data() }));
-    setIdeaContext({
-      loading: false,
-      relations: [...relationMap.values()],
-      sources: sources.docs.map((item) => ({ id: item.id, ...item.data() })),
-      evaluations: evaluations.docs.map((item) => ({ id: item.id, ...item.data() })),
-      artifacts: artifacts.docs.map((item) => ({ id: item.id, ...item.data() })),
-    });
+    try {
+      const context = await agentApi(`?resource=context&id=${encodeURIComponent(idea.id)}`);
+      setIdeaContext({
+        loading: false,
+        relations: context.relations || [],
+        sources: context.sources || [],
+        evaluations: context.evaluations || [],
+        artifacts: context.artifacts || [],
+      });
+    } catch (err) {
+      setIdeaContext({ loading: false, relations: [], sources: [], evaluations: [], artifacts: [] });
+      setError(err.message);
+    }
   };
 
   const startSession = (idea = null) => {
@@ -233,36 +200,20 @@ export default function AgentIdeaSpace() {
   const createSession = async () => {
     if (!objective.trim()) return;
     try {
-      const ref = await addDoc(runsCollection(), {
-        agent: 'portal-session',
-        model: null,
-        objective: objective.trim(),
-        instructions: instructions.trim(),
-        trigger: 'manual',
-        status: 'active',
-        seedIdeaIds: seedIdeaId ? [seedIdeaId] : [],
-        createdIdeaIds: [],
-        updatedIdeaIds: [],
-        findings: [],
-        nextActions: [],
-        metadata: { source: 'my-portal-ui' },
-        revision: 1,
-        startedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+      const run = await agentApi('', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'run_start',
+          objective: objective.trim(),
+          instructions: instructions.trim(),
+          seedIdeaIds: seedIdeaId ? [seedIdeaId] : [],
+        }),
       });
       setSessionOpen(false);
       setTab(1);
-      setSelectedRun({
-        id: ref.id,
-        objective: objective.trim(),
-        instructions: instructions.trim(),
-        status: 'active',
-        seedIdeaIds: seedIdeaId ? [seedIdeaId] : [],
-        findings: [],
-        nextActions: [],
-        revision: 1,
-      });
+      setSelectedRun(run);
       setNotice('セッションを開始しました。');
+      await refresh();
     } catch (err) {
       setError(err.message);
     }
@@ -271,20 +222,22 @@ export default function AgentIdeaSpace() {
   const finishSession = async () => {
     if (!selectedRun) return;
     try {
-      const findings = [...(selectedRun.findings || []), ...(finding.trim() ? [finding.trim()] : [])];
-      const nextActions = [...(selectedRun.nextActions || []), ...(nextAction.trim() ? [nextAction.trim()] : [])];
-      await updateDoc(runDoc(selectedRun.id), {
-        status: 'completed',
-        findings,
-        nextActions,
-        revision: Number(selectedRun.revision || 1) + 1,
-        finishedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+      const run = await agentApi('', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'run_finish',
+          id: selectedRun.id,
+          expectedRevision: selectedRun.revision,
+          findings: finding.trim() ? [finding.trim()] : [],
+          nextActions: nextAction.trim() ? [nextAction.trim()] : [],
+        }),
       });
-      setSelectedRun((current) => current ? { ...current, status: 'completed', findings, nextActions } : current);
+      setSelectedRun(run);
       setFinishOpen(false);
       setFinding('');
       setNextAction('');
+      setNotice('セッションを完了しました。');
+      await refresh();
     } catch (err) {
       setError(err.message);
     }
@@ -317,10 +270,10 @@ export default function AgentIdeaSpace() {
             <Chip label="agent-ideas DB" size="small" color="primary" variant="outlined" />
           </Stack>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Agent専用DBにあるアイデア・関係・セッションを、My Portalの中から確認します。
+            Agent専用DBのアイデアと作業セッションを、My Portalのログインだけで確認・操作します。
           </Typography>
         </Box>
-        <Button startIcon={<RefreshIcon />} onClick={() => window.location.reload()} variant="outlined">更新</Button>
+        <Button startIcon={<RefreshIcon />} onClick={refresh} variant="outlined">更新</Button>
         <Button startIcon={<AddIcon />} onClick={() => startSession()} variant="contained">セッション開始</Button>
       </Stack>
 
@@ -376,7 +329,7 @@ export default function AgentIdeaSpace() {
               {runs.map((run) => (
                 <Paper key={run.id} variant="outlined" onClick={() => setSelectedRun(run)} sx={{ p: 1.5, borderRadius: 2.5, cursor: 'pointer', borderLeft: 4, borderLeftColor: run.status === 'active' ? 'success.main' : 'primary.main', bgcolor: selectedRun?.id === run.id ? 'action.selected' : 'background.paper' }}>
                   <Typography fontWeight={850}>{run.objective || 'Untitled session'}</Typography>
-                  <Typography variant="caption" color="text.secondary">{run.agent || 'portal-session'} · {run.status || 'active'} · {formatDate(run.updatedAt || run.startedAt)}</Typography>
+                  <Typography variant="caption" color="text.secondary">{run.agent || 'agent'} · {run.status || 'active'} · {formatDate(run.updatedAt || run.startedAt)}</Typography>
                 </Paper>
               ))}
               {!runs.length && <Typography color="text.secondary" textAlign="center" sx={{ py: 5 }}>セッションはまだありません</Typography>}
@@ -443,7 +396,7 @@ export default function AgentIdeaSpace() {
             <TextField label="目的" value={objective} onChange={(e) => setObjective(e.target.value)} autoFocus required />
             <TextField label="作業指示・制約" value={instructions} onChange={(e) => setInstructions(e.target.value)} multiline minRows={4} />
             {seedIdeaId && <TextField label="Seed Idea ID" value={seedIdeaId} disabled />}
-            <Alert severity="info">My PortalのGoogleログインをそのまま利用し、Agent専用DBへ保存します。</Alert>
+            <Alert severity="info">追加ログインは不要です。My PortalのGoogleログインをAPI側で検証して保存します。</Alert>
           </Stack>
         </DialogContent>
         <DialogActions>
