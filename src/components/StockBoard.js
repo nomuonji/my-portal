@@ -8,12 +8,12 @@ function StockBoard() {
       database={db}
       collectionName="stocks"
       tagsCollectionName="stock_tags"
-      eyebrow="REFERENCE STOCK"
+      eyebrow="QUICK STOCK"
       title="ストックボード"
-      description="あとで使いたい文章や知識を、ノイズの少ないカードでざっと眺められるストック棚です。"
-      manageLabel="ストックを追加・編集"
+      description="あとで使いたい単語・言い回し・短い知識断片を、一覧性優先でストックしておく場所です。"
+      manageLabel="ストックを追加"
       manageRoute="/stock"
-      emptyMessage="検索条件を変えるか、新しいストックを追加してください。"
+      emptyMessage="検索条件を変えるか、新しい短いストックを追加してください。"
       deleteConfirmMessage="本当にこのストックを削除しますか？"
     />
   );
