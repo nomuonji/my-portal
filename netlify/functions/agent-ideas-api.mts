@@ -1,11 +1,10 @@
-import { cert, getApps, initializeApp } from "firebase-admin/app";
+import { cert, getApp, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, initializeFirestore } from "firebase-admin/firestore";
 import * as storeImport from "../../functions/agentIdeasStoreAgentDb.js";
-import * as migrationImport from "../../functions/agentIdeasMigration.js";
 
 const store: any = (storeImport as any).default ?? storeImport;
-const migration: any = (migrationImport as any).default ?? migrationImport;
+const AGENT_DATABASE_ID = "agent-ideas";
 
 function env(name: string): string | undefined {
   try {
@@ -24,27 +23,37 @@ function json(value: unknown, status = 200) {
 }
 
 function ensureFirebaseAdmin() {
-  if (getApps().length) return;
-  const raw = env("FIREBASE_SERVICE_ACCOUNT_JSON");
-  if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is not configured on Netlify");
-  let serviceAccount: any;
-  try {
-    serviceAccount = JSON.parse(raw);
-  } catch {
-    throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON");
+  let app;
+  if (getApps().length) {
+    app = getApp();
+  } else {
+    const raw = env("FIREBASE_SERVICE_ACCOUNT_JSON");
+    if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is not configured on Netlify");
+    let serviceAccount: any;
+    try {
+      serviceAccount = JSON.parse(raw);
+    } catch {
+      throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON");
+    }
+    app = initializeApp({
+      credential: cert(serviceAccount),
+      projectId: serviceAccount.project_id || "my-portal-d05fd",
+    });
   }
-  initializeApp({
-    credential: cert(serviceAccount),
-    projectId: serviceAccount.project_id || "my-portal-d05fd",
-  });
+
+  // Bind the named database to the exact Admin app and prefer REST transport.
+  // This avoids ambiguous/default-app resolution and gRPC NOT_FOUND failures in
+  // serverless runtimes while keeping Agent Ideas isolated from `(default)`.
+  initializeFirestore(app, { preferRest: true }, AGENT_DATABASE_ID);
+  return app;
 }
 
 async function requireFirebaseUser(request: Request) {
-  ensureFirebaseAdmin();
+  const app = ensureFirebaseAdmin();
   const bearer = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
   if (!bearer) throw new Error("UNAUTHORIZED");
   try {
-    return await getAuth().verifyIdToken(bearer);
+    return await getAuth(app).verifyIdToken(bearer);
   } catch {
     throw new Error("UNAUTHORIZED");
   }
@@ -63,7 +72,7 @@ function serialize(value: any): any {
 }
 
 async function listCollection(name: "ideas" | "runs", limitValue: number) {
-  const database = getFirestore("agent-ideas");
+  const database = getFirestore(getApp(), AGENT_DATABASE_ID);
   const snapshot = await database.collection(name).limit(limitValue).get();
   return snapshot.docs
     .map((doc) => serialize({ id: doc.id, ...doc.data() }))
@@ -87,7 +96,6 @@ export default async (request: Request) => {
 
   try {
     const user = await requireFirebaseUser(request);
-    await migration.bootstrapLegacyAgentData("agent-ideas");
     const url = new URL(request.url);
 
     if (request.method === "GET") {
