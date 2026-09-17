@@ -35,6 +35,12 @@ function assertString(value, name, max = 300) {
   return normalized;
 }
 
+function requireConfirmation(input, action) {
+  if (input.confirm !== true) {
+    throw new Error(`Portal ${action} requires confirm=true. My Portal is read-mostly for agents; only write after explicit user confirmation.`);
+  }
+}
+
 function jsonSafe(value, depth = 0) {
   if (depth > 8) return '[max-depth]';
   if (value === null || ['boolean', 'number'].includes(typeof value)) return value;
@@ -92,6 +98,8 @@ async function status() {
   return {
     ok: true,
     databaseId: DATABASE_ID,
+    mode: 'read-mostly',
+    writePolicy: 'portal_create, portal_update, and portal_delete require confirm=true after explicit user confirmation; use Agent Idea Space for normal agent writes.',
     collections: Object.entries(COLLECTIONS).map(([name, config]) => ({ name, ...config })),
     latencyMs: Date.now() - started,
   };
@@ -136,6 +144,7 @@ async function search(input = {}) {
 }
 
 async function create(input = {}) {
+  requireConfirmation(input, 'create');
   const config = collectionConfig(input.collection);
   const data = jsonSafe(input.data && typeof input.data === 'object' ? input.data : {});
   const explicitId = clampString(input.id, 500);
@@ -158,6 +167,7 @@ async function create(input = {}) {
 }
 
 async function update(input = {}) {
+  requireConfirmation(input, 'update');
   const config = collectionConfig(input.collection);
   const id = assertString(input.id, 'id', 500);
   const patch = jsonSafe(input.patch && typeof input.patch === 'object' ? input.patch : {});
@@ -170,9 +180,9 @@ async function update(input = {}) {
 }
 
 async function remove(input = {}) {
+  requireConfirmation(input, 'delete');
   const config = collectionConfig(input.collection);
   const id = assertString(input.id, 'id', 500);
-  if (input.confirm !== true) throw new Error('Deletion requires confirm=true');
   const ref = db().collection(config.name).doc(id);
   const existing = await ref.get();
   if (!existing.exists) throw new Error(`Document not found: ${config.name}/${id}`);
