@@ -55,11 +55,16 @@ const MATURITY = [
 const AGENT_COLLECTIONS = {
   ideas: 'ideas',
   relations: 'relations',
-  runs: 'runs',
   sources: 'sources',
   evaluations: 'evaluations',
   artifacts: 'artifacts',
 };
+
+// Portal sessions live below /ideas so the existing My Portal Firestore rule
+// already covers them. They are continuation bookmarks for ChatGPT sessions;
+// the MCP can create its own durable run when the copied prompt is resumed.
+const portalRuns = () => collection(db, 'ideas', '__agent', 'runs');
+const portalRunDoc = (id) => doc(db, 'ideas', '__agent', 'runs', id);
 
 function isAgentIdea(idea) {
   return Boolean(
@@ -86,6 +91,18 @@ function formatDate(value) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date);
+}
+
+async function safeGetDocs(targetQuery) {
+  try {
+    return await getDocs(targetQuery);
+  } catch (error) {
+    // Optional graph metadata may still be server-only on older deployments.
+    // The core integrated UI should remain usable even when those collections
+    // are not readable by the browser yet.
+    console.debug('Agent Idea Space optional metadata unavailable:', error);
+    return { docs: [] };
+  }
 }
 
 function IdeaCard({ idea, onClick }) {
@@ -151,6 +168,7 @@ function AgentIdeaSpace() {
   const [nextAction, setNextAction] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
   useEffect(() => {
     setLoading(true);
@@ -174,18 +192,13 @@ function AgentIdeaSpace() {
       },
     );
 
-    let unsubscribeRuns = () => {};
-    try {
-      unsubscribeRuns = onSnapshot(
-        query(collection(db, AGENT_COLLECTIONS.runs), orderBy('updatedAt', 'desc'), limit(100)),
-        (snapshot) => {
-          setRuns(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
-        },
-        (err) => setError(err.message),
-      );
-    } catch (err) {
-      setError(err.message);
-    }
+    const unsubscribeRuns = onSnapshot(
+      query(portalRuns(), orderBy('updatedAt', 'desc'), limit(100)),
+      (snapshot) => {
+        setRuns(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
+      },
+      (err) => setError(err.message),
+    );
 
     return () => {
       unsubscribeIdeas();
@@ -212,27 +225,24 @@ function AgentIdeaSpace() {
   const openIdea = async (idea) => {
     setSelectedIdea(idea);
     setIdeaContext({ loading: true, relations: [], sources: [], evaluations: [], artifacts: [] });
-    try {
-      const [outgoing, incoming, sources, evaluations, artifacts] = await Promise.all([
-        getDocs(query(collection(db, AGENT_COLLECTIONS.relations), where('fromIdeaId', '==', idea.id), limit(50))),
-        getDocs(query(collection(db, AGENT_COLLECTIONS.relations), where('toIdeaId', '==', idea.id), limit(50))),
-        getDocs(query(collection(db, AGENT_COLLECTIONS.sources), where('ideaId', '==', idea.id), limit(50))),
-        getDocs(query(collection(db, AGENT_COLLECTIONS.evaluations), where('ideaId', '==', idea.id), limit(50))),
-        getDocs(query(collection(db, AGENT_COLLECTIONS.artifacts), where('ideaId', '==', idea.id), limit(50))),
-      ]);
-      const relationMap = new Map();
-      [...outgoing.docs, ...incoming.docs].forEach((item) => relationMap.set(item.id, { id: item.id, ...item.data() }));
-      setIdeaContext({
-        loading: false,
-        relations: [...relationMap.values()],
-        sources: sources.docs.map((item) => ({ id: item.id, ...item.data() })),
-        evaluations: evaluations.docs.map((item) => ({ id: item.id, ...item.data() })),
-        artifacts: artifacts.docs.map((item) => ({ id: item.id, ...item.data() })),
-      });
-    } catch (err) {
-      setIdeaContext({ loading: false, relations: [], sources: [], evaluations: [], artifacts: [] });
-      setError(err.message);
-    }
+
+    const [outgoing, incoming, sources, evaluations, artifacts] = await Promise.all([
+      safeGetDocs(query(collection(db, AGENT_COLLECTIONS.relations), where('fromIdeaId', '==', idea.id), limit(50))),
+      safeGetDocs(query(collection(db, AGENT_COLLECTIONS.relations), where('toIdeaId', '==', idea.id), limit(50))),
+      safeGetDocs(query(collection(db, AGENT_COLLECTIONS.sources), where('ideaId', '==', idea.id), limit(50))),
+      safeGetDocs(query(collection(db, AGENT_COLLECTIONS.evaluations), where('ideaId', '==', idea.id), limit(50))),
+      safeGetDocs(query(collection(db, AGENT_COLLECTIONS.artifacts), where('ideaId', '==', idea.id), limit(50))),
+    ]);
+
+    const relationMap = new Map();
+    [...outgoing.docs, ...incoming.docs].forEach((item) => relationMap.set(item.id, { id: item.id, ...item.data() }));
+    setIdeaContext({
+      loading: false,
+      relations: [...relationMap.values()],
+      sources: sources.docs.map((item) => ({ id: item.id, ...item.data() })),
+      evaluations: evaluations.docs.map((item) => ({ id: item.id, ...item.data() })),
+      artifacts: artifacts.docs.map((item) => ({ id: item.id, ...item.data() })),
+    });
   };
 
   const startSession = (idea = null) => {
@@ -246,7 +256,7 @@ function AgentIdeaSpace() {
   const createSession = async () => {
     if (!objective.trim()) return;
     try {
-      const ref = await addDoc(collection(db, AGENT_COLLECTIONS.runs), {
+      const ref = await addDoc(portalRuns(), {
         agent: 'portal-session',
         model: null,
         objective: objective.trim(),
@@ -254,18 +264,14 @@ function AgentIdeaSpace() {
         trigger: 'manual',
         status: 'active',
         seedIdeaIds: seedIdeaId ? [seedIdeaId] : [],
-        createdIdeaIds: [],
-        updatedIdeaIds: [],
         findings: [],
         nextActions: [],
-        metadata: { source: 'my-portal-ui' },
+        metadata: { source: 'my-portal-ui', kind: 'continuation-bookmark' },
         revision: 1,
         startedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-      setSessionOpen(false);
-      setTab(1);
-      setSelectedRun({
+      const newRun = {
         id: ref.id,
         objective: objective.trim(),
         instructions: instructions.trim(),
@@ -274,7 +280,11 @@ function AgentIdeaSpace() {
         findings: [],
         nextActions: [],
         revision: 1,
-      });
+      };
+      setSessionOpen(false);
+      setTab(1);
+      setSelectedRun(newRun);
+      setNotice('セッションを開始しました。ChatGPT再開文をコピーして @my-portal に渡せます。');
     } catch (err) {
       setError(err.message);
     }
@@ -285,14 +295,13 @@ function AgentIdeaSpace() {
     try {
       const findings = [...(selectedRun.findings || []), ...(finding.trim() ? [finding.trim()] : [])];
       const nextActions = [...(selectedRun.nextActions || []), ...(nextAction.trim() ? [nextAction.trim()] : [])];
-      await updateDoc(doc(db, AGENT_COLLECTIONS.runs, selectedRun.id), {
+      await updateDoc(portalRunDoc(selectedRun.id), {
         status: 'completed',
         findings,
         nextActions,
         revision: Number(selectedRun.revision || 1) + 1,
         finishedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        metadata: { ...(selectedRun.metadata || {}), finishedFrom: 'my-portal-ui' },
       });
       setSelectedRun((current) => current ? { ...current, status: 'completed', findings, nextActions } : current);
       setFinishOpen(false);
@@ -306,14 +315,15 @@ function AgentIdeaSpace() {
   const copyRunPrompt = async (run) => {
     const prompt = [
       '@my-portal この作業セッションを継続してください。',
-      `Session ID: ${run.id}`,
+      `Portal Session ID: ${run.id}`,
       `目的: ${run.objective || ''}`,
       `指示: ${run.instructions || ''}`,
       `Seed Idea IDs: ${(run.seedIdeaIds || []).join(', ')}`,
-      'まずidea_get_context等で関連情報を確認し、このセッションの続きとして作業してください。',
+      '必要なら idea_run_start でMCP側のdurable runを開始し、seed ideaのcontextを取得して続きから作業してください。',
     ].join('\n');
     try {
       await navigator.clipboard.writeText(prompt);
+      setNotice('ChatGPT再開文をコピーしました。');
     } catch (err) {
       setError(`コピーに失敗しました: ${err.message}`);
     }
@@ -337,6 +347,7 @@ function AgentIdeaSpace() {
       </Stack>
 
       {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>{error}</Alert>}
+      {notice && <Alert severity="success" onClose={() => setNotice('')} sx={{ mb: 2 }}>{notice}</Alert>}
       {loading && <LinearProgress sx={{ mb: 2 }} />}
 
       <Paper variant="outlined" sx={{ borderRadius: 3, overflow: 'hidden' }}>
@@ -411,7 +422,7 @@ function AgentIdeaSpace() {
                   >
                     <Typography fontWeight={850}>{run.objective || 'Untitled session'}</Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {run.agent || 'agent'} · {run.status || 'active'} · {formatDate(run.updatedAt || run.startedAt)}
+                      {run.agent || 'portal-session'} · {run.status || 'active'} · {formatDate(run.updatedAt || run.startedAt)}
                     </Typography>
                   </Paper>
                 ))}
@@ -478,19 +489,19 @@ function AgentIdeaSpace() {
                     {relation.type} → {relation.fromIdeaId === selectedIdea.id ? relation.toIdeaId : relation.fromIdeaId}
                   </Typography>
                 ))}
-                {!ideaContext.relations.length && <Typography variant="body2" color="text.disabled">なし</Typography>}
+                {!ideaContext.relations.length && <Typography variant="body2" color="text.disabled">なし / 未取得</Typography>}
 
                 <Typography variant="overline" color="text.secondary" sx={{ mt: 2, display: 'block' }}>Sources</Typography>
                 {ideaContext.sources.map((source) => <Typography key={source.id} variant="body2" sx={{ py: 0.5 }}>{source.title || source.url || source.type}</Typography>)}
-                {!ideaContext.sources.length && <Typography variant="body2" color="text.disabled">なし</Typography>}
+                {!ideaContext.sources.length && <Typography variant="body2" color="text.disabled">なし / 未取得</Typography>}
 
                 <Typography variant="overline" color="text.secondary" sx={{ mt: 2, display: 'block' }}>Evaluations</Typography>
                 {ideaContext.evaluations.map((evaluation) => <Typography key={evaluation.id} variant="body2" sx={{ py: 0.5 }}><b>{evaluation.evaluator || 'agent'}</b> {evaluation.comment || ''}</Typography>)}
-                {!ideaContext.evaluations.length && <Typography variant="body2" color="text.disabled">なし</Typography>}
+                {!ideaContext.evaluations.length && <Typography variant="body2" color="text.disabled">なし / 未取得</Typography>}
 
                 <Typography variant="overline" color="text.secondary" sx={{ mt: 2, display: 'block' }}>Artifacts</Typography>
                 {ideaContext.artifacts.map((artifact) => <Typography key={artifact.id} variant="body2" sx={{ py: 0.5 }}>{artifact.title || artifact.type}</Typography>)}
-                {!ideaContext.artifacts.length && <Typography variant="body2" color="text.disabled">なし</Typography>}
+                {!ideaContext.artifacts.length && <Typography variant="body2" color="text.disabled">なし / 未取得</Typography>}
               </>
             )}
           </>
@@ -504,7 +515,7 @@ function AgentIdeaSpace() {
             <TextField label="目的" value={objective} onChange={(event) => setObjective(event.target.value)} autoFocus required />
             <TextField label="作業指示・制約" value={instructions} onChange={(event) => setInstructions(event.target.value)} multiline minRows={4} />
             {seedIdeaId && <TextField label="Seed Idea ID" value={seedIdeaId} disabled />}
-            <Alert severity="info">開始後、「ChatGPT再開文をコピー」から @my-portal にそのまま引き継げます。</Alert>
+            <Alert severity="info">追加ログインは不要です。My Portalのログイン状態のまま保存されます。</Alert>
           </Stack>
         </DialogContent>
         <DialogActions>
