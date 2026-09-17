@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Agent Idea Space is intentionally server-only.
+    // The MCP Cloud Function uses the Admin SDK and bypasses Security Rules.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
