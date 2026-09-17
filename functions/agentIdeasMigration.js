@@ -24,7 +24,7 @@ async function commitCopies(target, entries) {
   return copied;
 }
 
-async function bootstrapLegacyAgentData(targetDatabaseId = 'agent-ideas') {
+async function bootstrapLegacyAgentData(targetDatabaseId = '(default)') {
   if (!targetDatabaseId || targetDatabaseId === '(default)') {
     return { migrated: false, reason: 'target-is-default', targetDatabaseId: '(default)' };
   }

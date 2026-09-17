@@ -188,7 +188,7 @@ function structured(value: unknown) {
 }
 
 async function ensureAgentData() {
-  return migration.bootstrapLegacyAgentData("agent-ideas");
+  return migration.bootstrapLegacyAgentData("(default)");
 }
 
 async function invokeTool(name: string, args: Record<string, any> = {}) {
@@ -258,7 +258,7 @@ async function handleRpc(message: any) {
         protocolVersion,
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
-        instructions: "Agent Idea Space is isolated in the named agent-ideas database. Use idea_* tools for autonomous agent ideation and provenance. Use portal_* tools for the user's existing My Portal data such as ideas, stocks, hobbies, projects, memos, reading lists, and feature requests. Never use idea_* tools to modify portal data. portal_delete requires explicit confirm=true.",
+        instructions: "Agent Idea Space uses dedicated collections in the default Firestore database. Use idea_* tools for autonomous agent ideation and provenance. Use portal_* tools for the user's existing My Portal data such as ideas, stocks, hobbies, projects, memos, reading lists, and feature requests. Never use idea_* tools to modify portal data. portal_delete requires explicit confirm=true.",
       },
     };
   }

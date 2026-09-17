@@ -4,7 +4,7 @@ import { getFirestore, initializeFirestore } from "firebase-admin/firestore";
 import * as storeImport from "../../functions/agentIdeasStoreAgentDb.js";
 
 const store: any = (storeImport as any).default ?? storeImport;
-const AGENT_DATABASE_ID = "agent-ideas";
+const AGENT_DATABASE_ID = "(default)";
 
 function env(name: string): string | undefined {
   try {
@@ -41,10 +41,9 @@ function ensureFirebaseAdmin() {
     });
   }
 
-  // Bind the named database to the exact Admin app and prefer REST transport.
-  // This avoids ambiguous/default-app resolution and gRPC NOT_FOUND failures in
-  // serverless runtimes while keeping Agent Ideas isolated from `(default)`.
-  initializeFirestore(app, { preferRest: true }, AGENT_DATABASE_ID);
+  // Bind the existing default database to the exact Admin app and prefer REST
+  // transport in the serverless runtime.
+  initializeFirestore(app, { preferRest: true });
   return app;
 }
 
@@ -72,7 +71,7 @@ function serialize(value: any): any {
 }
 
 async function listCollection(name: "ideas" | "runs", limitValue: number) {
-  const database = getFirestore(getApp(), AGENT_DATABASE_ID);
+  const database = getFirestore(getApp());
   const snapshot = await database.collection(name).limit(limitValue).get();
   return snapshot.docs
     .map((doc) => serialize({ id: doc.id, ...doc.data() }))

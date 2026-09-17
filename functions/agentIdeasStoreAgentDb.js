@@ -1,17 +1,16 @@
-// Netlify imports this wrapper instead of agentIdeasStore directly. Force the
-// shared store onto the dedicated named database so Agent Idea Space can never
-// fall back to the user's main `(default)` My Portal database.
-process.env.AGENT_IDEAS_DATABASE_ID = 'agent-ideas';
+// Netlify imports this wrapper instead of agentIdeasStore directly. Agent Idea
+// Space uses its dedicated collections in the project's existing `(default)`
+// Firestore database.
+process.env.AGENT_IDEAS_DATABASE_ID = '(default)';
 
 const { getApp } = require('firebase-admin/app');
 const { initializeFirestore } = require('firebase-admin/firestore');
 const store = require('./agentIdeasStore');
 
 function ensureAgentDatabase() {
-  // Bind the named database to the exact initialized Admin app and prefer the
-  // REST transport. In serverless runtimes this avoids opaque gRPC status 5
-  // NOT_FOUND failures while preserving strict separation from `(default)`.
-  return initializeFirestore(getApp(), { preferRest: true }, 'agent-ideas');
+  // Bind the default database to the exact initialized Admin app and prefer
+  // REST transport in the serverless runtime.
+  return initializeFirestore(getApp(), { preferRest: true });
 }
 
 const wrapped = {};
