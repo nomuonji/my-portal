@@ -449,7 +449,7 @@ export default async (request: Request) => {
       ok: credentialsConfigured && Boolean((database as any)?.ok ?? true),
       service: SERVER_NAME,
       serverVersion: SERVER_VERSION,
-      databaseId: store.DATABASE_ID || "agent-ideas",
+      databaseId: store.DATABASE_ID || "(default)",
       toolCount: TOOLS.length,
       oauth: { dcr: true, pkce: "S256" },
       firebaseCredentialsConfigured: credentialsConfigured,

@@ -1,7 +1,7 @@
 const { createHash } = require('node:crypto');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
-const DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || 'agent-ideas';
+const DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTIONS = Object.freeze({
   ideas: 'ideas',
   relations: 'relations',
