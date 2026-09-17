@@ -8,12 +8,12 @@ function HobbyBoard() {
       database={db}
       collectionName="hobbies"
       tagsCollectionName="hobby_tags"
-      eyebrow="PERSONAL INTERESTS"
+      eyebrow="QUICK INTERESTS"
       title="趣味ボード"
-      description="気になっていることや、また触れたいテーマを軽く蓄積して眺めるための個人ライブラリです。"
-      manageLabel="趣味を追加・編集"
+      description="気になる物・人・場所・作品などを、短い名前や一言だけで気軽に放り込んでおく趣味メモです。"
+      manageLabel="趣味メモを追加"
       manageRoute="/hobby"
-      emptyMessage="検索条件を変えるか、新しい趣味メモを追加してください。"
+      emptyMessage="検索条件を変えるか、新しい短い趣味メモを追加してください。"
       deleteConfirmMessage="本当にこの趣味を削除しますか？"
     />
   );
