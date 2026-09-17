@@ -4,40 +4,45 @@ const getAppTheme = (mode) => createTheme({
   palette: {
     mode,
     ...(mode === 'light'
-      ? { // Light Mode Palette (calmer, neutral)
+      ? {
           primary: {
-            main: '#3f51b5', // Indigo 500
+            main: '#5577e8',
+            dark: '#405fc8',
+            light: '#8ca3f0',
           },
           secondary: {
-            main: '#26a69a', // Teal 400
+            main: '#8b62dc',
           },
           background: {
-            default: '#f6f7fb', // soft neutral
+            default: '#edf4f8',
             paper: '#ffffff',
           },
           text: {
-            primary: '#1f2937', // slate-800
-            secondary: '#6b7280', // slate-500
+            primary: '#18324a',
+            secondary: '#6e8294',
           },
-          divider: 'rgba(0, 0, 0, 0.12)',
+          divider: 'rgba(77, 118, 145, 0.16)',
         }
-      : { // Dark Mode Palette (calmer, neutral)
+      : {
           primary: {
-            main: '#8ab4f8', // soft blue
+            main: '#8ea8ff',
           },
           secondary: {
-            main: '#7fd1c9', // soft teal
+            main: '#b49af1',
           },
           background: {
-            default: '#0f1115',
-            paper: '#141821',
+            default: '#111820',
+            paper: '#18222c',
           },
           text: {
-            primary: '#e5e7eb',
-            secondary: '#9ca3af',
+            primary: '#edf4f8',
+            secondary: '#9fb0be',
           },
-          divider: 'rgba(255, 255, 255, 0.12)',
+          divider: 'rgba(255, 255, 255, 0.10)',
         }),
+  },
+  shape: {
+    borderRadius: 12,
   },
   typography: {
     fontFamily: [
@@ -54,39 +59,42 @@ const getAppTheme = (mode) => createTheme({
       'sans-serif',
     ].join(','),
     h4: {
-      fontWeight: 600,
+      fontWeight: 700,
       fontSize: '1.8rem',
       lineHeight: 1.2,
     },
     h5: {
-      fontWeight: 600,
+      fontWeight: 700,
       fontSize: '1.5rem',
       lineHeight: 1.2,
     },
     h6: {
-      fontWeight: 600,
+      fontWeight: 700,
       fontSize: '1.2rem',
       lineHeight: 1.2,
     },
     subtitle1: {
-      fontWeight: 500,
+      fontWeight: 600,
+    },
+    button: {
+      fontWeight: 700,
     },
   },
-  spacing: 8, // Default spacing unit
+  spacing: 8,
   components: {
     MuiCssBaseline: {
       styleOverrides: {
         body: {
           ...(mode === 'light'
             ? {
-                background: 'linear-gradient(180deg, #fafbff 0%, #f6f7fb 100%)',
+                background: 'radial-gradient(circle at 12% 0%, rgba(129, 205, 236, 0.20), transparent 30%), radial-gradient(circle at 88% 4%, rgba(170, 205, 224, 0.18), transparent 32%), linear-gradient(135deg, #f4f9fc 0%, #eaf3f7 52%, #eef4f7 100%)',
                 backgroundAttachment: 'fixed',
-                backgroundColor: '#f6f7fb',
+                backgroundColor: '#edf4f8',
               }
             : {
-                background: 'linear-gradient(180deg, #0d1117 0%, #0f1115 100%)',
+                background: 'radial-gradient(circle at 12% 0%, rgba(85, 119, 232, 0.12), transparent 30%), linear-gradient(180deg, #0f161d 0%, #111820 100%)',
                 backgroundAttachment: 'fixed',
-                backgroundColor: '#0f1115',
+                backgroundColor: '#111820',
               }),
         },
       },
@@ -94,17 +102,27 @@ const getAppTheme = (mode) => createTheme({
     MuiAppBar: {
       styleOverrides: {
         root: {
-          boxShadow: '0px 2px 8px rgba(0,0,0,0.06)',
-          backgroundColor: mode === 'light' ? '#ffffffcc' : '#0f1115cc',
-          backdropFilter: 'saturate(180%) blur(8px)',
+          boxShadow: '0 2px 12px rgba(42, 82, 107, 0.07)',
+          backgroundImage: 'none',
+          backgroundColor: mode === 'light' ? 'rgba(248, 252, 255, 0.88)' : 'rgba(17, 24, 32, 0.90)',
+          color: mode === 'light' ? '#18324a' : '#edf4f8',
+          backdropFilter: 'blur(18px) saturate(145%)',
+          borderBottom: mode === 'light'
+            ? '1px solid rgba(77, 118, 145, 0.14)'
+            : '1px solid rgba(255,255,255,0.08)',
         },
       },
     },
     MuiDrawer: {
       styleOverrides: {
         paper: {
-          boxShadow: '0px 8px 24px rgba(0,0,0,0.08)',
-          backgroundColor: mode === 'light' ? '#ffffff' : '#141821',
+          boxShadow: '8px 0 28px rgba(42, 82, 107, 0.07)',
+          backgroundImage: 'none',
+          backgroundColor: mode === 'light' ? 'rgba(248, 252, 255, 0.88)' : 'rgba(24, 34, 44, 0.94)',
+          backdropFilter: 'blur(18px) saturate(135%)',
+          borderRight: mode === 'light'
+            ? '1px solid rgba(77, 118, 145, 0.13)'
+            : '1px solid rgba(255,255,255,0.08)',
         },
       },
     },
@@ -113,16 +131,15 @@ const getAppTheme = (mode) => createTheme({
         root: {
           borderRadius: 12,
           backgroundImage: 'none',
-          backgroundColor: mode === 'light' ? '#ffffff' : '#141821',
           boxShadow: mode === 'light'
-            ? '0 2px 8px rgba(0,0,0,0.06)'
-            : '0 2px 12px rgba(0,0,0,0.5)',
+            ? '0 4px 16px rgba(52, 89, 112, 0.08)'
+            : '0 4px 18px rgba(0, 0, 0, 0.28)',
         },
       },
     },
     MuiCard: {
       defaultProps: {
-        elevation: 1,
+        elevation: 0,
       },
       styleOverrides: {
         root: {
@@ -134,8 +151,15 @@ const getAppTheme = (mode) => createTheme({
     MuiButton: {
       styleOverrides: {
         root: {
-          borderRadius: 10,
-          textTransform: 'none', // Keep button text as is
+          borderRadius: 9,
+          textTransform: 'none',
+          boxShadow: 'none',
+        },
+        contained: {
+          boxShadow: '0 4px 11px rgba(85, 119, 232, 0.20)',
+          '&:hover': {
+            boxShadow: '0 6px 14px rgba(85, 119, 232, 0.25)',
+          },
         },
       },
     },
@@ -144,6 +168,22 @@ const getAppTheme = (mode) => createTheme({
         root: {
           borderRadius: 6,
         },
+      },
+    },
+    MuiListItemButton: {
+      styleOverrides: {
+        root: {
+          margin: '2px 8px',
+          borderRadius: 9,
+          '&:hover': {
+            backgroundColor: mode === 'light' ? 'rgba(85, 119, 232, 0.07)' : 'rgba(142, 168, 255, 0.09)',
+          },
+        },
+      },
+    },
+    MuiTextField: {
+      defaultProps: {
+        variant: 'outlined',
       },
     },
   },
