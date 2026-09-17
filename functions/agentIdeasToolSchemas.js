@@ -1,0 +1,44 @@
+const IDEA_STATUSES = ['active', 'paused', 'archived', 'promoted'];
+const IDEA_MATURITY = ['seed', 'exploring', 'developed', 'validated', 'execution_ready'];
+const RUN_STATUSES = ['active', 'completed', 'paused', 'failed'];
+
+function objectSchema(properties, required = []) {
+  return { type: 'object', properties, required, additionalProperties: false };
+}
+
+const string = (description, maxLength) => ({ type: 'string', description, ...(maxLength ? { maxLength } : {}) });
+const stringArray = (description, maxItems = 50) => ({ type: 'array', description, maxItems, items: { type: 'string' } });
+const jsonObject = (description) => ({ type: 'object', description, additionalProperties: true });
+
+const ideaFields = {
+  title: string('Short name for the idea.', 300),
+  summary: string('Compact summary for quick scanning.', 3000),
+  content: string('Free-form Markdown body.', 30000),
+  type: string('Free-form idea type.', 80),
+  status: { type: 'string', enum: IDEA_STATUSES },
+  maturity: { type: 'string', enum: IDEA_MATURITY },
+  tags: stringArray('Loose tags.', 50),
+  domains: stringArray('Broad domains.', 30),
+  attributes: jsonObject('Agent-defined structured metadata.'),
+  createdInRunId: string('Run that produced this idea.', 160),
+};
+
+const TOOLS = [
+  { name: 'agent_ideas_status', description: 'Check the dedicated Agent Idea Space database and tool contract.', inputSchema: objectSchema({}), annotations: { readOnlyHint: true } },
+  { name: 'idea_create', description: 'Create an Agent Idea Space idea node.', inputSchema: objectSchema(ideaFields, ['title']), annotations: { readOnlyHint: false, destructiveHint: false } },
+  { name: 'idea_get', description: 'Read one Agent Idea Space idea by ID.', inputSchema: objectSchema({ id: string('Idea ID.', 160) }, ['id']), annotations: { readOnlyHint: true } },
+  { name: 'idea_search', description: 'Search recent Agent Idea Space ideas.', inputSchema: objectSchema({ query: string('Substring query.', 300), status: { type: 'string', enum: IDEA_STATUSES }, maturity: { type: 'string', enum: IDEA_MATURITY }, tag: string('Exact tag.', 80), domain: string('Exact domain.', 80), createdByAgent: string('Exact agent.', 120), limit: { type: 'integer', minimum: 1, maximum: 100, default: 30 }, scanLimit: { type: 'integer', minimum: 1, maximum: 500 } }), annotations: { readOnlyHint: true } },
+  { name: 'idea_update', description: 'Incrementally update an Agent Idea Space idea.', inputSchema: objectSchema({ id: string('Idea ID.', 160), expectedRevision: { type: 'integer', minimum: 1 }, patch: objectSchema({ title: ideaFields.title, summary: ideaFields.summary, content: ideaFields.content, type: ideaFields.type, status: ideaFields.status, maturity: ideaFields.maturity, tags: ideaFields.tags, domains: ideaFields.domains, attributes: jsonObject('Replace attributes.'), attributesPatch: jsonObject('Shallow-merge attributes.') }) }, ['id', 'patch']), annotations: { readOnlyHint: false, destructiveHint: false } },
+  { name: 'idea_expand', description: 'Create child ideas linked to a parent.', inputSchema: objectSchema({ parentIdeaId: string('Parent idea ID.', 160), ideas: { type: 'array', minItems: 1, maxItems: 20, items: objectSchema({ ...ideaFields, relationDescription: string('Relation explanation.', 3000) }, ['title']) }, relationType: string('Relation type.', 80), relationDescription: string('Default relation description.', 3000), createdInRunId: string('Run ID.', 160) }, ['parentIdeaId', 'ideas']), annotations: { readOnlyHint: false, destructiveHint: false } },
+  { name: 'idea_link', description: 'Create or update a relationship between two Agent Idea Space ideas.', inputSchema: objectSchema({ fromIdeaId: string('Source idea ID.', 160), toIdeaId: string('Target idea ID.', 160), type: string('Relationship type.', 80), description: string('Relationship explanation.', 3000), createdInRunId: string('Run ID.', 160) }, ['fromIdeaId', 'toIdeaId', 'type']), annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true } },
+  { name: 'idea_get_context', description: 'Fetch an idea and its graph neighborhood, evidence, evaluations, artifacts, and runs.', inputSchema: objectSchema({ id: string('Root idea ID.', 160), depth: { type: 'integer', minimum: 0, maximum: 2, default: 1 }, maxNeighbors: { type: 'integer', minimum: 1, maximum: 80, default: 40 }, includeSources: { type: 'boolean', default: true }, includeEvaluations: { type: 'boolean', default: true }, includeRuns: { type: 'boolean', default: true }, includeArtifacts: { type: 'boolean', default: false } }, ['id']), annotations: { readOnlyHint: true } },
+  { name: 'idea_merge', description: 'Synthesize multiple ideas into a new linked idea.', inputSchema: objectSchema({ sourceIdeaIds: stringArray('Source idea IDs.', 20), idea: objectSchema(ideaFields, ['title']), relationType: string('Relation type.', 80), relationDescription: string('Why they were combined.', 3000), createdInRunId: string('Run ID.', 160) }, ['sourceIdeaIds', 'idea']), annotations: { readOnlyHint: false, destructiveHint: false } },
+  { name: 'idea_archive', description: 'Archive an Agent Idea Space idea without deleting it.', inputSchema: objectSchema({ id: string('Idea ID.', 160), expectedRevision: { type: 'integer', minimum: 1 }, reason: string('Archive reason.', 2000) }, ['id']), annotations: { readOnlyHint: false, destructiveHint: false } },
+  { name: 'idea_run_start', description: 'Start a durable Agent Idea Space work session.', inputSchema: objectSchema({ objective: string('Run objective.', 6000), instructions: string('Run instructions.', 12000), agent: string('Agent name.', 120), model: string('Model label.', 120), trigger: string('Trigger.', 80), seedIdeaIds: stringArray('Seed idea IDs.', 50), metadata: jsonObject('Run metadata.') }, ['objective']), annotations: { readOnlyHint: false, destructiveHint: false } },
+  { name: 'idea_run_finish', description: 'Finish or pause a durable Agent Idea Space run.', inputSchema: objectSchema({ id: string('Run ID.', 160), status: { type: 'string', enum: RUN_STATUSES, default: 'completed' }, expectedRevision: { type: 'integer', minimum: 1 }, createdIdeaIds: stringArray('Created idea IDs.', 200), updatedIdeaIds: stringArray('Updated idea IDs.', 200), findings: stringArray('Durable findings.', 100), nextActions: stringArray('Next actions.', 100), metadataPatch: jsonObject('Metadata patch.') }, ['id']), annotations: { readOnlyHint: false, destructiveHint: false } },
+  { name: 'idea_add_source', description: 'Attach evidence or inspiration to an Agent Idea Space idea.', inputSchema: objectSchema({ ideaId: string('Idea ID.', 160), type: string('Source type.', 80), url: string('Source URL.', 3000), title: string('Source title.', 1000), quote: string('Relevant excerpt.', 5000), summary: string('Source contribution.', 12000), metadata: jsonObject('Source metadata.'), createdInRunId: string('Run ID.', 160) }, ['ideaId']), annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true } },
+  { name: 'idea_evaluate', description: 'Add an independent evaluation to an Agent Idea Space idea.', inputSchema: objectSchema({ ideaId: string('Idea ID.', 160), evaluator: string('Evaluator.', 120), criteria: jsonObject('Evaluation criteria.'), comment: string('Evaluation notes.', 12000), metadata: jsonObject('Evaluation metadata.'), createdInRunId: string('Run ID.', 160) }, ['ideaId', 'criteria']), annotations: { readOnlyHint: false, destructiveHint: false } },
+  { name: 'idea_add_artifact', description: 'Attach a durable output to an Agent Idea Space idea or run.', inputSchema: objectSchema({ ideaId: string('Optional idea ID.', 160), type: string('Artifact type.', 80), title: string('Artifact title.', 1000), content: string('Artifact content.', 50000), url: string('External URL.', 3000), metadata: jsonObject('Artifact metadata.'), createdInRunId: string('Run ID.', 160) }, ['title']), annotations: { readOnlyHint: false, destructiveHint: false } },
+];
+
+module.exports = { TOOLS, IDEA_STATUSES, IDEA_MATURITY, RUN_STATUSES };
