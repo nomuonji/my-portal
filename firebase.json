@@ -1,10 +1,18 @@
 {
-  "firestore": {
-    "database": "(default)",
-    "location": "asia-northeast1",
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
-  },
+  "firestore": [
+    {
+      "database": "(default)",
+      "location": "asia-northeast1",
+      "rules": "firestore.rules",
+      "indexes": "firestore.indexes.json"
+    },
+    {
+      "database": "agent-ideas",
+      "location": "asia-northeast1",
+      "rules": "firestore.agent-ideas.rules",
+      "indexes": "firestore.agent-ideas.indexes.json"
+    }
+  ],
   "hosting": {
     "public": "build",
     "ignore": [
@@ -13,6 +21,48 @@
       "**/node_modules/**"
     ],
     "rewrites": [
+      {
+        "source": "/mcp",
+        "function": {
+          "functionId": "agentIdeasMcp",
+          "region": "asia-northeast1"
+        }
+      },
+      {
+        "source": "/mcp/**",
+        "function": {
+          "functionId": "agentIdeasMcp",
+          "region": "asia-northeast1"
+        }
+      },
+      {
+        "source": "/oauth/authorize",
+        "function": {
+          "functionId": "agentIdeasMcp",
+          "region": "asia-northeast1"
+        }
+      },
+      {
+        "source": "/oauth/token",
+        "function": {
+          "functionId": "agentIdeasMcp",
+          "region": "asia-northeast1"
+        }
+      },
+      {
+        "source": "/.well-known/oauth-protected-resource",
+        "function": {
+          "functionId": "agentIdeasMcp",
+          "region": "asia-northeast1"
+        }
+      },
+      {
+        "source": "/.well-known/oauth-authorization-server",
+        "function": {
+          "functionId": "agentIdeasMcp",
+          "region": "asia-northeast1"
+        }
+      },
       {
         "source": "**",
         "destination": "/index.html"
