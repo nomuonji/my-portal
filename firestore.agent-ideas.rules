@@ -1,11 +1,11 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Agent Idea Space is isolated in its own named database, but the UI is
-    // part of My Portal and uses the same Firebase Authentication session.
-    // MCP/server writes use Admin SDK and bypass these rules.
+    // Agent Idea Space stays server-only. The integrated My Portal UI calls a
+    // Netlify Function with its Firebase ID token; the Function verifies the
+    // login and accesses this database through the Admin SDK.
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
     }
   }
 }
