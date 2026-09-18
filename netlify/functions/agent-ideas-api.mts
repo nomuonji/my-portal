@@ -111,7 +111,7 @@ export default async (request: Request) => {
         });
       }
       if (resource === "ideas") {
-        return json(await store.ideaSearch({ limit: 100, scanLimit: 500 }));
+        return json(await store.ideaSearch({ limit: 500, scanLimit: 2000 }));
       }
       if (resource === "categories") {
         return json(await store.categoryList({ limit: 300 }));
@@ -149,10 +149,8 @@ export default async (request: Request) => {
         return json(await store.categoryUpsert({
           id: body.id,
           expectedRevision: body.expectedRevision,
-          name: body.name,
           description: body.description,
           instructions: body.instructions,
-          tags: body.tags || [],
           targetCount: body.targetCount,
           status: body.status || "active",
         }));
