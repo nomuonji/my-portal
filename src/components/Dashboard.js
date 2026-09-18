@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { db } from '../firebase';
+import { auth, db } from '../firebase';
 import { collection, deleteDoc, doc, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
 import {
   Box,
@@ -32,6 +32,7 @@ import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
 import SearchIcon from '@mui/icons-material/Search';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 
 const laneDefinitions = [
   { id: 'next_action', title: '進行中', hint: '次の行動', color: '#5577e8', icon: PlayCircleOutlineIcon },
@@ -67,6 +68,7 @@ const formatDate = (value) => {
 
 function Dashboard() {
   const [memos, setMemos] = useState([]);
+  const [spaces, setSpaces] = useState([]);
   const [selectedMemoId, setSelectedMemoId] = useState(null);
   const [searchText, setSearchText] = useState('');
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -74,6 +76,27 @@ function Dashboard() {
   const theme = useTheme();
   const navigate = useNavigate();
   const isDark = theme.palette.mode === 'dark';
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadSpaces = async () => {
+      try {
+        const user = auth.currentUser;
+        if (!user) return;
+        const token = await user.getIdToken();
+        const response = await fetch('/api/agent-ideas?resource=spaces', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'Failed to load Spaces');
+        if (!cancelled) setSpaces((payload.items || []).filter((space) => space.status === 'active').slice(0, 4));
+      } catch (error) {
+        console.error('Failed to load thinking spaces:', error);
+      }
+    };
+    loadSpaces();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const q = query(collection(db, 'memos'), orderBy('createdAt', 'desc'));
@@ -354,6 +377,59 @@ function Dashboard() {
             : 'radial-gradient(circle at 10% 8%, rgba(115,190,231,0.18), transparent 30%), radial-gradient(circle at 88% 0%, rgba(145,190,218,0.16), transparent 34%)',
         }}
       />
+
+      {spaces.length > 0 && (
+        <Paper
+          elevation={0}
+          sx={{
+            position: 'relative',
+            mb: 1.25,
+            p: 1.2,
+            border: `1px solid ${boardBorder}`,
+            background: laneBackground,
+            backdropFilter: 'blur(14px) saturate(130%)',
+          }}
+        >
+          <Stack direction="row" spacing={0.8} alignItems="center" sx={{ mb: 0.9 }}>
+            <AutoAwesomeIcon color="primary" sx={{ fontSize: 19 }} />
+            <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>Continue Thinking / 思考を再開</Typography>
+            <Button size="small" sx={{ ml: 'auto' }} onClick={() => navigate('/thinking')}>すべて見る</Button>
+          </Stack>
+          <Box sx={{ display: 'flex', gap: 0.8, overflowX: 'auto', pb: 0.2 }}>
+            {spaces.map((space) => (
+              <Paper
+                key={space.id}
+                variant="outlined"
+                onClick={() => navigate(`/thinking?space=${encodeURIComponent(space.id)}`)}
+                sx={{
+                  minWidth: { xs: 240, sm: 285 },
+                  maxWidth: 360,
+                  p: 1.1,
+                  borderRadius: 2.5,
+                  cursor: 'pointer',
+                  bgcolor: isDark ? alpha(theme.palette.background.paper, 0.9) : 'rgba(255,255,255,0.82)',
+                  '&:hover': { borderColor: 'primary.main', transform: 'translateY(-1px)' },
+                  transition: 'transform 150ms ease, border-color 150ms ease',
+                }}
+              >
+                <Typography variant="subtitle2" fontWeight={900}>{space.title}</Typography>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ mt: 0.45, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+                >
+                  {space.currentBrief || space.summary || 'Current Briefはまだありません。'}
+                </Typography>
+                {(space.nextActions || []).length > 0 && (
+                  <Typography variant="caption" color="primary.main" sx={{ display: 'block', mt: 0.55, fontWeight: 750 }}>
+                    Next: {space.nextActions[0]}
+                  </Typography>
+                )}
+              </Paper>
+            ))}
+          </Box>
+        </Paper>
+      )}
 
       <Box sx={{ position: 'relative', display: 'flex', gap: 1.25, alignItems: 'stretch', minHeight: { lg: 'calc(100vh - 104px)' } }}>
         <DetailPanel />
