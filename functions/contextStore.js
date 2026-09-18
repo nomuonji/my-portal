@@ -493,13 +493,14 @@ async function spaceGetContext(input) {
 
 async function spaceIdeaExists(id) {
   const normalized = assertString(id, 'id', { max: 160 });
-  return (await db().collection(THINKING_COLLECTIONS.ideas).doc(normalized).get()).exists;
+  const snapshot = await db().collection(THINKING_COLLECTIONS.ideas).doc(normalized).get();
+  return snapshot.exists && Boolean(snapshot.data().spaceId);
 }
 
 async function spaceIdeaGet(input) {
   const id = assertString(input.id, 'id', { max: 160 });
   const snapshot = await db().collection(THINKING_COLLECTIONS.ideas).doc(id).get();
-  if (!snapshot.exists) throw new Error('Idea not found: ' + id);
+  if (!snapshot.exists || !snapshot.data().spaceId) throw new Error('Thinking Space idea not found: ' + id);
   return documentToObject(snapshot);
 }
 
@@ -535,6 +536,10 @@ async function spaceIdeaSearch(input = {}) {
 async function spaceIdeaUpdate(input) {
   const id = assertString(input.id, 'id', { max: 160 });
   const patch = input.patch && typeof input.patch === 'object' ? input.patch : {};
+  const nextSpaceId = patch.spaceId !== undefined
+    ? assertString(patch.spaceId, 'patch.spaceId', { max: 160 })
+    : null;
+  if (nextSpaceId) await spaceGet({ id: nextSpaceId });
   const ref = db().collection(THINKING_COLLECTIONS.ideas).doc(id);
 
   await db().runTransaction(async (tx) => {
@@ -558,13 +563,11 @@ async function spaceIdeaUpdate(input) {
     if (patch.domains !== undefined) update.domains = stringArray(patch.domains, 30, 80);
     if (patch.attributes !== undefined) update.attributes = jsonSafe(patch.attributes || {});
     if (patch.attributesPatch !== undefined) update.attributes = { ...(current.attributes || {}), ...jsonSafe(patch.attributesPatch || {}) };
-    if (patch.spaceId !== undefined) update.spaceId = assertString(patch.spaceId, 'patch.spaceId', { max: 160 });
+    if (nextSpaceId) update.spaceId = nextSpaceId;
     tx.update(ref, update);
   });
 
-  const updated = await spaceIdeaGet({ id });
-  if (patch.spaceId !== undefined) await spaceGet({ id: updated.spaceId });
-  return updated;
+  return spaceIdeaGet({ id });
 }
 
 async function spaceIdeaLink(input, actor = {}) {
