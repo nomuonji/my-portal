@@ -223,3 +223,5 @@ ChatGPTなどのMCP hostが接続済みserverのtool schemaを一時的にcache�
 これは移行期のfallbackであり、Context Store toolsが見える環境では `space_search` / `space_get_context` を優先する。
 
 MCP initializeでは `tools.listChanged = true` を宣言し、host側がtool listの変更を再取得できることを示す。
+
+この互換経路は `0.5.1-netlify` で導入した。
