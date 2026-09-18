@@ -211,3 +211,15 @@ root Idea `wCaYjTvbYlO55KM3kNO5`（収益化できる仕事・案件探索）を
 - 再利用可能な条件はProfile Factsへ抽出
 - 一時条件は `scope=space:income-search` + `stability=temporary`
 - migrationはidempotentで、完了後の再実行では既存データを増殖させない
+
+
+## MCP schema互換
+
+ChatGPTなどのMCP hostが接続済みserverのtool schemaを一時的にcacheし、新しいContext Store toolsがまだ露出しない場合に備えて、旧Agent Idea toolsからの互換経路を用意する。
+
+- `idea_search({ query: "space:<query>" })` → `space_search` 相当
+- `idea_get_context({ id: "space:<spaceId>" })` → `space_get_context` 相当
+
+これは移行期のfallbackであり、Context Store toolsが見える環境では `space_search` / `space_get_context` を優先する。
+
+MCP initializeでは `tools.listChanged = true` を宣言し、host側がtool listの変更を再取得できることを示す。

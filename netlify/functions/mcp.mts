@@ -19,7 +19,7 @@ const migration: any = (migrationImport as any).default ?? migrationImport;
 const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...portalToolsModule.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "0.5.0-netlify";
+const SERVER_VERSION = "0.5.1-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -324,11 +324,36 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
     case "space_distill_run": return structured(await contextStore.spaceDistillRun(args));
     case "idea_create": return structured(await agentStore.ideaCreate(args));
     case "idea_get": return structured(await agentStore.ideaGet(args));
-    case "idea_search": return structured(await agentStore.ideaSearch(args));
+    case "idea_search": {
+      const query = String(args.query || "").trim();
+      if (query.toLowerCase().startsWith("space:")) {
+        const spaceQuery = query.slice("space:".length).trim();
+        return structured(await contextStore.spaceSearch({
+          query: spaceQuery || undefined,
+          tag: args.tag,
+          domain: args.domain,
+          limit: args.limit,
+          scanLimit: args.scanLimit,
+        }));
+      }
+      return structured(await agentStore.ideaSearch(args));
+    }
     case "idea_update": return structured(await agentStore.ideaUpdate(args));
     case "idea_expand": return structured(await agentStore.ideaExpand(args));
     case "idea_link": return structured(await agentStore.ideaLink(args));
-    case "idea_get_context": return structured(await agentStore.ideaGetContext(args));
+    case "idea_get_context": {
+      const id = String(args.id || "");
+      if (id.startsWith("space:")) {
+        return structured(await contextStore.spaceGetContext({
+          id: id.slice("space:".length),
+          ideaLimit: args.maxNeighbors,
+          recentLimit: args.maxNeighbors,
+          includeArtifacts: args.includeArtifacts ?? true,
+          includeInferred: true,
+        }));
+      }
+      return structured(await agentStore.ideaGetContext(args));
+    }
     case "idea_merge": return structured(await agentStore.ideaMerge(args));
     case "idea_archive": return structured(await agentStore.ideaArchive(args));
     case "idea_run_start": return structured(await agentStore.runStart(args));
@@ -367,9 +392,9 @@ async function handleRpc(message: any) {
       id,
       result: {
         protocolVersion,
-        capabilities: { tools: { listChanged: false } },
+        capabilities: { tools: { listChanged: true } },
         serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
-        instructions: "My Portal is a Context Store + Thinking Workspace. Use space_search then space_get_context to resume long-running themes. Use profile_get_context for scoped User Model facts, preserving explicit vs inferred evidence. Use idea_* as the scratch/exploration layer inside a Space, opportunity_* for concrete real-world targets, decision_* for durable choices, and space_distill_run at session end. Existing portal_* data (including short idea/hobby/stock boards and projects) remains separate; portal_delete requires explicit confirm=true.",
+        instructions: "My Portal is a Context Store + Thinking Workspace. Use space_search then space_get_context to resume long-running themes. Use profile_get_context for scoped User Model facts, preserving explicit vs inferred evidence. If the host is temporarily exposing an older cached tool schema without the new Context Store tools, use idea_search with query prefixed by `space:` to search Spaces and idea_get_context with id `space:<spaceId>` to fetch the same Space Context Pack. Use idea_* as the scratch/exploration layer inside a Space, opportunity_* for concrete real-world targets, decision_* for durable choices, and space_distill_run at session end. Existing portal_* data (including short idea/hobby/stock boards and projects) remains separate; portal_delete requires explicit confirm=true.",
       },
     };
   }
