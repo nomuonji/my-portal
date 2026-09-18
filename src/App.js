@@ -119,9 +119,10 @@ function App() {
 
   const pageTitle = useMemo(() => {
     const path = location.pathname;
+    if (path === '/' || path.startsWith('/boards')) return 'ボード';
+    if (path.startsWith('/dashboard')) return 'ダッシュボード';
     if (path.startsWith('/thinking')) return '思考テーマ';
     if (path.startsWith('/agent-ideas')) return 'Agent Ideas';
-    if (path.startsWith('/boards')) return 'ボード';
     if (path.startsWith('/ideaboard') || path.startsWith('/idea')) return 'アイデア';
     if (path.startsWith('/hobbyboard') || path.startsWith('/hobby')) return '趣味';
     if (path.startsWith('/stockboard') || path.startsWith('/stock')) return 'ストック';
@@ -137,9 +138,9 @@ function App() {
 
   const mobileNavValue = useMemo(() => {
     const path = location.pathname;
-    if (path === '/') return '/';
-    if (path.startsWith('/boards') || path.startsWith('/ideaboard') || path.startsWith('/hobbyboard') || path.startsWith('/stockboard')) return '/boards';
-    if (path.startsWith('/idea') || path.startsWith('/hobby') || path.startsWith('/stock')) return '/boards';
+    if (path === '/' || path.startsWith('/boards') || path.startsWith('/ideaboard') || path.startsWith('/hobbyboard') || path.startsWith('/stockboard')) return '/';
+    if (path.startsWith('/idea') || path.startsWith('/hobby') || path.startsWith('/stock')) return '/';
+    if (path.startsWith('/dashboard')) return '/dashboard';
     if (path.startsWith('/thinking')) return '/thinking';
     if (path.startsWith('/agent-ideas')) return '/agent-ideas';
     return false;
@@ -284,13 +285,13 @@ function App() {
       <List sx={{ flexGrow: 1, overflowY: 'auto', overscrollBehavior: 'contain', py: 1 }}>
         {user && (
           <>
-            <ListItemButton selected={location.pathname === '/'} component={Link} to="/" onClick={navClick}>
-              <ListItemIcon><DashboardIcon /></ListItemIcon>
-              <ListItemText primary="ダッシュボード" />
-            </ListItemButton>
-            <ListItemButton selected={location.pathname.startsWith('/boards') || location.pathname.startsWith('/ideaboard') || location.pathname.startsWith('/hobbyboard') || location.pathname.startsWith('/stockboard') || location.pathname === '/idea' || location.pathname === '/hobby' || location.pathname === '/stock'} component={Link} to="/boards" onClick={navClick}>
+            <ListItemButton selected={location.pathname === '/' || location.pathname.startsWith('/boards') || location.pathname.startsWith('/ideaboard') || location.pathname.startsWith('/hobbyboard') || location.pathname.startsWith('/stockboard') || location.pathname === '/idea' || location.pathname === '/hobby' || location.pathname === '/stock'} component={Link} to="/" onClick={navClick}>
               <ListItemIcon><ViewCompactIcon /></ListItemIcon>
               <ListItemText primary="ボード" secondary="企画・ビジネス / 興味・趣味 / ネタ・表現" />
+            </ListItemButton>
+            <ListItemButton selected={location.pathname.startsWith('/dashboard')} component={Link} to="/dashboard" onClick={navClick}>
+              <ListItemIcon><DashboardIcon /></ListItemIcon>
+              <ListItemText primary="ダッシュボード" />
             </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/thinking')} component={Link} to="/thinking" onClick={navClick}>
               <ListItemIcon><PsychologyAltIcon /></ListItemIcon>
@@ -461,7 +462,8 @@ function App() {
           >
             {user ? (
               <Routes>
-                <Route path="/" element={<Dashboard />} />
+                <Route path="/" element={<PortalBoards />} />
+                <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/memo" element={<Memo />} />
                 <Route path="/memo/:memoId" element={<Memo />} />
                 <Route path="/news" element={<News />} />
@@ -469,9 +471,9 @@ function App() {
                 <Route path="/idea" element={<Idea />} />
                 <Route path="/hobby" element={<Hobby />} />
                 <Route path="/boards" element={<PortalBoards />} />
-                <Route path="/ideaboard" element={<Navigate to="/boards?board=ideas" replace />} />
-                <Route path="/hobbyboard" element={<Navigate to="/boards?board=hobbies" replace />} />
-                <Route path="/stockboard" element={<Navigate to="/boards?board=stocks" replace />} />
+                <Route path="/ideaboard" element={<Navigate to="/?board=ideas" replace />} />
+                <Route path="/hobbyboard" element={<Navigate to="/?board=hobbies" replace />} />
+                <Route path="/stockboard" element={<Navigate to="/?board=stocks" replace />} />
                 <Route path="/agent-ideas" element={<AgentIdeaSpace />} />
                 <Route path="/thinking" element={<ThinkingWorkspace />} />
                 <Route path="/feature-requests" element={<FeatureRequests />} />
@@ -523,10 +525,10 @@ function App() {
             }}
             value={mobileNavValue}
           >
-            <BottomNavigationAction label="ホーム" icon={<DashboardIcon />} component={Link} to="/" />
-            <BottomNavigationAction label="ボード" icon={<ViewCompactIcon />} component={Link} to="/boards" />
-            <BottomNavigationAction label="思考" icon={<PsychologyAltIcon />} component={Link} to="/thinking" />
-            <BottomNavigationAction label="Agent" icon={<SmartToyIcon />} component={Link} to="/agent-ideas" />
+            <BottomNavigationAction value="/" label="ボード" icon={<ViewCompactIcon />} component={Link} to="/" />
+            <BottomNavigationAction value="/thinking" label="思考" icon={<PsychologyAltIcon />} component={Link} to="/thinking" />
+            <BottomNavigationAction value="/agent-ideas" label="Agent" icon={<SmartToyIcon />} component={Link} to="/agent-ideas" />
+            <BottomNavigationAction value="/dashboard" label="ダッシュ" icon={<DashboardIcon />} component={Link} to="/dashboard" />
           </BottomNavigation>
         )}
 
