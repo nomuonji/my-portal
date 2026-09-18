@@ -302,7 +302,7 @@ function App() {
             </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/agent-ideas')} component={Link} to="/agent-ideas" onClick={navClick}>
               <ListItemIcon><SmartToyIcon /></ListItemIcon>
-              <ListItemText primary="Agent Ideas" secondary="AIの発想・セッション" />
+              <ListItemText primary="Agent Ideas" secondary="カテゴリ別にAIが補充" />
             </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/hobbyboard')} component={Link} to="/hobbyboard" onClick={navClick}>
               <ListItemIcon><InterestsIcon /></ListItemIcon>
