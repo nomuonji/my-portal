@@ -30,9 +30,9 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
 
 const BOARD_TABS = [
-  { id: 'ideas', label: 'アイデア' },
-  { id: 'hobbies', label: '趣味' },
-  { id: 'stocks', label: 'ストック' },
+  { id: 'ideas', label: '企画・ビジネス' },
+  { id: 'hobbies', label: '興味・趣味' },
+  { id: 'stocks', label: 'ネタ・表現' },
 ];
 
 async function getAuthenticatedUser() {
