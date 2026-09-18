@@ -19,7 +19,7 @@ const UNTAGGED = '__untagged__';
 const PORTAL_BOARDS = Object.freeze({
   ideas: {
     key: 'ideas',
-    label: 'アイデア',
+    label: '企画・ビジネス',
     collection: 'ideas',
     tagsCollection: 'tags',
     description: 'ビジネス・企画・作りたいもの・試したいことなど、アイデアボードの裏側でAgentが候補を考える。',
@@ -27,7 +27,7 @@ const PORTAL_BOARDS = Object.freeze({
   },
   hobbies: {
     key: 'hobbies',
-    label: '趣味',
+    label: '興味・趣味',
     collection: 'hobbies',
     tagsCollection: 'hobby_tags',
     description: '興味がある物・人・場所・作品・テーマなど、趣味ボードの裏側でAgentが候補を考える。',
@@ -35,7 +35,7 @@ const PORTAL_BOARDS = Object.freeze({
   },
   stocks: {
     key: 'stocks',
-    label: 'ストック',
+    label: 'ネタ・表現',
     collection: 'stocks',
     tagsCollection: 'stock_tags',
     description: 'ネタ帳・大喜利・ユーモア・文体・言い回し・センスなど、感覚的な素材をAgentが裏側でストックする。',
