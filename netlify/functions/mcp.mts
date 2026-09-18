@@ -15,7 +15,7 @@ const migration: any = (migrationImport as any).default ?? migrationImport;
 const TOOLS: any[] = [...agentToolsModule.TOOLS, ...portalToolsModule.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "0.4.1-netlify";
+const SERVER_VERSION = "0.4.2-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -427,9 +427,15 @@ async function handleAuthorize(request: Request) {
       !resource
     ) return new Response("Invalid OAuth authorization request", { status: 400 });
 
+    const clientProof = sign("client-proof", {
+      clientId,
+      redirectUri: redirectUri.toString(),
+      resource,
+    });
     const html = authorizeForm(request, {
       redirect_uri: redirectUri.toString(),
       client_id: clientId,
+      client_proof: clientProof,
       state: url.searchParams.get("state") || "",
       code_challenge: challenge,
       code_challenge_method: "S256",
@@ -443,16 +449,32 @@ async function handleAuthorize(request: Request) {
     const body = await bodyObject(request);
     const redirectUri = safeRedirect(body.redirect_uri);
     const clientId = String(body.client_id || "");
-    const client = await resolveOAuthClient(clientId);
+    const clientProof = verifySigned(body.client_proof, "client-proof");
     const challenge = String(body.code_challenge || "");
     const scope = requestedScopes(body.scope);
     const resource = requestedResource(body.resource, request);
     let accessGranted = false;
-    try { accessGranted = sameAccessKey(String(body.access_key || "")); } catch { accessGranted = false; }
-    if (
-      !redirectUri || !client || !client.redirectUris.includes(redirectUri.toString()) ||
-      !challenge || !scope || !resource || !accessGranted
-    ) return new Response("Authorization denied", { status: 401 });
+    let accessConfigured = true;
+    try {
+      accessGranted = sameAccessKey(String(body.access_key || ""));
+    } catch {
+      accessConfigured = false;
+    }
+
+    const failure =
+      !redirectUri ? "redirect_uri" :
+      !clientProof ? "client_proof" :
+      clientProof.clientId !== clientId ? "client_id" :
+      clientProof.redirectUri !== redirectUri.toString() ? "redirect_uri_binding" :
+      clientProof.resource !== resource ? "resource_binding" :
+      !challenge ? "code_challenge" :
+      !scope ? "scope" :
+      !resource ? "resource" :
+      !accessConfigured ? "server_configuration" :
+      !accessGranted ? "access_key" :
+      null;
+
+    if (failure) return new Response(`Authorization denied (${failure})`, { status: 401 });
 
     const code = sign("code", { redirectUri: redirectUri.toString(), clientId, challenge, scope, resource });
     redirectUri.searchParams.set("code", code);
@@ -488,11 +510,9 @@ async function handleToken(request: Request) {
   const redirectUri = String(body.redirect_uri || "");
   const clientId = String(body.client_id || "");
   const actualChallenge = createHash("sha256").update(verifier).digest("base64url");
-  const client = await resolveOAuthClient(clientId);
   const resource = requestedResource(body.resource || code?.resource, request);
   if (
-    grant !== "authorization_code" || !code || !client || !resource ||
-    !client.redirectUris.includes(redirectUri) ||
+    grant !== "authorization_code" || !code || !resource ||
     code.redirectUri !== redirectUri || code.clientId !== clientId || code.challenge !== actualChallenge ||
     (code.resource && code.resource !== resource)
   ) return json({ error: "invalid_grant" }, 400);
