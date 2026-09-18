@@ -288,7 +288,7 @@ function App() {
               <ListItemIcon><DashboardIcon /></ListItemIcon>
               <ListItemText primary="ダッシュボード" />
             </ListItemButton>
-            <ListItemButton selected={location.pathname.startsWith('/boards') || location.pathname.startsWith('/ideaboard') || location.pathname.startsWith('/hobbyboard') || location.pathname.startsWith('/stockboard')} component={Link} to="/boards" onClick={navClick}>
+            <ListItemButton selected={location.pathname.startsWith('/boards') || location.pathname.startsWith('/ideaboard') || location.pathname.startsWith('/hobbyboard') || location.pathname.startsWith('/stockboard') || location.pathname === '/idea' || location.pathname === '/hobby' || location.pathname === '/stock'} component={Link} to="/boards" onClick={navClick}>
               <ListItemIcon><ViewCompactIcon /></ListItemIcon>
               <ListItemText primary="ボード" secondary="アイデア / 趣味 / ストック" />
             </ListItemButton>
@@ -298,7 +298,7 @@ function App() {
             </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/agent-ideas')} component={Link} to="/agent-ideas" onClick={navClick}>
               <ListItemIcon><SmartToyIcon /></ListItemIcon>
-              <ListItemText primary="Agent Ideas" secondary="カテゴリ別にAIが補充" />
+              <ListItemText primary="Agent Ideas" secondary="Portalと同じ構造でAIが補充" />
             </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/project')} component={Link} to="/project" onClick={navClick}>
               <ListItemIcon><Folder /></ListItemIcon>
