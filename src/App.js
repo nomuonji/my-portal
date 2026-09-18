@@ -123,7 +123,7 @@ function App() {
 
   const pageTitle = useMemo(() => {
     const path = location.pathname;
-    if (path.startsWith('/thinking')) return 'Thinking Workspace';
+    if (path.startsWith('/thinking')) return '思考テーマ';
     if (path.startsWith('/agent-ideas')) return 'Agent Ideas';
     if (path.startsWith('/ideaboard') || path.startsWith('/idea')) return 'アイデア';
     if (path.startsWith('/hobbyboard') || path.startsWith('/hobby')) return '趣味';
@@ -298,7 +298,7 @@ function App() {
             </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/thinking')} component={Link} to="/thinking" onClick={navClick}>
               <ListItemIcon><PsychologyAltIcon /></ListItemIcon>
-              <ListItemText primary="思考ワークスペース" secondary="Space / Context Store" />
+              <ListItemText primary="思考テーマ" secondary="長期テーマ / Context Store" />
             </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/agent-ideas')} component={Link} to="/agent-ideas" onClick={navClick}>
               <ListItemIcon><SmartToyIcon /></ListItemIcon>
@@ -536,7 +536,7 @@ function App() {
           >
             <BottomNavigationAction label="ホーム" icon={<DashboardIcon />} component={Link} to="/" />
             <BottomNavigationAction label="アイデア" icon={<LightbulbIcon />} component={Link} to="/ideaboard" />
-            <BottomNavigationAction label="Thinking" icon={<PsychologyAltIcon />} component={Link} to="/thinking" />
+            <BottomNavigationAction label="思考" icon={<PsychologyAltIcon />} component={Link} to="/thinking" />
             <BottomNavigationAction label="趣味" icon={<InterestsIcon />} component={Link} to="/hobbyboard" />
             <BottomNavigationAction label="ストック" icon={<ViewCompactIcon />} component={Link} to="/stockboard" />
           </BottomNavigation>
