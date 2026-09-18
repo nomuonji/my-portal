@@ -131,6 +131,7 @@ function ideaPayload(input, actor = {}) {
 }
 
 async function ideaCreate(input, actor = {}) {
+  await syncPortalCategories();
   const database = db();
   const categoryId = assertString(input.categoryId, 'categoryId', { max: 160 });
   const categoryRef = database.collection(COLLECTIONS.categories).doc(categoryId);
@@ -622,8 +623,10 @@ async function syncPortalCategories() {
       const inheritedTags = tag === UNTAGGED ? [] : [tag];
       const desired = {
         name,
-        description: current.description || `${board.label} > ${tag === UNTAGGED ? '未分類' : '#'+tag}。 ${board.description}`,
-        instructions: current.instructions || board.instructions,
+        description: current.description !== undefined
+          ? current.description
+          : `${board.label} > ${tag === UNTAGGED ? '未分類' : '#'+tag}。 ${board.description}`,
+        instructions: current.instructions !== undefined ? current.instructions : board.instructions,
         tags: inheritedTags,
         targetCount: current.targetCount === undefined ? 5 : Math.min(Math.max(Number(current.targetCount) || 0, 0), 500),
         requestedCount: Math.min(Math.max(Number(current.requestedCount) || 0, 0), 500),
