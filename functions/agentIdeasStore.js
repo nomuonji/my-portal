@@ -105,28 +105,36 @@ function ideaPayload(input, actor = {}) {
 
 async function ideaCreate(input, actor = {}) {
   const database = db();
+  const categoryId = assertString(input.categoryId, 'categoryId', { max: 160 });
+  const categoryRef = database.collection(COLLECTIONS.categories).doc(categoryId);
+  const categorySnapshot = await categoryRef.get();
+  if (!categorySnapshot.exists) throw new Error(`Category not found: ${categoryId}`);
+  const category = categorySnapshot.data();
+
   const ref = database.collection(COLLECTIONS.ideas).doc();
-  const payload = ideaPayload(input, actor);
+  const payload = ideaPayload({
+    ...input,
+    categoryId,
+    tags: [...(category.tags || []), ...(Array.isArray(input.tags) ? input.tags : [])],
+  }, actor);
+
   await ref.set({
     ...payload,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
 
-  if (payload.categoryId) {
-    const categoryRef = database.collection(COLLECTIONS.categories).doc(payload.categoryId);
-    await database.runTransaction(async (tx) => {
-      const categorySnapshot = await tx.get(categoryRef);
-      if (!categorySnapshot.exists) return;
-      const requestedCount = Math.max(0, Number(categorySnapshot.data().requestedCount || 0));
-      if (requestedCount > 0) {
-        tx.update(categoryRef, {
-          requestedCount: requestedCount - 1,
-          updatedAt: FieldValue.serverTimestamp(),
-        });
-      }
-    });
-  }
+  await database.runTransaction(async (tx) => {
+    const latestCategory = await tx.get(categoryRef);
+    if (!latestCategory.exists) return;
+    const requestedCount = Math.max(0, Number(latestCategory.data().requestedCount || 0));
+    if (requestedCount > 0) {
+      tx.update(categoryRef, {
+        requestedCount: requestedCount - 1,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+  });
 
   return documentToObject(await ref.get());
 }
