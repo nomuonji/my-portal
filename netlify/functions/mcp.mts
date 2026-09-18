@@ -15,7 +15,7 @@ const migration: any = (migrationImport as any).default ?? migrationImport;
 const TOOLS: any[] = [...agentToolsModule.TOOLS, ...portalToolsModule.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "0.3.0-netlify";
+const SERVER_VERSION = "0.4.0-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -130,6 +130,78 @@ function requestedScopes(value: unknown) {
   return [...new Set(scopes)].join(" ");
 }
 
+function canonicalResource(request: Request) {
+  return `${new URL(request.url).origin}/mcp`;
+}
+
+function requestedResource(value: unknown, request: Request) {
+  const expected = canonicalResource(request);
+  if (!value) return expected;
+  try {
+    return new URL(String(value)).toString() === expected ? expected : null;
+  } catch {
+    return null;
+  }
+}
+
+function cimdUrl(value: unknown): URL | null {
+  try {
+    const url = new URL(String(value || ""));
+    if (
+      url.protocol !== "https:" ||
+      url.hostname !== "chatgpt.com" ||
+      url.port ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      !/^\/oauth\/(?:[A-Za-z0-9_-]+\/)?client\.json$/.test(url.pathname)
+    ) return null;
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveOAuthClient(clientId: string) {
+  const legacy = verifySigned(clientId, "client");
+  if (legacy && Array.isArray(legacy.redirectUris)) {
+    return { clientId, redirectUris: legacy.redirectUris.map(String), kind: "legacy-dcr" };
+  }
+
+  const metadataUrl = cimdUrl(clientId);
+  if (!metadataUrl) return null;
+  try {
+    const response = await fetch(metadataUrl, {
+      headers: { Accept: "application/json" },
+      redirect: "error",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return null;
+    const metadata: any = await response.json();
+    const redirectUris = Array.isArray(metadata.redirect_uris)
+      ? metadata.redirect_uris.map((value: unknown) => safeRedirect(value)).filter(Boolean).map((url: URL) => url.toString())
+      : [];
+    const authMethods = Array.isArray(metadata.token_endpoint_auth_methods_supported)
+      ? metadata.token_endpoint_auth_methods_supported.map(String)
+      : metadata.token_endpoint_auth_method
+        ? [String(metadata.token_endpoint_auth_method)]
+        : [];
+    const responseTypes = Array.isArray(metadata.response_types) ? metadata.response_types.map(String) : [];
+    const grantTypes = Array.isArray(metadata.grant_types) ? metadata.grant_types.map(String) : [];
+    if (
+      metadata.client_id !== clientId ||
+      !redirectUris.length ||
+      !authMethods.includes("none") ||
+      !responseTypes.includes("code") ||
+      !grantTypes.includes("authorization_code")
+    ) return null;
+    return { clientId, redirectUris, kind: "cimd" };
+  } catch {
+    return null;
+  }
+}
+
 function origin(request: Request) {
   return new URL(request.url).origin;
 }
@@ -235,11 +307,14 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
 function authorizeBearer(request: Request) {
   const raw = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
   try {
-    if (sameAccessKey(raw)) return { kind: "access-key", clientId: "direct", scope: "agent-ideas" };
+    if (sameAccessKey(raw)) return { kind: "access-key", clientId: "direct", scope: "agent-ideas", resource: canonicalResource(request) };
   } catch {
     return null;
   }
-  return verifySigned(raw, "access");
+  const token = verifySigned(raw, "access");
+  if (!token) return null;
+  if (token.resource && token.resource !== canonicalResource(request)) return null;
+  return token;
 }
 
 async function handleRpc(message: any) {
@@ -337,18 +412,19 @@ async function handleAuthorize(request: Request) {
     const url = new URL(request.url);
     const redirectUri = safeRedirect(url.searchParams.get("redirect_uri"));
     const clientId = url.searchParams.get("client_id") || "";
-    const client = verifySigned(clientId, "client");
+    const client = await resolveOAuthClient(clientId);
     const challenge = url.searchParams.get("code_challenge") || "";
     const scope = requestedScopes(url.searchParams.get("scope"));
+    const resource = requestedResource(url.searchParams.get("resource"), request);
     if (
       url.searchParams.get("response_type") !== "code" ||
       !redirectUri ||
       !client ||
-      !Array.isArray(client.redirectUris) ||
       !client.redirectUris.includes(redirectUri.toString()) ||
       !challenge ||
       url.searchParams.get("code_challenge_method") !== "S256" ||
-      !scope
+      !scope ||
+      !resource
     ) return new Response("Invalid OAuth authorization request", { status: 400 });
 
     const html = authorizeForm(request, {
@@ -358,6 +434,7 @@ async function handleAuthorize(request: Request) {
       code_challenge: challenge,
       code_challenge_method: "S256",
       scope,
+      resource,
     });
     return new Response(html, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
   }
@@ -366,24 +443,25 @@ async function handleAuthorize(request: Request) {
     const body = await bodyObject(request);
     const redirectUri = safeRedirect(body.redirect_uri);
     const clientId = String(body.client_id || "");
-    const client = verifySigned(clientId, "client");
+    const client = await resolveOAuthClient(clientId);
     const challenge = String(body.code_challenge || "");
     const scope = requestedScopes(body.scope);
+    const resource = requestedResource(body.resource, request);
     let accessGranted = false;
     try { accessGranted = sameAccessKey(String(body.access_key || "")); } catch { accessGranted = false; }
     if (
-      !redirectUri || !client || !Array.isArray(client.redirectUris) ||
-      !client.redirectUris.includes(redirectUri.toString()) || !challenge || !scope || !accessGranted
+      !redirectUri || !client || !client.redirectUris.includes(redirectUri.toString()) ||
+      !challenge || !scope || !resource || !accessGranted
     ) return new Response("Authorization denied", { status: 401 });
 
-    const code = sign("code", { redirectUri: redirectUri.toString(), clientId, challenge, scope });
+    const code = sign("code", { redirectUri: redirectUri.toString(), clientId, challenge, scope, resource });
     redirectUri.searchParams.set("code", code);
+    redirectUri.searchParams.set("iss", origin(request));
     if (body.state) redirectUri.searchParams.set("state", String(body.state));
     return Response.redirect(redirectUri.toString(), 302);
   }
   return new Response("Method not allowed", { status: 405 });
 }
-
 async function handleToken(request: Request) {
   if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   const body = await bodyObject(request);
@@ -393,10 +471,12 @@ async function handleToken(request: Request) {
     const refresh = verifySigned(body.refresh_token, "refresh");
     if (!refresh) return json({ error: "invalid_grant" }, 400);
     if (body.client_id && String(body.client_id) !== refresh.clientId) return json({ error: "invalid_client" }, 400);
+    const resource = requestedResource(body.resource || refresh.resource, request);
+    if (!resource || (refresh.resource && refresh.resource !== resource)) return json({ error: "invalid_target" }, 400);
     const scope = requestedScopes(refresh.scope) || "agent-ideas";
     return json({
-      access_token: sign("access", { clientId: refresh.clientId, scope }),
-      refresh_token: sign("refresh", { clientId: refresh.clientId, scope }),
+      access_token: sign("access", { clientId: refresh.clientId, scope, resource }),
+      refresh_token: sign("refresh", { clientId: refresh.clientId, scope, resource }),
       token_type: "Bearer",
       expires_in: 3600,
       scope,
@@ -408,43 +488,59 @@ async function handleToken(request: Request) {
   const redirectUri = String(body.redirect_uri || "");
   const clientId = String(body.client_id || "");
   const actualChallenge = createHash("sha256").update(verifier).digest("base64url");
-  const client = verifySigned(clientId, "client");
+  const client = await resolveOAuthClient(clientId);
+  const resource = requestedResource(body.resource || code?.resource, request);
   if (
-    grant !== "authorization_code" || !code || !client ||
-    code.redirectUri !== redirectUri || code.clientId !== clientId || code.challenge !== actualChallenge
+    grant !== "authorization_code" || !code || !client || !resource ||
+    !client.redirectUris.includes(redirectUri) ||
+    code.redirectUri !== redirectUri || code.clientId !== clientId || code.challenge !== actualChallenge ||
+    (code.resource && code.resource !== resource)
   ) return json({ error: "invalid_grant" }, 400);
 
   const scope = requestedScopes(code.scope) || "agent-ideas";
   return json({
-    access_token: sign("access", { clientId, scope }),
-    refresh_token: sign("refresh", { clientId, scope }),
+    access_token: sign("access", { clientId, scope, resource }),
+    refresh_token: sign("refresh", { clientId, scope, resource }),
     token_type: "Bearer",
     expires_in: 3600,
     scope,
   });
 }
-
 export default async (request: Request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204 });
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
   const base = origin(request);
 
-  if (path === "/.well-known/oauth-protected-resource" && request.method === "GET") {
+  if (
+    (path === "/.well-known/oauth-protected-resource" ||
+      path === "/.well-known/oauth-protected-resource/mcp") &&
+    request.method === "GET"
+  ) {
     return json({
       resource: `${base}/mcp`,
       authorization_servers: [base],
       bearer_methods_supported: ["header"],
       scopes_supported: ["agent-ideas", "offline_access"],
+      resource_name: "My Portal",
     });
   }
 
-  if (path === "/.well-known/oauth-authorization-server" && request.method === "GET") {
+  if (
+    (path === "/.well-known/oauth-authorization-server" ||
+      path === "/.well-known/oauth-authorization-server/mcp" ||
+      path === "/mcp/.well-known/oauth-authorization-server" ||
+      path === "/.well-known/openid-configuration" ||
+      path === "/.well-known/openid-configuration/mcp" ||
+      path === "/mcp/.well-known/openid-configuration") &&
+    request.method === "GET"
+  ) {
     return json({
       issuer: base,
+      authorization_response_iss_parameter_supported: true,
       authorization_endpoint: `${base}/oauth/authorize`,
       token_endpoint: `${base}/oauth/token`,
-      registration_endpoint: `${base}/oauth/register`,
+      client_id_metadata_document_supported: true,
       response_types_supported: ["code"],
       grant_types_supported: ["authorization_code", "refresh_token"],
       token_endpoint_auth_methods_supported: ["none"],
@@ -482,7 +578,7 @@ export default async (request: Request) => {
       toolCount: TOOLS.length,
       agentIdeas: { databaseId: agentStore.DATABASE_ID, database: agentDatabase, migration: migrationResult },
       portal: { databaseId: portalStore.DATABASE_ID, database: portalDatabase },
-      oauth: { configured: oauthConfigured, dcr: true, pkce: "S256" },
+      oauth: { configured: oauthConfigured, clientRegistration: "cimd", cimd: true, legacyDcr: true, pkce: "S256" },
       firebaseCredentialsConfigured: credentialsConfigured,
     }, credentialsConfigured ? 200 : 503);
   }
@@ -500,6 +596,12 @@ export const config = {
     "/oauth/authorize",
     "/oauth/token",
     "/.well-known/oauth-protected-resource",
+    "/.well-known/oauth-protected-resource/mcp",
     "/.well-known/oauth-authorization-server",
+    "/.well-known/oauth-authorization-server/mcp",
+    "/mcp/.well-known/oauth-authorization-server",
+    "/.well-known/openid-configuration",
+    "/.well-known/openid-configuration/mcp",
+    "/mcp/.well-known/openid-configuration",
   ],
 };
