@@ -15,7 +15,7 @@ const migration: any = (migrationImport as any).default ?? migrationImport;
 const TOOLS: any[] = [...agentToolsModule.TOOLS, ...portalToolsModule.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "0.4.2-netlify";
+const SERVER_VERSION = "0.4.3-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -57,7 +57,11 @@ function accessKeyHash() {
 }
 
 function signingKey() {
-  return requiredEnv("AGENT_IDEAS_MCP_SIGNING_KEY");
+  const dedicated = env("AGENT_IDEAS_MCP_SIGNING_KEY")?.trim();
+  if (dedicated) return dedicated;
+  // Personal MCP fallback: reuse the already configured access-key hash so
+  // OAuth remains operational even when a separate signing secret is absent.
+  return accessKeyHash();
 }
 
 function sameAccessKey(value: string) {
@@ -575,7 +579,7 @@ export default async (request: Request) => {
 
   if (path === "/health" || path === "/mcp/health") {
     const credentialsConfigured = Boolean(env("FIREBASE_SERVICE_ACCOUNT_JSON"));
-    const oauthConfigured = Boolean(env("AGENT_IDEAS_MCP_ACCESS_KEY_HASH") && env("AGENT_IDEAS_MCP_SIGNING_KEY"));
+    const oauthConfigured = Boolean(env("AGENT_IDEAS_MCP_ACCESS_KEY_HASH"));
     let agentDatabase: any = { ok: false, reason: "Firebase credentials are not configured" };
     let portalDatabase: any = { ok: false, reason: "Firebase credentials are not configured" };
     let migrationResult: any = null;
@@ -598,7 +602,14 @@ export default async (request: Request) => {
       toolCount: TOOLS.length,
       agentIdeas: { databaseId: agentStore.DATABASE_ID, database: agentDatabase, migration: migrationResult },
       portal: { databaseId: portalStore.DATABASE_ID, database: portalDatabase },
-      oauth: { configured: oauthConfigured, clientRegistration: "cimd", cimd: true, legacyDcr: true, pkce: "S256" },
+      oauth: {
+        configured: oauthConfigured,
+        clientRegistration: "cimd",
+        cimd: true,
+        legacyDcr: true,
+        pkce: "S256",
+        dedicatedSigningKeyConfigured: Boolean(env("AGENT_IDEAS_MCP_SIGNING_KEY")),
+      },
       firebaseCredentialsConfigured: credentialsConfigured,
     }, credentialsConfigured ? 200 : 503);
   }
