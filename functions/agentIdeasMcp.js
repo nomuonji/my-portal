@@ -2,7 +2,7 @@ const { createHash, createHmac, timingSafeEqual } = require('node:crypto');
 const store = require('./agentIdeasStore');
 
 const SERVER_NAME = 'my-portal-agent-ideas';
-const SERVER_VERSION = '0.1.0';
+const SERVER_VERSION = '0.2.0';
 const SUPPORTED_PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const DEFAULT_ACCESS_KEY_HASH = 'f174c5b44462f5b25b12902b20bca1cf24e1153c9a2baec7db89a9b436a07618';
@@ -41,6 +41,7 @@ const ideaCreateProperties = {
   tags: stringArray('Loose tags.', 50),
   domains: stringArray('Broad domains such as business, web, english-learning.', 30),
   attributes: jsonObject('Agent-defined structured metadata. Keep this flexible rather than forcing every idea into one schema.'),
+  categoryId: string('Owning Agent Ideas category ID.', 160),
   createdInRunId: string('Run that produced this idea.', 160),
 };
 
@@ -52,9 +53,51 @@ const TOOLS = [
     annotations: { readOnlyHint: true },
   },
   {
+    name: 'idea_category_list',
+    description: 'List persistent Agent Ideas generation categories.',
+    inputSchema: objectSchema({
+      status: { type: 'string', enum: ['active', 'paused', 'archived'] },
+      limit: { type: 'integer', minimum: 1, maximum: 300, default: 100 },
+    }),
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'idea_category_upsert',
+    description: 'Create or update a category generation brief and target stock count.',
+    inputSchema: objectSchema({
+      id: string('Optional category ID.', 160),
+      expectedRevision: { type: 'integer', minimum: 1 },
+      name: string('Category name.', 160),
+      description: string('What belongs in this category.', 3000),
+      instructions: string('Agent generation instructions.', 12000),
+      tags: stringArray('Category tags.', 30),
+      targetCount: { type: 'integer', minimum: 0, maximum: 500, default: 12 },
+      status: { type: 'string', enum: ['active', 'paused', 'archived'] },
+    }, ['name']),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  {
+    name: 'idea_generation_work',
+    description: 'Return categories that need idea replenishment.',
+    inputSchema: objectSchema({
+      categoryId: string('Optional category ID.', 160),
+      includeSatisfied: { type: 'boolean', default: false },
+    }),
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'idea_replenish_request',
+    description: 'Add an explicit replenishment count to a category.',
+    inputSchema: objectSchema({
+      categoryId: string('Category ID.', 160),
+      count: { type: 'integer', minimum: 1, maximum: 100, default: 5 },
+    }, ['categoryId']),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  {
     name: 'idea_create',
     description: 'Create a durable idea node. Use this for seeds, hypotheses, rough concepts, failed approaches, or developed proposals; do not wait until an idea is polished.',
-    inputSchema: objectSchema(ideaCreateProperties, ['title']),
+    inputSchema: objectSchema(ideaCreateProperties, ['title', 'categoryId']),
     annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
@@ -366,6 +409,10 @@ async function invokeTool(name, args = {}) {
         tools: TOOLS.map((tool) => tool.name),
         database: await store.healthCheck(),
       });
+    case 'idea_category_list': return structured(await store.categoryList(input));
+    case 'idea_category_upsert': return structured(await store.categoryUpsert(input));
+    case 'idea_generation_work': return structured(await store.generationWork(input));
+    case 'idea_replenish_request': return structured(await store.requestReplenishment(input));
     case 'idea_create': return structured(await store.ideaCreate(input));
     case 'idea_get': return structured(await store.ideaGet(input));
     case 'idea_search': return structured(await store.ideaSearch(input));
@@ -403,7 +450,7 @@ async function handleRpc(message) {
           protocolVersion,
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
-          instructions: 'Use idea_get_context before continuing an existing thread. Save rough branches, contradictions, failed ideas, and provenance rather than only polished conclusions. Start a run for substantial exploration and finish it with findings and next actions.',
+          instructions: 'Agent Ideas is an independent category-based replenishment board. Use idea_generation_work to find shortages, then create exactly the required category items with idea_create and categoryId. Do not write Portal short-form ideas or Thinking Space state through these tools.',
         },
       };
     }
