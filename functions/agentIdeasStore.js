@@ -263,6 +263,8 @@ async function ideaExpand(input, actor = {}) {
   const database = db();
   const parent = await database.collection(COLLECTIONS.ideas).doc(parentIdeaId).get();
   if (!parent.exists) throw new Error(`Idea not found: ${parentIdeaId}`);
+  const parentCategoryId = parent.data().categoryId;
+  if (!parentCategoryId) throw new Error(`Parent idea has no category: ${parentIdeaId}`);
   const batch = database.batch();
   const createdRefs = [];
   const relationType = clampString(input.relationType, 80) || 'derived_from';
@@ -271,6 +273,7 @@ async function ideaExpand(input, actor = {}) {
     const ideaRef = database.collection(COLLECTIONS.ideas).doc();
     const payload = ideaPayload({
       ...candidate,
+      categoryId: candidate.categoryId || parentCategoryId,
       createdInRunId: candidate.createdInRunId || input.createdInRunId,
     }, actor);
     batch.set(ideaRef, {
@@ -305,8 +308,13 @@ async function ideaMerge(input, actor = {}) {
   const missing = snapshots.filter((snapshot) => !snapshot.exists).map((snapshot) => snapshot.id);
   if (missing.length) throw new Error(`Ideas not found: ${missing.join(', ')}`);
 
+  const sourceCategoryIds = [...new Set(snapshots.map((snapshot) => snapshot.data().categoryId).filter(Boolean))];
+  const mergedCategoryId = input.idea?.categoryId || (sourceCategoryIds.length === 1 ? sourceCategoryIds[0] : null);
+  if (!mergedCategoryId) throw new Error('Merged idea requires categoryId when source ideas span categories');
+
   const merged = await ideaCreate({
     ...input.idea,
+    categoryId: mergedCategoryId,
     createdInRunId: input.createdInRunId || input.idea?.createdInRunId,
   }, actor);
   const batch = database.batch();
