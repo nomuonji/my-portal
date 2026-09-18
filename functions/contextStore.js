@@ -499,6 +499,177 @@ async function spaceDistillRun(input) {
   };
 }
 
+async function bootstrapIncomeSearchMigration() {
+  const rootIdeaId = 'wCaYjTvbYlO55KM3kNO5';
+  const spaceId = 'income-search';
+  const database = db();
+  const rootSnapshot = await database.collection('ideas').doc(rootIdeaId).get();
+  if (!rootSnapshot.exists) {
+    return { migrated: false, reason: 'legacy-root-not-found', rootIdeaId };
+  }
+
+  const spaceRef = database.collection(COLLECTIONS.spaces).doc(spaceId);
+  const existingSpace = await spaceRef.get();
+  if (existingSpace.exists && existingSpace.data().migrationState === 'complete') {
+    return { migrated: false, reason: 'already-migrated', spaceId, rootIdeaId };
+  }
+
+  const root = documentToObject(rootSnapshot);
+  const now = FieldValue.serverTimestamp();
+  if (!existingSpace.exists) {
+    await spaceRef.set({
+      title: 'お金を稼ぐ方法を探す',
+      summary: '在宅・ネット完結・非同期を前提に、営業や重い選考を避けながら、需要が先に存在する収益機会を継続探索する長期テーマ。',
+      goal: 'まず1万円程度の初回収益を現実的に作る。正社員就職を主目的にせず、ネット上に既に存在する需要へ成果物を提出する形を優先する。',
+      status: 'active',
+      currentBrief: 'AI評価プラットフォームや自前マーケティング中心の案から、OSS bounty・microgrant・公開懸賞・research bountyなど「インターネット上にすでに金が置かれている未解決問題をAIで採掘する」方向へ転換。野良案件レーダーを軸に、source-of-truth、競合、支払可能性、日本からの参加可否、AIでの圧縮余地を検証して候補化する。',
+      nextActions: [
+        'OSS bounty / microgrant / research bounty の新規候補を追加探索する',
+        '候補ごとに未アサイン・競合PR・支払実績・日本からの受領可否を検証する',
+        '作業量に対する期待報酬が低い案件は早めに除外する',
+      ],
+      tags: ['収益化', '野良案件', 'bounty', '非同期'],
+      domains: ['work', 'business', 'income'],
+      legacyRootIdeaId: rootIdeaId,
+      migrationState: 'running',
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+  } else {
+    await spaceRef.set({ migrationState: 'running', updatedAt: now }, { merge: true });
+  }
+
+  const ideaIds = new Set([rootIdeaId]);
+  let frontier = [rootIdeaId];
+  for (let depth = 0; depth < 2 && frontier.length; depth += 1) {
+    const next = new Set();
+    for (const ideaId of frontier) {
+      const [outgoing, incoming] = await Promise.all([
+        database.collection('relations').where('fromIdeaId', '==', ideaId).limit(100).get(),
+        database.collection('relations').where('toIdeaId', '==', ideaId).limit(100).get(),
+      ]);
+      [...outgoing.docs, ...incoming.docs].forEach((snapshot) => {
+        const relation = snapshot.data();
+        const otherId = relation.fromIdeaId === ideaId ? relation.toIdeaId : relation.fromIdeaId;
+        if (otherId && !ideaIds.has(otherId)) next.add(otherId);
+      });
+    }
+    [...next].forEach((id) => ideaIds.add(id));
+    frontier = [...next];
+  }
+
+  const ideaSnapshots = await database.getAll(...[...ideaIds].map((id) => database.collection('ideas').doc(id)));
+  const ideas = ideaSnapshots.filter((snapshot) => snapshot.exists).map(documentToObject);
+  const attachBatch = database.batch();
+  ideaSnapshots.filter((snapshot) => snapshot.exists).forEach((snapshot) => {
+    attachBatch.update(snapshot.ref, { spaceId, updatedAt: FieldValue.serverTimestamp() });
+  });
+  await attachBatch.commit();
+
+  const runIds = new Set(ideas.map((idea) => idea.createdInRunId).filter(Boolean));
+  if (runIds.size) {
+    const runSnapshots = await database.getAll(...[...runIds].map((id) => database.collection('runs').doc(id)));
+    const runBatch = database.batch();
+    runSnapshots.filter((snapshot) => snapshot.exists).forEach((snapshot) => {
+      runBatch.update(snapshot.ref, {
+        spaceId,
+        metadata: { ...(snapshot.data().metadata || {}), migratedToSpaceId: spaceId },
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+    await runBatch.commit();
+  }
+
+  const sourceRunId = root.createdInRunId || null;
+  const profileFacts = [
+    { statement: '仕事では対人コミュニケーションがかなり少ない働き方を好む', scope: 'work', category: 'work_preferences', stability: 'stable' },
+    { statement: '仕事では非同期で進められる作業を好む', scope: 'work', category: 'work_preferences', stability: 'stable' },
+    { statement: '営業・マーケティング負荷の低い収益方法を好む', scope: 'work', category: 'work_preferences', stability: 'stable' },
+    { statement: '登録・試験・選考負荷の大きいプラットフォームを好まない', scope: 'work', category: 'work_preferences', stability: 'contextual' },
+    { statement: 'AIで手作業を大きく圧縮できる仕事を好む', scope: 'work', category: 'technical_preferences', stability: 'stable' },
+    { statement: '当面の初回収益目標は1万円程度', scope: `space:${spaceId}`, category: 'temporary_context', stability: 'temporary' },
+    { statement: '現在は正社員就職を優先していない', scope: `space:${spaceId}`, category: 'temporary_context', stability: 'temporary' },
+  ];
+  for (const fact of profileFacts) {
+    await profileFactUpsert({
+      ...fact,
+      evidenceType: 'explicit',
+      confidence: 1,
+      source: { type: 'legacy_space_migration', rootIdeaId },
+      sourceRunId,
+    });
+  }
+
+  const byTitle = new Map(ideas.map((idea) => [idea.title, idea]));
+  const existingDecisions = await database.collection(COLLECTIONS.decisions).where('spaceId', '==', spaceId).limit(100).get();
+  if (existingDecisions.empty) {
+    const outlier = byTitle.get('AIトレーニング：Outlier 日本語×Coding');
+    const mercor = byTitle.get('AI評価：Mercor 日本語バイリンガル AI Safety');
+    const radar = byTitle.get('野良案件レーダー：需要先行・成果物提出型');
+    await decisionCreate({
+      spaceId,
+      subjectType: 'idea',
+      subjectId: outlier?.id || null,
+      decision: 'reject',
+      reason: '登録・試験・選考負荷が高く、案件発生も不定期で継続監視が必要なため、AI評価プラットフォーム系を主軸から外す。',
+      createdInRunId: sourceRunId,
+    });
+    await decisionCreate({
+      spaceId,
+      subjectType: 'idea',
+      subjectId: mercor?.id || null,
+      decision: 'reject',
+      reason: '高単価でもオンボーディング負荷と案件供給の不透明さが現在の希望条件に合わないため、主軸から外す。',
+      createdInRunId: sourceRunId,
+    });
+    await decisionCreate({
+      spaceId,
+      subjectType: 'idea',
+      subjectId: radar?.id || null,
+      decision: 'adopt',
+      reason: '自分で需要を作るより、すでに金が置かれている未解決問題を探し、非同期で成果物を提出する需要先行型を優先する。',
+      createdInRunId: sourceRunId,
+    });
+  }
+
+  const existingOpportunities = await database.collection(COLLECTIONS.opportunities).where('spaceId', '==', spaceId).limit(100).get();
+  const migratedOriginIds = new Set(existingOpportunities.docs.map((snapshot) => snapshot.data().originIdeaId).filter(Boolean));
+  const opportunityIdeas = ideas.filter((idea) => ['wild_gig', 'opportunity_source'].includes(idea.type));
+  for (const idea of opportunityIdeas) {
+    if (migratedOriginIds.has(idea.id)) continue;
+    const attrs = idea.attributes || {};
+    await opportunityCreate({
+      spaceId,
+      title: idea.title,
+      summary: idea.summary || idea.content || '',
+      type: idea.type === 'wild_gig' ? 'concrete_gig' : 'opportunity_source',
+      status: idea.status === 'paused' ? 'paused' : 'active',
+      originIdeaId: idea.id,
+      reward: attrs.reward || attrs.historicalReward || attrs.rewardModel || '',
+      deadline: attrs.deadline || '',
+      attributes: attrs,
+      createdInRunId: idea.createdInRunId || sourceRunId,
+    });
+  }
+
+  await spaceRef.set({
+    migrationState: 'complete',
+    migratedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  return {
+    migrated: true,
+    spaceId,
+    rootIdeaId,
+    attachedIdeaCount: ideas.length,
+    runCount: runIds.size,
+    profileFactCount: profileFacts.length,
+    opportunityCount: opportunityIdeas.length,
+  };
+}
+
 async function healthCheck() {
   const started = Date.now();
   const [spaceSample, profileSample] = await Promise.all([
@@ -538,4 +709,5 @@ module.exports = {
   opportunityCreate,
   opportunityUpdate,
   spaceDistillRun,
+  bootstrapIncomeSearchMigration,
 };
