@@ -26,10 +26,21 @@ import {
 } from '@mui/icons-material';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { auth } from '../firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+
+async function getAuthenticatedUser() {
+  if (auth.currentUser) return auth.currentUser;
+  return new Promise((resolve, reject) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      unsubscribe();
+      if (user) resolve(user);
+      else reject(new Error('My Portal にログインしてください'));
+    });
+  });
+}
 
 async function contextApi(path = '', options = {}) {
-  const user = auth.currentUser;
-  if (!user) throw new Error('My Portal にログインしてください');
+  const user = await getAuthenticatedUser();
   const token = await user.getIdToken();
   const response = await fetch(`/api/agent-ideas${path}`, {
     ...options,
@@ -263,11 +274,11 @@ export default function ThinkingWorkspace() {
         <Box sx={{ flexGrow: 1 }}>
           <Stack direction="row" spacing={1} alignItems="center">
             <PsychologyAltIcon color="primary" />
-            <Typography variant="h5" fontWeight={950}>Thinking Workspace</Typography>
+            <Typography variant="h5" fontWeight={950}>思考テーマ</Typography>
             <Chip label="Context Store" size="small" color="primary" variant="outlined" />
           </Stack>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.4 }}>
-            長期テーマをSpace単位で保存し、次のAIセッションがここから思考を再開します。
+            長期テーマの「現在地・判断・次の行動」をSpace単位で保存し、AIとの続きをここから再開します。
           </Typography>
         </Box>
         <Button startIcon={<RefreshIcon />} onClick={() => { loadBase(); if (selectedSpaceId) loadContext(selectedSpaceId); }}>
@@ -280,8 +291,8 @@ export default function ThinkingWorkspace() {
       {notice && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setNotice('')}>{notice}</Alert>}
 
       <Tabs value={tab} onChange={(_, value) => setTab(value)} sx={{ mb: 2 }}>
-        <Tab label="Continue Thinking" />
-        <Tab label="My Profile / User Model" />
+        <Tab label="テーマ" />
+        <Tab label="自分について / User Model" />
       </Tabs>
 
       {tab === 0 && (
@@ -289,7 +300,7 @@ export default function ThinkingWorkspace() {
           <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 3, alignSelf: 'start' }}>
             <Stack direction="row" spacing={0.8} alignItems="center" sx={{ px: 0.5, pb: 1 }}>
               <AutoAwesomeIcon fontSize="small" color="primary" />
-              <Typography fontWeight={900}>Continue Thinking / 思考を再開</Typography>
+              <Typography fontWeight={900}>長期テーマ</Typography>
             </Stack>
             <Stack spacing={1}>
               {spaces.length === 0 && <Empty>まだSpaceがありません。AIとの長期テーマが作成されるとここに表示されます。</Empty>}
@@ -329,14 +340,61 @@ export default function ThinkingWorkspace() {
             {!context && !contextLoading && <Section title="Spaceを選択"><Empty>左から長期テーマを選択してください。</Empty></Section>}
             {context && (
               <Stack spacing={2}>
-                <Paper variant="outlined" sx={{ p: { xs: 1.5, md: 2.25 }, borderRadius: 3 }}>
+                <Paper
+                  elevation={0}
+                  sx={{
+                    p: { xs: 1.75, md: 2.5 },
+                    borderRadius: 3.5,
+                    border: '1px solid',
+                    borderColor: 'primary.light',
+                    background: (theme) => `linear-gradient(135deg, ${theme.palette.primary.main}14, ${theme.palette.background.paper} 52%, ${theme.palette.info.main}0d)`,
+                  }}
+                >
                   <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} alignItems={{ md: 'center' }}>
                     <Box sx={{ flexGrow: 1 }}>
-                      <Typography variant="h5" fontWeight={950}>{context.space.title}</Typography>
-                      {context.space.summary && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{context.space.summary}</Typography>}
+                      <Typography variant="overline" color="primary.main" sx={{ fontWeight: 900, letterSpacing: '0.12em' }}>
+                        CURRENT THEME
+                      </Typography>
+                      <Typography variant="h4" fontWeight={950} sx={{ mt: -0.25, letterSpacing: '-0.03em' }}>
+                        {context.space.title}
+                      </Typography>
+                      {context.space.summary && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.65, maxWidth: 900 }}>{context.space.summary}</Typography>}
                     </Box>
                     <Chip label={context.space.status || 'active'} color="primary" variant="outlined" />
                   </Stack>
+
+                  <Box
+                    sx={{
+                      mt: 2,
+                      display: 'grid',
+                      gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
+                      gap: 1,
+                    }}
+                  >
+                    <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2.5, bgcolor: 'background.paper' }}>
+                      <Typography variant="caption" color="text.secondary" fontWeight={900}>現在地</Typography>
+                      <Typography variant="body2" sx={{ mt: 0.45, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+                        {context.currentBrief || 'まだCurrent Briefがありません。'}
+                      </Typography>
+                    </Paper>
+                    <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2.5, bgcolor: 'background.paper' }}>
+                      <Typography variant="caption" color="text.secondary" fontWeight={900}>GOAL</Typography>
+                      <Typography variant="body2" sx={{ mt: 0.45, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+                        {context.goal || 'まだGoalがありません。'}
+                      </Typography>
+                    </Paper>
+                    <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2.5, bgcolor: 'background.paper' }}>
+                      <Typography variant="caption" color="text.secondary" fontWeight={900}>NEXT</Typography>
+                      <Stack spacing={0.45} sx={{ mt: 0.45 }}>
+                        {(context.nextActions || []).length === 0 && <Typography variant="body2">まだNext Actionがありません。</Typography>}
+                        {(context.nextActions || []).slice(0, 3).map((action, index) => (
+                          <Typography key={action} variant="body2" sx={{ lineHeight: 1.55 }}>
+                            {index + 1}. {action}
+                          </Typography>
+                        ))}
+                      </Stack>
+                    </Paper>
+                  </Box>
                 </Paper>
 
                 <Section title="1. Current State / Current Brief" subtitle="次回セッションが最初に読む、現在地の圧縮版">
