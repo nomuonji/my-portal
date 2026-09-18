@@ -465,6 +465,34 @@ async function spaceGetContext(input) {
   };
 }
 
+async function createSpaceIdea(input, actor = {}) {
+  const database = db();
+  const ref = database.collection('ideas').doc();
+  const now = FieldValue.serverTimestamp();
+  await ref.set({
+    title: assertString(input.title, 'title', { max: 300 }),
+    summary: clampString(input.summary, 3000) || '',
+    content: clampString(input.content, 30000) || '',
+    type: clampString(input.type, 80) || 'idea',
+    status: ['active', 'paused', 'archived', 'promoted'].includes(input.status) ? input.status : 'active',
+    maturity: ['seed', 'exploring', 'developed', 'validated', 'execution_ready'].includes(input.maturity) ? input.maturity : 'seed',
+    tags: stringArray(input.tags, 50, 80),
+    domains: stringArray(input.domains, 30, 80),
+    attributes: jsonSafe(input.attributes || {}),
+    spaceId: clampString(input.spaceId, 160) || null,
+    createdBy: {
+      type: clampString(input.createdBy?.type || actor.type, 30) || 'agent',
+      agent: clampString(input.createdBy?.agent || actor.agent, 120) || 'chatgpt',
+      model: clampString(input.createdBy?.model || actor.model, 120) || null,
+    },
+    createdInRunId: clampString(input.createdInRunId, 160) || null,
+    revision: 1,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return documentToObject(await ref.get());
+}
+
 async function spaceDistillRun(input) {
   const spaceId = assertString(input.spaceId, 'spaceId', { max: 160 });
   await spaceGet({ id: spaceId });
@@ -519,7 +547,7 @@ async function spaceDistillRun(input) {
 
   const createdIdeas = [];
   for (const idea of Array.isArray(input.ideas) ? input.ideas.slice(0, 50) : []) {
-    createdIdeas.push(await agentStore.ideaCreate({ ...idea, spaceId, createdInRunId: idea.createdInRunId || runId || null }));
+    createdIdeas.push(await createSpaceIdea({ ...idea, spaceId, createdInRunId: idea.createdInRunId || runId || null }));
   }
 
   return {
