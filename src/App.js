@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Routes, Route, Link, useLocation } from 'react-router-dom';
+import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 import { auth } from './firebase';
 import { GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp, query, where, onSnapshot } from 'firebase/firestore';
@@ -33,7 +33,6 @@ import {
   Folder,
   Menu as MenuIcon,
   Dashboard as DashboardIcon,
-  Lightbulb as LightbulbIcon,
   ViewCompact as ViewCompactIcon,
   Build as BuildIcon,
   Brightness4 as Brightness4Icon,
@@ -42,7 +41,6 @@ import {
   ExpandLess,
   ExpandMore,
   MoreHoriz as MoreHorizIcon,
-  Interests as InterestsIcon,
   SmartToy as SmartToyIcon,
   PsychologyAlt as PsychologyAltIcon,
 } from '@mui/icons-material';
@@ -51,11 +49,10 @@ import Memo from './components/Memo';
 import Dashboard from './components/Dashboard';
 import News from './components/News';
 import Idea from './components/Idea';
-import IdeaBoard from './components/IdeaBoard';
 import AgentIdeaSpace from './components/AgentIdeaSpace';
+import PortalBoards from './components/PortalBoards';
 import ThinkingWorkspace from './components/ThinkingWorkspace';
 import Hobby from './components/Hobby';
-import HobbyBoard from './components/HobbyBoard';
 import FeatureRequests from './components/FeatureRequests';
 import Project from './components/Project';
 import ProjectDetails from './components/ProjectDetails';
@@ -67,7 +64,6 @@ import Flashcard from './components/Flashcard';
 import FlashcardForm from './components/FlashcardForm';
 import GroupAndDeckList from './components/GroupAndDeckList';
 import Stock from './components/Stock';
-import StockBoard from './components/StockBoard';
 import GlobalFlashcardManagement from './components/GlobalFlashcardManagement';
 
 import getAppTheme from './theme';
@@ -125,6 +121,7 @@ function App() {
     const path = location.pathname;
     if (path.startsWith('/thinking')) return '思考テーマ';
     if (path.startsWith('/agent-ideas')) return 'Agent Ideas';
+    if (path.startsWith('/boards')) return 'ボード';
     if (path.startsWith('/ideaboard') || path.startsWith('/idea')) return 'アイデア';
     if (path.startsWith('/hobbyboard') || path.startsWith('/hobby')) return '趣味';
     if (path.startsWith('/stockboard') || path.startsWith('/stock')) return 'ストック';
@@ -141,11 +138,10 @@ function App() {
   const mobileNavValue = useMemo(() => {
     const path = location.pathname;
     if (path === '/') return '/';
-    if (path.startsWith('/ideaboard') || path.startsWith('/idea')) return '/ideaboard';
+    if (path.startsWith('/boards') || path.startsWith('/ideaboard') || path.startsWith('/hobbyboard') || path.startsWith('/stockboard')) return '/boards';
+    if (path.startsWith('/idea') || path.startsWith('/hobby') || path.startsWith('/stock')) return '/boards';
     if (path.startsWith('/thinking')) return '/thinking';
-    if (path.startsWith('/agent-ideas')) return '/thinking';
-    if (path.startsWith('/hobbyboard') || path.startsWith('/hobby')) return '/hobbyboard';
-    if (path.startsWith('/stockboard') || path.startsWith('/stock')) return '/stockboard';
+    if (path.startsWith('/agent-ideas')) return '/agent-ideas';
     return false;
   }, [location.pathname]);
 
@@ -292,9 +288,9 @@ function App() {
               <ListItemIcon><DashboardIcon /></ListItemIcon>
               <ListItemText primary="ダッシュボード" />
             </ListItemButton>
-            <ListItemButton selected={location.pathname.startsWith('/ideaboard')} component={Link} to="/ideaboard" onClick={navClick}>
-              <ListItemIcon><LightbulbIcon /></ListItemIcon>
-              <ListItemText primary="アイデアボード" />
+            <ListItemButton selected={location.pathname.startsWith('/boards') || location.pathname.startsWith('/ideaboard') || location.pathname.startsWith('/hobbyboard') || location.pathname.startsWith('/stockboard')} component={Link} to="/boards" onClick={navClick}>
+              <ListItemIcon><ViewCompactIcon /></ListItemIcon>
+              <ListItemText primary="ボード" secondary="アイデア / 趣味 / ストック" />
             </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/thinking')} component={Link} to="/thinking" onClick={navClick}>
               <ListItemIcon><PsychologyAltIcon /></ListItemIcon>
@@ -304,17 +300,9 @@ function App() {
               <ListItemIcon><SmartToyIcon /></ListItemIcon>
               <ListItemText primary="Agent Ideas" secondary="カテゴリ別にAIが補充" />
             </ListItemButton>
-            <ListItemButton selected={location.pathname.startsWith('/hobbyboard')} component={Link} to="/hobbyboard" onClick={navClick}>
-              <ListItemIcon><InterestsIcon /></ListItemIcon>
-              <ListItemText primary="趣味ボード" />
-            </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/project')} component={Link} to="/project" onClick={navClick}>
               <ListItemIcon><Folder /></ListItemIcon>
               <ListItemText primary="プロジェクトボード" />
-            </ListItemButton>
-            <ListItemButton selected={location.pathname.startsWith('/stockboard')} component={Link} to="/stockboard" onClick={navClick}>
-              <ListItemIcon><ViewCompactIcon /></ListItemIcon>
-              <ListItemText primary="ストックボード" />
             </ListItemButton>
             <ListItemButton onClick={() => setOpenOthers((open) => !open)}>
               <ListItemIcon><MoreHorizIcon /></ListItemIcon>
@@ -478,13 +466,14 @@ function App() {
                 <Route path="/memo/:memoId" element={<Memo />} />
                 <Route path="/news" element={<News />} />
                 <Route path="/stock" element={<Stock />} />
-                <Route path="/stockboard" element={<StockBoard />} />
                 <Route path="/idea" element={<Idea />} />
-                <Route path="/ideaboard" element={<IdeaBoard />} />
+                <Route path="/hobby" element={<Hobby />} />
+                <Route path="/boards" element={<PortalBoards />} />
+                <Route path="/ideaboard" element={<Navigate to="/boards?board=ideas" replace />} />
+                <Route path="/hobbyboard" element={<Navigate to="/boards?board=hobbies" replace />} />
+                <Route path="/stockboard" element={<Navigate to="/boards?board=stocks" replace />} />
                 <Route path="/agent-ideas" element={<AgentIdeaSpace />} />
                 <Route path="/thinking" element={<ThinkingWorkspace />} />
-                <Route path="/hobby" element={<Hobby />} />
-                <Route path="/hobbyboard" element={<HobbyBoard />} />
                 <Route path="/feature-requests" element={<FeatureRequests />} />
                 <Route path="/project" element={<Project />} />
                 <Route path="/project/new" element={<ProjectForm />} />
@@ -535,10 +524,9 @@ function App() {
             value={mobileNavValue}
           >
             <BottomNavigationAction label="ホーム" icon={<DashboardIcon />} component={Link} to="/" />
-            <BottomNavigationAction label="アイデア" icon={<LightbulbIcon />} component={Link} to="/ideaboard" />
+            <BottomNavigationAction label="ボード" icon={<ViewCompactIcon />} component={Link} to="/boards" />
             <BottomNavigationAction label="思考" icon={<PsychologyAltIcon />} component={Link} to="/thinking" />
-            <BottomNavigationAction label="趣味" icon={<InterestsIcon />} component={Link} to="/hobbyboard" />
-            <BottomNavigationAction label="ストック" icon={<ViewCompactIcon />} component={Link} to="/stockboard" />
+            <BottomNavigationAction label="Agent" icon={<SmartToyIcon />} component={Link} to="/agent-ideas" />
           </BottomNavigation>
         )}
 
