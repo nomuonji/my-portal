@@ -7,9 +7,9 @@
 Two-level hierarchy:
 
 1. Large board category
-   - `ideas` — アイデア。ビジネス・企画・作りたいもの・試したいこと寄り。
-   - `hobbies` — 趣味。興味がある物・人・場所・作品・テーマ。
-   - `stocks` — ストック。ネタ帳・大喜利・ユーモア・文体・言い回し・センスなど、感覚的な素材。
+   - `ideas` — 企画・ビジネス。ビジネス・企画・作りたいもの・試したいこと寄り。
+   - `hobbies` — 興味・趣味。興味がある物・人・場所・作品・テーマ。
+   - `stocks` — ネタ・表現。ネタ帳・大喜利・ユーモア・文体・言い回し・センスなど、感覚的な素材。
 2. Tag category inside each large board
    - `tags`
    - `hobby_tags`
