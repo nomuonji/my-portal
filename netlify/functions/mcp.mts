@@ -19,7 +19,7 @@ const migration: any = (migrationImport as any).default ?? migrationImport;
 const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...portalToolsModule.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "0.7.0-netlify";
+const SERVER_VERSION = "0.7.1-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -327,8 +327,15 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
     case "idea_generation_work": return structured(await agentStore.generationWork(args));
     case "idea_replenish_request": return structured(await agentStore.requestReplenishment(args));
     case "idea_promote_to_portal": return structured(await agentStore.promoteToPortal(args));
-    case "idea_create": return structured(await agentStore.ideaCreate(args));
-    case "idea_get": return structured(await agentStore.ideaGet(args));
+    case "idea_create": {
+      if (args.spaceId && args.categoryId) throw new Error("idea_create accepts either spaceId or categoryId, not both");
+      if (args.spaceId) return structured(await contextStore.spaceIdeaCreate(args));
+      return structured(await agentStore.ideaCreate(args));
+    }
+    case "idea_get": {
+      if (await contextStore.spaceIdeaExists(args.id)) return structured(await contextStore.spaceIdeaGet(args));
+      return structured(await agentStore.ideaGet(args));
+    }
     case "idea_search": {
       const query = String(args.query || "").trim();
       if (query.toLowerCase().startsWith("space:")) {
@@ -341,11 +348,30 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
           scanLimit: args.scanLimit,
         }));
       }
+      if (args.spaceId) return structured(await contextStore.spaceIdeaSearch(args));
       return structured(await agentStore.ideaSearch(args));
     }
-    case "idea_update": return structured(await agentStore.ideaUpdate(args));
-    case "idea_expand": return structured(await agentStore.ideaExpand(args));
-    case "idea_link": return structured(await agentStore.ideaLink(args));
+    case "idea_update": {
+      if (await contextStore.spaceIdeaExists(args.id)) return structured(await contextStore.spaceIdeaUpdate(args));
+      return structured(await agentStore.ideaUpdate(args));
+    }
+    case "idea_expand": {
+      if (await contextStore.spaceIdeaExists(args.parentIdeaId)) return structured(await contextStore.spaceIdeaExpand(args));
+      return structured(await agentStore.ideaExpand(args));
+    }
+    case "idea_link": {
+      const [fromThinking, toThinking] = await Promise.all([
+        contextStore.spaceIdeaExists(args.fromIdeaId),
+        contextStore.spaceIdeaExists(args.toIdeaId),
+      ]);
+      if (fromThinking || toThinking) {
+        if (!(fromThinking && toThinking)) {
+          throw new Error("Cross-layer idea links are not supported; both ideas must be Thinking Space ideas or both Agent Ideas");
+        }
+        return structured(await contextStore.spaceIdeaLink(args));
+      }
+      return structured(await agentStore.ideaLink(args));
+    }
     case "idea_get_context": {
       const id = String(args.id || "");
       if (id.startsWith("space:")) {
@@ -357,15 +383,46 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
           includeInferred: true,
         }));
       }
+      if (await contextStore.spaceIdeaExists(id)) return structured(await contextStore.spaceIdeaGetContext(args));
       return structured(await agentStore.ideaGetContext(args));
     }
-    case "idea_merge": return structured(await agentStore.ideaMerge(args));
-    case "idea_archive": return structured(await agentStore.ideaArchive(args));
-    case "idea_run_start": return structured(await agentStore.runStart(args));
-    case "idea_run_finish": return structured(await agentStore.runFinish(args));
-    case "idea_add_source": return structured(await agentStore.sourceAdd(args));
-    case "idea_evaluate": return structured(await agentStore.evaluationAdd(args));
-    case "idea_add_artifact": return structured(await agentStore.artifactAdd(args));
+    case "idea_merge": {
+      const sourceIds = Array.isArray(args.sourceIdeaIds) ? args.sourceIdeaIds : [];
+      const thinkingFlags = await Promise.all(sourceIds.map((id: string) => contextStore.spaceIdeaExists(id)));
+      if (thinkingFlags.some(Boolean)) {
+        if (!thinkingFlags.every(Boolean)) {
+          throw new Error("Cross-layer idea merge is not supported; all source ideas must be in the same layer");
+        }
+        return structured(await contextStore.spaceIdeaMerge(args));
+      }
+      return structured(await agentStore.ideaMerge(args));
+    }
+    case "idea_archive": {
+      if (await contextStore.spaceIdeaExists(args.id)) return structured(await contextStore.spaceIdeaArchive(args));
+      return structured(await agentStore.ideaArchive(args));
+    }
+    case "idea_run_start": {
+      if (args.spaceId) return structured(await contextStore.spaceRunStart(args));
+      return structured(await agentStore.runStart(args));
+    }
+    case "idea_run_finish": {
+      if (await contextStore.spaceRunExists(args.id)) return structured(await contextStore.spaceRunFinish(args));
+      return structured(await agentStore.runFinish(args));
+    }
+    case "idea_add_source": {
+      if (await contextStore.spaceIdeaExists(args.ideaId)) return structured(await contextStore.spaceSourceAdd(args));
+      return structured(await agentStore.sourceAdd(args));
+    }
+    case "idea_evaluate": {
+      if (await contextStore.spaceIdeaExists(args.ideaId)) return structured(await contextStore.spaceEvaluationAdd(args));
+      return structured(await agentStore.evaluationAdd(args));
+    }
+    case "idea_add_artifact": {
+      if ((args.ideaId && await contextStore.spaceIdeaExists(args.ideaId)) || (!args.ideaId && args.spaceId)) {
+        return structured(await contextStore.spaceArtifactAdd(args));
+      }
+      return structured(await agentStore.artifactAdd(args));
+    }
     default: throw new Error(`Unknown tool: ${name}`);
   }
 }
@@ -399,7 +456,7 @@ async function handleRpc(message: any) {
         protocolVersion,
         capabilities: { tools: { listChanged: true } },
         serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
-        instructions: "My Portal is a Context Store + Thinking Workspace. Use space_search then space_get_context to resume long-running themes. Use profile_get_context for scoped User Model facts, preserving explicit vs inferred evidence. If the host is temporarily exposing an older cached tool schema without the new Context Store tools, use idea_search with query prefixed by `space:` to search Spaces and idea_get_context with id `space:<spaceId>` to fetch the same Space Context Pack. Thinking Spaces and Agent Ideas are separate layers. Use space_* / profile_* / decision_* / opportunity_* for long-running thinking themes. Agent Ideas mirrors the Portal board hierarchy: ideas/hobbies/stocks as the large categories and the Portal tags beneath them. Use idea_generation_work to find mirrored tag categories that need replenishment, then idea_create with categoryId. When the user adopts an Agent Idea, use idea_promote_to_portal so it is copied into the matching Portal board/tag and marked promoted with provenance retained. Existing portal_* data (including short idea/hobby/stock boards and projects) remains separate; portal_delete requires explicit confirm=true.",
+        instructions: "My Portal is a Context Store + Thinking Workspace. Use space_search then space_get_context to resume long-running themes. Use profile_get_context for scoped User Model facts, preserving explicit vs inferred evidence. If the host is temporarily exposing an older cached tool schema without the new Context Store tools, use idea_search with query prefixed by `space:` to search Spaces and idea_get_context with id `space:<spaceId>` to fetch the same Space Context Pack. Thinking Spaces and Agent Ideas are separate storage layers, but idea_* tools are interoperable: spaceId targets durable Thinking Space ideas, categoryId targets Agent Ideas board items, and ID-based reads/updates resolve the correct layer automatically. Use space_* / profile_* / decision_* / opportunity_* for long-running thinking themes. Agent Ideas mirrors the Portal board hierarchy: ideas/hobbies/stocks as the large categories and the Portal tags beneath them. Use idea_generation_work to find mirrored tag categories that need replenishment, then idea_create with categoryId. When the user adopts an Agent Idea, use idea_promote_to_portal so it is copied into the matching Portal board/tag and marked promoted with provenance retained. Existing portal_* data (including short idea/hobby/stock boards and projects) remains separate; portal_delete requires explicit confirm=true.",
       },
     };
   }
