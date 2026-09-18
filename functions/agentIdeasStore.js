@@ -15,6 +15,33 @@ const COLLECTIONS = Object.freeze({
 const IDEA_STATUSES = ['active', 'paused', 'archived', 'promoted'];
 const IDEA_MATURITY = ['seed', 'exploring', 'developed', 'validated', 'execution_ready'];
 const RUN_STATUSES = ['active', 'completed', 'paused', 'failed'];
+const UNTAGGED = '__untagged__';
+const PORTAL_BOARDS = Object.freeze({
+  ideas: {
+    key: 'ideas',
+    label: 'アイデア',
+    collection: 'ideas',
+    tagsCollection: 'tags',
+    description: 'ビジネス・企画・作りたいもの・試したいことなど、アイデアボードの裏側でAgentが候補を考える。',
+    instructions: 'Portalのアイデアボードに採用できる、短くても発展性のあるアイデアを考える。既存案の言い換えだけでなく、新しい切り口を優先する。',
+  },
+  hobbies: {
+    key: 'hobbies',
+    label: '趣味',
+    collection: 'hobbies',
+    tagsCollection: 'hobby_tags',
+    description: '興味がある物・人・場所・作品・テーマなど、趣味ボードの裏側でAgentが候補を考える。',
+    instructions: 'ユーザーが興味を持ちそうな対象や、既存の興味から自然に広がる対象を提案する。ビジネス化を前提にしない。',
+  },
+  stocks: {
+    key: 'stocks',
+    label: 'ストック',
+    collection: 'stocks',
+    tagsCollection: 'stock_tags',
+    description: 'ネタ帳・大喜利・ユーモア・文体・言い回し・センスなど、感覚的な素材をAgentが裏側でストックする。',
+    instructions: '説明しすぎず、再利用したくなる短いネタ・言い回し・観察・文体断片を考える。凡庸な一般論より、感覚やセンスのある断片を優先する。',
+  },
+});
 
 function db() {
   return DATABASE_ID === '(default)' ? getFirestore() : getFirestore(DATABASE_ID);
@@ -110,12 +137,20 @@ async function ideaCreate(input, actor = {}) {
   const categorySnapshot = await categoryRef.get();
   if (!categorySnapshot.exists) throw new Error(`Category not found: ${categoryId}`);
   const category = categorySnapshot.data();
+  if (category.mirrorSource !== 'portal' || category.status !== 'active') {
+    throw new Error('categoryId must reference an active Portal-mirrored category');
+  }
 
   const ref = database.collection(COLLECTIONS.ideas).doc();
   const payload = ideaPayload({
     ...input,
     categoryId,
     tags: [...(category.tags || []), ...(Array.isArray(input.tags) ? input.tags : [])],
+    attributes: {
+      ...(input.attributes || {}),
+      portalBoard: category.portalBoard,
+      portalTag: category.portalTag,
+    },
   }, actor);
 
   await ref.set({
@@ -529,62 +564,193 @@ async function artifactAdd(input, actor = {}) {
 }
 
 
-function categoryIdFromName(name) {
-  return createHash('sha256').update(String(name || '').trim().toLowerCase()).digest('hex').slice(0, 24);
+function portalCategoryId(boardKey, tag) {
+  const digest = createHash('sha256').update(`${boardKey}\n${tag}`).digest('hex').slice(0, 20);
+  return `portal-${boardKey}-${digest}`;
+}
+
+function isPortalBoardItem(boardKey, item = {}) {
+  if (!item || typeof item !== 'object') return false;
+  if (boardKey !== 'ideas') return Boolean(item.content);
+  return item.owner === 'portal'
+    || (Boolean(item.content) && !item.createdBy && !item.maturity && !item.spaceId);
+}
+
+function sameStrings(left = [], right = []) {
+  if (left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
+}
+
+async function syncPortalCategories() {
+  const database = db();
+  const existingSnapshot = await database.collection(COLLECTIONS.categories).limit(500).get();
+  const existing = new Map(existingSnapshot.docs.map((snapshot) => [snapshot.id, snapshot.data()]));
+  const activeIds = new Set();
+  const writes = [];
+
+  for (const board of Object.values(PORTAL_BOARDS)) {
+    const [itemSnapshot, tagSnapshot] = await Promise.all([
+      database.collection(board.collection).limit(1000).get(),
+      database.collection(board.tagsCollection).limit(500).get(),
+    ]);
+
+    const items = itemSnapshot.docs
+      .map((snapshot) => ({ id: snapshot.id, ...snapshot.data() }))
+      .filter((item) => isPortalBoardItem(board.key, item));
+
+    const usedTags = new Set();
+    let hasUntagged = false;
+    items.forEach((item) => {
+      const tags = Array.isArray(item.tags) ? item.tags.filter(Boolean).map(String) : [];
+      if (!tags.length) hasUntagged = true;
+      tags.forEach((tag) => usedTags.add(tag));
+    });
+
+    // Keep the Agent mirror aligned with the categories that are actually
+    // visible in CollectionBoard. A tag document with no board item is not
+    // shown there yet, so it is not mirrored until the first item uses it.
+    const declaredTags = new Set(tagSnapshot.docs.map((snapshot) => snapshot.id));
+    const visibleTags = [...usedTags].filter((tag) => declaredTags.has(tag) || usedTags.has(tag));
+    visibleTags.sort((a, b) => a.localeCompare(b, 'ja'));
+    if (hasUntagged) visibleTags.push(UNTAGGED);
+
+    visibleTags.forEach((tag) => {
+      const id = portalCategoryId(board.key, tag);
+      activeIds.add(id);
+      const current = existing.get(id) || {};
+      const name = tag === UNTAGGED ? '未分類' : tag;
+      const inheritedTags = tag === UNTAGGED ? [] : [tag];
+      const desired = {
+        name,
+        description: current.description || `${board.label} > ${tag === UNTAGGED ? '未分類' : '#'+tag}。 ${board.description}`,
+        instructions: current.instructions || board.instructions,
+        tags: inheritedTags,
+        targetCount: current.targetCount === undefined ? 5 : Math.min(Math.max(Number(current.targetCount) || 0, 0), 500),
+        requestedCount: Math.min(Math.max(Number(current.requestedCount) || 0, 0), 500),
+        status: current.status === 'paused' ? 'paused' : 'active',
+        mirrorSource: 'portal',
+        portalBoard: board.key,
+        portalBoardLabel: board.label,
+        portalCollection: board.collection,
+        portalTagsCollection: board.tagsCollection,
+        portalTag: tag,
+      };
+      const changed = !current.name
+        || current.name !== desired.name
+        || current.description !== desired.description
+        || current.instructions !== desired.instructions
+        || !sameStrings(current.tags || [], desired.tags)
+        || Number(current.targetCount ?? -1) !== Number(desired.targetCount)
+        || Number(current.requestedCount || 0) !== Number(desired.requestedCount)
+        || current.status !== desired.status
+        || current.mirrorSource !== 'portal'
+        || current.portalBoard !== desired.portalBoard
+        || current.portalTag !== desired.portalTag;
+
+      if (changed) {
+        writes.push({
+          ref: database.collection(COLLECTIONS.categories).doc(id),
+          data: {
+            ...desired,
+            revision: Number(current.revision || 0) + 1 || 1,
+            ...(current.createdAt ? {} : { createdAt: FieldValue.serverTimestamp() }),
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+        });
+      }
+    });
+  }
+
+  existing.forEach((current, id) => {
+    if (activeIds.has(id)) return;
+    // The previous free-form category system is retained for provenance but is
+    // no longer surfaced. Mirrored categories also archive when their Portal
+    // tag disappears from the visible board structure.
+    if (current.status !== 'archived') {
+      writes.push({
+        ref: database.collection(COLLECTIONS.categories).doc(id),
+        data: {
+          status: 'archived',
+          revision: Number(current.revision || 1) + 1,
+          updatedAt: FieldValue.serverTimestamp(),
+          archivedByMirrorSync: true,
+        },
+      });
+    }
+  });
+
+  for (let i = 0; i < writes.length; i += 400) {
+    const batch = database.batch();
+    writes.slice(i, i + 400).forEach(({ ref, data }) => batch.set(ref, data, { merge: true }));
+    await batch.commit();
+  }
+
+  return {
+    boards: Object.values(PORTAL_BOARDS).map((board) => ({
+      key: board.key,
+      label: board.label,
+      collection: board.collection,
+      tagsCollection: board.tagsCollection,
+    })),
+    activeCategoryCount: activeIds.size,
+    changedCount: writes.length,
+  };
 }
 
 async function categoryUpsert(input = {}) {
+  await syncPortalCategories();
   const database = db();
-  const name = assertString(input.name, 'name', { max: 160 });
-  const id = clampString(input.id, 160) || categoryIdFromName(name);
+  const id = assertString(input.id, 'id', { max: 160 });
   const ref = database.collection(COLLECTIONS.categories).doc(id);
 
   await database.runTransaction(async (tx) => {
     const snapshot = await tx.get(ref);
-    const current = snapshot.exists ? snapshot.data() : {};
-    const currentRevision = Number(current.revision || 0);
-    if (input.expectedRevision !== undefined && currentRevision > 0
-      && Number(input.expectedRevision) !== currentRevision) {
+    if (!snapshot.exists) throw new Error(`Category not found: ${id}`);
+    const current = snapshot.data();
+    if (current.mirrorSource !== 'portal') throw new Error('Only Portal-mirrored categories can be configured');
+    const currentRevision = Number(current.revision || 1);
+    if (input.expectedRevision !== undefined && Number(input.expectedRevision) !== currentRevision) {
       throw new Error(`Revision conflict: expected ${input.expectedRevision}, actual ${currentRevision}`);
     }
 
-    const payload = {
-      name,
-      description: clampString(input.description, 3000) ?? current.description ?? '',
-      instructions: clampString(input.instructions, 12000) ?? current.instructions ?? '',
-      tags: input.tags !== undefined ? stringArray(input.tags, 30, 80) : (current.tags || []),
-      targetCount: input.targetCount !== undefined
-        ? Math.min(Math.max(Number(input.targetCount) || 0, 0), 500)
-        : Math.min(Math.max(Number(current.targetCount) || 12, 0), 500),
-      requestedCount: Math.min(Math.max(Number(current.requestedCount) || 0, 0), 500),
-      status: ['active', 'paused', 'archived'].includes(input.status)
-        ? input.status
-        : (current.status || 'active'),
-      revision: currentRevision + 1 || 1,
+    const update = {
+      revision: currentRevision + 1,
       updatedAt: FieldValue.serverTimestamp(),
     };
-
-    if (snapshot.exists) {
-      tx.set(ref, payload, { merge: true });
-    } else {
-      tx.set(ref, { ...payload, createdAt: FieldValue.serverTimestamp() });
-    }
+    if (input.description !== undefined) update.description = clampString(input.description, 3000) || '';
+    if (input.instructions !== undefined) update.instructions = clampString(input.instructions, 12000) || '';
+    if (input.targetCount !== undefined) update.targetCount = Math.min(Math.max(Number(input.targetCount) || 0, 0), 500);
+    if (input.status !== undefined) update.status = ['active', 'paused'].includes(input.status) ? input.status : current.status;
+    tx.update(ref, update);
   });
 
   return documentToObject(await ref.get());
 }
 
 async function categoryList(input = {}) {
-  const limit = Math.min(Math.max(Number(input.limit) || 100, 1), 300);
+  await syncPortalCategories();
+  const limit = Math.min(Math.max(Number(input.limit) || 300, 1), 500);
   const snapshot = await db().collection(COLLECTIONS.categories).limit(limit).get();
+  const board = clampString(input.portalBoard, 40);
   const items = snapshot.docs
     .map(documentToObject)
+    .filter((item) => item.mirrorSource === 'portal')
     .filter((item) => !input.status || item.status === input.status)
-    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
-  return { items, count: items.length };
+    .filter((item) => !board || item.portalBoard === board)
+    .sort((a, b) => {
+      const boardOrder = Object.keys(PORTAL_BOARDS);
+      const boardDiff = boardOrder.indexOf(a.portalBoard) - boardOrder.indexOf(b.portalBoard);
+      return boardDiff || String(a.name || '').localeCompare(String(b.name || ''), 'ja');
+    });
+  return {
+    items,
+    count: items.length,
+    boards: Object.values(PORTAL_BOARDS).map((item) => ({ key: item.key, label: item.label })),
+  };
 }
 
 async function requestReplenishment(input = {}) {
+  await syncPortalCategories();
   const categoryId = assertString(input.categoryId, 'categoryId', { max: 160 });
   const count = Math.min(Math.max(Number(input.count) || 5, 1), 100);
   const database = db();
@@ -594,6 +760,7 @@ async function requestReplenishment(input = {}) {
     const snapshot = await tx.get(ref);
     if (!snapshot.exists) throw new Error(`Category not found: ${categoryId}`);
     const current = snapshot.data();
+    if (current.mirrorSource !== 'portal') throw new Error('Category is not part of the Portal mirror');
     tx.update(ref, {
       requestedCount: Math.min(500, Math.max(0, Number(current.requestedCount || 0)) + count),
       revision: Number(current.revision || 1) + 1,
@@ -605,9 +772,10 @@ async function requestReplenishment(input = {}) {
 }
 
 async function generationWork(input = {}) {
+  await syncPortalCategories();
   const database = db();
   const [categorySnapshot, ideaSnapshot] = await Promise.all([
-    database.collection(COLLECTIONS.categories).limit(300).get(),
+    database.collection(COLLECTIONS.categories).limit(500).get(),
     database.collection(COLLECTIONS.ideas).limit(1000).get(),
   ]);
 
@@ -618,10 +786,12 @@ async function generationWork(input = {}) {
   });
 
   const categoryId = clampString(input.categoryId, 160);
+  const board = clampString(input.portalBoard, 40);
   const items = categorySnapshot.docs
     .map(documentToObject)
-    .filter((category) => category.status === 'active')
+    .filter((category) => category.mirrorSource === 'portal' && category.status === 'active')
     .filter((category) => !categoryId || category.id === categoryId)
+    .filter((category) => !board || category.portalBoard === board)
     .map((category) => {
       const activeCount = activeCounts.get(category.id) || 0;
       const targetCount = Math.max(0, Number(category.targetCount || 0));
@@ -641,6 +811,84 @@ async function generationWork(input = {}) {
     items,
     count: items.length,
     totalNeeded: items.reduce((sum, item) => sum + item.neededCount, 0),
+    boards: Object.values(PORTAL_BOARDS).map((item) => ({ key: item.key, label: item.label })),
+  };
+}
+
+async function promoteToPortal(input = {}) {
+  await syncPortalCategories();
+  const database = db();
+  const id = assertString(input.id, 'id', { max: 160 });
+  const ideaRef = database.collection(COLLECTIONS.ideas).doc(id);
+  const ideaSnapshot = await ideaRef.get();
+  if (!ideaSnapshot.exists) throw new Error(`Idea not found: ${id}`);
+  const idea = ideaSnapshot.data();
+  if (idea.status === 'promoted') throw new Error('Idea is already promoted');
+
+  const categoryId = assertString(idea.categoryId, 'idea.categoryId', { max: 160 });
+  const categoryRef = database.collection(COLLECTIONS.categories).doc(categoryId);
+  const categorySnapshot = await categoryRef.get();
+  if (!categorySnapshot.exists) throw new Error(`Category not found: ${categoryId}`);
+  const category = categorySnapshot.data();
+  if (category.mirrorSource !== 'portal' || !category.portalCollection) {
+    throw new Error('Idea category is not mapped to a Portal board');
+  }
+
+  const portalContent = clampString(input.content, 10000)
+    || clampString(idea.title, 10000)
+    || clampString(idea.summary, 10000)
+    || clampString(idea.content, 10000);
+  if (!portalContent) throw new Error('Promoted Portal content is empty');
+
+  const portalTags = category.portalTag && category.portalTag !== UNTAGGED
+    ? [String(category.portalTag)]
+    : [];
+  const portalRef = database.collection(category.portalCollection).doc();
+  const now = FieldValue.serverTimestamp();
+
+  await database.runTransaction(async (tx) => {
+    const latestIdea = await tx.get(ideaRef);
+    if (!latestIdea.exists) throw new Error(`Idea not found: ${id}`);
+    const latest = latestIdea.data();
+    if (latest.status === 'promoted') throw new Error('Idea is already promoted');
+    if (input.expectedRevision !== undefined && Number(input.expectedRevision) !== Number(latest.revision || 1)) {
+      throw new Error(`Revision conflict: expected ${input.expectedRevision}, actual ${latest.revision || 1}`);
+    }
+
+    tx.set(portalRef, {
+      content: portalContent,
+      tags: portalTags,
+      owner: 'portal',
+      source: 'agent-ideas',
+      promotedFromAgentIdeaId: id,
+      promotedFromAgentCategoryId: categoryId,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    tx.update(ideaRef, {
+      status: 'promoted',
+      revision: Number(latest.revision || 1) + 1,
+      updatedAt: now,
+      attributes: {
+        ...(latest.attributes || {}),
+        portalPromotion: {
+          board: category.portalBoard,
+          collection: category.portalCollection,
+          tag: category.portalTag,
+          documentId: portalRef.id,
+        },
+      },
+    });
+  });
+
+  return {
+    ok: true,
+    portalBoard: category.portalBoard,
+    portalCollection: category.portalCollection,
+    portalTag: category.portalTag,
+    portalItem: documentToObject(await portalRef.get()),
+    agentIdea: documentToObject(await ideaRef.get()),
   };
 }
 
@@ -682,4 +930,7 @@ module.exports = {
   categoryList,
   requestReplenishment,
   generationWork,
+  syncPortalCategories,
+  promoteToPortal,
+  PORTAL_BOARDS,
 };
