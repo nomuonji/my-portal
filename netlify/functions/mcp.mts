@@ -613,26 +613,38 @@ export default async (request: Request) => {
     const credentialsConfigured = Boolean(env("FIREBASE_SERVICE_ACCOUNT_JSON"));
     const oauthConfigured = Boolean(accessKeyHash());
     let agentDatabase: any = { ok: false, reason: "Firebase credentials are not configured" };
+    let contextDatabase: any = { ok: false, reason: "Firebase credentials are not configured" };
     let portalDatabase: any = { ok: false, reason: "Firebase credentials are not configured" };
     let migrationResult: any = null;
     if (credentialsConfigured) {
       try {
         ensureFirebaseAdmin();
         migrationResult = await ensureAgentData();
-        [agentDatabase, portalDatabase] = await Promise.all([agentStore.healthCheck(), portalStore.status()]);
+        [agentDatabase, contextDatabase, portalDatabase] = await Promise.all([
+          agentStore.healthCheck(),
+          contextStore.healthCheck(),
+          portalStore.status(),
+        ]);
       } catch (error) {
         const failure = { ok: false, error: error instanceof Error ? error.message : String(error) };
         agentDatabase = failure;
+        contextDatabase = failure;
         portalDatabase = failure;
       }
     }
-    const ok = credentialsConfigured && oauthConfigured && Boolean(agentDatabase?.ok) && Boolean(portalDatabase?.ok);
+    const ok = credentialsConfigured
+      && oauthConfigured
+      && Boolean(agentDatabase?.ok)
+      && Boolean(contextDatabase?.ok)
+      && Boolean(portalDatabase?.ok);
     return json({
       ok,
       service: SERVER_NAME,
       serverVersion: SERVER_VERSION,
       toolCount: TOOLS.length,
+      tools: TOOLS.map((tool) => tool.name),
       agentIdeas: { databaseId: agentStore.DATABASE_ID, database: agentDatabase, migration: migrationResult },
+      contextStore: { databaseId: contextStore.DATABASE_ID, collections: contextStore.COLLECTIONS, database: contextDatabase },
       portal: { databaseId: portalStore.DATABASE_ID, database: portalDatabase },
       oauth: {
         configured: oauthConfigured,
