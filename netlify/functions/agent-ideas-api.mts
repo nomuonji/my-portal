@@ -111,10 +111,16 @@ export default async (request: Request) => {
         });
       }
       if (resource === "ideas") {
-        return json({ items: await listCollection("ideas", 300), databaseId: store.DATABASE_ID });
+        return json(await store.ideaSearch({ limit: 100, scanLimit: 500 }));
+      }
+      if (resource === "categories") {
+        return json(await store.categoryList({ limit: 300 }));
+      }
+      if (resource === "generation_work") {
+        return json(await store.generationWork({ includeSatisfied: true }));
       }
       if (resource === "runs") {
-        return json({ items: await listCollection("runs", 150), databaseId: store.DATABASE_ID });
+        return json({ items: await listCollection(store.COLLECTIONS.runs, 150), databaseId: store.DATABASE_ID });
       }
       if (resource === "spaces") {
         // One-time additive migration requested for the existing income-search
@@ -139,6 +145,31 @@ export default async (request: Request) => {
     if (request.method === "POST") {
       const body: any = await parseBody(request);
       const action = String(body.action || "");
+      if (action === "category_upsert") {
+        return json(await store.categoryUpsert({
+          id: body.id,
+          expectedRevision: body.expectedRevision,
+          name: body.name,
+          description: body.description,
+          instructions: body.instructions,
+          tags: body.tags || [],
+          targetCount: body.targetCount,
+          status: body.status || "active",
+        }));
+      }
+      if (action === "replenish_request") {
+        return json(await store.requestReplenishment({
+          categoryId: body.categoryId,
+          count: body.count,
+        }));
+      }
+      if (action === "idea_archive") {
+        return json(await store.ideaArchive({
+          id: body.id,
+          expectedRevision: body.expectedRevision,
+          reason: body.reason || "Archived from Agent Ideas board",
+        }));
+      }
       if (action === "run_start") {
         return json(await store.runStart({
           objective: body.objective,
