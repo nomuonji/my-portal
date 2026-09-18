@@ -2,8 +2,10 @@ import { cert, getApp, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore, initializeFirestore } from "firebase-admin/firestore";
 import * as storeImport from "../../functions/agentIdeasStoreAgentDb.js";
+import * as contextStoreImport from "../../functions/contextStore.js";
 
 const store: any = (storeImport as any).default ?? storeImport;
+const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
 const AGENT_DATABASE_ID = "(default)";
 
 function env(name: string): string | undefined {
@@ -70,7 +72,7 @@ function serialize(value: any): any {
   return value;
 }
 
-async function listCollection(name: "ideas" | "runs", limitValue: number) {
+async function listCollection(name: string, limitValue: number) {
   const database = getFirestore(getApp());
   const snapshot = await database.collection(name).limit(limitValue).get();
   return snapshot.docs
@@ -105,6 +107,7 @@ export default async (request: Request) => {
           user: { uid: user.uid },
           databaseId: store.DATABASE_ID,
           database: await store.healthCheck(),
+          contextStore: await contextStore.healthCheck(),
         });
       }
       if (resource === "ideas") {
@@ -112,6 +115,16 @@ export default async (request: Request) => {
       }
       if (resource === "runs") {
         return json({ items: await listCollection("runs", 150), databaseId: store.DATABASE_ID });
+      }
+      if (resource === "spaces") {
+        return json(await contextStore.spaceSearch({ limit: 100, scanLimit: 300 }));
+      }
+      if (resource === "space_context") {
+        const id = url.searchParams.get("id") || "";
+        return json(await contextStore.spaceGetContext({ id, includeArtifacts: true, includeInferred: true }));
+      }
+      if (resource === "profile") {
+        return json(await contextStore.profileGetContext({ includeInferred: true, limit: 200 }));
       }
       if (resource === "context") {
         const id = url.searchParams.get("id") || "";
@@ -130,6 +143,7 @@ export default async (request: Request) => {
           agent: "portal-session",
           trigger: "manual",
           seedIdeaIds: body.seedIdeaIds || [],
+          spaceId: body.spaceId || null,
           metadata: { source: "my-portal-ui", ...(body.metadata || {}) },
         }, { agent: "portal-session" }));
       }
@@ -140,6 +154,19 @@ export default async (request: Request) => {
           expectedRevision: body.expectedRevision,
           findings: body.findings || [],
           nextActions: body.nextActions || [],
+        }));
+      }
+      if (action === "space_update") {
+        return json(await contextStore.spaceUpdate({
+          id: body.id,
+          expectedRevision: body.expectedRevision,
+          patch: body.patch || {},
+        }));
+      }
+      if (action === "profile_update") {
+        return json(await contextStore.profileFactUpdate({
+          id: body.id,
+          patch: body.patch || {},
         }));
       }
       return json({ error: "Unknown action" }, 400);
