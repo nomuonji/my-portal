@@ -290,7 +290,7 @@ function App() {
             </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/boards') || location.pathname.startsWith('/ideaboard') || location.pathname.startsWith('/hobbyboard') || location.pathname.startsWith('/stockboard') || location.pathname === '/idea' || location.pathname === '/hobby' || location.pathname === '/stock'} component={Link} to="/boards" onClick={navClick}>
               <ListItemIcon><ViewCompactIcon /></ListItemIcon>
-              <ListItemText primary="ボード" secondary="アイデア / 趣味 / ストック" />
+              <ListItemText primary="ボード" secondary="企画・ビジネス / 興味・趣味 / ネタ・表現" />
             </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/thinking')} component={Link} to="/thinking" onClick={navClick}>
               <ListItemIcon><PsychologyAltIcon /></ListItemIcon>
