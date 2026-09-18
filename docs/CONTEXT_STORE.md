@@ -133,6 +133,8 @@ Ideaのattributesに埋め込まず、判断履歴として独立保存する。
 
 `idea_get_context` は残し、graph探索のために使う。
 
+Opportunityの `sourceUrl` がlegacy migration由来で空の場合、Context Pack生成時にorigin Ideaの一次情報Sourceから補完する。保存済みlegacyデータ自体は破壊的に書き換えない。
+
 ## Distillation Loop
 
 目標とする循環:
