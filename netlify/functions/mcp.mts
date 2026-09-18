@@ -1,6 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
-import "firebase-admin/firestore";
+import { initializeFirestore } from "firebase-admin/firestore";
 import * as agentStoreImport from "../../functions/agentIdeasStoreAgentDb.js";
 import * as portalStoreImport from "../../functions/portalStore.js";
 import * as agentToolsImport from "../../functions/agentIdeasToolSchemas.js";
@@ -242,18 +242,27 @@ async function bodyObject(request: Request): Promise<Record<string, any>> {
 }
 
 function ensureFirebaseAdmin() {
-  if (getApps().length) return;
-  const raw = requiredEnv("FIREBASE_SERVICE_ACCOUNT_JSON");
-  let serviceAccount: any;
-  try {
-    serviceAccount = JSON.parse(raw);
-  } catch {
-    throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON");
+  let app;
+  if (getApps().length) {
+    app = getApps()[0];
+  } else {
+    const raw = requiredEnv("FIREBASE_SERVICE_ACCOUNT_JSON");
+    let serviceAccount: any;
+    try {
+      serviceAccount = JSON.parse(raw);
+    } catch {
+      throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON");
+    }
+    app = initializeApp({
+      credential: cert(serviceAccount),
+      projectId: serviceAccount.project_id || "my-portal-d05fd",
+    });
   }
-  initializeApp({
-    credential: cert(serviceAccount),
-    projectId: serviceAccount.project_id || "my-portal-d05fd",
-  });
+
+  // Initialize Firestore before any Context Store call. The Agent Idea wrapper
+  // uses the same options; doing this here prevents a raw getFirestore() call
+  // from locking the app to different serverless transport options.
+  initializeFirestore(app, { preferRest: true });
 }
 
 function structured(value: unknown) {
