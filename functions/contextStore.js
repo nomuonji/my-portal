@@ -10,7 +10,19 @@ const COLLECTIONS = Object.freeze({
   opportunities: 'opportunities',
 });
 
+const THINKING_COLLECTIONS = Object.freeze({
+  ideas: 'ideas',
+  relations: 'relations',
+  runs: 'runs',
+  sources: 'sources',
+  evaluations: 'evaluations',
+  artifacts: 'artifacts',
+});
+
 const SPACE_STATUSES = ['active', 'paused', 'completed', 'archived'];
+const IDEA_STATUSES = ['active', 'paused', 'archived', 'promoted'];
+const IDEA_MATURITY = ['seed', 'exploring', 'developed', 'validated', 'execution_ready'];
+const RUN_STATUSES = ['active', 'completed', 'paused', 'failed'];
 const PROFILE_EVIDENCE_TYPES = ['explicit', 'inferred', 'confirmed_inference'];
 const PROFILE_STABILITY = ['temporary', 'contextual', 'stable'];
 const PROFILE_STATUSES = ['active', 'superseded', 'archived'];
@@ -74,6 +86,18 @@ function assertEnum(value, allowed, name, fallback) {
   if (value === undefined || value === null || value === '') return fallback;
   if (!allowed.includes(value)) throw new Error(`${name} must be one of: ${allowed.join(', ')}`);
   return value;
+}
+
+function createdBy(input = {}, actor = {}) {
+  return {
+    type: clampString(input.type || actor.type, 30) || 'agent',
+    agent: clampString(input.agent || actor.agent, 120) || 'chatgpt',
+    model: clampString(input.model || actor.model, 120) || null,
+  };
+}
+
+function thinkingRelationId(fromIdeaId, type, toIdeaId) {
+  return createHash('sha256').update(fromIdeaId + '\n' + type + '\n' + toIdeaId).digest('hex').slice(0, 40);
 }
 
 function sortRecent(items) {
