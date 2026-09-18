@@ -117,6 +117,9 @@ export default async (request: Request) => {
         return json({ items: await listCollection("runs", 150), databaseId: store.DATABASE_ID });
       }
       if (resource === "spaces") {
+        // One-time additive migration requested for the existing income-search
+        // theme. This is idempotent and never deletes legacy ideas.
+        await contextStore.bootstrapIncomeSearchMigration();
         return json(await contextStore.spaceSearch({ limit: 100, scanLimit: 300 }));
       }
       if (resource === "space_context") {
