@@ -33,7 +33,6 @@ import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
 import SearchIcon from '@mui/icons-material/Search';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 
 const laneDefinitions = [
   { id: 'next_action', title: '進行中', hint: '次の行動', color: '#5577e8', icon: PlayCircleOutlineIcon },
