@@ -2,7 +2,7 @@ const { createHash, createHmac, timingSafeEqual } = require('node:crypto');
 const store = require('./agentIdeasStore');
 
 const SERVER_NAME = 'my-portal-agent-ideas';
-const SERVER_VERSION = '0.2.0';
+const SERVER_VERSION = '0.3.0';
 const SUPPORTED_PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const DEFAULT_ACCESS_KEY_HASH = 'f174c5b44462f5b25b12902b20bca1cf24e1153c9a2baec7db89a9b436a07618';
@@ -45,236 +45,7 @@ const ideaCreateProperties = {
   createdInRunId: string('Run that produced this idea.', 160),
 };
 
-const TOOLS = [
-  {
-    name: 'agent_ideas_status',
-    description: 'Check the Agent Idea Space MCP version, named Firestore database, collection contract, and live database reachability.',
-    inputSchema: objectSchema({}),
-    annotations: { readOnlyHint: true },
-  },
-  {
-    name: 'idea_category_list',
-    description: 'List persistent Agent Ideas generation categories.',
-    inputSchema: objectSchema({
-      status: { type: 'string', enum: ['active', 'paused', 'archived'] },
-      limit: { type: 'integer', minimum: 1, maximum: 300, default: 100 },
-    }),
-    annotations: { readOnlyHint: true },
-  },
-  {
-    name: 'idea_category_upsert',
-    description: 'Create or update a category generation brief and target stock count.',
-    inputSchema: objectSchema({
-      id: string('Optional category ID.', 160),
-      expectedRevision: { type: 'integer', minimum: 1 },
-      name: string('Category name.', 160),
-      description: string('What belongs in this category.', 3000),
-      instructions: string('Agent generation instructions.', 12000),
-      tags: stringArray('Category tags.', 30),
-      targetCount: { type: 'integer', minimum: 0, maximum: 500, default: 12 },
-      status: { type: 'string', enum: ['active', 'paused', 'archived'] },
-    }, ['name']),
-    annotations: { readOnlyHint: false, destructiveHint: false },
-  },
-  {
-    name: 'idea_generation_work',
-    description: 'Return categories that need idea replenishment.',
-    inputSchema: objectSchema({
-      categoryId: string('Optional category ID.', 160),
-      includeSatisfied: { type: 'boolean', default: false },
-    }),
-    annotations: { readOnlyHint: true },
-  },
-  {
-    name: 'idea_replenish_request',
-    description: 'Add an explicit replenishment count to a category.',
-    inputSchema: objectSchema({
-      categoryId: string('Category ID.', 160),
-      count: { type: 'integer', minimum: 1, maximum: 100, default: 5 },
-    }, ['categoryId']),
-    annotations: { readOnlyHint: false, destructiveHint: false },
-  },
-  {
-    name: 'idea_create',
-    description: 'Create a durable idea node. Use this for seeds, hypotheses, rough concepts, failed approaches, or developed proposals; do not wait until an idea is polished.',
-    inputSchema: objectSchema(ideaCreateProperties, ['title', 'categoryId']),
-    annotations: { readOnlyHint: false, destructiveHint: false },
-  },
-  {
-    name: 'idea_get',
-    description: 'Read one idea by ID.',
-    inputSchema: objectSchema({ id: string('Idea ID.', 160) }, ['id']),
-    annotations: { readOnlyHint: true },
-  },
-  {
-    name: 'idea_search',
-    description: 'Search recent idea nodes by text and flexible metadata. The MCP deliberately uses bounded in-memory filtering so agents can search without requiring many composite Firestore indexes.',
-    inputSchema: objectSchema({
-      query: string('Substring matched against title, summary, content, tags, and domains.', 300),
-      status: { type: 'string', enum: store.IDEA_STATUSES },
-      maturity: { type: 'string', enum: store.IDEA_MATURITY },
-      tag: string('Exact tag match.', 80),
-      domain: string('Exact domain match.', 80),
-      createdByAgent: string('Exact creating agent name.', 120),
-      limit: { type: 'integer', minimum: 1, maximum: 100, default: 30 },
-      scanLimit: { type: 'integer', minimum: 1, maximum: 500, description: 'Maximum recent documents scanned before filtering.' },
-    }),
-    annotations: { readOnlyHint: true },
-  },
-  {
-    name: 'idea_update',
-    description: 'Incrementally update an idea with optimistic revision control. Prefer attributesPatch for agent-specific metadata so other metadata is retained.',
-    inputSchema: objectSchema({
-      id: string('Idea ID.', 160),
-      expectedRevision: { type: 'integer', minimum: 1 },
-      patch: objectSchema({
-        title: ideaCreateProperties.title,
-        summary: ideaCreateProperties.summary,
-        content: ideaCreateProperties.content,
-        type: ideaCreateProperties.type,
-        status: ideaCreateProperties.status,
-        maturity: ideaCreateProperties.maturity,
-        tags: ideaCreateProperties.tags,
-        domains: ideaCreateProperties.domains,
-        attributes: jsonObject('Replace the complete attributes object.'),
-        attributesPatch: jsonObject('Shallow-merge these keys into existing attributes.'),
-      }),
-    }, ['id', 'patch']),
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
-  },
-  {
-    name: 'idea_expand',
-    description: 'Create up to 20 child ideas in one call and link each child back to a parent. Use this when deliberately branching an idea into alternatives, subproblems, or adjacent opportunities.',
-    inputSchema: objectSchema({
-      parentIdeaId: string('Existing parent idea ID.', 160),
-      ideas: { type: 'array', minItems: 1, maxItems: 20, items: objectSchema({ ...ideaCreateProperties, relationDescription: string('Why this branch came from the parent.', 3000) }, ['title']) },
-      relationType: string(`Relationship type. Common values: ${relationTypes.join(', ')}.`, 80),
-      relationDescription: string('Default relation description applied when a child does not supply one.', 3000),
-      createdInRunId: string('Run responsible for this expansion.', 160),
-    }, ['parentIdeaId', 'ideas']),
-    annotations: { readOnlyHint: false, destructiveHint: false },
-  },
-  {
-    name: 'idea_link',
-    description: 'Create or update a directed relationship between two existing ideas. Relation types are intentionally extensible; use concrete verbs rather than generic related_to when possible.',
-    inputSchema: objectSchema({
-      fromIdeaId: string('Source idea ID.', 160),
-      toIdeaId: string('Target idea ID.', 160),
-      type: string(`Relationship type. Suggested values: ${relationTypes.join(', ')}.`, 80),
-      description: string('Explain the relationship in plain language.', 3000),
-      createdInRunId: string('Run that established this relation.', 160),
-    }, ['fromIdeaId', 'toIdeaId', 'type']),
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  },
-  {
-    name: 'idea_get_context',
-    description: 'Fetch an idea plus its graph neighborhood, relations, evidence, evaluations, and originating runs. This is the preferred tool before continuing an old line of thought in a new ChatGPT session.',
-    inputSchema: objectSchema({
-      id: string('Root idea ID.', 160),
-      depth: { type: 'integer', minimum: 0, maximum: 2, default: 1 },
-      maxNeighbors: { type: 'integer', minimum: 1, maximum: 80, default: 40 },
-      includeSources: { type: 'boolean', default: true },
-      includeEvaluations: { type: 'boolean', default: true },
-      includeRuns: { type: 'boolean', default: true },
-      includeArtifacts: { type: 'boolean', default: false },
-    }, ['id']),
-    annotations: { readOnlyHint: true },
-  },
-  {
-    name: 'idea_merge',
-    description: 'Synthesize two or more existing ideas into a new idea while preserving links to every source idea. Source ideas are not archived automatically.',
-    inputSchema: objectSchema({
-      sourceIdeaIds: stringArray('Two or more source idea IDs.', 20),
-      idea: objectSchema(ideaCreateProperties, ['title']),
-      relationType: string('Relation from the new synthesis to each source; defaults to combined_from.', 80),
-      relationDescription: string('Why these ideas were combined.', 3000),
-      createdInRunId: string('Run responsible for the synthesis.', 160),
-    }, ['sourceIdeaIds', 'idea']),
-    annotations: { readOnlyHint: false, destructiveHint: false },
-  },
-  {
-    name: 'idea_archive',
-    description: 'Archive an idea without deleting it. Keep failed or abandoned ideas available for future recombination.',
-    inputSchema: objectSchema({
-      id: string('Idea ID.', 160),
-      expectedRevision: { type: 'integer', minimum: 1 },
-      reason: string('Why the idea was archived.', 2000),
-    }, ['id']),
-    annotations: { readOnlyHint: false, destructiveHint: false },
-  },
-  {
-    name: 'idea_run_start',
-    description: 'Start a durable agent work session so later sessions can see the objective, instructions, seeds, and provenance of created ideas.',
-    inputSchema: objectSchema({
-      objective: string('What this run is trying to discover, develop, or decide.', 6000),
-      instructions: string('Constraints or working method for this run.', 12000),
-      agent: string('Agent name, e.g. chatgpt.', 120),
-      model: string('Optional model label.', 120),
-      trigger: string('chat, scheduled, autonomous, manual, etc.', 80),
-      seedIdeaIds: stringArray('Ideas this run starts from.', 50),
-      metadata: jsonObject('Additional run metadata.'),
-    }, ['objective']),
-    annotations: { readOnlyHint: false, destructiveHint: false },
-  },
-  {
-    name: 'idea_run_finish',
-    description: 'Finish or pause an agent run and append what it created, changed, learned, and recommends doing next. Uses optimistic revision control when expectedRevision is provided.',
-    inputSchema: objectSchema({
-      id: string('Run ID.', 160),
-      status: { type: 'string', enum: store.RUN_STATUSES, default: 'completed' },
-      expectedRevision: { type: 'integer', minimum: 1 },
-      createdIdeaIds: stringArray('Ideas created by the run.', 200),
-      updatedIdeaIds: stringArray('Ideas materially changed by the run.', 200),
-      findings: stringArray('Durable findings worth carrying into later sessions.', 100),
-      nextActions: stringArray('Concrete continuation points.', 100),
-      metadataPatch: jsonObject('Shallow-merge run metadata.'),
-    }, ['id']),
-    annotations: { readOnlyHint: false, destructiveHint: false },
-  },
-  {
-    name: 'idea_add_source',
-    description: 'Attach evidence or inspiration to an idea. Sources may be web pages, user observations, documents, experiments, or other evidence types.',
-    inputSchema: objectSchema({
-      ideaId: string('Idea ID.', 160),
-      type: string('web, document, observation, experiment, dataset, etc.', 80),
-      url: string('Optional source URL.', 3000),
-      title: string('Source title.', 1000),
-      quote: string('Short relevant excerpt; keep copyrighted quotations brief.', 5000),
-      summary: string('Agent summary of what the source contributes.', 12000),
-      metadata: jsonObject('Structured source metadata.'),
-      createdInRunId: string('Run that added this source.', 160),
-    }, ['ideaId']),
-    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-  },
-  {
-    name: 'idea_evaluate',
-    description: 'Add one independent evaluation to an idea without overwriting other agents or previous evaluations. Criteria are intentionally free-form.',
-    inputSchema: objectSchema({
-      ideaId: string('Idea ID.', 160),
-      evaluator: string('Evaluator or role, e.g. seo-agent, engineering-agent, business-agent.', 120),
-      criteria: jsonObject('Free-form criteria and measurements.'),
-      comment: string('Evaluation notes, tradeoffs, and caveats.', 12000),
-      metadata: jsonObject('Additional evaluation metadata.'),
-      createdInRunId: string('Run that produced this evaluation.', 160),
-    }, ['ideaId', 'criteria']),
-    annotations: { readOnlyHint: false, destructiveHint: false },
-  },
-  {
-    name: 'idea_add_artifact',
-    description: 'Attach a durable output such as a specification, article outline, prompt, code plan, experiment plan, or external artifact to an idea or run.',
-    inputSchema: objectSchema({
-      ideaId: string('Optional idea ID.', 160),
-      type: string('document, spec, code-plan, prompt, article, experiment, link, etc.', 80),
-      title: string('Artifact title.', 1000),
-      content: string('Inline artifact content or summary.', 50000),
-      url: string('External artifact URL if applicable.', 3000),
-      metadata: jsonObject('Structured artifact metadata.'),
-      createdInRunId: string('Run that created this artifact.', 160),
-    }, ['title']),
-    annotations: { readOnlyHint: false, destructiveHint: false },
-  },
-];
-
+const { TOOLS } = require('./agentIdeasToolSchemas');
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }
@@ -413,6 +184,11 @@ async function invokeTool(name, args = {}) {
     case 'idea_category_upsert': return structured(await store.categoryUpsert(input));
     case 'idea_generation_work': return structured(await store.generationWork(input));
     case 'idea_replenish_request': return structured(await store.requestReplenishment(input));
+    case 'idea_category_list': return structured(await store.categoryList(input));
+    case 'idea_category_upsert': return structured(await store.categoryUpsert(input));
+    case 'idea_generation_work': return structured(await store.generationWork(input));
+    case 'idea_replenish_request': return structured(await store.requestReplenishment(input));
+    case 'idea_promote_to_portal': return structured(await store.promoteToPortal(input));
     case 'idea_create': return structured(await store.ideaCreate(input));
     case 'idea_get': return structured(await store.ideaGet(input));
     case 'idea_search': return structured(await store.ideaSearch(input));
@@ -450,7 +226,7 @@ async function handleRpc(message) {
           protocolVersion,
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
-          instructions: 'Agent Ideas is an independent category-based replenishment board. Use idea_generation_work to find shortages, then create exactly the required category items with idea_create and categoryId. Do not write Portal short-form ideas or Thinking Space state through these tools.',
+          instructions: 'Agent Ideas mirrors Portal boards (ideas/hobbies/stocks) and their tag categories. Use idea_generation_work to find shortages and idea_create with the mirrored categoryId. Use idea_promote_to_portal only when the user adopts an Agent Idea; this creates the matching Portal memo and marks the Agent Idea promoted.',
         },
       };
     }
