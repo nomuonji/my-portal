@@ -12,7 +12,7 @@ const isPortalIdea = (item) => (
 const BOARDS = [
   {
     id: 'ideas',
-    label: 'アイデア',
+    label: '企画・ビジネス',
     database: db,
     collectionName: 'ideas',
     tagsCollectionName: 'tags',
@@ -27,7 +27,7 @@ const BOARDS = [
   },
   {
     id: 'hobbies',
-    label: '趣味',
+    label: '興味・趣味',
     database: hobbyDb,
     collectionName: 'hobbies',
     tagsCollectionName: 'hobby_tags',
@@ -41,7 +41,7 @@ const BOARDS = [
   },
   {
     id: 'stocks',
-    label: 'ストック',
+    label: 'ネタ・表現',
     database: db,
     collectionName: 'stocks',
     tagsCollectionName: 'stock_tags',
