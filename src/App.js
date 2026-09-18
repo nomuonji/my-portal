@@ -44,6 +44,7 @@ import {
   MoreHoriz as MoreHorizIcon,
   Interests as InterestsIcon,
   SmartToy as SmartToyIcon,
+  PsychologyAlt as PsychologyAltIcon,
 } from '@mui/icons-material';
 
 import Memo from './components/Memo';
@@ -52,6 +53,7 @@ import News from './components/News';
 import Idea from './components/Idea';
 import IdeaBoard from './components/IdeaBoard';
 import AgentIdeaSpace from './components/AgentIdeaSpace';
+import ThinkingWorkspace from './components/ThinkingWorkspace';
 import Hobby from './components/Hobby';
 import HobbyBoard from './components/HobbyBoard';
 import FeatureRequests from './components/FeatureRequests';
@@ -121,6 +123,7 @@ function App() {
 
   const pageTitle = useMemo(() => {
     const path = location.pathname;
+    if (path.startsWith('/thinking')) return 'Thinking Workspace';
     if (path.startsWith('/agent-ideas')) return 'Agent Ideas';
     if (path.startsWith('/ideaboard') || path.startsWith('/idea')) return 'アイデア';
     if (path.startsWith('/hobbyboard') || path.startsWith('/hobby')) return '趣味';
@@ -139,7 +142,8 @@ function App() {
     const path = location.pathname;
     if (path === '/') return '/';
     if (path.startsWith('/ideaboard') || path.startsWith('/idea')) return '/ideaboard';
-    if (path.startsWith('/agent-ideas')) return '/agent-ideas';
+    if (path.startsWith('/thinking')) return '/thinking';
+    if (path.startsWith('/agent-ideas')) return '/thinking';
     if (path.startsWith('/hobbyboard') || path.startsWith('/hobby')) return '/hobbyboard';
     if (path.startsWith('/stockboard') || path.startsWith('/stock')) return '/stockboard';
     return false;
@@ -291,6 +295,10 @@ function App() {
             <ListItemButton selected={location.pathname.startsWith('/ideaboard')} component={Link} to="/ideaboard" onClick={navClick}>
               <ListItemIcon><LightbulbIcon /></ListItemIcon>
               <ListItemText primary="アイデアボード" />
+            </ListItemButton>
+            <ListItemButton selected={location.pathname.startsWith('/thinking')} component={Link} to="/thinking" onClick={navClick}>
+              <ListItemIcon><PsychologyAltIcon /></ListItemIcon>
+              <ListItemText primary="思考ワークスペース" secondary="Space / Context Store" />
             </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/agent-ideas')} component={Link} to="/agent-ideas" onClick={navClick}>
               <ListItemIcon><SmartToyIcon /></ListItemIcon>
@@ -474,6 +482,7 @@ function App() {
                 <Route path="/idea" element={<Idea />} />
                 <Route path="/ideaboard" element={<IdeaBoard />} />
                 <Route path="/agent-ideas" element={<AgentIdeaSpace />} />
+                <Route path="/thinking" element={<ThinkingWorkspace />} />
                 <Route path="/hobby" element={<Hobby />} />
                 <Route path="/hobbyboard" element={<HobbyBoard />} />
                 <Route path="/feature-requests" element={<FeatureRequests />} />
@@ -527,7 +536,7 @@ function App() {
           >
             <BottomNavigationAction label="ホーム" icon={<DashboardIcon />} component={Link} to="/" />
             <BottomNavigationAction label="アイデア" icon={<LightbulbIcon />} component={Link} to="/ideaboard" />
-            <BottomNavigationAction label="Agent" icon={<SmartToyIcon />} component={Link} to="/agent-ideas" />
+            <BottomNavigationAction label="Thinking" icon={<PsychologyAltIcon />} component={Link} to="/thinking" />
             <BottomNavigationAction label="趣味" icon={<InterestsIcon />} component={Link} to="/hobbyboard" />
             <BottomNavigationAction label="ストック" icon={<ViewCompactIcon />} component={Link} to="/stockboard" />
           </BottomNavigation>

@@ -5,17 +5,21 @@ import * as agentStoreImport from "../../functions/agentIdeasStoreAgentDb.js";
 import * as portalStoreImport from "../../functions/portalStore.js";
 import * as agentToolsImport from "../../functions/agentIdeasToolSchemas.js";
 import * as portalToolsImport from "../../functions/portalMcpTools.js";
+import * as contextStoreImport from "../../functions/contextStore.js";
+import * as contextToolsImport from "../../functions/contextStoreToolSchemas.js";
 import * as migrationImport from "../../functions/agentIdeasMigration.js";
 
 const agentStore: any = (agentStoreImport as any).default ?? agentStoreImport;
 const portalStore: any = (portalStoreImport as any).default ?? portalStoreImport;
 const agentToolsModule: any = (agentToolsImport as any).default ?? agentToolsImport;
 const portalToolsModule: any = (portalToolsImport as any).default ?? portalToolsImport;
+const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
+const contextToolsModule: any = (contextToolsImport as any).default ?? contextToolsImport;
 const migration: any = (migrationImport as any).default ?? migrationImport;
-const TOOLS: any[] = [...agentToolsModule.TOOLS, ...portalToolsModule.TOOLS];
+const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...portalToolsModule.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "0.4.4-netlify";
+const SERVER_VERSION = "0.5.0-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -280,17 +284,35 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
 
   await ensureAgentData();
   switch (name) {
-    case "agent_ideas_status":
+    case "agent_ideas_status": {
+      const legacyBootstrap = await contextStore.bootstrapIncomeSearchMigration();
       return structured({
         service: SERVER_NAME,
         serverVersion: SERVER_VERSION,
         databaseId: agentStore.DATABASE_ID,
         collections: agentStore.COLLECTIONS,
+        contextCollections: contextStore.COLLECTIONS,
         toolCount: TOOLS.length,
         agentToolCount: agentToolsModule.TOOLS.length,
+        contextToolCount: contextToolsModule.TOOLS.length,
         portalToolCount: portalToolsModule.TOOLS.length,
         database: await agentStore.healthCheck(),
+        contextStore: await contextStore.healthCheck(),
+        legacyBootstrap,
       });
+    }
+    case "space_create": return structured(await contextStore.spaceCreate(args));
+    case "space_get": return structured(await contextStore.spaceGet(args));
+    case "space_search": return structured(await contextStore.spaceSearch(args));
+    case "space_update": return structured(await contextStore.spaceUpdate(args));
+    case "space_get_context": return structured(await contextStore.spaceGetContext(args));
+    case "profile_get_context": return structured(await contextStore.profileGetContext(args));
+    case "profile_fact_upsert": return structured(await contextStore.profileFactUpsert(args));
+    case "profile_fact_update": return structured(await contextStore.profileFactUpdate(args));
+    case "decision_create": return structured(await contextStore.decisionCreate(args));
+    case "opportunity_create": return structured(await contextStore.opportunityCreate(args));
+    case "opportunity_update": return structured(await contextStore.opportunityUpdate(args));
+    case "space_distill_run": return structured(await contextStore.spaceDistillRun(args));
     case "idea_create": return structured(await agentStore.ideaCreate(args));
     case "idea_get": return structured(await agentStore.ideaGet(args));
     case "idea_search": return structured(await agentStore.ideaSearch(args));
@@ -338,7 +360,7 @@ async function handleRpc(message: any) {
         protocolVersion,
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
-        instructions: "Agent Idea Space uses dedicated collections in the default Firestore database. Use idea_* tools for autonomous agent ideation and provenance. Use portal_* tools for the user's existing My Portal data such as ideas, stocks, hobbies, projects, memos, reading lists, and feature requests. Never use idea_* tools to modify portal data. portal_delete requires explicit confirm=true.",
+        instructions: "My Portal is a Context Store + Thinking Workspace. Use space_search then space_get_context to resume long-running themes. Use profile_get_context for scoped User Model facts, preserving explicit vs inferred evidence. Use idea_* as the scratch/exploration layer inside a Space, opportunity_* for concrete real-world targets, decision_* for durable choices, and space_distill_run at session end. Existing portal_* data (including short idea/hobby/stock boards and projects) remains separate; portal_delete requires explicit confirm=true.",
       },
     };
   }

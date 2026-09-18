@@ -95,6 +95,7 @@ function ideaPayload(input, actor = {}) {
     tags: stringArray(input.tags, 50, 80),
     domains: stringArray(input.domains, 30, 80),
     attributes: jsonSafe(input.attributes || {}),
+    spaceId: clampString(input.spaceId, 160) || null,
     createdBy: createdBy(input.createdBy || actor),
     createdInRunId: clampString(input.createdInRunId, 160) || null,
     revision: 1,
@@ -180,6 +181,7 @@ async function ideaUpdate(input) {
     if (patch.maturity !== undefined) update.maturity = assertEnum(patch.maturity, IDEA_MATURITY, 'patch.maturity', current.maturity);
     if (patch.tags !== undefined) update.tags = stringArray(patch.tags, 50, 80);
     if (patch.domains !== undefined) update.domains = stringArray(patch.domains, 30, 80);
+    if (patch.spaceId !== undefined) update.spaceId = clampString(patch.spaceId, 160) || null;
     if (patch.attributes !== undefined) update.attributes = jsonSafe(patch.attributes || {});
     if (patch.attributesPatch !== undefined) update.attributes = {
       ...(current.attributes || {}),
@@ -394,6 +396,7 @@ async function runStart(input, actor = {}) {
     trigger: clampString(input.trigger, 80) || 'chat',
     status: 'active',
     seedIdeaIds: stringArray(input.seedIdeaIds, 50, 160),
+    spaceId: clampString(input.spaceId, 160) || null,
     createdIdeaIds: [],
     updatedIdeaIds: [],
     findings: [],
@@ -434,10 +437,11 @@ async function runFinish(input) {
 
 async function sourceAdd(input, actor = {}) {
   const ideaId = assertString(input.ideaId, 'ideaId', { max: 160 });
-  await ideaGet({ id: ideaId });
+  const idea = await ideaGet({ id: ideaId });
   const ref = db().collection(COLLECTIONS.sources).doc();
   await ref.set({
     ideaId,
+    spaceId: clampString(input.spaceId, 160) || idea.spaceId || null,
     type: clampString(input.type, 80) || 'web',
     url: clampString(input.url, 3000) || '',
     title: clampString(input.title, 1000) || '',
@@ -453,10 +457,11 @@ async function sourceAdd(input, actor = {}) {
 
 async function evaluationAdd(input, actor = {}) {
   const ideaId = assertString(input.ideaId, 'ideaId', { max: 160 });
-  await ideaGet({ id: ideaId });
+  const idea = await ideaGet({ id: ideaId });
   const ref = db().collection(COLLECTIONS.evaluations).doc();
   await ref.set({
     ideaId,
+    spaceId: clampString(input.spaceId, 160) || idea.spaceId || null,
     evaluator: clampString(input.evaluator, 120) || actor.agent || 'chatgpt',
     criteria: jsonSafe(input.criteria || {}),
     comment: clampString(input.comment, 12000) || '',
@@ -469,10 +474,11 @@ async function evaluationAdd(input, actor = {}) {
 
 async function artifactAdd(input, actor = {}) {
   const ideaId = clampString(input.ideaId, 160) || null;
-  if (ideaId) await ideaGet({ id: ideaId });
+  const idea = ideaId ? await ideaGet({ id: ideaId }) : null;
   const ref = db().collection(COLLECTIONS.artifacts).doc();
   await ref.set({
     ideaId,
+    spaceId: clampString(input.spaceId, 160) || idea?.spaceId || null,
     type: clampString(input.type, 80) || 'document',
     title: assertString(input.title, 'title', { max: 1000 }),
     content: clampString(input.content, 50000) || '',
