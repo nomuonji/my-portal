@@ -2,6 +2,8 @@ import React from 'react';
 import { db } from '../firebase';
 import CollectionBoard from './CollectionBoard';
 
+const isPortalIdea = (item) => Boolean(item?.content) && !item?.createdBy && !item?.maturity && !item?.spaceId;
+
 function IdeaBoard() {
   return (
     <CollectionBoard
@@ -15,6 +17,7 @@ function IdeaBoard() {
       manageRoute="/idea"
       emptyMessage="検索条件を変えるか、新しい短いアイデアを追加してください。"
       deleteConfirmMessage="本当にこのアイデアを削除しますか？"
+      itemFilter={isPortalIdea}
     />
   );
 }
