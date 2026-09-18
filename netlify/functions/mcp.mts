@@ -19,7 +19,7 @@ const migration: any = (migrationImport as any).default ?? migrationImport;
 const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...portalToolsModule.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "0.5.1-netlify";
+const SERVER_VERSION = "0.6.0-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -322,6 +322,10 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
     case "opportunity_create": return structured(await contextStore.opportunityCreate(args));
     case "opportunity_update": return structured(await contextStore.opportunityUpdate(args));
     case "space_distill_run": return structured(await contextStore.spaceDistillRun(args));
+    case "idea_category_list": return structured(await agentStore.categoryList(args));
+    case "idea_category_upsert": return structured(await agentStore.categoryUpsert(args));
+    case "idea_generation_work": return structured(await agentStore.generationWork(args));
+    case "idea_replenish_request": return structured(await agentStore.requestReplenishment(args));
     case "idea_create": return structured(await agentStore.ideaCreate(args));
     case "idea_get": return structured(await agentStore.ideaGet(args));
     case "idea_search": {
@@ -394,7 +398,7 @@ async function handleRpc(message: any) {
         protocolVersion,
         capabilities: { tools: { listChanged: true } },
         serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
-        instructions: "My Portal is a Context Store + Thinking Workspace. Use space_search then space_get_context to resume long-running themes. Use profile_get_context for scoped User Model facts, preserving explicit vs inferred evidence. If the host is temporarily exposing an older cached tool schema without the new Context Store tools, use idea_search with query prefixed by `space:` to search Spaces and idea_get_context with id `space:<spaceId>` to fetch the same Space Context Pack. Use idea_* as the scratch/exploration layer inside a Space, opportunity_* for concrete real-world targets, decision_* for durable choices, and space_distill_run at session end. Existing portal_* data (including short idea/hobby/stock boards and projects) remains separate; portal_delete requires explicit confirm=true.",
+        instructions: "My Portal is a Context Store + Thinking Workspace. Use space_search then space_get_context to resume long-running themes. Use profile_get_context for scoped User Model facts, preserving explicit vs inferred evidence. If the host is temporarily exposing an older cached tool schema without the new Context Store tools, use idea_search with query prefixed by `space:` to search Spaces and idea_get_context with id `space:<spaceId>` to fetch the same Space Context Pack. Thinking Spaces and Agent Ideas are separate layers. Use space_* / profile_* / decision_* / opportunity_* for long-running thinking themes. Agent Ideas is now an independent replenishable idea board: use idea_generation_work to find category shortages, then idea_create with categoryId for each generated idea. Portal short-form boards remain separate and should not be written through idea_* tools. Existing portal_* data (including short idea/hobby/stock boards and projects) remains separate; portal_delete requires explicit confirm=true.",
       },
     };
   }
