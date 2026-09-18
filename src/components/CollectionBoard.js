@@ -55,6 +55,7 @@ function CollectionBoard({
   manageRoute,
   emptyMessage,
   deleteConfirmMessage,
+  itemFilter,
 }) {
   const [items, setItems] = useState([]);
   const [allTags, setAllTags] = useState([]);
@@ -69,9 +70,12 @@ function CollectionBoard({
   useEffect(() => {
     const q = query(collection(database, collectionName), orderBy('createdAt', 'desc'));
     return onSnapshot(q, (snapshot) => {
-      setItems(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
+      const nextItems = snapshot.docs
+        .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+        .filter((item) => (typeof itemFilter === 'function' ? itemFilter(item) : true));
+      setItems(nextItems);
     });
-  }, [database, collectionName]);
+  }, [database, collectionName, itemFilter]);
 
   useEffect(() => {
     if (!tagsCollectionName) return undefined;
