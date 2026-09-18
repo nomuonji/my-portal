@@ -217,7 +217,20 @@ root Idea `wCaYjTvbYlO55KM3kNO5`（収益化できる仕事・案件探索）を
 
 ## MCP schema互換
 
-ChatGPTなどのMCP hostが接続済みserverのtool schemaを一時的にcacheし、新しいContext Store toolsがまだ露出しない場合に備えて、旧Agent Idea toolsからの互換経路を用意する。
+Thinking SpaceのIdea（`ideas`）と、短文ボード補充用Agent Ideas（`agent_ideas`）は保存層を分離したまま維持する。ただしAgent側が保存層の差を毎回意識しなくて済むよう、`idea_*` MCP toolsにはinterop routingを持たせる。
+
+- `idea_create({ spaceId, ... })` → Thinking Space Idea
+- `idea_create({ categoryId, ... })` → Agent Ideas board item
+- `idea_get / idea_update / idea_get_context / idea_archive` → IDから保存層を自動判別
+- `idea_link / idea_merge` → 同一保存層内で動作。Thinking ↔ Agent Ideasのcross-layer relationは暗黙変換せず拒否
+- `idea_add_source / idea_evaluate / idea_add_artifact` → Idea IDから保存先を自動判別
+- `idea_run_start({ spaceId, ... })` → Thinking Workspaceの`runs`
+- `idea_run_start` without `spaceId` → Agent Ideasの`agent_idea_runs`
+- `space_get_context` は移行期に作成された`agent_idea_runs`も`spaceId`が一致すればrecent runsへ含める
+
+これにより、Space distillationで作ったIdeaを直後に`idea_link`や`idea_add_source`へ渡しても、`Idea not found`にならない。
+
+ChatGPTなどのMCP hostが接続済みserverのtool schemaを一時的にcacheし、新しいContext Store toolsがまだ露出しない場合に備えて、旧Agent Idea toolsからの互換経路も維持する。
 
 - `idea_search({ query: "space:<query>" })` → `space_search` 相当
 - `idea_get_context({ id: "space:<spaceId>" })` → `space_get_context` 相当
