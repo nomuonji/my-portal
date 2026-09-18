@@ -160,19 +160,17 @@ Idea 本体を書き換えず、Agent / 観点ごとに独立した評価を追�
 
 ## MCP
 
-Firebase Hosting から以下へ rewrite する。
+本番MCPは Netlify Functions の Streamable HTTP endpoint で公開する。
 
 ```text
-https://<hosting-domain>/mcp
+https://my-portal-agent.netlify.app/mcp
 ```
 
-Firebase のデフォルト Hosting site を使う場合は通常:
+認証は OAuth 2.1 Authorization Code + PKCE。ChatGPT接続では Client ID Metadata Document (CIMD) を優先し、ChatGPTの固定クライアントメタデータを検証する。これにより再接続のたびに動的な client_id を作る必要がない。
 
-```text
-https://my-portal-d05fd.web.app/mcp
-```
+旧Dynamic Client Registration (DCR) client_id は既存接続との後方互換のため受理するが、OAuth discoveryでは新規登録方式として広告しない。
 
-OAuth 2.0 Authorization Code + PKCE を実装している。接続時に Agent Idea Space 専用アクセスキーを入力する。
+接続時のユーザー認可は Agent Idea Space 専用アクセスキーで行う。MCP endpoint 自体を無認証公開にはしない。
 
 ### MCP tools
 
@@ -228,28 +226,26 @@ idea_run_start
 
 ## Authentication / key rotation
 
-初期版は、平文アクセスキーをリポジトリに保存せず SHA-256 hash だけを function source に保持する。OAuth access/refresh token の署名にも server-side の signing key を使う。
-
-本格運用時は環境変数で上書きできる。
+平文アクセスキーはリポジトリに保存せず、Netlify環境変数の SHA-256 hash で検証する。OAuth authorization code / access token / refresh token の署名には別の server-side signing key を使う。
 
 - `AGENT_IDEAS_MCP_ACCESS_KEY_HASH`
 - `AGENT_IDEAS_MCP_SIGNING_KEY`
 - `AGENT_IDEAS_DATABASE_ID`
 
-アクセスキーを変更する場合は新しいキーの SHA-256 を `AGENT_IDEAS_MCP_ACCESS_KEY_HASH` に設定し、署名鍵も別 secret にするのが望ましい。
+`AGENT_IDEAS_MCP_SIGNING_KEY` を変更すると既存の署名済みトークンは無効になる。ただし新規・再接続はCIMDの固定 client_id を使うため、旧DCRのように「過去の動的 client_id 自体が失効して認可画面に入れない」状態には依存しない。
+
+アクセスキーをローテーションする場合は、新しいキーの SHA-256 を `AGENT_IDEAS_MCP_ACCESS_KEY_HASH` に設定する。
 
 ## Deploy
 
-named database 作成後:
-
-```bash
-firebase deploy --only firestore,functions,hosting --project=my-portal-d05fd
-```
+`main` へのpushから Netlify の production deploy を行う。
 
 動作確認:
 
 ```text
-GET https://my-portal-d05fd.web.app/mcp/health
+GET https://my-portal-agent.netlify.app/mcp/health
+GET https://my-portal-agent.netlify.app/.well-known/oauth-authorization-server
+GET https://my-portal-agent.netlify.app/.well-known/oauth-protected-resource/mcp
 ```
 
-正常なら `databaseId: "agent-ideas"` と tool count が返る。
+OAuth metadata では `client_id_metadata_document_supported: true`、PKCE `S256`、`offline_access` が確認できること。healthでは `serverVersion`、tool count、Firestore接続状態を確認する。
