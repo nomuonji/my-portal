@@ -79,6 +79,11 @@ function hslToHex(h, s, l) {
   return `#${f(0)}${f(8)}${f(4)}`;
 }
 
+const isPortalIdea = (idea) => (
+  idea?.owner === 'portal'
+  || (Boolean(idea?.content) && !idea?.createdBy && !idea?.maturity && !idea?.spaceId)
+);
+
 // Function to generate a consistent color from a string (tag)
 const getTagColor = (tag) => {
   let hash = 0;
@@ -107,7 +112,9 @@ function Idea() {
   useEffect(() => {
     const q = query(collection(db, 'ideas'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetchedIdeas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const fetchedIdeas = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(isPortalIdea);
       setIdeas(fetchedIdeas);
     });
     return () => unsubscribe();
@@ -143,6 +150,7 @@ function Idea() {
     const ideaData = {
       content,
       tags: selectedTags, // Use selectedTags directly
+      owner: 'portal',
       updatedAt: serverTimestamp(),
     };
 
@@ -226,8 +234,11 @@ function Idea() {
         const ideasUsingTagQuery = query(collection(db, 'ideas'), where('tags', 'array-contains', tagToDelete));
         const ideasUsingTagSnapshot = await getDocs(ideasUsingTagQuery);
 
-        if (!ideasUsingTagSnapshot.empty) {
-          alert(`タグ「${tagToDelete}」は${ideasUsingTagSnapshot.size}件のアイデアで使用されているため削除できません。`);
+        const portalIdeasUsingTag = ideasUsingTagSnapshot.docs
+          .map(snapshotDoc => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+          .filter(isPortalIdea);
+        if (portalIdeasUsingTag.length > 0) {
+          alert(`タグ「${tagToDelete}」は${portalIdeasUsingTag.length}件のアイデアで使用されているため削除できません。`);
           return;
         }
 
