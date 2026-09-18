@@ -284,19 +284,23 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
 
   await ensureAgentData();
   switch (name) {
-    case "agent_ideas_status":
+    case "agent_ideas_status": {
+      const legacyBootstrap = await contextStore.bootstrapIncomeSearchMigration();
       return structured({
         service: SERVER_NAME,
         serverVersion: SERVER_VERSION,
         databaseId: agentStore.DATABASE_ID,
         collections: agentStore.COLLECTIONS,
+        contextCollections: contextStore.COLLECTIONS,
         toolCount: TOOLS.length,
         agentToolCount: agentToolsModule.TOOLS.length,
         contextToolCount: contextToolsModule.TOOLS.length,
         portalToolCount: portalToolsModule.TOOLS.length,
         database: await agentStore.healthCheck(),
         contextStore: await contextStore.healthCheck(),
+        legacyBootstrap,
       });
+    }
     case "space_create": return structured(await contextStore.spaceCreate(args));
     case "space_get": return structured(await contextStore.spaceGet(args));
     case "space_search": return structured(await contextStore.spaceSearch(args));
