@@ -401,7 +401,44 @@ async function spaceGetContext(input) {
   const themeLocalConstraints = profileContext.items.filter((fact) => String(fact.scope || '') === `space:${space.id}`);
   const relevantProfileFacts = profileContext.items.filter((fact) => String(fact.scope || '') !== `space:${space.id}`);
   const activeIdeas = ideas.filter((item) => item.status === 'active' && !['wild_gig', 'opportunity_source'].includes(item.type));
-  const activeOpportunities = opportunities.filter(activeOpportunity);
+
+  // Keep concrete Opportunities self-contained in the Context Pack. Legacy
+  // opportunity records may not have sourceUrl populated because their source
+  // evidence lived on the originating Idea; prefer the strongest source type
+  // without mutating the stored migration data.
+  const sourcePriority = {
+    source_of_truth: 0,
+    bounty_listing: 1,
+    contest_page: 1,
+    program_rules: 1,
+    job_listing: 1,
+    program_history: 2,
+    platform_documentation: 2,
+    market_evidence: 3,
+    risk_note: 4,
+  };
+  const sourceByIdea = new Map();
+  sources.forEach((source) => {
+    if (!source.ideaId || !source.url) return;
+    const existing = sourceByIdea.get(source.ideaId);
+    const rank = sourcePriority[source.type] ?? 10;
+    const existingRank = existing ? (sourcePriority[existing.type] ?? 10) : Number.POSITIVE_INFINITY;
+    if (!existing || rank < existingRank) sourceByIdea.set(source.ideaId, source);
+  });
+  const activeOpportunities = opportunities.filter(activeOpportunity).map((item) => {
+    const primarySource = item.originIdeaId ? sourceByIdea.get(item.originIdeaId) : null;
+    if (!primarySource) return item;
+    return {
+      ...item,
+      sourceUrl: item.sourceUrl || primarySource.url || '',
+      primarySource: {
+        id: primarySource.id,
+        title: primarySource.title || '',
+        type: primarySource.type || '',
+        url: primarySource.url || '',
+      },
+    };
+  });
   const importantDecisions = decisions.filter((item) => !item.status || item.status === 'active');
 
   return {
