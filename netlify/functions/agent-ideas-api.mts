@@ -170,6 +170,13 @@ export default async (request: Request) => {
           reason: body.reason || "Archived from Agent Ideas board",
         }));
       }
+      if (action === "idea_promote") {
+        return json(await store.promoteToPortal({
+          id: body.id,
+          expectedRevision: body.expectedRevision,
+          content: body.content,
+        }));
+      }
       if (action === "run_start") {
         return json(await store.runStart({
           objective: body.objective,
