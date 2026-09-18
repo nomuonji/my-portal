@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { auth, db } from '../firebase';
 import { collection, deleteDoc, doc, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
 import {
   Box,
   Button,
@@ -80,10 +81,13 @@ function Dashboard() {
 
   useEffect(() => {
     let cancelled = false;
-    const loadSpaces = async () => {
+
+    const loadSpaces = async (user) => {
+      if (!user) {
+        if (!cancelled) setSpaces([]);
+        return;
+      }
       try {
-        const user = auth.currentUser;
-        if (!user) return;
         const token = await user.getIdToken();
         const response = await fetch('/api/agent-ideas?resource=spaces', {
           headers: { Authorization: `Bearer ${token}` },
@@ -95,8 +99,12 @@ function Dashboard() {
         console.error('Failed to load thinking spaces:', error);
       }
     };
-    loadSpaces();
-    return () => { cancelled = true; };
+
+    const unsubscribe = onAuthStateChanged(auth, loadSpaces);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -384,47 +392,103 @@ function Dashboard() {
           elevation={0}
           sx={{
             position: 'relative',
-            mb: 1.25,
-            p: 1.2,
-            border: `1px solid ${boardBorder}`,
-            background: laneBackground,
-            backdropFilter: 'blur(14px) saturate(130%)',
+            overflow: 'hidden',
+            mb: 1.75,
+            p: { xs: 1.5, md: 2 },
+            borderRadius: 3.5,
+            border: `1px solid ${alpha(theme.palette.primary.main, isDark ? 0.28 : 0.2)}`,
+            background: isDark
+              ? `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.16)}, ${alpha(theme.palette.background.paper, 0.92)} 48%, ${alpha(theme.palette.info.main, 0.08)})`
+              : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.1)}, rgba(255,255,255,0.95) 48%, ${alpha(theme.palette.info.main, 0.08)})`,
+            boxShadow: isDark
+              ? '0 18px 48px rgba(0,0,0,0.18)'
+              : '0 18px 48px rgba(61, 101, 126, 0.12)',
           }}
         >
-          <Stack direction="row" spacing={0.8} alignItems="center" sx={{ mb: 0.9 }}>
-            <AutoAwesomeIcon color="primary" sx={{ fontSize: 19 }} />
-            <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>Continue Thinking / 思考を再開</Typography>
-            <Button size="small" sx={{ ml: 'auto' }} onClick={() => navigate('/thinking')}>すべて見る</Button>
+          <Stack
+            direction={{ xs: 'column', md: 'row' }}
+            spacing={1.25}
+            alignItems={{ md: 'center' }}
+            sx={{ mb: 1.5 }}
+          >
+            <Box sx={{ flexGrow: 1 }}>
+              <Stack direction="row" spacing={0.8} alignItems="center">
+                <AutoAwesomeIcon color="primary" />
+                <Typography variant="overline" color="primary.main" sx={{ fontWeight: 900, letterSpacing: '0.12em' }}>
+                  THINKING WORKSPACE
+                </Typography>
+                <Chip size="small" label={`${spaces.length} active`} color="primary" variant="outlined" />
+              </Stack>
+              <Typography variant="h5" sx={{ mt: 0.2, fontWeight: 950, letterSpacing: '-0.025em' }}>
+                思考テーマ
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.45, maxWidth: 760 }}>
+                AIとの長期テーマを、前回の現在地・判断・次の行動ごと保存しています。ここから会話の続きを再開できます。
+              </Typography>
+            </Box>
+            <Button
+              variant="contained"
+              startIcon={<PsychologyAltIcon />}
+              onClick={() => navigate('/thinking')}
+              sx={{ alignSelf: { xs: 'stretch', md: 'center' } }}
+            >
+              思考テーマを開く
+            </Button>
           </Stack>
-          <Box sx={{ display: 'flex', gap: 0.8, overflowX: 'auto', pb: 0.2 }}>
+
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 1 }}>
             {spaces.map((space) => (
               <Paper
                 key={space.id}
-                variant="outlined"
+                elevation={0}
                 onClick={() => navigate(`/thinking?space=${encodeURIComponent(space.id)}`)}
                 sx={{
-                  minWidth: { xs: 240, sm: 285 },
-                  maxWidth: 360,
-                  p: 1.1,
-                  borderRadius: 2.5,
+                  p: 1.4,
+                  borderRadius: 2.75,
                   cursor: 'pointer',
-                  bgcolor: isDark ? alpha(theme.palette.background.paper, 0.9) : 'rgba(255,255,255,0.82)',
-                  '&:hover': { borderColor: 'primary.main', transform: 'translateY(-1px)' },
-                  transition: 'transform 150ms ease, border-color 150ms ease',
+                  border: `1px solid ${boardBorder}`,
+                  bgcolor: isDark ? alpha(theme.palette.background.paper, 0.82) : 'rgba(255,255,255,0.84)',
+                  transition: 'transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease',
+                  '&:hover': {
+                    transform: 'translateY(-2px)',
+                    borderColor: 'primary.main',
+                    boxShadow: `0 10px 24px ${alpha(theme.palette.primary.main, 0.12)}`,
+                  },
                 }}
               >
-                <Typography variant="subtitle2" fontWeight={900}>{space.title}</Typography>
+                <Stack direction="row" spacing={0.7} alignItems="center">
+                  <Typography variant="subtitle1" fontWeight={950} sx={{ flexGrow: 1 }}>
+                    {space.title}
+                  </Typography>
+                  <Chip size="small" label={space.status || 'active'} color="primary" variant="outlined" />
+                </Stack>
+
                 <Typography
-                  variant="caption"
+                  variant="body2"
                   color="text.secondary"
-                  sx={{ mt: 0.45, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+                  sx={{ mt: 0.7, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
                 >
                   {space.currentBrief || space.summary || 'Current Briefはまだありません。'}
                 </Typography>
+
+                {space.goal && (
+                  <Box sx={{ mt: 1, p: 0.9, borderRadius: 2, bgcolor: alpha(theme.palette.primary.main, isDark ? 0.09 : 0.055) }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 800 }}>
+                      GOAL
+                    </Typography>
+                    <Typography variant="caption" sx={{ display: 'block', mt: 0.2, fontWeight: 700 }}>
+                      {space.goal}
+                    </Typography>
+                  </Box>
+                )}
+
                 {(space.nextActions || []).length > 0 && (
-                  <Typography variant="caption" color="primary.main" sx={{ display: 'block', mt: 0.55, fontWeight: 750 }}>
-                    Next: {space.nextActions[0]}
-                  </Typography>
+                  <Stack direction="row" spacing={0.6} alignItems="flex-start" sx={{ mt: 1 }}>
+                    <PlayCircleOutlineIcon color="primary" sx={{ fontSize: 17, mt: 0.1 }} />
+                    <Typography variant="caption" color="primary.main" sx={{ fontWeight: 800 }}>
+                      次: {space.nextActions[0]}
+                    </Typography>
+                  </Stack>
                 )}
               </Paper>
             ))}
