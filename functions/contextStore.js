@@ -399,10 +399,11 @@ async function spaceGetContext(input) {
   const opportunities = sortRecent(opportunitySnapshot.docs.map(documentToObject));
   opportunities.forEach((item) => { if (item.createdInRunId) runIds.add(item.createdInRunId); });
 
-  const [sourcesAll, runsAll, artifactsAll, projectsSnapshot] = await Promise.all([
-    getRecentCollection('sources', 300),
-    getRecentCollection('runs', 220),
-    input.includeArtifacts === false ? Promise.resolve([]) : getRecentCollection('artifacts', 220),
+  const [sourcesAll, runsAll, agentRunsAll, artifactsAll, projectsSnapshot] = await Promise.all([
+    getRecentCollection(THINKING_COLLECTIONS.sources, 300),
+    getRecentCollection(THINKING_COLLECTIONS.runs, 220),
+    getRecentCollection('agent_idea_runs', 220).catch(() => []),
+    input.includeArtifacts === false ? Promise.resolve([]) : getRecentCollection(THINKING_COLLECTIONS.artifacts, 220),
     database.collection('projects').where('spaceId', '==', space.id).limit(50).get().catch(() => ({ docs: [] })),
   ]);
 
@@ -411,7 +412,7 @@ async function spaceGetContext(input) {
     .slice(0, recentLimit);
   sources.forEach((item) => { if (item.createdInRunId) runIds.add(item.createdInRunId); });
 
-  const runs = runsAll
+  const runs = sortRecent([...runsAll, ...agentRunsAll])
     .filter((item) => item.spaceId === space.id
       || runIds.has(item.id)
       || (item.seedIdeaIds || []).some((id) => ideaIds.has(id)))
@@ -489,26 +490,24 @@ async function spaceGetContext(input) {
   };
 }
 
-async function createSpaceIdea(input, actor = {}) {
+async function spaceIdeaCreate(input, actor = {}) {
+  const spaceId = assertString(input.spaceId, 'spaceId', { max: 160 });
+  await spaceGet({ id: spaceId });
   const database = db();
-  const ref = database.collection('ideas').doc();
+  const ref = database.collection(THINKING_COLLECTIONS.ideas).doc();
   const now = FieldValue.serverTimestamp();
   await ref.set({
     title: assertString(input.title, 'title', { max: 300 }),
     summary: clampString(input.summary, 3000) || '',
     content: clampString(input.content, 30000) || '',
     type: clampString(input.type, 80) || 'idea',
-    status: ['active', 'paused', 'archived', 'promoted'].includes(input.status) ? input.status : 'active',
-    maturity: ['seed', 'exploring', 'developed', 'validated', 'execution_ready'].includes(input.maturity) ? input.maturity : 'seed',
+    status: IDEA_STATUSES.includes(input.status) ? input.status : 'active',
+    maturity: IDEA_MATURITY.includes(input.maturity) ? input.maturity : 'seed',
     tags: stringArray(input.tags, 50, 80),
     domains: stringArray(input.domains, 30, 80),
     attributes: jsonSafe(input.attributes || {}),
-    spaceId: clampString(input.spaceId, 160) || null,
-    createdBy: {
-      type: clampString(input.createdBy?.type || actor.type, 30) || 'agent',
-      agent: clampString(input.createdBy?.agent || actor.agent, 120) || 'chatgpt',
-      model: clampString(input.createdBy?.model || actor.model, 120) || null,
-    },
+    spaceId,
+    createdBy: createdBy(input.createdBy, actor),
     createdInRunId: clampString(input.createdInRunId, 160) || null,
     revision: 1,
     createdAt: now,
@@ -543,10 +542,14 @@ async function spaceDistillRun(input) {
 
   const runId = clampString(input.runId, 160);
   if (runId) {
-    const runRef = database.collection('runs').doc(runId);
-    const runSnapshot = await runRef.get();
-    if (runSnapshot.exists) {
-      await runRef.update({
+    const runRefs = [
+      database.collection(THINKING_COLLECTIONS.runs).doc(runId),
+      database.collection('agent_idea_runs').doc(runId),
+    ];
+    const runSnapshots = await database.getAll(...runRefs);
+    const runSnapshot = runSnapshots.find((snapshot) => snapshot.exists);
+    if (runSnapshot) {
+      await runSnapshot.ref.update({
         spaceId,
         metadata: { ...(runSnapshot.data().metadata || {}), distilledToSpaceId: spaceId },
         updatedAt: FieldValue.serverTimestamp(),
@@ -571,7 +574,7 @@ async function spaceDistillRun(input) {
 
   const createdIdeas = [];
   for (const idea of Array.isArray(input.ideas) ? input.ideas.slice(0, 50) : []) {
-    createdIdeas.push(await createSpaceIdea({ ...idea, spaceId, createdInRunId: idea.createdInRunId || runId || null }));
+    createdIdeas.push(await spaceIdeaCreate({ ...idea, spaceId, createdInRunId: idea.createdInRunId || runId || null }));
   }
 
   return {
