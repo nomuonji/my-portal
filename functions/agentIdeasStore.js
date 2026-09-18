@@ -3,12 +3,13 @@ const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
 const DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTIONS = Object.freeze({
-  ideas: 'ideas',
-  relations: 'relations',
-  runs: 'runs',
-  sources: 'sources',
-  evaluations: 'evaluations',
-  artifacts: 'artifacts',
+  ideas: 'agent_ideas',
+  categories: 'agent_idea_categories',
+  relations: 'agent_idea_relations',
+  runs: 'agent_idea_runs',
+  sources: 'agent_idea_sources',
+  evaluations: 'agent_idea_evaluations',
+  artifacts: 'agent_idea_artifacts',
 });
 
 const IDEA_STATUSES = ['active', 'paused', 'archived', 'promoted'];
@@ -95,7 +96,7 @@ function ideaPayload(input, actor = {}) {
     tags: stringArray(input.tags, 50, 80),
     domains: stringArray(input.domains, 30, 80),
     attributes: jsonSafe(input.attributes || {}),
-    spaceId: clampString(input.spaceId, 160) || null,
+    categoryId: clampString(input.categoryId, 160) || null,
     createdBy: createdBy(input.createdBy || actor),
     createdInRunId: clampString(input.createdInRunId, 160) || null,
     revision: 1,
@@ -103,13 +104,30 @@ function ideaPayload(input, actor = {}) {
 }
 
 async function ideaCreate(input, actor = {}) {
-  const ref = db().collection(COLLECTIONS.ideas).doc();
+  const database = db();
+  const ref = database.collection(COLLECTIONS.ideas).doc();
   const payload = ideaPayload(input, actor);
   await ref.set({
     ...payload,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
+
+  if (payload.categoryId) {
+    const categoryRef = database.collection(COLLECTIONS.categories).doc(payload.categoryId);
+    await database.runTransaction(async (tx) => {
+      const categorySnapshot = await tx.get(categoryRef);
+      if (!categorySnapshot.exists) return;
+      const requestedCount = Math.max(0, Number(categorySnapshot.data().requestedCount || 0));
+      if (requestedCount > 0) {
+        tx.update(categoryRef, {
+          requestedCount: requestedCount - 1,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      }
+    });
+  }
+
   return documentToObject(await ref.get());
 }
 
@@ -134,6 +152,7 @@ async function ideaSearch(input = {}) {
   const tag = clampString(input.tag, 80)?.toLowerCase();
   const domain = clampString(input.domain, 80)?.toLowerCase();
   const agent = clampString(input.createdByAgent, 120)?.toLowerCase();
+  const categoryId = clampString(input.categoryId, 160);
 
   const items = snapshot.docs
     .map(documentToObject)
@@ -143,6 +162,7 @@ async function ideaSearch(input = {}) {
       if (tag && !(idea.tags || []).some((item) => String(item).toLowerCase() === tag)) return false;
       if (domain && !(idea.domains || []).some((item) => String(item).toLowerCase() === domain)) return false;
       if (agent && String(idea.createdBy?.agent || '').toLowerCase() !== agent) return false;
+      if (categoryId && idea.categoryId !== categoryId) return false;
       if (q) {
         const haystack = [idea.title, idea.summary, idea.content, ...(idea.tags || []), ...(idea.domains || [])]
           .join('\n')
@@ -181,7 +201,7 @@ async function ideaUpdate(input) {
     if (patch.maturity !== undefined) update.maturity = assertEnum(patch.maturity, IDEA_MATURITY, 'patch.maturity', current.maturity);
     if (patch.tags !== undefined) update.tags = stringArray(patch.tags, 50, 80);
     if (patch.domains !== undefined) update.domains = stringArray(patch.domains, 30, 80);
-    if (patch.spaceId !== undefined) update.spaceId = clampString(patch.spaceId, 160) || null;
+    if (patch.categoryId !== undefined) update.categoryId = clampString(patch.categoryId, 160) || null;
     if (patch.attributes !== undefined) update.attributes = jsonSafe(patch.attributes || {});
     if (patch.attributesPatch !== undefined) update.attributes = {
       ...(current.attributes || {}),
@@ -492,6 +512,122 @@ async function artifactAdd(input, actor = {}) {
   return documentToObject(await ref.get());
 }
 
+
+function categoryIdFromName(name) {
+  return createHash('sha256').update(String(name || '').trim().toLowerCase()).digest('hex').slice(0, 24);
+}
+
+async function categoryUpsert(input = {}) {
+  const database = db();
+  const name = assertString(input.name, 'name', { max: 160 });
+  const id = clampString(input.id, 160) || categoryIdFromName(name);
+  const ref = database.collection(COLLECTIONS.categories).doc(id);
+
+  await database.runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    const current = snapshot.exists ? snapshot.data() : {};
+    const currentRevision = Number(current.revision || 0);
+    if (input.expectedRevision !== undefined && currentRevision > 0
+      && Number(input.expectedRevision) !== currentRevision) {
+      throw new Error(`Revision conflict: expected ${input.expectedRevision}, actual ${currentRevision}`);
+    }
+
+    const payload = {
+      name,
+      description: clampString(input.description, 3000) ?? current.description ?? '',
+      instructions: clampString(input.instructions, 12000) ?? current.instructions ?? '',
+      tags: input.tags !== undefined ? stringArray(input.tags, 30, 80) : (current.tags || []),
+      targetCount: input.targetCount !== undefined
+        ? Math.min(Math.max(Number(input.targetCount) || 0, 0), 500)
+        : Math.min(Math.max(Number(current.targetCount) || 12, 0), 500),
+      requestedCount: Math.min(Math.max(Number(current.requestedCount) || 0, 0), 500),
+      status: ['active', 'paused', 'archived'].includes(input.status)
+        ? input.status
+        : (current.status || 'active'),
+      revision: currentRevision + 1 || 1,
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+
+    if (snapshot.exists) {
+      tx.set(ref, payload, { merge: true });
+    } else {
+      tx.set(ref, { ...payload, createdAt: FieldValue.serverTimestamp() });
+    }
+  });
+
+  return documentToObject(await ref.get());
+}
+
+async function categoryList(input = {}) {
+  const limit = Math.min(Math.max(Number(input.limit) || 100, 1), 300);
+  const snapshot = await db().collection(COLLECTIONS.categories).limit(limit).get();
+  const items = snapshot.docs
+    .map(documentToObject)
+    .filter((item) => !input.status || item.status === input.status)
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
+  return { items, count: items.length };
+}
+
+async function requestReplenishment(input = {}) {
+  const categoryId = assertString(input.categoryId, 'categoryId', { max: 160 });
+  const count = Math.min(Math.max(Number(input.count) || 5, 1), 100);
+  const database = db();
+  const ref = database.collection(COLLECTIONS.categories).doc(categoryId);
+
+  await database.runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    if (!snapshot.exists) throw new Error(`Category not found: ${categoryId}`);
+    const current = snapshot.data();
+    tx.update(ref, {
+      requestedCount: Math.min(500, Math.max(0, Number(current.requestedCount || 0)) + count),
+      revision: Number(current.revision || 1) + 1,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  return documentToObject(await ref.get());
+}
+
+async function generationWork(input = {}) {
+  const database = db();
+  const [categorySnapshot, ideaSnapshot] = await Promise.all([
+    database.collection(COLLECTIONS.categories).limit(300).get(),
+    database.collection(COLLECTIONS.ideas).limit(1000).get(),
+  ]);
+
+  const activeCounts = new Map();
+  ideaSnapshot.docs.map(documentToObject).forEach((idea) => {
+    if (!idea.categoryId || idea.status !== 'active') return;
+    activeCounts.set(idea.categoryId, (activeCounts.get(idea.categoryId) || 0) + 1);
+  });
+
+  const categoryId = clampString(input.categoryId, 160);
+  const items = categorySnapshot.docs
+    .map(documentToObject)
+    .filter((category) => category.status === 'active')
+    .filter((category) => !categoryId || category.id === categoryId)
+    .map((category) => {
+      const activeCount = activeCounts.get(category.id) || 0;
+      const targetCount = Math.max(0, Number(category.targetCount || 0));
+      const requestedCount = Math.max(0, Number(category.requestedCount || 0));
+      const targetShortage = Math.max(0, targetCount - activeCount);
+      return {
+        ...category,
+        activeCount,
+        targetShortage,
+        neededCount: Math.max(targetShortage, requestedCount),
+      };
+    })
+    .filter((category) => input.includeSatisfied === true || category.neededCount > 0)
+    .sort((a, b) => b.neededCount - a.neededCount || String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
+
+  return {
+    items,
+    count: items.length,
+    totalNeeded: items.reduce((sum, item) => sum + item.neededCount, 0),
+  };
+}
+
 async function healthCheck() {
   const started = Date.now();
   const snapshot = await db().collection(COLLECTIONS.ideas).limit(1).get();
@@ -526,4 +662,8 @@ module.exports = {
   sourceAdd,
   evaluationAdd,
   artifactAdd,
+  categoryUpsert,
+  categoryList,
+  requestReplenishment,
+  generationWork,
 };
