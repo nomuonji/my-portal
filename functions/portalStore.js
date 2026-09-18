@@ -73,6 +73,17 @@ function documentToObject(snapshot) {
   return snapshot.exists ? serialize({ id: snapshot.id, ...snapshot.data() }) : null;
 }
 
+function isPortalIdea(item = {}) {
+  return item?.owner === 'portal'
+    || (Boolean(item?.content) && !item?.createdBy && !item?.maturity && !item?.spaceId);
+}
+
+function assertPortalOwned(config, item) {
+  if (config.name === 'ideas' && !isPortalIdea(item)) {
+    throw new Error(`Document not found: ${config.name}/${item?.id || ''}`);
+  }
+}
+
 function collectionConfig(name) {
   const normalized = assertString(name, 'collection', 120);
   const config = COLLECTIONS[normalized];
@@ -110,7 +121,9 @@ async function get(input = {}) {
   const id = assertString(input.id, 'id', 500);
   const snapshot = await db().collection(config.name).doc(id).get();
   if (!snapshot.exists) throw new Error(`Document not found: ${config.name}/${id}`);
-  return { collection: config.name, item: documentToObject(snapshot), databaseId: DATABASE_ID };
+  const item = documentToObject(snapshot);
+  assertPortalOwned(config, item);
+  return { collection: config.name, item, databaseId: DATABASE_ID };
 }
 
 async function search(input = {}) {
@@ -124,6 +137,7 @@ async function search(input = {}) {
   const items = snapshot.docs
     .map((doc) => documentToObject(doc))
     .filter((item) => {
+      if (config.name === 'ideas' && !isPortalIdea(item)) return false;
       if (tag) {
         const values = Array.isArray(item?.[config.tagsField || 'tags']) ? item[config.tagsField || 'tags'] : [];
         if (!values.some((value) => String(value).toLowerCase() === tag)) return false;
@@ -147,6 +161,7 @@ async function create(input = {}) {
   requireConfirmation(input, 'create');
   const config = collectionConfig(input.collection);
   const data = jsonSafe(input.data && typeof input.data === 'object' ? input.data : {});
+  if (config.name === 'ideas') data.owner = 'portal';
   const explicitId = clampString(input.id, 500);
   const ref = explicitId
     ? db().collection(config.name).doc(explicitId)
@@ -175,6 +190,8 @@ async function update(input = {}) {
   const ref = db().collection(config.name).doc(id);
   const existing = await ref.get();
   if (!existing.exists) throw new Error(`Document not found: ${config.name}/${id}`);
+  assertPortalOwned(config, documentToObject(existing));
+  if (config.name === 'ideas') patch.owner = 'portal';
   await ref.set({ ...patch, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
   return { collection: config.name, item: documentToObject(await ref.get()), databaseId: DATABASE_ID };
 }
@@ -187,6 +204,7 @@ async function remove(input = {}) {
   const existing = await ref.get();
   if (!existing.exists) throw new Error(`Document not found: ${config.name}/${id}`);
   const deleted = documentToObject(existing);
+  assertPortalOwned(config, deleted);
   await ref.delete();
   return { collection: config.name, deleted, databaseId: DATABASE_ID };
 }
