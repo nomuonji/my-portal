@@ -182,8 +182,8 @@ async function ideaGet(input) {
 }
 
 async function ideaSearch(input = {}) {
-  const requestedLimit = Math.min(Math.max(Number(input.limit) || 30, 1), 100);
-  const scanLimit = Math.min(Math.max(Number(input.scanLimit) || Math.max(requestedLimit * 5, 100), requestedLimit), 500);
+  const requestedLimit = Math.min(Math.max(Number(input.limit) || 30, 1), 500);
+  const scanLimit = Math.min(Math.max(Number(input.scanLimit) || Math.max(requestedLimit * 5, 100), requestedLimit), 2000);
   const snapshot = await db().collection(COLLECTIONS.ideas)
     .orderBy('updatedAt', 'desc')
     .limit(scanLimit)
