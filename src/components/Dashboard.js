@@ -11,6 +11,7 @@ import {
   DialogTitle,
   IconButton,
   Paper,
+  Stack,
   TextField,
   Tooltip,
   Typography,
