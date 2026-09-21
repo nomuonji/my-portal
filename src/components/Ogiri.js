@@ -6,7 +6,7 @@ import {
 import {
   AutoAwesome as AutoAwesomeIcon, Bolt as BoltIcon, Refresh as RefreshIcon, Shuffle as ShuffleIcon,
 } from '@mui/icons-material';
-import { addDoc, collection, doc, getDocs, limit, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore';
+import { addDoc, collection, doc, getDocs, increment, limit, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 const SIGNALS = [
@@ -132,12 +132,17 @@ export default function Ogiri() {
         createdAt: serverTimestamp(),
       });
 
+      const signalCounts = Object.fromEntries(
+        SIGNALS.map(([id]) => [id, increment(signals.includes(id) ? 1 : 0)]),
+      );
       const profileRef = doc(db, 'creative_profile', 'primary');
       await setDoc(profileRef, {
-        totalRounds: round,
+        totalRounds: increment(1),
+        ratingSum: increment(Number(selfRating) || 0),
         lastResponseId: responseRef.id,
         lastUpdatedAt: serverTimestamp(),
         lastSignals: signals,
+        signalCounts,
       }, { merge: true });
 
       setSubmitted(true);
