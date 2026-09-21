@@ -18,6 +18,8 @@ const COLLECTIONS = Object.freeze({
   stock_tags: { label: 'ストックタグ', documentIdsAsData: true },
   hobbies: { label: '趣味', tagsField: 'tags' },
   hobby_tags: { label: '趣味タグ', documentIdsAsData: true },
+  ogiri_responses: { label: '大喜利回答', tagsField: 'signals' },
+  creative_profile: { label: '創造性プロファイル' },
 });
 
 function db() {
