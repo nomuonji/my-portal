@@ -43,6 +43,7 @@ import {
   MoreHoriz as MoreHorizIcon,
   SmartToy as SmartToyIcon,
   PsychologyAlt as PsychologyAltIcon,
+  EmojiObjects as EmojiObjectsIcon,
 } from '@mui/icons-material';
 
 import Memo from './components/Memo';
@@ -50,6 +51,7 @@ import Dashboard from './components/Dashboard';
 import News from './components/News';
 import Idea from './components/Idea';
 import AgentIdeaSpace from './components/AgentIdeaSpace';
+import Ogiri from './components/Ogiri';
 import PortalBoards from './components/PortalBoards';
 import ThinkingWorkspace from './components/ThinkingWorkspace';
 import Hobby from './components/Hobby';
@@ -123,6 +125,7 @@ function App() {
     if (path.startsWith('/dashboard')) return 'ダッシュボード';
     if (path.startsWith('/thinking')) return '思考テーマ';
     if (path.startsWith('/agent-ideas')) return 'Agent Ideas';
+    if (path.startsWith('/ogiri')) return '大喜利ラボ';
     if (path.startsWith('/ideaboard') || path.startsWith('/idea')) return 'アイデア';
     if (path.startsWith('/hobbyboard') || path.startsWith('/hobby')) return '趣味';
     if (path.startsWith('/stockboard') || path.startsWith('/stock')) return 'ストック';
@@ -143,6 +146,7 @@ function App() {
     if (path.startsWith('/dashboard')) return '/dashboard';
     if (path.startsWith('/thinking')) return '/thinking';
     if (path.startsWith('/agent-ideas')) return '/agent-ideas';
+    if (path.startsWith('/ogiri')) return '/ogiri';
     return false;
   }, [location.pathname]);
 
@@ -298,8 +302,13 @@ function App() {
               <ListItemText primary="思考テーマ" secondary="長期テーマ / Context Store" />
             </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/agent-ideas')} component={Link} to="/agent-ideas" onClick={navClick}>
+
               <ListItemIcon><SmartToyIcon /></ListItemIcon>
               <ListItemText primary="Agent Ideas" secondary="Portalと同じ構造でAIが補充" />
+            </ListItemButton>
+            <ListItemButton selected={location.pathname.startsWith('/ogiri')} component={Link} to="/ogiri" onClick={navClick}>
+              <ListItemIcon><EmojiObjectsIcon /></ListItemIcon>
+              <ListItemText primary="大喜利ラボ" secondary="発想の拡散・センス蓄積" />
             </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/project')} component={Link} to="/project" onClick={navClick}>
               <ListItemIcon><Folder /></ListItemIcon>
@@ -475,6 +484,7 @@ function App() {
                 <Route path="/hobbyboard" element={<Navigate to="/?board=hobbies" replace />} />
                 <Route path="/stockboard" element={<Navigate to="/?board=stocks" replace />} />
                 <Route path="/agent-ideas" element={<AgentIdeaSpace />} />
+                <Route path="/ogiri" element={<Ogiri />} />
                 <Route path="/thinking" element={<ThinkingWorkspace />} />
                 <Route path="/feature-requests" element={<FeatureRequests />} />
                 <Route path="/project" element={<Project />} />
@@ -528,6 +538,7 @@ function App() {
             <BottomNavigationAction value="/" label="ボード" icon={<ViewCompactIcon />} component={Link} to="/" />
             <BottomNavigationAction value="/thinking" label="思考" icon={<PsychologyAltIcon />} component={Link} to="/thinking" />
             <BottomNavigationAction value="/agent-ideas" label="Agent" icon={<SmartToyIcon />} component={Link} to="/agent-ideas" />
+            <BottomNavigationAction value="/ogiri" label="大喜利" icon={<EmojiObjectsIcon />} component={Link} to="/ogiri" />
             <BottomNavigationAction value="/dashboard" label="ダッシュ" icon={<DashboardIcon />} component={Link} to="/dashboard" />
           </BottomNavigation>
         )}
