@@ -62,6 +62,15 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
 
+    // Creative sense / Ogiri Lab. Each round is raw behavioral evidence for later Agent analysis.
+    match /ogiri_responses/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /creative_profile/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
     // Agent Idea Space shares the user's existing My Portal login. MCP writes
     // these collections through the Admin SDK; the UI reads and manages them
     // directly once the user has already authenticated to My Portal.
