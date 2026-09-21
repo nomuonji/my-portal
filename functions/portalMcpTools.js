@@ -14,6 +14,8 @@ const COLLECTION_ENUM = [
   'stock_tags',
   'hobbies',
   'hobby_tags',
+  'ogiri_responses',
+  'creative_profile',
 ];
 
 const collectionSchema = {
@@ -55,7 +57,7 @@ const TOOLS = [
   },
   {
     name: 'portal_search',
-    description: 'My Portal本体DBを検索します。短文メモ、アイデア、ストック、趣味、プロジェクト等を参照するための読み取り専用ツールです。',
+    description: 'My Portal本体DBを検索します。短文メモ、アイデア、ストック、趣味、プロジェクトに加えて、大喜利回答・創造性プロファイルも参照できる読み取り専用ツールです。',
     inputSchema: {
       type: 'object',
       properties: {
