@@ -75,6 +75,11 @@ function normalizeSource(item, source) {
   };
 }
 
+function isPortalIdea(item = {}) {
+  return item?.owner === 'portal'
+    || (Boolean(item?.content) && !item?.createdBy && !item?.maturity && !item?.spaceId);
+}
+
 function responseTimestamp(item) {
   if (!item?.createdAt) return '';
   try {
@@ -127,7 +132,9 @@ export default function Ogiri() {
         } catch {
           snap = await getDocs(query(collection(db, collectionName), limit(20)));
         }
-        const items = snap.docs.map((item) => ({ id: item.id, ...item.data() }));
+        const items = snap.docs
+          .map((item) => ({ id: item.id, ...item.data() }))
+          .filter((item) => collectionName !== 'ideas' || isPortalIdea(item));
         if (items.length) return normalizeSource(randomItem(items), collectionName);
       } catch {
         // Try the next Portal collection before falling back to the static prompt deck.
@@ -229,10 +236,14 @@ export default function Ogiri() {
         lastResponseId: responseRef.id,
         lastUpdatedAt: serverTimestamp(),
         lastSignals: signals,
-        signalCounts: Object.fromEntries(signals.map((id) => [id, increment(1)])),
       };
 
-      if (mutation) profilePatch.lensCounts = { [mutation]: increment(1) };
+      if (signals.length) {
+        profilePatch.signalCounts = Object.fromEntries(signals.map((id) => [id, increment(1)]));
+      }
+      if (trimmedMutationAnswer && mutation) {
+        profilePatch.lensCounts = { [mutation]: increment(1) };
+      }
       const preferenceKey = trimmedMutationAnswer ? preferredVersion : 'original';
       profilePatch.preferenceCounts = { [preferenceKey]: increment(1) };
 
