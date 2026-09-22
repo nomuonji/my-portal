@@ -1,3 +1,4 @@
+// Final Netlify verification: database counts, second archive integrity, and cursor pagination.
 const { cert, getApps, initializeApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const socialStore = require('../functions/socialArchiveStore.js');
