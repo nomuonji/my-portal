@@ -10,8 +10,7 @@ import {
   Search as SearchIcon,
   Twitter as TwitterIcon,
 } from '@mui/icons-material';
-import { collection, doc, getDocs, limit, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { auth } from '../firebase';
 
 const DEFAULT_CATEGORIES = [
   '未分類',
@@ -73,12 +72,28 @@ export default function SocialArchive() {
   const [editNote, setEditNote] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const apiRequest = async (path, options = {}) => {
+    const token = await auth.currentUser?.getIdToken();
+    if (!token) throw new Error('ログイン情報を確認できません。');
+    const response = await fetch(path, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        ...(options.headers || {}),
+      },
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data?.error || 'API request failed');
+    return data;
+  };
+
   const load = async () => {
     setLoading(true);
     setError('');
     try {
-      const snap = await getDocs(query(collection(db, 'social_posts'), orderBy('postedAt', 'desc'), limit(5000)));
-      setPosts(snap.docs.map((item) => ({ id: item.id, ...item.data() })));
+      const data = await apiRequest('/api/social-archive?resource=posts&limit=5000');
+      setPosts(Array.isArray(data.items) ? data.items : []);
     } catch (err) {
       setError(err.message || '投稿の読み込みに失敗しました。');
     } finally {
@@ -128,11 +143,15 @@ export default function SocialArchive() {
     setSaving(true);
     try {
       const tags = [...new Set(editTags.split(',').map((item) => item.trim()).filter(Boolean))].slice(0, 30);
-      await updateDoc(doc(db, 'social_posts', editing.id), {
-        category: editCategory || '未分類',
-        tags,
-        note: editNote.trim().slice(0, 4000),
-        updatedAt: serverTimestamp(),
+      await apiRequest('/api/social-archive', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'update_metadata',
+          id: editing.id,
+          category: editCategory || '未分類',
+          tags,
+          note: editNote.trim().slice(0, 4000),
+        }),
       });
       setPosts((current) => current.map((post) => post.id === editing.id
         ? { ...post, category: editCategory || '未分類', tags, note: editNote.trim().slice(0, 4000) }
@@ -149,7 +168,10 @@ export default function SocialArchive() {
     const next = !post.starred;
     setPosts((current) => current.map((item) => item.id === post.id ? { ...item, starred: next } : item));
     try {
-      await updateDoc(doc(db, 'social_posts', post.id), { starred: next, updatedAt: serverTimestamp() });
+      await apiRequest('/api/social-archive', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'update_metadata', id: post.id, starred: next }),
+      });
     } catch (err) {
       setPosts((current) => current.map((item) => item.id === post.id ? { ...item, starred: !next } : item));
       setError(err.message || 'お気に入り更新に失敗しました。');
