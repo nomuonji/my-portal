@@ -1,3 +1,4 @@
+// One-time production verification for the X social archive import.
 const crypto = require('node:crypto');
 const zlib = require('node:zlib');
 const { cert, getApps, initializeApp } = require('firebase-admin/app');
