@@ -1,5 +1,5 @@
 [build]
-  command = "node scripts/import-social-archive-once.js && npm run build"
+  command = "node scripts/cleanup-social-import-run-once.js && npm run build"
   publish = "build"
 
 [build.environment]
