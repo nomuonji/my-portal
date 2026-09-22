@@ -44,6 +44,7 @@ import {
   SmartToy as SmartToyIcon,
   PsychologyAlt as PsychologyAltIcon,
   EmojiObjects as EmojiObjectsIcon,
+  Archive as ArchiveIcon,
 } from '@mui/icons-material';
 
 import Memo from './components/Memo';
@@ -52,6 +53,7 @@ import News from './components/News';
 import Idea from './components/Idea';
 import AgentIdeaSpace from './components/AgentIdeaSpace';
 import Ogiri from './components/Ogiri';
+import SocialArchive from './components/SocialArchive';
 import PortalBoards from './components/PortalBoards';
 import ThinkingWorkspace from './components/ThinkingWorkspace';
 import Hobby from './components/Hobby';
@@ -126,6 +128,7 @@ function App() {
     if (path.startsWith('/thinking')) return '思考テーマ';
     if (path.startsWith('/agent-ideas')) return 'Agent Ideas';
     if (path.startsWith('/ogiri')) return '大喜利ラボ';
+    if (path.startsWith('/social-archive')) return 'X投稿アーカイブ';
     if (path.startsWith('/ideaboard') || path.startsWith('/idea')) return 'アイデア';
     if (path.startsWith('/hobbyboard') || path.startsWith('/hobby')) return '趣味';
     if (path.startsWith('/stockboard') || path.startsWith('/stock')) return 'ストック';
@@ -310,6 +313,10 @@ function App() {
               <ListItemIcon><EmojiObjectsIcon /></ListItemIcon>
               <ListItemText primary="大喜利ラボ" secondary="発想の拡散・センス蓄積" />
             </ListItemButton>
+            <ListItemButton selected={location.pathname.startsWith('/social-archive')} component={Link} to="/social-archive" onClick={navClick}>
+              <ListItemIcon><ArchiveIcon /></ListItemIcon>
+              <ListItemText primary="X投稿アーカイブ" secondary="過去投稿の検索・分類・見返し" />
+            </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/project')} component={Link} to="/project" onClick={navClick}>
               <ListItemIcon><Folder /></ListItemIcon>
               <ListItemText primary="プロジェクトボード" />
@@ -485,6 +492,7 @@ function App() {
                 <Route path="/stockboard" element={<Navigate to="/?board=stocks" replace />} />
                 <Route path="/agent-ideas" element={<AgentIdeaSpace />} />
                 <Route path="/ogiri" element={<Ogiri />} />
+                <Route path="/social-archive" element={<SocialArchive />} />
                 <Route path="/thinking" element={<ThinkingWorkspace />} />
                 <Route path="/feature-requests" element={<FeatureRequests />} />
                 <Route path="/project" element={<Project />} />
