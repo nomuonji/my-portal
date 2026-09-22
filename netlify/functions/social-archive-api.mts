@@ -113,32 +113,6 @@ export default async (request: Request) => {
   try {
     const url = new URL(request.url);
 
-    if (request.method === "GET" && url.pathname.endsWith("/verify-import")) {
-      const expected = env("SOCIAL_ARCHIVE_VERIFY_TOKEN") || "";
-      const provided = url.searchParams.get("token") || "";
-      if (!expected || provided !== expected) return json({ error: "Unauthorized" }, 401);
-      ensureFirebaseAdmin();
-      const database = getFirestore(getApp());
-      const [archive, secondAccount, firstRun, secondRun] = await Promise.all([
-        socialStore.status(),
-        database.collection(socialStore.COLLECTIONS.posts).where("accountId", "==", "1372211341172244484").get(),
-        database.collection(socialStore.COLLECTIONS.importRuns).doc("x-archive-1334823231262314497-2023-02-16").get(),
-        database.collection(socialStore.COLLECTIONS.importRuns).doc("x-archive-1372211341172244484-2022-11-26").get(),
-      ]);
-      const secondItems = secondAccount.docs.map((doc) => doc.data());
-      return json({
-        archive,
-        secondAccount: {
-          posts: secondItems.length,
-          replies: secondItems.filter((item) => item.type === "reply").length,
-          reposts: secondItems.filter((item) => item.type === "repost").length,
-          quotes: secondItems.filter((item) => item.type === "quote").length,
-        },
-        firstRun: firstRun.exists ? serialize(firstRun.data()) : null,
-        secondRun: secondRun.exists ? serialize(secondRun.data()) : null,
-      });
-    }
-
     const user = await requireFirebaseUser(request);
 
     if (request.method === "GET") {
