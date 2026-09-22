@@ -1,5 +1,5 @@
 [build]
-  command = "node scripts/verify-social-archive-once.js && npm run build"
+  command = "npm run build"
   publish = "build"
 
 [build.environment]
