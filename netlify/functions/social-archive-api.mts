@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { cert, getApp, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore, initializeFirestore } from "firebase-admin/firestore";
@@ -19,6 +20,12 @@ function json(value: unknown, status = 200) {
     status,
     headers: { "Content-Type": "application/json; charset=utf-8" },
   });
+}
+
+function secureEqual(left: string, right: string) {
+  const a = Buffer.from(left || "", "utf8");
+  const b = Buffer.from(right || "", "utf8");
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 function ensureFirebaseAdmin() {
@@ -87,8 +94,23 @@ export default async (request: Request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204 });
 
   try {
-    const user = await requireFirebaseUser(request);
     const url = new URL(request.url);
+
+    if (request.method === "POST" && url.pathname.endsWith("/import")) {
+      const expectedToken = env("SOCIAL_ARCHIVE_IMPORT_TOKEN") || "";
+      const providedToken = request.headers.get("x-social-archive-import-token") || "";
+      if (!expectedToken || !secureEqual(providedToken, expectedToken)) {
+        return json({ error: "Unauthorized" }, 401);
+      }
+      ensureFirebaseAdmin();
+      const body: any = await parseBody(request);
+      return json(await socialStore.importPosts({
+        ...body,
+        confirm: true,
+      }));
+    }
+
+    const user = await requireFirebaseUser(request);
 
     if (request.method === "GET") {
       const resource = url.searchParams.get("resource") || "status";
