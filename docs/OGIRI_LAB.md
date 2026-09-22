@@ -1,1 +1,152 @@
-# Ogiri Lab\n\nMy Portal に、大喜利を使って発想を拡散しながら、ユーザー自身の創造性の傾向を蓄積する機能を追加する。\n\n## 目的\n\n完成したアイデアだけを保存するのではなく、\n- 何をお題として与えられたか\n- ユーザーが最初にどう答えたか\n- どの変異方向を選んだか\n- 変異後にどう発想を広げたか\n- 自分の発想をどの方向だと認識したか\n- その回答をどれだけ「自分っぽい」と感じたか\n\nを1ラウンド単位で保存する。\n\nこれを長期的に蓄積すると、Agent が後から「このユーザーはどんなズラし方を好むか」を分析できる。\n\n## UI\n\nRoute: /ogiri\n\nナビゲーション:\n- 大喜利ラボ\n- モバイル下部ナビにも表示\n\n1ラウンドは以下の流れ。\n\nPortalの既存ネタ / ランダムお題 → 回答 → 変異レンズ選択 → 変異回答 → 発想シグナル自己選択 → 1〜5の自己評価 → 永続保存\n\n## 保存データ\n\n### ogiri_responses\n1ラウンドごとの生データ。\n- prompt\n- source\n- answer\n- mutation\n- mutationPrompt\n- mutationAnswer\n- signals\n- selfRating\n- createdAt\n\n### creative_profile/primary\n長期集計用の軽量プロファイル。\n- totalRounds\n- ratingSum\n- signalCounts\n- lastResponseId\n- lastSignals\n- lastUpdatedAt\n\ncreative_profile は最終的な人格判定を保存するものではない。あくまで観測値を蓄積し、後からAgentがContext Storeへ分析結果を抽出できるようにする。\n\n## Creative signals\n\n初期シグナル:\n- unexpected / 意外性\n- inversion / 逆転\n- absurd / 不条理\n- useful / 実用性\n- specific / 具体性\n- metaphor / 比喩\n- extreme / 極端化\n- wordplay / 言葉遊び\n- dark / ブラック\n- cute / かわいさ\n- social / 社会観察\n- minimal / 引き算\n\nこの分類は固定的な人格診断ではなく、後から追加・再分類できる観測ラベルとして扱う。\n\n## Portalとの接続\n\nお題生成時に既存の ideas / stocks / hobbies から最近のデータを1件取得できる。\n\nこれにより、一般的な大喜利だけではなく、「ユーザー自身が過去に残したネタ → 別方向へ変異」というループを作る。\n\n既存データを変更することはない。\n\n## Agent利用\n\n将来的には Agent が、\n1. ogiri_responses を分析\n2. シグナル頻度だけでなく、回答内容そのものをクラスタリング\n3. 高自己評価の回答に共通する構造を抽出\n4. Context Store の profileFacts に「創造性に関する推定」として保存\n5. 以後のアイデア生成・大喜利のお題生成に反映\n\nという流れを取る。\n\n重要なのは、「あなたはこういう人間だ」と早期に固定しないこと。まず大量の生データを集め、十分な観測が溜まってからAgentが仮説化する。\n\n## Firestore security\n\n既存My Portalと同様、ログイン済みユーザーのみ読み書き可能。\n- ogiri_responses\n- creative_profile
+# Ogiri Lab
+
+My Portal に、大喜利を使って発想を拡散しながら、ユーザー自身の「何を面白いと判断したか」を観測データとして蓄積する機能。
+
+## 目的
+
+完成したアイデアだけでなく、1ラウンドごとに以下を残す。
+
+- 何をお題として与えられたか
+- Portal 内のどのネタを seed にしたか
+- 最初にどう答えたか
+- どの変異方向を選んだか
+- 変異後にどう発想を広げたか
+- 元案 / 変異案のどちらを残したいと判断したか
+- 自分の発想をどの方向だと認識したか
+- その回答をどれだけ「自分っぽい」と感じたか
+- 判断理由の短いメモ
+
+重要なのは、早期に「あなたはこういう人」と人格ラベルへ固定しないこと。
+回答内容と選択ログを raw evidence として蓄積し、十分な件数が溜まってから Agent が仮説化する。
+
+## UI
+
+Route: `/ogiri`
+
+1ラウンド:
+
+Portal seed / ランダムお題
+→ 最初の回答
+→ 任意の変異レンズ
+→ 変異回答
+→ 元案 / 変異案 / 両方 / どちらもボツ の比較選択
+→ 発想シグナル
+→ 1〜5自己評価
+→ 任意の判断メモ
+→ 永続保存
+
+保存後は、
+- 次のお題へ進む
+- 同じお題で別案を作る
+
+の2方向に分岐する。
+
+「保存済み回答を編集して再保存」は採用しない。
+同じデータを二重計上するより、別案として新しい観測値を作る。
+
+## 保存データ
+
+### `ogiri_responses`
+
+1ラウンドごとの生データ。schemaVersion 2。
+
+- `schemaVersion`
+- `sessionRound`
+- `prompt`
+- `source`
+- `answer`
+- `mutation`
+- `mutationPrompt`
+- `mutationAnswer`
+- `preferredVersion`
+- `signals`
+- `selfRating`
+- `tasteNote`
+- `createdAt`
+
+`preferredVersion`:
+- `original`
+- `mutation`
+- `both`
+- `neither`
+
+### `creative_profile/primary`
+
+長期集計用の軽量プロファイル。
+
+- `schemaVersion`
+- `totalRounds`
+- `ratingSum`
+- `signalCounts`
+- `lensCounts`
+- `preferenceCounts`
+- `lastResponseId`
+- `lastSignals`
+- `lastUpdatedAt`
+
+creative_profile は人格診断ではなく集計キャッシュ。
+正本は `ogiri_responses` の生データとする。
+
+## Atomic write
+
+回答本体と creative_profile の集計更新は Firestore `writeBatch` で一括コミットする。
+
+これにより、
+
+1. 回答だけ保存された
+2. profile 更新に失敗した
+3. ユーザーが再保存して回答が重複する
+
+という部分成功を避ける。
+
+## Portal seed
+
+お題生成時は `ideas / stocks / hobbies` をランダム順で探索する。
+
+- 1つ目が空でも即フォールバックせず次の collection を試す
+- `createdAt` で取得できない legacy collection は orderBy なしで再試行する
+- 保存する source snapshot は文字数とタグ数を制限し、Firestore document size を無駄に圧迫しない
+
+3 collection 全てから取得できなければ静的なお題 deck を使う。
+
+## Creative signals
+
+初期シグナル:
+
+- unexpected / 意外性
+- inversion / 逆転
+- absurd / 不条理
+- useful / 実用性
+- specific / 具体性
+- metaphor / 比喩
+- extreme / 極端化
+- wordplay / 言葉遊び
+- dark / ブラック
+- cute / かわいさ
+- social / 社会観察
+- minimal / 引き算
+
+この分類は後から追加・再分類できる観測ラベルとして扱う。
+
+## Agent利用
+
+Portal MCP から `ogiri_responses` と `creative_profile` を参照できる。
+
+将来的な分析ループ:
+
+1. 生の `ogiri_responses` を読む
+2. 高自己評価 / 低自己評価を比較する
+3. `preferredVersion` から「何を残したか」を見る
+4. `tasteNote` から判断理由を抽出する
+5. 回答構造をクラスタリングする
+6. 十分な観測数がある仮説だけ Context Store の `profileFacts` に昇格する
+7. その仮説を次のお題・アイデア生成に弱くフィードバックする
+
+profileFacts へ昇格するときも、断定ではなく evidence count と confidence を持つ推定として扱う。
+
+## Firestore security
+
+既存 My Portal と同じく、ログイン済みユーザーのみ読み書き可能。
+
+- `ogiri_responses`
+- `creative_profile`
