@@ -66,13 +66,37 @@ function serialize(value: any): any {
   return value;
 }
 
-async function listPosts(limitValue = 5000) {
+async function archiveFacets() {
   const database = getFirestore(getApp());
-  const snapshot = await database.collection(socialStore.COLLECTIONS.posts)
-    .orderBy("postedAt", "desc")
-    .limit(Math.min(Math.max(Number(limitValue) || 5000, 1), 5000))
-    .get();
-  return snapshot.docs.map((doc) => serialize({ id: doc.id, ...doc.data() }));
+  const [accountsSnapshot, newestSnapshot, oldestSnapshot, archiveStatus] = await Promise.all([
+    database.collection(socialStore.COLLECTIONS.accounts).limit(200).get(),
+    database.collection(socialStore.COLLECTIONS.posts).orderBy("postedAt", "desc").limit(1).get(),
+    database.collection(socialStore.COLLECTIONS.posts).orderBy("postedAt", "asc").limit(1).get(),
+    socialStore.status(),
+  ]);
+
+  const accounts = accountsSnapshot.docs.map((doc) => {
+    const item: any = doc.data();
+    return {
+      accountId: String(item.accountId || ""),
+      username: String(item.username || ""),
+      displayName: String(item.displayName || ""),
+    };
+  }).sort((a, b) => (a.username || a.accountId).localeCompare(b.username || b.accountId));
+
+  const newest = newestSnapshot.docs[0]?.get("postedAt")?.toDate?.() || null;
+  const oldest = oldestSnapshot.docs[0]?.get("postedAt")?.toDate?.() || null;
+  const years: number[] = [];
+  if (newest && oldest) {
+    for (let year = newest.getUTCFullYear(); year >= oldest.getUTCFullYear(); year -= 1) years.push(year);
+  }
+
+  return {
+    accounts,
+    years,
+    totalPosts: archiveStatus.counts.posts,
+    totalAccounts: archiveStatus.counts.accounts,
+  };
 }
 
 async function parseBody(request: Request) {
@@ -99,10 +123,21 @@ export default async (request: Request) => {
         });
       }
       if (resource === "posts") {
-        return json({
-          items: await listPosts(Number(url.searchParams.get("limit") || 5000)),
-          databaseId: socialStore.DATABASE_ID,
-        });
+        const starredParam = url.searchParams.get("starred");
+        return json(await socialStore.searchPosts({
+          query: url.searchParams.get("query") || undefined,
+          account: url.searchParams.get("account") || undefined,
+          category: url.searchParams.get("category") || undefined,
+          type: url.searchParams.get("type") || undefined,
+          year: url.searchParams.get("year") ? Number(url.searchParams.get("year")) : undefined,
+          starred: starredParam === null ? undefined : starredParam === "true",
+          cursor: url.searchParams.get("cursor") || undefined,
+          limit: Number(url.searchParams.get("limit") || 50),
+          scanLimit: Number(url.searchParams.get("scanLimit") || 500),
+        }));
+      }
+      if (resource === "facets") {
+        return json(await archiveFacets());
       }
       return json({ error: "Unknown resource" }, 400);
     }
