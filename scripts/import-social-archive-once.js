@@ -22,6 +22,17 @@ function decryptPayloads() {
   return payloads;
 }
 
+async function runPass(payloads) {
+  const totals = { received: 0, created: 0, updated: 0 };
+  for (const payload of payloads) {
+    const result = await socialStore.importPosts({ ...payload, confirm: true });
+    totals.received += Number(result.received || 0);
+    totals.created += Number(result.created || 0);
+    totals.updated += Number(result.updated || 0);
+  }
+  return totals;
+}
+
 async function main() {
   const raw = String(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '');
   if (!raw) throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON is not configured');
@@ -34,21 +45,47 @@ async function main() {
   }
 
   const payloads = decryptPayloads();
-  const totals = { received: 0, created: 0, updated: 0 };
-  for (const payload of payloads) {
-    const result = await socialStore.importPosts({ ...payload, confirm: true });
-    totals.received += Number(result.received || 0);
-    totals.created += Number(result.created || 0);
-    totals.updated += Number(result.updated || 0);
-    console.log(JSON.stringify({
-      importKey: result.importKey,
-      received: result.received,
-      created: result.created,
-      updated: result.updated,
-      complete: result.complete,
-    }));
+  const firstPass = await runPass(payloads);
+  const secondPass = await runPass(payloads);
+  const status = await socialStore.status();
+  const replies = await socialStore.searchPosts({
+    account: '1334823231262314497',
+    type: 'reply',
+    limit: 200,
+    scanLimit: 5000,
+  });
+  const reposts = await socialStore.searchPosts({
+    account: '1334823231262314497',
+    type: 'repost',
+    limit: 200,
+    scanLimit: 5000,
+  });
+  const sample = await socialStore.searchPosts({
+    account: '1334823231262314497',
+    limit: 5,
+    scanLimit: 5000,
+  });
+
+  if (secondPass.received !== 1638 || secondPass.created !== 0 || secondPass.updated !== 1638) {
+    throw new Error(`Duplicate import verification failed: ${JSON.stringify(secondPass)}`);
   }
-  console.log(JSON.stringify({ socialArchiveImportTotals: totals }));
+  if (status.counts.posts !== 1638 || status.counts.accounts !== 1 || status.counts.importRuns !== 1) {
+    throw new Error(`Archive count verification failed: ${JSON.stringify(status.counts)}`);
+  }
+  if (replies.count !== 94 || reposts.count !== 18 || sample.count !== 5) {
+    throw new Error(`Archive sample/type verification failed: replies=${replies.count}, reposts=${reposts.count}, sample=${sample.count}`);
+  }
+
+  console.log(JSON.stringify({
+    socialArchiveVerification: {
+      firstPass,
+      secondPass,
+      counts: status.counts,
+      replies: replies.count,
+      reposts: reposts.count,
+      sampleCount: sample.count,
+    },
+  }));
 }
 
 main().catch((error) => {
