@@ -5,6 +5,8 @@ import * as agentStoreImport from "../../functions/agentIdeasStoreAgentDb.js";
 import * as portalStoreImport from "../../functions/portalStore.js";
 import * as agentToolsImport from "../../functions/agentIdeasToolSchemas.js";
 import * as portalToolsImport from "../../functions/portalMcpTools.js";
+import * as socialStoreImport from "../../functions/socialArchiveStore.js";
+import * as socialToolsImport from "../../functions/socialArchiveToolSchemas.js";
 import * as contextStoreImport from "../../functions/contextStore.js";
 import * as contextToolsImport from "../../functions/contextStoreToolSchemas.js";
 import * as migrationImport from "../../functions/agentIdeasMigration.js";
@@ -13,13 +15,15 @@ const agentStore: any = (agentStoreImport as any).default ?? agentStoreImport;
 const portalStore: any = (portalStoreImport as any).default ?? portalStoreImport;
 const agentToolsModule: any = (agentToolsImport as any).default ?? agentToolsImport;
 const portalToolsModule: any = (portalToolsImport as any).default ?? portalToolsImport;
+const socialStore: any = (socialStoreImport as any).default ?? socialStoreImport;
+const socialToolsModule: any = (socialToolsImport as any).default ?? socialToolsImport;
 const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
 const contextToolsModule: any = (contextToolsImport as any).default ?? contextToolsImport;
 const migration: any = (migrationImport as any).default ?? migrationImport;
-const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...portalToolsModule.TOOLS];
+const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...portalToolsModule.TOOLS, ...socialToolsModule.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "0.7.1-netlify";
+const SERVER_VERSION = "0.8.0-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -291,6 +295,13 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "portal_update") return structured(await portalStore.update(args));
   if (name === "portal_delete") return structured(await portalStore.remove(args));
 
+  if (name === "social_archive_status") return structured(await socialStore.status());
+  if (name === "social_post_get") return structured(await socialStore.getPost(args));
+  if (name === "social_posts_search") return structured(await socialStore.searchPosts(args));
+  if (name === "social_import_posts") return structured(await socialStore.importPosts(args));
+  if (name === "social_post_update_metadata") return structured(await socialStore.updateMetadata(args));
+  if (name === "social_posts_update_metadata") return structured(await socialStore.bulkUpdateMetadata(args));
+
   await ensureAgentData();
   switch (name) {
     case "agent_ideas_status": {
@@ -305,6 +316,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
         agentToolCount: agentToolsModule.TOOLS.length,
         contextToolCount: contextToolsModule.TOOLS.length,
         portalToolCount: portalToolsModule.TOOLS.length,
+        socialToolCount: socialToolsModule.TOOLS.length,
         database: await agentStore.healthCheck(),
         contextStore: await contextStore.healthCheck(),
         legacyBootstrap,
@@ -456,7 +468,7 @@ async function handleRpc(message: any) {
         protocolVersion,
         capabilities: { tools: { listChanged: true } },
         serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
-        instructions: "My Portal is a Context Store + Thinking Workspace. Use space_search then space_get_context to resume long-running themes. Use profile_get_context for scoped User Model facts, preserving explicit vs inferred evidence. If the host is temporarily exposing an older cached tool schema without the new Context Store tools, use idea_search with query prefixed by `space:` to search Spaces and idea_get_context with id `space:<spaceId>` to fetch the same Space Context Pack. Thinking Spaces and Agent Ideas are separate storage layers, but idea_* tools are interoperable: spaceId targets durable Thinking Space ideas, categoryId targets Agent Ideas board items, and ID-based reads/updates resolve the correct layer automatically. Use space_* / profile_* / decision_* / opportunity_* for long-running thinking themes. Agent Ideas mirrors the Portal board hierarchy: ideas/hobbies/stocks as the large categories and the Portal tags beneath them. Use idea_generation_work to find mirrored tag categories that need replenishment, then idea_create with categoryId. When the user adopts an Agent Idea, use idea_promote_to_portal so it is copied into the matching Portal board/tag and marked promoted with provenance retained. Existing portal_* data (including short idea/hobby/stock boards and projects) remains separate; portal_delete requires explicit confirm=true.",
+        instructions: "My Portal is a Context Store + Thinking Workspace. Use space_search then space_get_context to resume long-running themes. Use profile_get_context for scoped User Model facts, preserving explicit vs inferred evidence. If the host is temporarily exposing an older cached tool schema without the new Context Store tools, use idea_search with query prefixed by `space:` to search Spaces and idea_get_context with id `space:<spaceId>` to fetch the same Space Context Pack. Thinking Spaces and Agent Ideas are separate storage layers, but idea_* tools are interoperable: spaceId targets durable Thinking Space ideas, categoryId targets Agent Ideas board items, and ID-based reads/updates resolve the correct layer automatically. Use space_* / profile_* / decision_* / opportunity_* for long-running thinking themes. Agent Ideas mirrors the Portal board hierarchy: ideas/hobbies/stocks as the large categories and the Portal tags beneath them. Use idea_generation_work to find mirrored tag categories that need replenishment, then idea_create with categoryId. When the user adopts an Agent Idea, use idea_promote_to_portal so it is copied into the matching Portal board/tag and marked promoted with provenance retained. Existing portal_* data (including short idea/hobby/stock boards and projects) remains separate; portal_delete requires explicit confirm=true. social_* tools manage the personal SNS archive: search historical posts, import official X archive posts in batches, and update only review metadata such as category/tags/starred/note.",
       },
     };
   }
@@ -702,28 +714,32 @@ export default async (request: Request) => {
     let agentDatabase: any = { ok: false, reason: "Firebase credentials are not configured" };
     let contextDatabase: any = { ok: false, reason: "Firebase credentials are not configured" };
     let portalDatabase: any = { ok: false, reason: "Firebase credentials are not configured" };
+    let socialDatabase: any = { ok: false, reason: "Firebase credentials are not configured" };
     let migrationResult: any = null;
     if (credentialsConfigured) {
       try {
         ensureFirebaseAdmin();
         migrationResult = await ensureAgentData();
-        [agentDatabase, contextDatabase, portalDatabase] = await Promise.all([
+        [agentDatabase, contextDatabase, portalDatabase, socialDatabase] = await Promise.all([
           agentStore.healthCheck(),
           contextStore.healthCheck(),
           portalStore.status(),
+          socialStore.status(),
         ]);
       } catch (error) {
         const failure = { ok: false, error: error instanceof Error ? error.message : String(error) };
         agentDatabase = failure;
         contextDatabase = failure;
         portalDatabase = failure;
+        socialDatabase = failure;
       }
     }
     const ok = credentialsConfigured
       && oauthConfigured
       && Boolean(agentDatabase?.ok)
       && Boolean(contextDatabase?.ok)
-      && Boolean(portalDatabase?.ok);
+      && Boolean(portalDatabase?.ok)
+      && Boolean(socialDatabase?.ok);
     return json({
       ok,
       service: SERVER_NAME,
@@ -733,6 +749,7 @@ export default async (request: Request) => {
       agentIdeas: { databaseId: agentStore.DATABASE_ID, database: agentDatabase, migration: migrationResult },
       contextStore: { databaseId: contextStore.DATABASE_ID, collections: contextStore.COLLECTIONS, database: contextDatabase },
       portal: { databaseId: portalStore.DATABASE_ID, database: portalDatabase },
+      socialArchive: { databaseId: socialStore.DATABASE_ID, collections: socialStore.COLLECTIONS, database: socialDatabase },
       oauth: {
         configured: oauthConfigured,
         clientRegistration: "cimd",
