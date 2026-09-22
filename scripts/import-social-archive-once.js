@@ -9,14 +9,15 @@ const IMPORT_KEY = 'x-archive-1372211341172244484-2022-11-26';
 const ACCOUNT_ID = '1372211341172244484';
 
 function decryptPayloads() {
-  const keyHex = String(process.env.SOCIAL_ARCHIVE_IMPORT_DECRYPT_KEY || '');
-  if (!/^[0-9a-f]{64}$/i.test(keyHex)) throw new Error('SOCIAL_ARCHIVE_IMPORT_DECRYPT_KEY is not configured');
+  const existingSecret = String(process.env.REACT_APP_NEWS_API_KEY || '');
+  if (!existingSecret) throw new Error('REACT_APP_NEWS_API_KEY is not configured');
+  const key = crypto.createHash('sha256').update(existingSecret, 'utf8').digest();
   const blob = Buffer.from(String(encryptedPayload || ''), 'base64');
   if (blob.length < 29) throw new Error('Encrypted payload is invalid');
   const iv = blob.subarray(0, 12);
   const tag = blob.subarray(12, 28);
   const ciphertext = blob.subarray(28);
-  const decipher = crypto.createDecipheriv('aes-256-gcm', Buffer.from(keyHex, 'hex'), iv);
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
   decipher.setAuthTag(tag);
   const compressed = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
   const payloads = JSON.parse(zlib.gunzipSync(compressed).toString('utf8'));
