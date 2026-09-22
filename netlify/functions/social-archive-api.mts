@@ -1,10 +1,7 @@
-import { createDecipheriv, timingSafeEqual } from "node:crypto";
-import { gunzipSync } from "node:zlib";
 import { cert, getApp, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore, initializeFirestore } from "firebase-admin/firestore";
 import * as socialStoreImport from "../../functions/socialArchiveStore.js";
-import * as encryptedPayloadImport from "../../functions/_socialArchiveEncryptedPayload.js";
 
 const socialStore: any = (socialStoreImport as any).default ?? socialStoreImport;
 
@@ -22,35 +19,6 @@ function json(value: unknown, status = 200) {
     status,
     headers: { "Content-Type": "application/json; charset=utf-8" },
   });
-}
-
-function secureEqual(left: string, right: string) {
-  const a = Buffer.from(left || "", "utf8");
-  const b = Buffer.from(right || "", "utf8");
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-function decryptImportPayloads() {
-  const keyHex = env("SOCIAL_ARCHIVE_IMPORT_DECRYPT_KEY") || "";
-  if (!/^[0-9a-f]{64}$/i.test(keyHex)) {
-    throw new Error("SOCIAL_ARCHIVE_IMPORT_DECRYPT_KEY is not configured");
-  }
-  const encrypted = (encryptedPayloadImport as any).default ?? encryptedPayloadImport;
-  if (typeof encrypted !== "string" || !encrypted) {
-    throw new Error("Encrypted social archive payload is unavailable");
-  }
-  const blob = Buffer.from(encrypted, "base64");
-  if (blob.length < 29) throw new Error("Encrypted social archive payload is invalid");
-  const iv = blob.subarray(0, 12);
-  const tag = blob.subarray(12, 28);
-  const ciphertext = blob.subarray(28);
-  const decipher = createDecipheriv("aes-256-gcm", Buffer.from(keyHex, "hex"), iv);
-  decipher.setAuthTag(tag);
-  const compressed = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-  const decoded = gunzipSync(compressed).toString("utf8");
-  const payloads = JSON.parse(decoded);
-  if (!Array.isArray(payloads) || !payloads.length) throw new Error("Decrypted import bundle is empty");
-  return payloads;
 }
 
 function ensureFirebaseAdmin() {
@@ -119,52 +87,8 @@ export default async (request: Request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204 });
 
   try {
-    const url = new URL(request.url);
-
-    if (request.method === "GET" && url.pathname.endsWith("/import-bundle")) {
-      const expectedToken = env("SOCIAL_ARCHIVE_IMPORT_TOKEN") || "";
-      const providedToken = url.searchParams.get("token") || "";
-      if (!expectedToken || !secureEqual(providedToken, expectedToken)) {
-        return json({ error: "Unauthorized" }, 401);
-      }
-      ensureFirebaseAdmin();
-      const payloads = decryptImportPayloads();
-      const results = [];
-      for (const payload of payloads) {
-        results.push(await socialStore.importPosts({ ...payload, confirm: true }));
-      }
-      return json({
-        ok: true,
-        batches: results.map((item: any) => ({
-          importKey: item.importKey,
-          received: item.received,
-          created: item.created,
-          updated: item.updated,
-          complete: item.complete,
-        })),
-        totals: results.reduce((acc: any, item: any) => ({
-          received: acc.received + Number(item.received || 0),
-          created: acc.created + Number(item.created || 0),
-          updated: acc.updated + Number(item.updated || 0),
-        }), { received: 0, created: 0, updated: 0 }),
-      });
-    }
-
-    if (request.method === "POST" && url.pathname.endsWith("/import")) {
-      const expectedToken = env("SOCIAL_ARCHIVE_IMPORT_TOKEN") || "";
-      const providedToken = request.headers.get("x-social-archive-import-token") || "";
-      if (!expectedToken || !secureEqual(providedToken, expectedToken)) {
-        return json({ error: "Unauthorized" }, 401);
-      }
-      ensureFirebaseAdmin();
-      const body: any = await parseBody(request);
-      return json(await socialStore.importPosts({
-        ...body,
-        confirm: true,
-      }));
-    }
-
     const user = await requireFirebaseUser(request);
+    const url = new URL(request.url);
 
     if (request.method === "GET") {
       const resource = url.searchParams.get("resource") || "status";
