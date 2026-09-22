@@ -56,9 +56,10 @@ async function main() {
   }
 
   const database = getFirestore();
-  const [status, accountSnapshot] = await Promise.all([
+  const [status, accountSnapshot, firstPage] = await Promise.all([
     socialStore.status(),
     database.collection(socialStore.COLLECTIONS.posts).where('accountId', '==', ACCOUNT_ID).get(),
+    socialStore.searchPosts({ limit: 50, scanLimit: 50 }),
   ]);
   const accountPosts = accountSnapshot.docs.map((doc) => doc.data());
   const replies = accountPosts.filter((item) => item.type === 'reply').length;
@@ -70,6 +71,28 @@ async function main() {
   }
   if (accountPosts.length !== 412 || replies !== 65 || reposts !== 0 || quotes !== 0) {
     throw new Error(`Second archive verification failed: total=${accountPosts.length}, replies=${replies}, reposts=${reposts}, quotes=${quotes}`);
+  }
+
+  if (firstPage.items.length !== 50 || !firstPage.hasMore || !firstPage.nextCursor) {
+    throw new Error(`Pagination first-page verification failed: ${JSON.stringify({ count: firstPage.items.length, hasMore: firstPage.hasMore })}`);
+  }
+  const secondPage = await socialStore.searchPosts({
+    limit: 50,
+    scanLimit: 50,
+    cursor: firstPage.nextCursor,
+  });
+  const firstIds = new Set(firstPage.items.map((item) => item.id));
+  const overlap = secondPage.items.filter((item) => firstIds.has(item.id));
+  if (secondPage.items.length !== 50 || overlap.length !== 0) {
+    throw new Error(`Pagination second-page verification failed: count=${secondPage.items.length}, overlap=${overlap.length}`);
+  }
+  const accountPage = await socialStore.searchPosts({
+    account: ACCOUNT_ID,
+    limit: 50,
+    scanLimit: 500,
+  });
+  if (!accountPage.items.length || accountPage.items.some((item) => item.accountId !== ACCOUNT_ID)) {
+    throw new Error('Pagination account-filter verification failed');
   }
 
   await database.collection(socialStore.COLLECTIONS.importRuns).doc(IMPORT_KEY).set({
