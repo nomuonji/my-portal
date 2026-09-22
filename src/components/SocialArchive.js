@@ -62,6 +62,7 @@ export default function SocialArchive() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [queryText, setQueryText] = useState('');
+  const [selectedAccountId, setSelectedAccountId] = useState('');
   const [category, setCategory] = useState('');
   const [type, setType] = useState('');
   const [year, setYear] = useState('');
@@ -113,9 +114,29 @@ export default function SocialArchive() {
     return [...new Set(values)].sort((a, b) => b - a);
   }, [posts]);
 
+  const accounts = useMemo(() => {
+    const byId = new Map();
+    posts.forEach((post) => {
+      const accountId = String(post.accountId || '').trim();
+      if (!accountId) return;
+      const existing = byId.get(accountId);
+      if (existing) {
+        existing.count += 1;
+        return;
+      }
+      byId.set(accountId, {
+        accountId,
+        username: String(post.username || '').trim(),
+        count: 1,
+      });
+    });
+    return [...byId.values()].sort((a, b) => (a.username || a.accountId).localeCompare(b.username || b.accountId));
+  }, [posts]);
+
   const visiblePosts = useMemo(() => {
     const needle = queryText.trim().toLowerCase();
     return posts.filter((post) => {
+      if (selectedAccountId && String(post.accountId || '') !== selectedAccountId) return false;
       if (category && post.category !== category) return false;
       if (type && post.type !== type) return false;
       if (year && timestampToDate(post.postedAt)?.getFullYear() !== Number(year)) return false;
@@ -129,7 +150,7 @@ export default function SocialArchive() {
       }
       return true;
     });
-  }, [posts, queryText, category, type, year, starredOnly]);
+  }, [posts, queryText, selectedAccountId, category, type, year, starredOnly]);
 
   const openEdit = (post) => {
     setEditing(post);
@@ -203,6 +224,20 @@ export default function SocialArchive() {
             InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> }}
           />
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+            <Select
+              size="small"
+              value={selectedAccountId}
+              onChange={(event) => setSelectedAccountId(event.target.value)}
+              displayEmpty
+              sx={{ minWidth: 180 }}
+            >
+              <MenuItem value="">全アカウント</MenuItem>
+              {accounts.map((item) => (
+                <MenuItem key={item.accountId} value={item.accountId}>
+                  {item.username ? `@${item.username}` : item.accountId} ({item.count.toLocaleString()})
+                </MenuItem>
+              ))}
+            </Select>
             <Select size="small" value={category} onChange={(event) => setCategory(event.target.value)} displayEmpty sx={{ minWidth: 160 }}>
               <MenuItem value="">すべてのカテゴリ</MenuItem>
               {categories.map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
@@ -239,6 +274,7 @@ export default function SocialArchive() {
                   <Stack direction="row" spacing={0.6} alignItems="center" flexWrap="wrap" useFlexGap>
                     <Chip size="small" label={post.category || '未分類'} />
                     <Chip size="small" variant="outlined" label={typeLabel(post.type)} />
+                    {post.username && <Chip size="small" variant="outlined" label={`@${post.username}`} />}
                     {(post.tags || []).slice(0, 4).map((tag) => <Chip key={tag} size="small" variant="outlined" label={tag} />)}
                     <Typography variant="caption" color="text.secondary">{displayDate(post.postedAt)}</Typography>
                   </Stack>
