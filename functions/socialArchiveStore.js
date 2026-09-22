@@ -1,4 +1,4 @@
-const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
+const { getFirestore, FieldPath, FieldValue, Timestamp } = require('firebase-admin/firestore');
 
 const DATABASE_ID = '(default)';
 const COLLECTIONS = Object.freeze({
@@ -84,6 +84,26 @@ function serialize(value) {
 
 function snapshotObject(snapshot) {
   return snapshot.exists ? serialize({ id: snapshot.id, ...snapshot.data() }) : null;
+}
+
+function encodeCursor(postedAt, id) {
+  const date = postedAt?.toDate ? postedAt.toDate() : isoDate(postedAt);
+  if (!date || !id) return null;
+  return Buffer.from(JSON.stringify({ postedAt: date.toISOString(), id }), 'utf8').toString('base64url');
+}
+
+function decodeCursor(value) {
+  const raw = text(value, 1000);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+    const date = isoDate(parsed?.postedAt);
+    const id = text(parsed?.id, 300);
+    if (!date || !id) throw new Error('invalid');
+    return { postedAt: Timestamp.fromDate(date), id };
+  } catch {
+    throw new Error('cursor is invalid');
+  }
 }
 
 function normalizeMedia(value) {
@@ -201,8 +221,8 @@ function searchableText(item) {
 
 async function searchPosts(input = {}) {
   const requestedLimit = Math.min(Math.max(int(input.limit) || 50, 1), 200);
-  const scanLimit = Math.min(Math.max(int(input.scanLimit) || 2000, requestedLimit), 5000);
-  const snapshot = await db().collection(COLLECTIONS.posts).orderBy('postedAt', 'desc').limit(scanLimit).get();
+  const scanLimit = Math.min(Math.max(int(input.scanLimit) || 500, requestedLimit), 5000);
+  const cursor = decodeCursor(input.cursor);
 
   const needle = text(input.query, 500).toLowerCase();
   const account = text(input.account, 200).toLowerCase();
@@ -212,7 +232,7 @@ async function searchPosts(input = {}) {
   const year = int(input.year);
   const starred = input.starred;
 
-  const items = snapshot.docs.map(snapshotObject).filter((item) => {
+  const matches = (item) => {
     if (needle && !searchableText(item).includes(needle)) return false;
     if (account && ![item.accountId, item.username].some((value) => String(value || '').toLowerCase() === account)) return false;
     if (category && String(item.category || '').toLowerCase() !== category) return false;
@@ -221,12 +241,64 @@ async function searchPosts(input = {}) {
     if (year && new Date(item.postedAt).getUTCFullYear() !== year) return false;
     if (typeof starred === 'boolean' && Boolean(item.starred) !== starred) return false;
     return true;
-  }).slice(0, requestedLimit);
+  };
+
+  const collection = db().collection(COLLECTIONS.posts);
+  const ordered = () => collection.orderBy('postedAt', 'desc').orderBy(FieldPath.documentId(), 'desc');
+  let query = ordered();
+  if (cursor) query = query.startAfter(cursor.postedAt, cursor.id);
+
+  const items = [];
+  let scanned = 0;
+  let nextCursor = null;
+  let hasMore = false;
+
+  while (items.length < requestedLimit && scanned < scanLimit) {
+    const remaining = scanLimit - scanned;
+    const batchSize = Math.min(Math.max(requestedLimit, 50), 100, remaining);
+    const snapshot = await query.limit(batchSize).get();
+    if (snapshot.empty) {
+      hasMore = false;
+      break;
+    }
+
+    let processedInBatch = 0;
+    for (const doc of snapshot.docs) {
+      processedInBatch += 1;
+      scanned += 1;
+      nextCursor = encodeCursor(doc.get('postedAt'), doc.id);
+      const item = snapshotObject(doc);
+      if (matches(item)) items.push(item);
+      if (items.length >= requestedLimit || scanned >= scanLimit) break;
+    }
+
+    const lastProcessed = snapshot.docs[processedInBatch - 1];
+    const exhaustedSnapshot = processedInBatch >= snapshot.size;
+    const reachedCollectionEnd = snapshot.size < batchSize && exhaustedSnapshot;
+
+    if (items.length >= requestedLimit) {
+      hasMore = !reachedCollectionEnd;
+      break;
+    }
+    if (scanned >= scanLimit) {
+      hasMore = !reachedCollectionEnd;
+      break;
+    }
+    if (reachedCollectionEnd) {
+      hasMore = false;
+      break;
+    }
+
+    query = ordered().startAfter(lastProcessed.get('postedAt'), lastProcessed.id);
+    hasMore = true;
+  }
 
   return {
     items,
     count: items.length,
-    scanned: snapshot.size,
+    scanned,
+    hasMore,
+    nextCursor: hasMore ? nextCursor : null,
     databaseId: DATABASE_ID,
   };
 }
