@@ -9,8 +9,8 @@ const IMPORT_KEY = 'x-archive-1372211341172244484-2022-11-26';
 const ACCOUNT_ID = '1372211341172244484';
 
 function decryptPayloads() {
-  const existingSecret = String(process.env.REACT_APP_NEWS_API_KEY || '');
-  if (!existingSecret) throw new Error('REACT_APP_NEWS_API_KEY is not configured');
+  const existingSecret = String(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '');
+  if (!existingSecret) throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON is not configured');
   const key = crypto.createHash('sha256').update(existingSecret, 'utf8').digest();
   const blob = Buffer.from(String(encryptedPayload || ''), 'base64');
   if (blob.length < 29) throw new Error('Encrypted payload is invalid');
