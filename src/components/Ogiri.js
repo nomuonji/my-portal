@@ -11,7 +11,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const SIGNALS = [
   ['unexpected', '意外性'], ['inversion', '逆転'], ['absurd', '不条理'], ['useful', '実用性'],
@@ -20,37 +20,70 @@ const SIGNALS = [
 ];
 
 const LENSES = [
-  { id: 'inversion', label: '逆転', prompt: '常識をひっくり返す。立場・目的・因果関係を逆にする。' },
-  { id: 'extreme', label: '100倍', prompt: '規模・価格・時間・人数などを100倍にして考える。' },
-  { id: 'collision', label: '異業種衝突', prompt: 'まったく別の業界・趣味・制度と混ぜる。' },
-  { id: 'removal', label: '引き算', prompt: '当たり前に必要だと思っている要素を1つ捨てる。' },
+  { id: 'shorten', label: '削る', prompt: '同じボケを、説明を減らして半分くらいの長さにする。' },
+  { id: 'specific', label: '具体化', prompt: '数字・固有名詞・生活感のある細部を1つだけ足して、絵が浮かぶ回答にする。' },
+  { id: 'misdirect', label: '裏切る', prompt: '読み手が予想する方向を一度作ってから、最後で別方向へ落とす。' },
+  { id: 'viewpoint', label: '視点変更', prompt: '別の人物・物・立場から同じお題に答える。' },
+  { id: 'deadpan', label: '真顔', prompt: '内容はくだらないまま、ニュースや規約のように妙に真面目な言い方にする。' },
 ];
 
 const PREFERENCES = [
   ['original', '元案'],
-  ['mutation', '変異案'],
+  ['mutation', '磨き後'],
   ['both', '両方'],
   ['neither', 'どちらもボツ'],
 ];
 
-const FALLBACK_PROMPTS = [
-  '「絶対に流行らないのに、なぜか一度だけ試したくなるサービス」を考えてください。',
-  '「今まで誰も困っていなかったのに、発売された瞬間に必要になる商品」とは？',
-  '「会社員の昼休みを、無駄に壮大なイベントにする方法」は？',
-  '「資格試験」をまったく別の娯楽に変えるなら？',
-  '「AIが人間より上手くできるのに、人間がやった方が面白いこと」は？',
-  '「存在すると少しだけ人生が楽しくなる、どうでもいいデータベース」は？',
-  '「面倒くさい」を逆に価値にするサービスを1つ。',
-  '「誰も買わないが、見た瞬間に人に話したくなる商品」は？',
-  '「SNSでバズること」を目的にしないSNSとは？',
-  '「普通のメモ帳」に1機能だけ追加して、別の道具にしてください。',
+const OGIRI_PROMPTS = [
+  { type: 'iya', label: 'こんなの嫌だ', text: 'こんなコンビニは二度と行かない。どんなコンビニ？' },
+  { type: 'iya', label: 'こんなの嫌だ', text: 'こんなAIアシスタントは嫌だ。どんなAI？' },
+  { type: 'iya', label: 'こんなの嫌だ', text: 'こんな高級ホテルは逆に落ち着かない。どんなホテル？' },
+  { type: 'iya', label: 'こんなの嫌だ', text: 'こんな資格試験は受験者が全員途中で帰る。どんな試験？' },
+  { type: 'iya', label: 'こんなの嫌だ', text: 'こんなSNSは3日で全ユーザーがいなくなる。どんなSNS？' },
+
+  { type: 'why', label: 'なぜ？', text: '「この医者、たぶん昨日YouTubeで勉強したな」なぜそう思った？' },
+  { type: 'why', label: 'なぜ？', text: '新入社員が入社3分で社長に謝られた。何をした？' },
+  { type: 'why', label: 'なぜ？', text: 'この動物園、動物より飼育員の方が心配されている。なぜ？' },
+  { type: 'why', label: 'なぜ？', text: '世界一静かな炎上が発生。何があった？' },
+  { type: 'why', label: 'なぜ？', text: '100年間一度も予約が入らない人気店。どういうこと？' },
+
+  { type: 'hitokoto', label: '一言', text: '絶対に信用できない人が言う「任せてください」の直前の一言とは？' },
+  { type: 'hitokoto', label: '一言', text: 'タイムマシンで未来から来た自分が、開口一番に言った一言。' },
+  { type: 'hitokoto', label: '一言', text: '面接官が履歴書を見て3秒沈黙。そのあと何と言った？' },
+  { type: 'hitokoto', label: '一言', text: 'ロボットが初めて「人間って面倒くさい」と思った瞬間の一言。' },
+  { type: 'hitokoto', label: '一言', text: '絶対に行きたくない温泉旅館の館内アナウンス。' },
+
+  { type: 'news', label: '架空ニュース', text: 'どうでもよすぎて逆に速報になったニュースとは？' },
+  { type: 'news', label: '架空ニュース', text: '日本中が「そこ？」とツッコんだ政府の重大発表とは？' },
+  { type: 'news', label: '架空ニュース', text: 'AI時代ならではの、史上初のしょうもない事件とは？' },
+  { type: 'news', label: '架空ニュース', text: '未来の教科書に1行だけ載っている「2020年代最大の勘違い」とは？' },
+
+  { type: 'worst', label: '最悪', text: '世界一やる気のないテーマパーク、新アトラクションの名前は？' },
+  { type: 'worst', label: '最悪', text: '絶対に売れないスマホの新機能とは？' },
+  { type: 'worst', label: '最悪', text: '史上最も感じの悪い「お客様の声」とは？' },
+  { type: 'worst', label: '最悪', text: '一流シェフが人生で唯一、店に出すのをためらった料理名とは？' },
+
+  { type: 'blank', label: '穴埋め', text: '「この会社、福利厚生で○○まで出るらしい」何が出る？' },
+  { type: 'blank', label: '穴埋め', text: '「最近の若者は○○までタイパを気にする」何？' },
+  { type: 'blank', label: '穴埋め', text: '「AIに仕事を奪われると思っていたら、まさか○○を奪われた」何？' },
+  { type: 'blank', label: '穴埋め', text: '「大人になったな」と最悪のタイミングで実感した瞬間。「○○」' },
+
+  { type: 'rule', label: '謎ルール', text: 'この村、観光客が絶対に理解できない謎ルールがある。どんなルール？' },
+  { type: 'rule', label: '謎ルール', text: '新人研修の資料に1個だけ明らかにおかしい社内ルール。何？' },
+  { type: 'rule', label: '謎ルール', text: '地獄にもコンプラ研修が導入された。最初に追加されたルールとは？' },
+
+  { type: 'character', label: '人物', text: '「こいつ絶対に勇者じゃないな」と思った自己紹介とは？' },
+  { type: 'character', label: '人物', text: 'プロの泥棒が新人にだけは絶対やるなと教えること。' },
+  { type: 'character', label: '人物', text: 'めちゃくちゃ弱いラスボスが戦闘前に言いそうなこと。' },
 ];
 
-const SOURCE_PROMPTS = [
-  'このネタを、まったく別の用途に変えてください。',
-  'このネタから「誰も思いつかなそうな商品」を1つ作ってください。',
-  'このネタを、くだらない方向へ10倍拡張してください。',
-  'このネタと無関係そうなものを1つ衝突させてください。',
+const PORTAL_PROMPT_BUILDERS = [
+  { type: 'portal-iya', label: '自分ネタ', build: (topic) => `こんな「${topic}」は嫌だ。どんなの？` },
+  { type: 'portal-hitokoto', label: '自分ネタ', build: (topic) => `「${topic}」を完全に勘違いしている人の一言。` },
+  { type: 'portal-why', label: '自分ネタ', build: (topic) => `なぜか「${topic}」だけが法律で禁止された。何があった？` },
+  { type: 'portal-news', label: '自分ネタ', build: (topic) => `速報です。「${topic}」界隈で史上最もしょうもない事件が起きました。何？` },
+  { type: 'portal-rule', label: '自分ネタ', build: (topic) => `「${topic}」の玄人にしか理解できない謎マナーとは？` },
+  { type: 'portal-worst', label: '自分ネタ', build: (topic) => `「${topic}」を台無しにする、余計すぎる新機能とは？` },
 ];
 
 function randomItem(items) {
@@ -75,6 +108,20 @@ function normalizeSource(item, source) {
   };
 }
 
+function sourceTopic(source) {
+  const raw = source?.title || source?.text || source?.tags?.[0] || '';
+  const oneLine = String(raw).replace(/\s+/g, ' ').replace(/[「」"'“”]/g, '').trim();
+  return oneLine.slice(0, 42) || 'このネタ';
+}
+
+function makePrompt(source) {
+  if (source) {
+    const builder = randomItem(PORTAL_PROMPT_BUILDERS);
+    return { type: builder.type, label: builder.label, text: builder.build(sourceTopic(source)) };
+  }
+  return randomItem(OGIRI_PROMPTS);
+}
+
 function isPortalIdea(item = {}) {
   return item?.owner === 'portal'
     || (Boolean(item?.content) && !item?.createdBy && !item?.maturity && !item?.spaceId);
@@ -94,6 +141,8 @@ export default function Ogiri() {
   const isDark = theme.palette.mode === 'dark';
   const [source, setSource] = useState(null);
   const [prompt, setPrompt] = useState('');
+  const [promptType, setPromptType] = useState('');
+  const [promptLabel, setPromptLabel] = useState('');
   const [answer, setAnswer] = useState('');
   const [mutation, setMutation] = useState('');
   const [mutationAnswer, setMutationAnswer] = useState('');
@@ -137,7 +186,7 @@ export default function Ogiri() {
           .filter((item) => collectionName !== 'ideas' || isPortalIdea(item));
         if (items.length) return normalizeSource(randomItem(items), collectionName);
       } catch {
-        // Try the next Portal collection before falling back to the static prompt deck.
+        // Try the next Portal collection before falling back to a standard Ogiri prompt.
       }
     }
     return null;
@@ -158,9 +207,14 @@ export default function Ogiri() {
     setLoading(true);
     setError('');
     try {
-      const candidate = await pickPortalSeed();
+      // Standard Ogiri stays dominant so the lab feels like actual Ogiri.
+      // Portal material is occasionally converted into an Ogiri-shaped prompt rather than used as an ideation task.
+      const candidate = Math.random() < 0.3 ? await pickPortalSeed() : null;
+      const nextPrompt = makePrompt(candidate);
       setSource(candidate);
-      setPrompt(candidate ? randomItem(SOURCE_PROMPTS) : randomItem(FALLBACK_PROMPTS));
+      setPrompt(nextPrompt.text);
+      setPromptType(nextPrompt.type);
+      setPromptLabel(nextPrompt.label);
       resetAnswers();
       setSessionRound((value) => value + 1);
       await loadSnapshot();
@@ -202,7 +256,7 @@ export default function Ogiri() {
 
     if (!trimmedAnswer || !selfRating) return;
     if (trimmedMutationAnswer && !preferredVersion) {
-      setError('変異案を書いた場合は、「残すならどっち？」も選んでください。');
+      setError('磨き後の回答を書いた場合は、「残すならどっち？」も選んでください。');
       return;
     }
 
@@ -217,6 +271,8 @@ export default function Ogiri() {
         schemaVersion: SCHEMA_VERSION,
         sessionRound,
         prompt,
+        promptType,
+        promptLabel,
         source,
         answer: trimmedAnswer.slice(0, 10000),
         mutation,
@@ -236,6 +292,7 @@ export default function Ogiri() {
         lastResponseId: responseRef.id,
         lastUpdatedAt: serverTimestamp(),
         lastSignals: signals,
+        promptTypeCounts: { [promptType || 'unknown']: increment(1) },
       };
 
       if (signals.length) {
@@ -251,7 +308,7 @@ export default function Ogiri() {
       await batch.commit();
 
       setSubmitted(true);
-      setNotice('保存しました。回答と集計は同じトランザクションで記録されています。');
+      setNotice('保存しました。');
       await loadSnapshot();
     } catch (err) {
       setError(err.message || '保存に失敗しました。');
@@ -278,10 +335,10 @@ export default function Ogiri() {
             O G I R I   L A B
           </Typography>
         </Stack>
-        <Typography variant="h4" fontWeight={950}>大喜利で、発想の癖を集める</Typography>
+        <Typography variant="h4" fontWeight={950}>大喜利で、センスを貯める</Typography>
         <Typography color="text.secondary">
-          アイデアの完成度ではなく、どこをズラし、どちらを残し、何を自分っぽいと感じたかまで記録します。
-          「センス」を早い段階で人格ラベルに固定せず、選択ログとして蓄積します。
+          まず普通にボケる。気に入ったら別の切り口でもう一度磨く。
+          回答と「どっちを残したか」を蓄積して、自分の笑いの癖を後から分析します。
         </Typography>
       </Stack>
 
@@ -295,7 +352,7 @@ export default function Ogiri() {
             <Box>
               <Typography fontWeight={900}>現在の観測値</Typography>
               <Typography variant="body2" color="text.secondary">
-                {profile.totalRounds}ラウンド · 自分っぽさ平均 {averageRating}/5
+                {profile.totalRounds}回答 · 自分っぽさ平均 {averageRating}/5
               </Typography>
             </Box>
             <Stack direction="row" flexWrap="wrap" useFlexGap spacing={0.6}>
@@ -310,38 +367,41 @@ export default function Ogiri() {
       <Paper elevation={0} sx={{ p: { xs: 1.5, sm: 2.5 }, border: '1px solid ' + (isDark ? 'rgba(255,255,255,.12)' : 'rgba(40,70,90,.14)'), borderRadius: 3 }}>
         <Stack spacing={2}>
           <Stack direction="row" justifyContent="space-between" alignItems="center">
-            <Chip label={'SESSION ' + (sessionRound || '—')} color="primary" variant="outlined" />
-            <Button size="small" startIcon={<RefreshIcon />} onClick={startRound} disabled={saving}>お題を変える</Button>
+            <Stack direction="row" spacing={0.7} alignItems="center">
+              <Chip label={'#' + (sessionRound || '—')} color="primary" variant="outlined" />
+              {promptLabel && <Chip label={promptLabel} size="small" />}
+            </Stack>
+            <Button size="small" startIcon={<RefreshIcon />} onClick={startRound} disabled={saving}>次のお題</Button>
           </Stack>
 
           {source && (
-            <Paper variant="outlined" sx={{ p: 1.3, bgcolor: 'action.hover' }}>
-              <Typography variant="caption" color="text.secondary" fontWeight={900}>PORTAL SEED · {source.sourceType}</Typography>
-              <Typography fontWeight={850} sx={{ mt: 0.3 }}>{source.title || '無題のネタ'}</Typography>
-              {source.text && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.4, whiteSpace: 'pre-wrap' }}>{source.text.slice(0, 500)}</Typography>}
-            </Paper>
+            <Typography variant="caption" color="text.secondary">
+              Portalの「{sourceTopic(source)}」を材料にしたお題
+            </Typography>
           )}
 
-          <Box>
-            <Typography variant="overline" color="primary.main" fontWeight={900}>お題</Typography>
-            <Typography variant="h5" fontWeight={900} sx={{ mt: 0.2, lineHeight: 1.45 }}>{prompt || 'お題を読み込んでいます…'}</Typography>
+          <Box sx={{ py: { xs: 1, sm: 2 } }}>
+            <Typography variant="h4" fontWeight={950} sx={{ lineHeight: 1.45 }}>
+              {prompt || 'お題を読み込んでいます…'}
+            </Typography>
           </Box>
 
           <TextField
-            fullWidth multiline minRows={4} value={answer}
+            fullWidth multiline minRows={3} value={answer}
             onChange={(event) => setAnswer(event.target.value)}
-            placeholder="思いついたことを、きれいにまとめずそのまま書いてください。"
-            label="最初の回答" disabled={submitted}
+            placeholder="回答"
+            label="あなたの回答" disabled={submitted}
+            autoFocus
           />
 
           <Divider />
 
           <Box>
             <Stack direction="row" spacing={0.8} alignItems="center">
-              <BoltIcon color="warning" /><Typography fontWeight={900}>ここから拡散する</Typography>
+              <BoltIcon color="warning" /><Typography fontWeight={900}>もう一段だけ磨く（任意）</Typography>
             </Stack>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.4, mb: 1 }}>
-              変異は任意です。選んだ場合は、元案と変異案のどちらを残したいかまで記録します。
+              アイデアを広げるのではなく、同じボケを別の笑わせ方に調整します。
             </Typography>
             <Stack direction="row" flexWrap="wrap" useFlexGap spacing={0.7}>
               {LENSES.map((item) => (
@@ -357,12 +417,12 @@ export default function Ogiri() {
 
           {mutation && (
             <TextField
-              fullWidth multiline minRows={3} value={mutationAnswer}
+              fullWidth multiline minRows={2} value={mutationAnswer}
               onChange={(event) => {
                 setMutationAnswer(event.target.value);
                 if (!event.target.value.trim()) setPreferredVersion('');
               }}
-              label={LENSES.find((item) => item.id === mutation)?.label + 'で変異'}
+              label={LENSES.find((item) => item.id === mutation)?.label + '版'}
               helperText={mutationPrompt}
               disabled={submitted}
             />
@@ -371,14 +431,11 @@ export default function Ogiri() {
           {mutationAnswer.trim() && (
             <Box>
               <Typography fontWeight={900}>残すならどっち？</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.3, mb: 1 }}>
-                この比較が「何を面白いと判断したか」の強いデータになります。
-              </Typography>
               <ToggleButtonGroup
                 exclusive value={preferredVersion}
                 onChange={(_, value) => !submitted && setPreferredVersion(value || '')}
                 size="small"
-                sx={{ flexWrap: 'wrap', gap: 0.5 }}
+                sx={{ mt: 0.8, flexWrap: 'wrap', gap: 0.5 }}
               >
                 {PREFERENCES.map(([id, label]) => <ToggleButton key={id} value={id}>{label}</ToggleButton>)}
               </ToggleButtonGroup>
@@ -386,11 +443,14 @@ export default function Ogiri() {
           )}
 
           <Box>
-            <Typography fontWeight={900}>「自分っぽさ」が出た方向</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.3, mb: 1 }}>
-              複数選択可。分類は固定的な診断ではなく、後から組み替えられる観測ラベルです。
-            </Typography>
-            <Stack direction="row" flexWrap="wrap" useFlexGap spacing={0.7}>
+            <Typography fontWeight={900}>この回答の「自分っぽさ」 <Typography component="span" color="error.main">*</Typography></Typography>
+            <Typography variant="body2" color="text.secondary">ボツなら1でOK。</Typography>
+            <Rating value={selfRating} onChange={(_, value) => setSelfRating(value || 0)} disabled={submitted} />
+          </Box>
+
+          <Box>
+            <Typography fontWeight={900}>何が自分っぽかった？（任意）</Typography>
+            <Stack direction="row" flexWrap="wrap" useFlexGap spacing={0.7} sx={{ mt: 0.8 }}>
               {SIGNALS.map(([id, label]) => (
                 <Chip
                   key={id} clickable label={label}
@@ -402,22 +462,16 @@ export default function Ogiri() {
             </Stack>
           </Box>
 
-          <Box>
-            <Typography fontWeight={900}>今回の「自分っぽさ」 <Typography component="span" color="error.main">*</Typography></Typography>
-            <Typography variant="body2" color="text.secondary">ボツなら1でもOK。良し悪しを含めて残す方が分析に使えます。</Typography>
-            <Rating value={selfRating} onChange={(_, value) => setSelfRating(value || 0)} disabled={submitted} />
-          </Box>
-
           <TextField
             fullWidth value={tasteNote} onChange={(event) => setTasteNote(event.target.value)}
-            label="判断メモ（任意）"
-            placeholder="例: 発想より言い方が好き / 実用的すぎて面白くない"
+            label="メモ（任意）"
+            placeholder="例: 内容より言い回しが好き / 説明しすぎた"
             inputProps={{ maxLength: 1000 }}
             disabled={submitted}
           />
 
           {signalLabels.length > 0 && (
-            <Typography variant="caption" color="text.secondary">記録するシグナル: {signalLabels.join(' / ')}</Typography>
+            <Typography variant="caption" color="text.secondary">記録: {signalLabels.join(' / ')}</Typography>
           )}
 
           {!submitted ? (
@@ -425,12 +479,12 @@ export default function Ogiri() {
               variant="contained" size="large" startIcon={<AutoAwesomeIcon />}
               onClick={saveRound} disabled={!canSave || saving}
             >
-              {saving ? '発想データを保存中…' : 'この発想を記録する'}
+              {saving ? '保存中…' : '回答を保存'}
             </Button>
           ) : (
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
               <Button variant="contained" startIcon={<ShuffleIcon />} onClick={startRound}>次のお題</Button>
-              <Button variant="outlined" onClick={retrySamePrompt}>同じお題で別案</Button>
+              <Button variant="outlined" onClick={retrySamePrompt}>同じお題でもう一回答える</Button>
             </Stack>
           )}
         </Stack>
@@ -438,13 +492,14 @@ export default function Ogiri() {
 
       {recentResponses.length > 0 && (
         <Paper elevation={0} variant="outlined" sx={{ mt: 1.5, p: 1.5, borderRadius: 2.5 }}>
-          <Typography fontWeight={900}>最近の記録</Typography>
+          <Typography fontWeight={900}>最近の回答</Typography>
           <Stack spacing={1} sx={{ mt: 1 }}>
             {recentResponses.slice(0, 3).map((item) => (
               <Box key={item.id}>
+                <Typography variant="caption" color="text.secondary">{item.promptLabel || '大喜利'} · {responseTimestamp(item)}</Typography>
                 <Typography variant="body2" fontWeight={800} noWrap>{item.answer || '—'}</Typography>
                 <Typography variant="caption" color="text.secondary">
-                  {responseTimestamp(item)} · 自分っぽさ {item.selfRating || '—'}/5
+                  自分っぽさ {item.selfRating || '—'}/5
                   {item.preferredVersion ? ` · 選択 ${PREFERENCES.find(([id]) => id === item.preferredVersion)?.[1] || item.preferredVersion}` : ''}
                 </Typography>
               </Box>
@@ -452,15 +507,6 @@ export default function Ogiri() {
           </Stack>
         </Paper>
       )}
-
-      <Paper elevation={0} variant="outlined" sx={{ mt: 1.5, p: 1.5, borderRadius: 2.5 }}>
-        <Typography fontWeight={900}>何が「センス」のデータになるか</Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, lineHeight: 1.7 }}>
-          回答そのものだけでなく、どの変異レンズを選んだか、元案と変異案のどちらを残したか、
-          自己評価、観測ラベル、判断メモを保存します。AgentはMCP経由で生データを読み、
-          高評価・低評価双方の差分から仮説を作れる設計です。
-        </Typography>
-      </Paper>
     </Box>
   );
 }
