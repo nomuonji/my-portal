@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel,
   IconButton, InputAdornment, MenuItem, Paper, Select, Stack, Switch, TextField, Typography,
@@ -11,6 +11,9 @@ import {
   Twitter as TwitterIcon,
 } from '@mui/icons-material';
 import { auth } from '../firebase';
+
+const PAGE_SIZE = 50;
+const SCAN_LIMIT = 500;
 
 const DEFAULT_CATEGORIES = [
   '未分類',
@@ -59,7 +62,9 @@ function typeLabel(type) {
 
 export default function SocialArchive() {
   const [posts, setPosts] = useState([]);
+  const [facets, setFacets] = useState({ accounts: [], years: [], totalPosts: 0, totalAccounts: 0 });
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [queryText, setQueryText] = useState('');
   const [selectedAccountId, setSelectedAccountId] = useState('');
@@ -67,13 +72,17 @@ export default function SocialArchive() {
   const [type, setType] = useState('');
   const [year, setYear] = useState('');
   const [starredOnly, setStarredOnly] = useState(false);
+  const [cursor, setCursor] = useState('');
+  const [hasMore, setHasMore] = useState(false);
+  const [lastScanned, setLastScanned] = useState(0);
   const [editing, setEditing] = useState(null);
   const [editCategory, setEditCategory] = useState('');
   const [editTags, setEditTags] = useState('');
   const [editNote, setEditNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const requestVersionRef = useRef(0);
 
-  const apiRequest = async (path, options = {}) => {
+  const apiRequest = useCallback(async (path, options = {}) => {
     const token = await auth.currentUser?.getIdToken();
     if (!token) throw new Error('ログイン情報を確認できません。');
     const response = await fetch(path, {
@@ -87,70 +96,94 @@ export default function SocialArchive() {
     const data = await response.json();
     if (!response.ok) throw new Error(data?.error || 'API request failed');
     return data;
-  };
+  }, []);
 
-  const load = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await apiRequest('/api/social-archive?resource=posts&limit=5000');
-      setPosts(Array.isArray(data.items) ? data.items : []);
-    } catch (err) {
-      setError(err.message || '投稿の読み込みに失敗しました。');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { load(); }, []);
-
-  const categories = useMemo(() => {
-    const dynamic = posts.map((post) => post.category).filter(Boolean);
-    return [...new Set([...DEFAULT_CATEGORIES, ...dynamic])];
-  }, [posts]);
-
-  const years = useMemo(() => {
-    const values = posts.map((post) => timestampToDate(post.postedAt)?.getFullYear()).filter(Boolean);
-    return [...new Set(values)].sort((a, b) => b - a);
-  }, [posts]);
-
-  const accounts = useMemo(() => {
-    const byId = new Map();
-    posts.forEach((post) => {
-      const accountId = String(post.accountId || '').trim();
-      if (!accountId) return;
-      const existing = byId.get(accountId);
-      if (existing) {
-        existing.count += 1;
-        return;
-      }
-      byId.set(accountId, {
-        accountId,
-        username: String(post.username || '').trim(),
-        count: 1,
+  useEffect(() => {
+    let active = true;
+    apiRequest('/api/social-archive?resource=facets')
+      .then((data) => {
+        if (!active) return;
+        setFacets({
+          accounts: Array.isArray(data.accounts) ? data.accounts : [],
+          years: Array.isArray(data.years) ? data.years : [],
+          totalPosts: Number(data.totalPosts || 0),
+          totalAccounts: Number(data.totalAccounts || 0),
+        });
+      })
+      .catch((err) => {
+        if (active) setError(err.message || 'アーカイブ情報の読み込みに失敗しました。');
       });
-    });
-    return [...byId.values()].sort((a, b) => (a.username || a.accountId).localeCompare(b.username || b.accountId));
-  }, [posts]);
+    return () => { active = false; };
+  }, [apiRequest]);
 
-  const visiblePosts = useMemo(() => {
-    const needle = queryText.trim().toLowerCase();
-    return posts.filter((post) => {
-      if (selectedAccountId && String(post.accountId || '') !== selectedAccountId) return false;
-      if (category && post.category !== category) return false;
-      if (type && post.type !== type) return false;
-      if (year && timestampToDate(post.postedAt)?.getFullYear() !== Number(year)) return false;
-      if (starredOnly && !post.starred) return false;
-      if (needle) {
-        const haystack = [
-          post.text, post.category, post.note, post.username,
-          ...(post.tags || []), ...(post.hashtags || []),
-        ].filter(Boolean).join('\n').toLowerCase();
-        if (!haystack.includes(needle)) return false;
-      }
-      return true;
+  const buildPostsPath = useCallback((cursorValue = '') => {
+    const params = new URLSearchParams({
+      resource: 'posts',
+      limit: String(PAGE_SIZE),
+      scanLimit: String(SCAN_LIMIT),
     });
-  }, [posts, queryText, selectedAccountId, category, type, year, starredOnly]);
+    if (queryText.trim()) params.set('query', queryText.trim());
+    if (selectedAccountId) params.set('account', selectedAccountId);
+    if (category) params.set('category', category);
+    if (type) params.set('type', type);
+    if (year) params.set('year', String(year));
+    if (starredOnly) params.set('starred', 'true');
+    if (cursorValue) params.set('cursor', cursorValue);
+    return `/api/social-archive?${params.toString()}`;
+  }, [queryText, selectedAccountId, category, type, year, starredOnly]);
+
+  const fetchPosts = useCallback(async ({ append = false, cursorValue = '', version }) => {
+    if (append) setLoadingMore(true);
+    else setLoading(true);
+    setError('');
+
+    try {
+      const data = await apiRequest(buildPostsPath(cursorValue));
+      if (version !== requestVersionRef.current) return;
+      const items = Array.isArray(data.items) ? data.items : [];
+      setPosts((current) => append ? [...current, ...items] : items);
+      setCursor(data.nextCursor || '');
+      setHasMore(Boolean(data.hasMore && data.nextCursor));
+      setLastScanned(Number(data.scanned || 0));
+    } catch (err) {
+      if (version === requestVersionRef.current) {
+        setError(err.message || '投稿の読み込みに失敗しました。');
+      }
+    } finally {
+      if (version === requestVersionRef.current) {
+        if (append) setLoadingMore(false);
+        else setLoading(false);
+      }
+    }
+  }, [apiRequest, buildPostsPath]);
+
+  useEffect(() => {
+    const version = requestVersionRef.current + 1;
+    requestVersionRef.current = version;
+    setPosts([]);
+    setCursor('');
+    setHasMore(false);
+    setLastScanned(0);
+
+    const timer = setTimeout(() => {
+      fetchPosts({ append: false, cursorValue: '', version });
+    }, queryText.trim() ? 350 : 0);
+
+    return () => clearTimeout(timer);
+  }, [fetchPosts, queryText]);
+
+  const accounts = facets.accounts;
+  const years = facets.years;
+  const categories = useMemo(() => DEFAULT_CATEGORIES, []);
+
+  const loadMore = () => {
+    if (!hasMore || !cursor || loadingMore) return;
+    fetchPosts({
+      append: true,
+      cursorValue: cursor,
+      version: requestVersionRef.current,
+    });
+  };
 
   const openEdit = (post) => {
     setEditing(post);
@@ -193,6 +226,9 @@ export default function SocialArchive() {
         method: 'POST',
         body: JSON.stringify({ action: 'update_metadata', id: post.id, starred: next }),
       });
+      if (starredOnly && !next) {
+        setPosts((current) => current.filter((item) => item.id !== post.id));
+      }
     } catch (err) {
       setPosts((current) => current.map((item) => item.id === post.id ? { ...item, starred: !next } : item));
       setError(err.message || 'お気に入り更新に失敗しました。');
@@ -234,7 +270,8 @@ export default function SocialArchive() {
               <MenuItem value="">全アカウント</MenuItem>
               {accounts.map((item) => (
                 <MenuItem key={item.accountId} value={item.accountId}>
-                  {item.username ? `@${item.username}` : item.accountId} ({item.count.toLocaleString()})
+                  {item.username ? `@${item.username}` : item.accountId}
+                  {item.displayName ? ` · ${item.displayName}` : ''}
                 </MenuItem>
               ))}
             </Select>
@@ -259,13 +296,18 @@ export default function SocialArchive() {
             />
           </Stack>
           <Typography variant="caption" color="text.secondary">
-            {loading ? '読み込み中…' : `${visiblePosts.length.toLocaleString()} / ${posts.length.toLocaleString()} 件`}
+            {loading
+              ? '読み込み中…'
+              : `${posts.length.toLocaleString()}件表示中 / 全${facets.totalPosts.toLocaleString()}件${hasMore ? ' · 続きあり' : ''}`}
+            {!loading && lastScanned > PAGE_SIZE && (
+              <> · 条件検索で直近{lastScanned.toLocaleString()}件を走査</>
+            )}
           </Typography>
         </Stack>
       </Paper>
 
       <Stack spacing={1}>
-        {visiblePosts.map((post) => {
+        {posts.map((post) => {
           const image = firstImage(post);
           return (
             <Paper key={post.id} variant="outlined" sx={{ p: { xs: 1.2, sm: 1.6 }, borderRadius: 2.5 }}>
@@ -317,10 +359,20 @@ export default function SocialArchive() {
           );
         })}
 
-        {!loading && visiblePosts.length === 0 && (
+        {!loading && posts.length === 0 && (
           <Paper variant="outlined" sx={{ p: 3, textAlign: 'center', borderRadius: 2.5 }}>
-            <Typography color="text.secondary">条件に一致する投稿がありません。</Typography>
+            <Typography color="text.secondary">
+              {hasMore ? 'この範囲には一致する投稿がありません。続きを検索できます。' : '条件に一致する投稿がありません。'}
+            </Typography>
           </Paper>
+        )}
+
+        {!loading && hasMore && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', pt: 1 }}>
+            <Button variant="outlined" onClick={loadMore} disabled={loadingMore}>
+              {loadingMore ? '読み込み中…' : `さらに${PAGE_SIZE}件読み込む`}
+            </Button>
+          </Box>
         )}
       </Stack>
 
