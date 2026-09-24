@@ -187,3 +187,19 @@ Portal seed を使う場合も、
 - 真顔
 
 schemaVersion 3 では `promptType` と `promptLabel` を保存し、どのお題形式で本人らしい回答が出やすいかも後から分析できる。
+
+
+## センス帳（schemaVersion 1）
+
+大喜利ラボ内の「センス帳」では、自分の過去ネタ・AIの案・参考投稿を手で登録し、好き / 普通 / ボツの評価、笑いのシグナル、理由を一緒に保存する。これはプロフィールで性格を決めつけるためではなく、具体例と判断理由を後の生成・分析で参照するための evidence である。
+
+### `humor_examples`
+
+- `text`: ネタ本文（最大5000文字）
+- `source`: 自分のネタ / AIの案 / 参考投稿
+- `rating`: like / neutral / skip
+- `reason`: 刺さった・滑った理由（最大1000文字）
+- `signals`: 既存の creative signals
+- `createdAt`, `updatedAt`
+
+MCP の `portal_search` / `portal_get` から参照できるようにコレクション許可リストに含める。大喜利ラボからの保存・評価変更はログイン中のユーザーに限定する。
