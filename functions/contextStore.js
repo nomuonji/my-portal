@@ -1565,7 +1565,7 @@ async function bootstrapYoutubeEssayMethod() {
         '適切なら最後にユーモアで真面目さを破壊してよい',
         '引用・出典は検証可能で、引用とAIの解釈が区別されている',
       ],
-      status: 'active',
+      status: Number(methodSnapshot.data()?.currentVersionNumber || 0) > 2 ? 'superseded' : 'active',
       createdBy: { type: 'system', agent: 'bootstrap', model: null },
       createdAt: now,
       updatedAt: now,
