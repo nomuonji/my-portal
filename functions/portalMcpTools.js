@@ -16,6 +16,7 @@ const COLLECTION_ENUM = [
   'hobby_tags',
   'ogiri_responses',
   'creative_profile',
+  'humor_examples',
 ];
 
 const collectionSchema = {
@@ -57,7 +58,7 @@ const TOOLS = [
   },
   {
     name: 'portal_search',
-    description: 'My Portal本体DBを検索します。短文メモ、アイデア、ストック、趣味、プロジェクトに加えて、大喜利回答・創造性プロファイルも参照できる読み取り専用ツールです。',
+    description: 'My Portal本体DBを検索します。短文メモ、アイデア、ストック、趣味、プロジェクトに加えて、大喜利回答・創造性プロファイル・センス帳の好き嫌い例も参照できる読み取り専用ツールです。',
     inputSchema: {
       type: 'object',
       properties: {
