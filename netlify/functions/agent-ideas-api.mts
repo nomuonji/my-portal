@@ -123,13 +123,17 @@ export default async (request: Request) => {
         return json({ items: await listCollection(store.COLLECTIONS.runs, 150), databaseId: store.DATABASE_ID });
       }
       if (resource === "spaces") {
-        // One-time additive migration requested for the existing income-search
-        // theme. This is idempotent and never deletes legacy ideas.
-        await contextStore.bootstrapIncomeSearchMigration();
+        // Additive, idempotent bootstraps. Loading the Thinking Workspace is
+        // enough to make durable starter Spaces/Methods available.
+        await Promise.all([
+          contextStore.bootstrapIncomeSearchMigration(),
+          contextStore.bootstrapYoutubeEssayMethod(),
+        ]);
         return json(await contextStore.spaceSearch({ limit: 100, scanLimit: 300 }));
       }
       if (resource === "space_context") {
         const id = url.searchParams.get("id") || "";
+        if (id === "youtube-content-methodology") await contextStore.bootstrapYoutubeEssayMethod();
         return json(await contextStore.spaceGetContext({ id, includeArtifacts: true, includeInferred: true }));
       }
       if (resource === "profile") {

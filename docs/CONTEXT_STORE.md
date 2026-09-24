@@ -222,10 +222,11 @@ Thinking WorkspaceではSpaceごとに次の順で表示する。
 3. 自分の条件
 4. Active Ideas
 5. Opportunities
-6. Decisions
-7. Evidence / Sources
-8. Recent Sessions
-9. Next Actions
+6. Methods / Protocols
+7. Decisions
+8. Evidence / Sources
+9. Recent Sessions
+10. Next Actions
 
 My Profile / User ModelではProfile Factsを確認・修正できる。
 

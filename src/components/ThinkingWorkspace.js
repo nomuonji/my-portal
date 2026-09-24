@@ -454,7 +454,43 @@ export default function ThinkingWorkspace() {
                   </Stack>
                 </Section>
 
-                <Section title="6. Decisions" subtitle="採用・却下・保留の理由をIdea属性から分離">
+                <Section title="6. Methods / Protocols" subtitle="AIが再利用する制作方法論。Runごとに使用versionを固定し、結果を見ながら改善します">
+                  <Stack spacing={1}>
+                    {(context.activeMethods || []).length === 0 && <Empty>このSpaceにはまだMethodがありません。</Empty>}
+                    {(context.activeMethods || []).map((method) => (
+                      <Paper key={method.id} variant="outlined" sx={{ p: 1.35, borderRadius: 2.5 }}>
+                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'flex-start' }}>
+                          <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                            <Typography variant="subtitle2" fontWeight={900}>{method.title}</Typography>
+                            {method.summary && (
+                              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.4, lineHeight: 1.65 }}>
+                                {method.summary}
+                              </Typography>
+                            )}
+                            {method.purpose && (
+                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.65, lineHeight: 1.55 }}>
+                                {method.purpose}
+                              </Typography>
+                            )}
+                            <Stack direction="row" spacing={0.55} flexWrap="wrap" useFlexGap sx={{ mt: 0.9 }}>
+                              <Chip size="small" color="secondary" label="Method" />
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                label={method.currentVersionNumber ? `current version #${method.currentVersionNumber}` : 'no active version'}
+                              />
+                              {(method.tags || []).slice(0, 5).map((tag) => (
+                                <Chip key={tag} size="small" label={tag} variant="outlined" />
+                              ))}
+                            </Stack>
+                          </Box>
+                        </Stack>
+                      </Paper>
+                    ))}
+                  </Stack>
+                </Section>
+
+                <Section title="7. Decisions" subtitle="採用・却下・保留の理由をIdea属性から分離">
                   <Stack spacing={1}>
                     {(context.importantDecisions || []).length === 0 && <Empty />}
                     {(context.importantDecisions || []).map((decision) => (
@@ -468,7 +504,7 @@ export default function ThinkingWorkspace() {
                   </Stack>
                 </Section>
 
-                <Section title="7. Evidence / Sources">
+                <Section title="8. Evidence / Sources">
                   <Stack spacing={0.8}>
                     {(context.recentSources || []).length === 0 && <Empty />}
                     {(context.recentSources || []).map((source) => (
@@ -480,7 +516,7 @@ export default function ThinkingWorkspace() {
                   </Stack>
                 </Section>
 
-                <Section title="8. Recent Sessions">
+                <Section title="9. Recent Sessions">
                   <Stack spacing={0.8}>
                     {(context.recentRuns || []).length === 0 && <Empty />}
                     {(context.recentRuns || []).map((run) => (
@@ -492,7 +528,7 @@ export default function ThinkingWorkspace() {
                   </Stack>
                 </Section>
 
-                <Section title="9. Next Actions">
+                <Section title="10. Next Actions">
                   <TextField
                     multiline
                     minRows={3}
