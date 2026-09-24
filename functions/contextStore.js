@@ -1378,11 +1378,18 @@ async function bootstrapYoutubeEssayMethod() {
   const spaceId = 'youtube-content-methodology';
   const methodId = 'tweet-intellectual-youtube-essay';
   const versionId = 'tweet-intellectual-youtube-essay-v1';
+  const version2Id = 'tweet-intellectual-youtube-essay-v2';
   const now = FieldValue.serverTimestamp();
   const spaceRef = database.collection(COLLECTIONS.spaces).doc(spaceId);
   const methodRef = database.collection(COLLECTIONS.methods).doc(methodId);
   const versionRef = database.collection(COLLECTIONS.methodVersions).doc(versionId);
-  const [spaceSnapshot, methodSnapshot, versionSnapshot] = await database.getAll(spaceRef, methodRef, versionRef);
+  const version2Ref = database.collection(COLLECTIONS.methodVersions).doc(version2Id);
+  const [spaceSnapshot, methodSnapshot, versionSnapshot, version2Snapshot] = await database.getAll(
+    spaceRef,
+    methodRef,
+    versionRef,
+    version2Ref,
+  );
 
   if (!spaceSnapshot.exists) {
     await spaceRef.set({
@@ -1414,9 +1421,9 @@ async function bootstrapYoutubeEssayMethod() {
       spaceId,
       tags: ['tweet', 'youtube', 'essay', 'research', 'script'],
       domains: ['creative', 'video', 'research'],
-      currentVersionId: versionId,
-      currentVersionNumber: 1,
-      latestVersionNumber: 1,
+      currentVersionId: version2Id,
+      currentVersionNumber: 2,
+      latestVersionNumber: 2,
       revision: 1,
       createdBy: { type: 'system', agent: 'bootstrap', model: null },
       createdAt: now,
@@ -1479,11 +1486,131 @@ async function bootstrapYoutubeEssayMethod() {
     });
   }
 
+  if (!version2Snapshot.exists) {
+    await version2Ref.set({
+      methodId,
+      versionNumber: 2,
+      label: 'v0.2',
+      changeSummary: 'Production feedback update: standard long-form duration, free local Japanese TTS, separate spoken script, explicit attention timeline, reading-budget validation, and a 30–60s quality probe before full render.',
+      instructions: [
+        '# Tweet → Intellectual YouTube Essay v0.2',
+        '',
+        'v0.1の知的リサーチ・Collision・Original Thesisを維持しつつ、完成動画の視聴体験を制作工程の中心に置く。',
+        '',
+        '動画尺は目的別に分ける。short = 60–150秒、standard = 5–8分、deep = 10–20分。思想・批評系の通常制作はstandardを既定とし、短尺pilotを本編扱いしない。',
+        '',
+        'Script、Spoken Script、On-screen Textを別成果物として扱う。文章として良い文を、そのままTTS原稿や画面字幕へ流用しない。',
+        '',
+        'Spoken Scriptでは読み・句読点・間・固有語の発音を音声用に調整する。AI→エーアイ、LLM→エルエルエム等、必要なら表示文と読みを分ける。',
+        '',
+        'Attention Timelineを先に設計し、各beatで視聴者が何を見るかを一つに絞る。原則として同時に複数の長文を読ませない。',
+        '',
+        'カードや重要テキストを読ませる場面では通常字幕を抑制し、読む時間を確保する。内容理解のための静止や無音を失敗とみなさない。',
+        '',
+        '本番TTSは無料・ローカル実行を前提とし、有料APIや従量課金を必須にしない。現在のanimation-factory標準はVOICEVOX Nemo。必要なクレジットを成果物に保持する。',
+        '',
+        'ピクセルアートは背景・キャラクターの表現に使い、字幕・見出し・論点カードはフル解像度の通常フォントで描画する。',
+        '',
+        '長尺本番の前に30〜60秒のQuality Probeをレンダーし、音声、発音、テンポ、視線誘導、文字量、BGM、余白を確認する。probeが不合格なら本編レンダーへ進まない。',
+      ].join('\n'),
+      protocol: {
+        input: ['source_post'],
+        defaultMode: 'standard',
+        durationModes: {
+          short: '60–150 sec',
+          standard: '5–8 min',
+          deep: '10–20 min',
+        },
+        stages: [
+          { id: 'seed_extraction', output: 'seed_brief', goal: 'tweet固有の違和感・矛盾・笑い・暗黙の前提・個人的含意を抽出する' },
+          { id: 'question_expansion', output: 'question_map', goal: '元tweetから複数の問いを展開し、射程を広げる' },
+          { id: 'intellectual_research', output: 'research_dossier', goal: '哲学・思想・批評・文学・社会科学・歴史等から有効なレンズと検証可能な資料を集める' },
+          { id: 'collision', output: 'collision_map', goal: '支持・反論・別解・経験的批判・馬鹿馬鹿しい読みを衝突させる' },
+          { id: 'original_synthesis', output: 'thesis', goal: '引用元の誰も直接言っていない独自命題を作る' },
+          { id: 'narrative_design', output: 'narrative_outline', goal: '論文順ではなく動画として観続けたくなる情報開示順へ変換する' },
+          { id: 'script', output: 'script', goal: '意味内容、会話、フック、回収を含む脚本を作る' },
+          { id: 'spoken_script', output: 'spoken_script', goal: 'TTSまたはナレーター用に発音、句読点、間、速度を最適化した音声原稿を別に作る' },
+          { id: 'attention_design', output: 'attention_timeline', goal: '各beatのvisual focus、on-screen text、reading budget、breathing roomを設計する' },
+          { id: 'quality_probe', output: 'quality_probe', goal: '30〜60秒を実レンダーし、音声・発音・テンポ・視線誘導・文字可読性・BGMを検証する' },
+          { id: 'production', output: 'production_artifacts', goal: 'probe承認後にanimation-factory等で長尺本編を制作する' },
+          { id: 'review_method_update', output: 'method_feedback', goal: '完成物とprobeの差分を評価し、次versionへ残す改善点を記録する' },
+        ],
+        researchLenses: ['philosophy', 'critical_theory', 'literature', 'sociology', 'psychology', 'history', 'empirical_counterevidence', 'humor'],
+        collisionRoles: ['supporter', 'destroyer', 'sideways_reader', 'empirical_skeptic', 'comic_reducer'],
+        productionDefaults: {
+          paidCloudTtsRequired: false,
+          japaneseTts: 'VOICEVOX Nemo local',
+          typography: 'full-resolution DOM/sans-serif',
+          readingBudget: 'about 8 Japanese chars/sec plus buffer',
+          maxPrimaryReadingTargets: 1,
+          qualityProbeSeconds: '30–60',
+        },
+        outputs: ['seed_brief', 'question_map', 'research_dossier', 'collision_map', 'thesis', 'narrative_outline', 'script', 'spoken_script', 'attention_timeline', 'quality_probe', 'production_artifacts', 'method_feedback'],
+        improvementLoop: 'run → quality probe → full production → evaluate → record findings → create next method version → activate after review',
+      },
+      qualityGates: [
+        '元tweet固有の妙味・矛盾・語感が残っている',
+        '思想家や批評家の名前を並べるだけの権威付けになっていない',
+        '支持だけでなく有力な反論または別解が入っている',
+        'Researchから独自命題が生成されている',
+        'standard本編は原則5〜8分の内容密度を持ち、短いpilotを本編として扱わない',
+        'ScriptとSpoken ScriptとOn-screen Textが意図的に分離されている',
+        '一画面の主たる読解対象は原則1つである',
+        '表示文字に十分なreading budgetがあり、長文カードと通常字幕を同時に読ませない',
+        '30〜60秒Quality Probeで音声・発音・テンポ・視線誘導・文字可読性・BGMを確認している',
+        '日本語TTSの既定経路が無料・ローカルで、有料APIを必須にしていない',
+        '背景・キャラクターのpixel artと、通常フォントの情報テキストが役割分離されている',
+        '内容が正しくても動画として退屈なら不合格',
+        '説明が説教臭くなりすぎていない',
+        '適切なら最後にユーモアで真面目さを破壊してよい',
+        '引用・出典は検証可能で、引用とAIの解釈が区別されている',
+      ],
+      status: 'active',
+      createdBy: { type: 'system', agent: 'bootstrap', model: null },
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  const currentMethodVersion = Number(methodSnapshot.data()?.currentVersionNumber || 0);
+  if (!methodSnapshot.exists || currentMethodVersion < 2) {
+    await methodRef.set({
+      currentVersionId: version2Id,
+      currentVersionNumber: 2,
+      latestVersionNumber: Math.max(2, Number(methodSnapshot.data()?.latestVersionNumber || 0)),
+      revision: Math.max(2, Number(methodSnapshot.data()?.revision || 0) + 1),
+      updatedAt: now,
+    }, { merge: true });
+    await versionRef.set({
+      status: 'superseded',
+      updatedAt: now,
+    }, { merge: true });
+  }
+
+  if (
+    spaceSnapshot.exists &&
+    spaceSnapshot.data()?.bootstrapKey === 'youtube-content-methodology-v1'
+  ) {
+    await spaceRef.set({
+      currentBrief: 'Method v0.2へ更新。知的リサーチと独自命題の生成に加え、Script → Spoken Script → Attention Timeline → 30〜60秒Quality Probe → Full Production を標準工程とする。通常の思想系本編は5〜8分を既定とし、日本語TTSは有料APIに依存せずローカル無料経路を使う。',
+      nextActions: [
+        'VOICEVOX Nemo + attention timelineのQuality Probeを確認する',
+        'probeの音声・テンポ・視線誘導を評価して本編productionへ反映する',
+        '5〜8分standard版を制作し、完成後にMethod v0.3候補の改善点を記録する',
+      ],
+      bootstrapKey: 'youtube-content-methodology-v2',
+      revision: FieldValue.increment(1),
+      updatedAt: now,
+    }, { merge: true });
+  }
+
   return {
     ok: true,
     spaceId,
     methodId,
-    versionId,
+    versionId: version2Id,
+    version1Id: versionId,
+    version2Id,
     created: {
       space: !spaceSnapshot.exists,
       method: !methodSnapshot.exists,
