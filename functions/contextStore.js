@@ -8,6 +8,8 @@ const COLLECTIONS = Object.freeze({
   profileFacts: 'profileFacts',
   decisions: 'decisions',
   opportunities: 'opportunities',
+  methods: 'methods',
+  methodVersions: 'methodVersions',
 });
 
 const THINKING_COLLECTIONS = Object.freeze({
@@ -29,6 +31,8 @@ const PROFILE_STATUSES = ['active', 'superseded', 'archived'];
 const DECISION_TYPES = ['adopt', 'reject', 'hold', 'defer', 'supersede'];
 const DECISION_STATUSES = ['active', 'superseded', 'reversed'];
 const OPPORTUNITY_STATUSES = ['active', 'watching', 'paused', 'closed', 'rejected', 'completed'];
+const METHOD_STATUSES = ['active', 'paused', 'archived'];
+const METHOD_VERSION_STATUSES = ['draft', 'active', 'superseded', 'archived'];
 
 function db() {
   return DATABASE_ID === '(default)' ? getFirestore() : getFirestore(DATABASE_ID);
@@ -368,6 +372,219 @@ async function opportunityUpdate(input) {
   return documentToObject(await ref.get());
 }
 
+
+async function methodCreate(input, actor = {}) {
+  const spaceId = clampString(input.spaceId, 160) || null;
+  if (spaceId) await spaceGet({ id: spaceId });
+  const ref = db().collection(COLLECTIONS.methods).doc();
+  const now = FieldValue.serverTimestamp();
+  await ref.set({
+    title: assertString(input.title, 'title', { max: 300 }),
+    summary: clampString(input.summary, 5000) || '',
+    purpose: clampString(input.purpose, 12000) || '',
+    status: assertEnum(input.status, METHOD_STATUSES, 'status', 'active'),
+    spaceId,
+    tags: stringArray(input.tags, 50, 100),
+    domains: stringArray(input.domains, 30, 100),
+    currentVersionId: null,
+    currentVersionNumber: null,
+    latestVersionNumber: 0,
+    revision: 1,
+    createdBy: createdBy(input.createdBy, actor),
+    createdAt: now,
+    updatedAt: now,
+  });
+  return documentToObject(await ref.get());
+}
+
+async function methodGet(input) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const snapshot = await db().collection(COLLECTIONS.methods).doc(id).get();
+  if (!snapshot.exists) throw new Error('Method not found: ' + id);
+  return documentToObject(snapshot);
+}
+
+async function methodSearch(input = {}) {
+  const limit = Math.min(Math.max(Number(input.limit) || 30, 1), 100);
+  const scanLimit = Math.min(Math.max(Number(input.scanLimit) || Math.max(limit * 5, 100), limit), 500);
+  const snapshot = await db().collection(COLLECTIONS.methods).limit(scanLimit).get();
+  const q = clampString(input.query, 300)?.toLowerCase();
+  const status = input.status;
+  const spaceId = clampString(input.spaceId, 160);
+  const tag = clampString(input.tag, 100)?.toLowerCase();
+  const domain = clampString(input.domain, 100)?.toLowerCase();
+  const items = sortRecent(snapshot.docs.map(documentToObject))
+    .filter((method) => {
+      if (status && method.status !== status) return false;
+      if (spaceId && method.spaceId !== spaceId) return false;
+      if (tag && !(method.tags || []).some((item) => String(item).toLowerCase() === tag)) return false;
+      if (domain && !(method.domains || []).some((item) => String(item).toLowerCase() === domain)) return false;
+      if (q) {
+        const haystack = [method.title, method.summary, method.purpose, ...(method.tags || []), ...(method.domains || [])]
+          .join('\n')
+          .toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    })
+    .slice(0, limit);
+  return { items, count: items.length, scanned: snapshot.size, databaseId: DATABASE_ID };
+}
+
+async function methodUpdate(input) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const patch = input.patch && typeof input.patch === 'object' ? input.patch : {};
+  const nextSpaceId = patch.spaceId !== undefined ? (clampString(patch.spaceId, 160) || null) : undefined;
+  if (nextSpaceId) await spaceGet({ id: nextSpaceId });
+  const ref = db().collection(COLLECTIONS.methods).doc(id);
+  await db().runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    if (!snapshot.exists) throw new Error('Method not found: ' + id);
+    const current = snapshot.data();
+    if (input.expectedRevision !== undefined && Number(input.expectedRevision) !== Number(current.revision || 1)) {
+      throw new Error('Revision conflict: expected ' + input.expectedRevision + ', actual ' + (current.revision || 1));
+    }
+    const update = {
+      revision: Number(current.revision || 1) + 1,
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    if (patch.title !== undefined) update.title = assertString(patch.title, 'patch.title', { max: 300 });
+    if (patch.summary !== undefined) update.summary = clampString(patch.summary, 5000) || '';
+    if (patch.purpose !== undefined) update.purpose = clampString(patch.purpose, 12000) || '';
+    if (patch.status !== undefined) update.status = assertEnum(patch.status, METHOD_STATUSES, 'patch.status', current.status || 'active');
+    if (patch.spaceId !== undefined) update.spaceId = nextSpaceId;
+    if (patch.tags !== undefined) update.tags = stringArray(patch.tags, 50, 100);
+    if (patch.domains !== undefined) update.domains = stringArray(patch.domains, 30, 100);
+    tx.update(ref, update);
+  });
+  return methodGet({ id });
+}
+
+async function methodVersionGet(input) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const snapshot = await db().collection(COLLECTIONS.methodVersions).doc(id).get();
+  if (!snapshot.exists) throw new Error('Method version not found: ' + id);
+  return documentToObject(snapshot);
+}
+
+async function methodVersionCreate(input, actor = {}) {
+  const methodId = assertString(input.methodId, 'methodId', { max: 160 });
+  const database = db();
+  const methodRef = database.collection(COLLECTIONS.methods).doc(methodId);
+  const versionRef = database.collection(COLLECTIONS.methodVersions).doc();
+  const activate = input.activate === true;
+
+  await database.runTransaction(async (tx) => {
+    const methodSnapshot = await tx.get(methodRef);
+    if (!methodSnapshot.exists) throw new Error('Method not found: ' + methodId);
+    const current = methodSnapshot.data();
+    const previousRef = activate && current.currentVersionId
+      ? database.collection(COLLECTIONS.methodVersions).doc(current.currentVersionId)
+      : null;
+    const previousSnapshot = previousRef ? await tx.get(previousRef) : null;
+    const versionNumber = Number(current.latestVersionNumber || 0) + 1;
+    const now = FieldValue.serverTimestamp();
+
+    tx.set(versionRef, {
+      methodId,
+      versionNumber,
+      label: clampString(input.label, 120) || ('v' + versionNumber),
+      changeSummary: clampString(input.changeSummary, 5000) || '',
+      instructions: clampString(input.instructions, 30000) || '',
+      protocol: jsonSafe(input.protocol || {}),
+      qualityGates: stringArray(input.qualityGates, 100, 1000),
+      status: activate ? 'active' : 'draft',
+      createdBy: createdBy(input.createdBy, actor),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    if (activate && previousSnapshot?.exists && previousSnapshot.id !== versionRef.id) {
+      tx.update(previousSnapshot.ref, { status: 'superseded', updatedAt: now });
+    }
+
+    tx.update(methodRef, {
+      latestVersionNumber: versionNumber,
+      ...(activate ? {
+        currentVersionId: versionRef.id,
+        currentVersionNumber: versionNumber,
+      } : {}),
+      revision: Number(current.revision || 1) + 1,
+      updatedAt: now,
+    });
+  });
+
+  return {
+    method: await methodGet({ id: methodId }),
+    version: await methodVersionGet({ id: versionRef.id }),
+  };
+}
+
+async function methodVersionActivate(input) {
+  const methodId = assertString(input.methodId, 'methodId', { max: 160 });
+  const versionId = assertString(input.versionId, 'versionId', { max: 160 });
+  const database = db();
+  const methodRef = database.collection(COLLECTIONS.methods).doc(methodId);
+  const versionRef = database.collection(COLLECTIONS.methodVersions).doc(versionId);
+
+  await database.runTransaction(async (tx) => {
+    const methodSnapshot = await tx.get(methodRef);
+    const versionSnapshot = await tx.get(versionRef);
+    if (!methodSnapshot.exists) throw new Error('Method not found: ' + methodId);
+    if (!versionSnapshot.exists) throw new Error('Method version not found: ' + versionId);
+    const method = methodSnapshot.data();
+    const version = versionSnapshot.data();
+    if (version.methodId !== methodId) throw new Error('Method version does not belong to method: ' + methodId);
+    const previousRef = method.currentVersionId && method.currentVersionId !== versionId
+      ? database.collection(COLLECTIONS.methodVersions).doc(method.currentVersionId)
+      : null;
+    const previousSnapshot = previousRef ? await tx.get(previousRef) : null;
+    const now = FieldValue.serverTimestamp();
+
+    if (previousSnapshot?.exists) tx.update(previousSnapshot.ref, { status: 'superseded', updatedAt: now });
+    tx.update(versionRef, { status: 'active', updatedAt: now });
+    tx.update(methodRef, {
+      currentVersionId: versionId,
+      currentVersionNumber: Number(version.versionNumber || 0) || null,
+      revision: Number(method.revision || 1) + 1,
+      updatedAt: now,
+    });
+  });
+
+  return methodGetContext({ id: methodId });
+}
+
+async function methodGetContext(input) {
+  const method = await methodGet({ id: input.id });
+  const database = db();
+  const versionSnapshot = await database.collection(COLLECTIONS.methodVersions)
+    .where('methodId', '==', method.id)
+    .limit(Math.min(Math.max(Number(input.versionLimit) || 20, 1), 50))
+    .get();
+  const versions = [...versionSnapshot.docs.map(documentToObject)]
+    .sort((a, b) => Number(b.versionNumber || 0) - Number(a.versionNumber || 0));
+  const currentVersion = method.currentVersionId
+    ? versions.find((item) => item.id === method.currentVersionId) || await methodVersionGet({ id: method.currentVersionId })
+    : null;
+  const runs = (await getRecentCollection(THINKING_COLLECTIONS.runs, 300))
+    .filter((run) => run.methodId === method.id)
+    .slice(0, Math.min(Math.max(Number(input.runLimit) || 30, 1), 100));
+  return {
+    method,
+    currentVersion,
+    versions,
+    recentRuns: runs,
+    executionContract: currentVersion ? {
+      methodId: method.id,
+      methodVersionId: currentVersion.id,
+      methodVersionNumber: currentVersion.versionNumber,
+      instructions: currentVersion.instructions || '',
+      protocol: currentVersion.protocol || {},
+      qualityGates: currentVersion.qualityGates || [],
+    } : null,
+  };
+}
+
 async function getRecentCollection(name, limit = 300) {
   const snapshot = await db().collection(name).limit(limit).get();
   return sortRecent(snapshot.docs.map(documentToObject));
@@ -384,10 +601,11 @@ async function spaceGetContext(input) {
   const opportunityLimit = Math.min(Math.max(Number(input.opportunityLimit) || 80, 1), 200);
   const recentLimit = Math.min(Math.max(Number(input.recentLimit) || 30, 1), 100);
 
-  const [ideaSnapshot, decisionSnapshot, opportunitySnapshot, profileContext] = await Promise.all([
+  const [ideaSnapshot, decisionSnapshot, opportunitySnapshot, methodSnapshot, profileContext] = await Promise.all([
     database.collection('ideas').where('spaceId', '==', space.id).limit(ideaLimit).get(),
     database.collection(COLLECTIONS.decisions).where('spaceId', '==', space.id).limit(100).get(),
     database.collection(COLLECTIONS.opportunities).where('spaceId', '==', space.id).limit(opportunityLimit).get(),
+    database.collection(COLLECTIONS.methods).where('spaceId', '==', space.id).limit(50).get(),
     profileGetContext({ spaceId: space.id, includeInferred: input.includeInferred !== false, limit: 120 }),
   ]);
 
@@ -398,6 +616,7 @@ async function spaceGetContext(input) {
   decisions.forEach((item) => { if (item.createdInRunId) runIds.add(item.createdInRunId); });
   const opportunities = sortRecent(opportunitySnapshot.docs.map(documentToObject));
   opportunities.forEach((item) => { if (item.createdInRunId) runIds.add(item.createdInRunId); });
+  const methods = sortRecent(methodSnapshot.docs.map(documentToObject));
 
   const [sourcesAll, runsAll, agentRunsAll, artifactsAll, projectsSnapshot] = await Promise.all([
     getRecentCollection(THINKING_COLLECTIONS.sources, 300),
@@ -467,7 +686,7 @@ async function spaceGetContext(input) {
   const importantDecisions = decisions.filter((item) => !item.status || item.status === 'active');
 
   return {
-    contextVersion: 1,
+    contextVersion: 2,
     space,
     goal: space.goal || '',
     currentBrief: space.currentBrief || '',
@@ -476,6 +695,7 @@ async function spaceGetContext(input) {
     importantDecisions,
     activeIdeas,
     activeOpportunities,
+    activeMethods: methods.filter((item) => item.status === 'active'),
     recentSources: sources,
     recentRuns: runs,
     artifacts,
@@ -689,7 +909,22 @@ async function spaceRunExists(id) {
 }
 
 async function spaceRunStart(input, actor = {}) {
-  const spaceId = assertString(input.spaceId, 'spaceId', { max: 160 });
+  const requestedMethodId = clampString(input.methodId, 160) || null;
+  const requestedVersionId = clampString(input.methodVersionId, 160) || null;
+  let method = null;
+  let methodVersion = null;
+
+  if (requestedVersionId) {
+    methodVersion = await methodVersionGet({ id: requestedVersionId });
+    if (requestedMethodId && requestedMethodId !== methodVersion.methodId) throw new Error('methodVersionId does not belong to methodId');
+    method = await methodGet({ id: methodVersion.methodId });
+  } else if (requestedMethodId) {
+    method = await methodGet({ id: requestedMethodId });
+    if (!method.currentVersionId) throw new Error('Method has no active version: ' + method.id);
+    methodVersion = await methodVersionGet({ id: method.currentVersionId });
+  }
+
+  const spaceId = assertString(input.spaceId || method?.spaceId, 'spaceId', { max: 160 });
   await spaceGet({ id: spaceId });
   const ref = db().collection(THINKING_COLLECTIONS.runs).doc();
   await ref.set({
@@ -701,6 +936,9 @@ async function spaceRunStart(input, actor = {}) {
     status: 'active',
     seedIdeaIds: stringArray(input.seedIdeaIds, 50, 160),
     spaceId,
+    methodId: method?.id || null,
+    methodVersionId: methodVersion?.id || null,
+    methodVersionNumber: methodVersion?.versionNumber || null,
     createdIdeaIds: [],
     updatedIdeaIds: [],
     findings: [],
@@ -1134,11 +1372,132 @@ async function bootstrapIncomeSearchMigration() {
   };
 }
 
+
+async function bootstrapYoutubeEssayMethod() {
+  const database = db();
+  const spaceId = 'youtube-content-methodology';
+  const methodId = 'tweet-intellectual-youtube-essay';
+  const versionId = 'tweet-intellectual-youtube-essay-v1';
+  const now = FieldValue.serverTimestamp();
+  const spaceRef = database.collection(COLLECTIONS.spaces).doc(spaceId);
+  const methodRef = database.collection(COLLECTIONS.methods).doc(methodId);
+  const versionRef = database.collection(COLLECTIONS.methodVersions).doc(versionId);
+  const [spaceSnapshot, methodSnapshot, versionSnapshot] = await database.getAll(spaceRef, methodRef, versionRef);
+
+  if (!spaceSnapshot.exists) {
+    await spaceRef.set({
+      title: 'YouTubeコンテンツ制作方法論',
+      summary: '自分のX投稿を種に、外部知見・反論・独自統合・演出を経て、重厚だが説教臭くないYouTubeコンテンツへ発展させる方法論を継続改善するSpace。',
+      goal: 'tweet固有の妙味を失わず、哲学・思想・批評・文学・社会科学などの知見との衝突から独自命題を作り、動画として面白い脚本と演出へ変換する再利用可能な制作プロトコルを育てる。',
+      status: 'active',
+      currentBrief: '初期Method v0.1を導入。Seed Extraction → Question Expansion → Intellectual Research → Collision → Original Synthesis → Narrative → Script → Direction → Production → Review/Method Update の10段階で運用する。引用の寄せ集めではなく、元tweetと外部知見の衝突から新しい命題を作ることを中核とする。',
+      nextActions: [
+        '実際のtweetを1本選び、Method v0.1でResearchからScriptまで通す',
+        '完成物を評価し、退屈・説教臭さ・引用過多・元tweetの妙味喪失をMethod Feedbackとして記録する',
+        '評価を踏まえてv0.2を作り、旧versionを残したままactive versionを切り替える',
+      ],
+      tags: ['YouTube', 'content-method', 'research', 'script', 'X過去投稿'],
+      domains: ['creative', 'video', 'research', 'personal-archive'],
+      revision: 1,
+      bootstrapKey: 'youtube-content-methodology-v1',
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  if (!methodSnapshot.exists) {
+    await methodRef.set({
+      title: 'Tweet → Intellectual YouTube Essay',
+      summary: '短いX投稿を、知的リサーチ・反論・独自統合・物語化を通してYouTube脚本へ発展させる再利用可能Method。',
+      purpose: 'tweetを単なる引用動画や思想家紹介へ薄めず、tweetの矛盾・違和感・笑いを核に、複数の知的レンズを衝突させて独自命題を作り、最終的に映像として面白い構造へ変換する。',
+      status: 'active',
+      spaceId,
+      tags: ['tweet', 'youtube', 'essay', 'research', 'script'],
+      domains: ['creative', 'video', 'research'],
+      currentVersionId: versionId,
+      currentVersionNumber: 1,
+      latestVersionNumber: 1,
+      revision: 1,
+      createdBy: { type: 'system', agent: 'bootstrap', model: null },
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  if (!versionSnapshot.exists) {
+    await versionRef.set({
+      methodId,
+      versionNumber: 1,
+      label: 'v0.1',
+      changeSummary: 'Initial workflow: tweet seed → intellectual collision → original synthesis → narrative/script/direction → review-driven method improvement.',
+      instructions: [
+        '# Tweet → Intellectual YouTube Essay v0.1',
+        '',
+        '元tweetを主張の要約に縮めない。語感、矛盾、飛躍、笑い、気味悪さ、個人的な切実さをSeedとして保持する。',
+        '',
+        '外部知見は権威付けのために引用しない。tweetを支持・破壊・別方向へ曲げるための道具として使う。',
+        '',
+        'Researchの最終成果は思想家の紹介ではなく、元tweetと複数の知見を衝突させた結果として生まれるOriginal Thesisである。',
+        '',
+        '構成は論文順を避け、Hook → tweet → 一見くだらない展開 → 深掘り → 反論 → 予想外の統合 → 元tweetへの帰還を基本形とする。',
+        '',
+        '深くなった後でも、必要なら最後にくだらなさで全体を破壊してよい。真面目さとユーモアを二者択一にしない。',
+      ].join('\n'),
+      protocol: {
+        input: ['source_post'],
+        stages: [
+          { id: 'seed_extraction', output: 'seed_brief', goal: 'tweet固有の違和感・矛盾・笑い・暗黙の前提・個人的含意を抽出する' },
+          { id: 'question_expansion', output: 'question_map', goal: '元tweetから5〜15個の問いを展開し、射程を広げる' },
+          { id: 'intellectual_research', output: 'research_dossier', goal: '哲学・思想・批評・文学・社会科学・歴史等から有効なレンズと一次/信頼できる二次資料を集める' },
+          { id: 'collision', output: 'collision_map', goal: '支持・反論・別解・経験的批判・馬鹿馬鹿しい読みを衝突させる' },
+          { id: 'original_synthesis', output: 'thesis', goal: '引用元の誰も直接言っていない独自命題を作る' },
+          { id: 'narrative_design', output: 'narrative_outline', goal: '論文ではなく動画として観続けたくなる情報開示順へ変換する' },
+          { id: 'script', output: 'script', goal: 'ナレーション、会話、間、フック、回収を含む脚本を作る' },
+          { id: 'direction', output: 'direction_sheet', goal: 'シーン、画、テキスト、音、テンポ、演出上の反復と破壊を設計する' },
+          { id: 'production', output: 'production_artifacts', goal: 'animation-factory等の実制作系へ受け渡せる形にする' },
+          { id: 'review_method_update', output: 'method_feedback', goal: '完成物を評価し、次versionへ残す改善点をMethod Feedbackとして記録する' },
+        ],
+        researchLenses: ['philosophy', 'critical_theory', 'literature', 'sociology', 'psychology', 'history', 'empirical_counterevidence', 'humor'],
+        collisionRoles: ['supporter', 'destroyer', 'sideways_reader', 'empirical_skeptic', 'comic_reducer'],
+        outputs: ['seed_brief', 'question_map', 'research_dossier', 'collision_map', 'thesis', 'narrative_outline', 'script', 'direction_sheet', 'production_artifacts', 'method_feedback'],
+        improvementLoop: 'run → evaluate finished content → record findings → create new method version → activate only after review',
+      },
+      qualityGates: [
+        '元tweet固有の妙味・矛盾・語感が残っている',
+        '思想家や批評家の名前を並べるだけの権威付けになっていない',
+        '支持だけでなく有力な反論または別解が入っている',
+        'Researchから独自命題が生成されている',
+        '内容が正しくても動画として退屈なら不合格',
+        '説明が説教臭くなりすぎていない',
+        '最後まで真面目さを維持する必要はなく、適切ならユーモアで破壊してよい',
+        '引用・出典は検証可能で、引用とAIの解釈が区別されている',
+      ],
+      status: 'active',
+      createdBy: { type: 'system', agent: 'bootstrap', model: null },
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  return {
+    ok: true,
+    spaceId,
+    methodId,
+    versionId,
+    created: {
+      space: !spaceSnapshot.exists,
+      method: !methodSnapshot.exists,
+      version: !versionSnapshot.exists,
+    },
+  };
+}
+
 async function healthCheck() {
   const started = Date.now();
-  const [spaceSample, profileSample] = await Promise.all([
+  const [spaceSample, profileSample, methodSample] = await Promise.all([
     db().collection(COLLECTIONS.spaces).limit(1).get(),
     db().collection(COLLECTIONS.profileFacts).limit(1).get(),
+    db().collection(COLLECTIONS.methods).limit(1).get(),
   ]);
   return {
     ok: true,
@@ -1146,6 +1505,7 @@ async function healthCheck() {
     collections: Object.values(COLLECTIONS),
     sampleSpaceCount: spaceSample.size,
     sampleProfileFactCount: profileSample.size,
+    sampleMethodCount: methodSample.size,
     latencyMs: Date.now() - started,
   };
 }
@@ -1161,6 +1521,8 @@ module.exports = {
   DECISION_TYPES,
   DECISION_STATUSES,
   OPPORTUNITY_STATUSES,
+  METHOD_STATUSES,
+  METHOD_VERSION_STATUSES,
   healthCheck,
   spaceCreate,
   spaceGet,
@@ -1189,6 +1551,15 @@ module.exports = {
   decisionCreate,
   opportunityCreate,
   opportunityUpdate,
+  methodCreate,
+  methodGet,
+  methodSearch,
+  methodUpdate,
+  methodVersionGet,
+  methodVersionCreate,
+  methodVersionActivate,
+  methodGetContext,
   spaceDistillRun,
   bootstrapIncomeSearchMigration,
+  bootstrapYoutubeEssayMethod,
 };

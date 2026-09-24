@@ -54,6 +54,24 @@ const opportunityFields = {
   createdInRunId: string('Run that found the opportunity.', 160),
 };
 
+const methodFields = {
+  title: string('Reusable method/protocol title.', 300),
+  summary: string('Compact description of the method.', 5000),
+  purpose: string('What the method is for and what it should optimize.', 12000),
+  status: { type: 'string', enum: store.METHOD_STATUSES },
+  spaceId: string('Optional Space used to improve and discuss this method.', 160),
+  tags: stringArray('Loose tags.', 50),
+  domains: stringArray('Broad domains.', 30),
+};
+
+const methodVersionFields = {
+  label: string('Human-readable version label such as v0.2.', 120),
+  changeSummary: string('What changed from prior versions and why.', 5000),
+  instructions: string('Executable agent-facing instructions for this version.', 30000),
+  protocol: jsonObject('Structured stages, lenses, outputs, and other execution metadata.'),
+  qualityGates: stringArray('Acceptance checks for outputs created with this version.', 100),
+};
+
 const TOOLS = [
   {
     name: 'space_create',
@@ -109,6 +127,77 @@ const TOOLS = [
       recentLimit: { type: 'integer', minimum: 1, maximum: 100, default: 30 },
       includeArtifacts: { type: 'boolean', default: true },
       includeInferred: { type: 'boolean', default: true },
+    }, ['id']),
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'method_create',
+    description: 'Create a reusable agent Method/Protocol. Keep evolving execution knowledge here instead of hard-coding it into one prompt or Space.',
+    inputSchema: objectSchema(methodFields, ['title']),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  {
+    name: 'method_get',
+    description: 'Read one reusable Method by ID.',
+    inputSchema: objectSchema({ id: string('Method ID.', 160) }, ['id']),
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'method_search',
+    description: 'Find reusable Methods/Protocols by text, status, Space, tag, or domain.',
+    inputSchema: objectSchema({
+      query: string('Substring query over title, summary, purpose, tags, and domains.', 300),
+      status: { type: 'string', enum: store.METHOD_STATUSES },
+      spaceId: string('Exact Space ID.', 160),
+      tag: string('Exact tag.', 100),
+      domain: string('Exact domain.', 100),
+      limit: { type: 'integer', minimum: 1, maximum: 100, default: 30 },
+      scanLimit: { type: 'integer', minimum: 1, maximum: 500 },
+    }),
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'method_update',
+    description: 'Update Method metadata without overwriting immutable historical versions.',
+    inputSchema: objectSchema({
+      id: string('Method ID.', 160),
+      expectedRevision: { type: 'integer', minimum: 1 },
+      patch: objectSchema(methodFields),
+    }, ['id', 'patch']),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  {
+    name: 'method_version_get',
+    description: 'Read one immutable Method version.',
+    inputSchema: objectSchema({ id: string('Method version ID.', 160) }, ['id']),
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'method_version_create',
+    description: 'Create a new Method version. activate=true makes it the execution default while preserving the previous version as superseded.',
+    inputSchema: objectSchema({
+      methodId: string('Method ID.', 160),
+      ...methodVersionFields,
+      activate: { type: 'boolean', default: false },
+    }, ['methodId']),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  {
+    name: 'method_version_activate',
+    description: 'Switch a Method to an existing version after review. The previous active version is preserved as superseded.',
+    inputSchema: objectSchema({
+      methodId: string('Method ID.', 160),
+      versionId: string('Method version ID.', 160),
+    }, ['methodId', 'versionId']),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  {
+    name: 'method_get_context',
+    description: 'Return a Method execution contract: active version, version history, recent runs, instructions, protocol, and quality gates.',
+    inputSchema: objectSchema({
+      id: string('Method ID.', 160),
+      versionLimit: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+      runLimit: { type: 'integer', minimum: 1, maximum: 100, default: 30 },
     }, ['id']),
     annotations: { readOnlyHint: true },
   },

@@ -21,6 +21,37 @@ My Portalは、単なるメモ・Idea DBではなく、**ユーザーの思考�
 
 Spaceは `currentBrief`, `goal`, `nextActions` を持ち、次回セッションの再開地点になる。
 
+
+### Method / Protocol
+
+複数のRunやProjectから再利用され、実行結果を見ながら改善していく**方法論**。
+
+Spaceが「考え続けるテーマ」であるのに対して、Methodは「どう実行するか」を定義する。
+
+例:
+
+- Space: YouTubeコンテンツ制作方法論
+- Method: Tweet → Intellectual YouTube Essay
+- MethodVersion: v0.1 / v0.2 / v1.0
+- Run: あるtweetをv0.2で調査・脚本化した1回の制作セッション
+
+Method本体はメタデータとactive versionへのポインタを持ち、実行内容はmethodVersionsへimmutableに保存する。改善時は旧versionを書き換えず新versionを作り、レビュー後にactivateする。
+
+RunはmethodId, methodVersionId, methodVersionNumberを保存する。これにより、どの方法論で作った成果物かを後から評価・比較できる。
+
+Agent側は原則として:
+
+1. method_search
+2. method_get_context
+3. idea_run_start({ methodId, ... })
+4. Research / Sources / Ideas / Artifactsを保存
+5. idea_run_finish
+6. 評価からMethod改善案を作る
+7. method_version_create
+8. 十分レビューしたversionだけmethod_version_activate
+
+という循環を使う。
+
 ### Project
 
 具体的に実行するプロジェクト。
@@ -125,6 +156,7 @@ Ideaのattributesに埋め込まず、判断履歴として独立保存する。
 - Important Decisions
 - Active Ideas
 - Active Opportunities
+- Active Methods
 - Recent Sources
 - Recent Runs
 - Artifacts
@@ -225,7 +257,8 @@ Thinking SpaceのIdea（`ideas`）と、短文ボード補充用Agent Ideas（`a
 - `idea_link / idea_merge` → 同一保存層内で動作。Thinking ↔ Agent Ideasのcross-layer relationは暗黙変換せず拒否
 - `idea_add_source / idea_evaluate / idea_add_artifact` → Idea IDから保存先を自動判別
 - `idea_run_start({ spaceId, ... })` → Thinking Workspaceの`runs`
-- `idea_run_start` without `spaceId` → Agent Ideasの`agent_idea_runs`
+- `idea_run_start({ methodId, ... })` → Methodのactive versionを解決し、methodId / methodVersionId / methodVersionNumber付きでThinking Workspaceのrunsへ保存
+- `idea_run_start` without spaceId / methodId / methodVersionId → Agent Ideasのagent_idea_runs
 - `space_get_context` は移行期に作成された`agent_idea_runs`も`spaceId`が一致すればrecent runsへ含める
 
 これにより、Space distillationで作ったIdeaを直後に`idea_link`や`idea_add_source`へ渡しても、`Idea not found`にならない。

@@ -23,7 +23,7 @@ const migration: any = (migrationImport as any).default ?? migrationImport;
 const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...portalToolsModule.TOOLS, ...socialToolsModule.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "0.8.0-netlify";
+const SERVER_VERSION = "0.9.0-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -282,7 +282,11 @@ function structured(value: unknown) {
 }
 
 async function ensureAgentData() {
-  return migration.bootstrapLegacyAgentData("(default)");
+  const [legacy, youtubeMethod] = await Promise.all([
+    migration.bootstrapLegacyAgentData("(default)"),
+    contextStore.bootstrapYoutubeEssayMethod(),
+  ]);
+  return { legacy, youtubeMethod };
 }
 
 async function invokeTool(name: string, args: Record<string, any> = {}) {
@@ -327,6 +331,14 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
     case "space_search": return structured(await contextStore.spaceSearch(args));
     case "space_update": return structured(await contextStore.spaceUpdate(args));
     case "space_get_context": return structured(await contextStore.spaceGetContext(args));
+    case "method_create": return structured(await contextStore.methodCreate(args));
+    case "method_get": return structured(await contextStore.methodGet(args));
+    case "method_search": return structured(await contextStore.methodSearch(args));
+    case "method_update": return structured(await contextStore.methodUpdate(args));
+    case "method_version_get": return structured(await contextStore.methodVersionGet(args));
+    case "method_version_create": return structured(await contextStore.methodVersionCreate(args));
+    case "method_version_activate": return structured(await contextStore.methodVersionActivate(args));
+    case "method_get_context": return structured(await contextStore.methodGetContext(args));
     case "profile_get_context": return structured(await contextStore.profileGetContext(args));
     case "profile_fact_upsert": return structured(await contextStore.profileFactUpsert(args));
     case "profile_fact_update": return structured(await contextStore.profileFactUpdate(args));
@@ -414,7 +426,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
       return structured(await agentStore.ideaArchive(args));
     }
     case "idea_run_start": {
-      if (args.spaceId) return structured(await contextStore.spaceRunStart(args));
+      if (args.spaceId || args.methodId || args.methodVersionId) return structured(await contextStore.spaceRunStart(args));
       return structured(await agentStore.runStart(args));
     }
     case "idea_run_finish": {
@@ -468,7 +480,7 @@ async function handleRpc(message: any) {
         protocolVersion,
         capabilities: { tools: { listChanged: true } },
         serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
-        instructions: "My Portal is a Context Store + Thinking Workspace. Use space_search then space_get_context to resume long-running themes. Use profile_get_context for scoped User Model facts, preserving explicit vs inferred evidence. If the host is temporarily exposing an older cached tool schema without the new Context Store tools, use idea_search with query prefixed by `space:` to search Spaces and idea_get_context with id `space:<spaceId>` to fetch the same Space Context Pack. Thinking Spaces and Agent Ideas are separate storage layers, but idea_* tools are interoperable: spaceId targets durable Thinking Space ideas, categoryId targets Agent Ideas board items, and ID-based reads/updates resolve the correct layer automatically. Use space_* / profile_* / decision_* / opportunity_* for long-running thinking themes. Agent Ideas mirrors the Portal board hierarchy: ideas/hobbies/stocks as the large categories and the Portal tags beneath them. Use idea_generation_work to find mirrored tag categories that need replenishment, then idea_create with categoryId. When the user adopts an Agent Idea, use idea_promote_to_portal so it is copied into the matching Portal board/tag and marked promoted with provenance retained. Existing portal_* data (including short idea/hobby/stock boards and projects) remains separate; portal_delete requires explicit confirm=true. social_* tools manage the personal SNS archive: search historical posts, import official X archive posts in batches, and update only review metadata such as category/tags/starred/note.",
+        instructions: "My Portal is a Context Store + Thinking Workspace. Use space_search then space_get_context to resume long-running themes. Use profile_get_context for scoped User Model facts, preserving explicit vs inferred evidence. If the host is temporarily exposing an older cached tool schema without the new Context Store tools, use idea_search with query prefixed by `space:` to search Spaces and idea_get_context with id `space:<spaceId>` to fetch the same Space Context Pack. Thinking Spaces and Agent Ideas are separate storage layers, but idea_* tools are interoperable: spaceId targets durable Thinking Space ideas, categoryId targets Agent Ideas board items, and ID-based reads/updates resolve the correct layer automatically. Use space_* / profile_* / decision_* / opportunity_* for long-running thinking themes. Use method_search then method_get_context for reusable, versioned Agent Methods/Protocols; start method executions with idea_run_start + methodId so the exact methodVersionId is persisted for later evaluation and improvement. Agent Ideas mirrors the Portal board hierarchy: ideas/hobbies/stocks as the large categories and the Portal tags beneath them. Use idea_generation_work to find mirrored tag categories that need replenishment, then idea_create with categoryId. When the user adopts an Agent Idea, use idea_promote_to_portal so it is copied into the matching Portal board/tag and marked promoted with provenance retained. Existing portal_* data (including short idea/hobby/stock boards and projects) remains separate; portal_delete requires explicit confirm=true. social_* tools manage the personal SNS archive: search historical posts, import official X archive posts in batches, and update only review metadata such as category/tags/starred/note.",
       },
     };
   }
