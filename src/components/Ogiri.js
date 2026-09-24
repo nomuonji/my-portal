@@ -7,7 +7,7 @@ import {
   AutoAwesome as AutoAwesomeIcon, Bolt as BoltIcon, Refresh as RefreshIcon, Shuffle as ShuffleIcon,
 } from '@mui/icons-material';
 import {
-  collection, doc, getDoc, getDocs, increment, limit, orderBy, query, serverTimestamp, writeBatch,
+  addDoc, collection, doc, getDoc, getDocs, increment, limit, orderBy, query, serverTimestamp, updateDoc, writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 
@@ -153,6 +153,14 @@ export default function Ogiri() {
   const [sessionRound, setSessionRound] = useState(0);
   const [profile, setProfile] = useState(null);
   const [recentResponses, setRecentResponses] = useState([]);
+  const [view, setView] = useState('practice');
+  const [examples, setExamples] = useState([]);
+  const [exampleText, setExampleText] = useState('');
+  const [exampleSource, setExampleSource] = useState('自分のネタ');
+  const [exampleRating, setExampleRating] = useState('like');
+  const [exampleReason, setExampleReason] = useState('');
+  const [exampleSignals, setExampleSignals] = useState([]);
+  const [exampleFilter, setExampleFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -167,6 +175,8 @@ export default function Ogiri() {
       ]);
       setProfile(profileSnap.exists() ? profileSnap.data() : null);
       setRecentResponses(recentSnap.docs.map((item) => ({ id: item.id, ...item.data() })));
+      const exampleSnap = await getDocs(query(collection(db, 'humor_examples'), orderBy('updatedAt', 'desc'), limit(100)));
+      setExamples(exampleSnap.docs.map((item) => ({ id: item.id, ...item.data() })));
     } catch {
       // Stats are secondary. The practice flow should remain usable if old data/indexes are inconsistent.
     }
@@ -317,6 +327,49 @@ export default function Ogiri() {
     }
   };
 
+  const saveExample = async () => {
+    const text = exampleText.trim();
+    if (!text) return;
+    setSaving(true);
+    setError('');
+    try {
+      await addDoc(collection(db, 'humor_examples'), {
+        schemaVersion: 1,
+        text: text.slice(0, 5000),
+        source: exampleSource,
+        rating: exampleRating,
+        reason: exampleReason.trim().slice(0, 1000),
+        signals: exampleSignals,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      setExampleText('');
+      setExampleReason('');
+      setExampleSignals([]);
+      setNotice('センス帳に記録しました。');
+      await loadSnapshot();
+    } catch (err) {
+      setError(err.message || '記録に失敗しました。');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const rateExample = async (item, rating) => {
+    try {
+      await updateDoc(doc(db, 'humor_examples', item.id), { rating, updatedAt: serverTimestamp() });
+      setExamples((current) => current.map((entry) => entry.id === item.id ? { ...entry, rating } : entry));
+    } catch (err) {
+      setError(err.message || '評価の更新に失敗しました。');
+    }
+  };
+
+  const filteredExamples = examples.filter((item) => exampleFilter === 'all' || item.rating === exampleFilter);
+  const senseCounts = examples.reduce((counts, item) => {
+    counts[item.rating] = (counts[item.rating] || 0) + 1;
+    return counts;
+  }, {});
+
   const retrySamePrompt = () => {
     resetAnswers();
     setSessionRound((value) => value + 1);
@@ -364,7 +417,12 @@ export default function Ogiri() {
         </Paper>
       )}
 
-      <Paper elevation={0} sx={{ p: { xs: 1.5, sm: 2.5 }, border: '1px solid ' + (isDark ? 'rgba(255,255,255,.12)' : 'rgba(40,70,90,.14)'), borderRadius: 3 }}>
+      <ToggleButtonGroup exclusive value={view} onChange={(_, value) => value && setView(value)} sx={{ mb: 1.5 }}>
+        <ToggleButton value="practice">大喜利する</ToggleButton>
+        <ToggleButton value="notebook">センス帳 ({examples.length})</ToggleButton>
+      </ToggleButtonGroup>
+
+      {view === 'practice' && <Paper elevation={0} sx={{ p: { xs: 1.5, sm: 2.5 }, border: '1px solid ' + (isDark ? 'rgba(255,255,255,.12)' : 'rgba(40,70,90,.14)'), borderRadius: 3 }}>
         <Stack spacing={2}>
           <Stack direction="row" justifyContent="space-between" alignItems="center">
             <Stack direction="row" spacing={0.7} alignItems="center">
@@ -488,9 +546,53 @@ export default function Ogiri() {
             </Stack>
           )}
         </Stack>
-      </Paper>
+      </Paper>}
 
-      {recentResponses.length > 0 && (
+      {view === 'notebook' && <Paper elevation={0} sx={{ p: { xs: 1.5, sm: 2.5 }, border: '1px solid ' + (isDark ? 'rgba(255,255,255,.12)' : 'rgba(40,70,90,.14)'), borderRadius: 3 }}>
+        <Stack spacing={2}>
+          <Box>
+            <Typography variant="h5" fontWeight={950}>センス帳</Typography>
+            <Typography color="text.secondary">自分のネタも、AIの案も、刺さった／滑った理由ごと残す。数が増えるほど「何が嫌か」まで次の相談に渡せます。</Typography>
+          </Box>
+          <Stack direction="row" spacing={0.7} flexWrap="wrap" useFlexGap>
+            <Chip label={`好き ${senseCounts.like || 0}`} color="success" variant="outlined" />
+            <Chip label={`普通 ${senseCounts.neutral || 0}`} variant="outlined" />
+            <Chip label={`ボツ ${senseCounts.skip || 0}`} color="error" variant="outlined" />
+          </Stack>
+          <TextField fullWidth multiline minRows={3} label="ネタ・回答" placeholder="自分の過去ネタ / AIの案 / 参考にした投稿" value={exampleText} onChange={(e) => setExampleText(e.target.value)} inputProps={{ maxLength: 5000 }} />
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+            <TextField select label="出どころ" value={exampleSource} onChange={(e) => setExampleSource(e.target.value)} SelectProps={{ native: true }} sx={{ minWidth: 150 }}>
+              <option value="自分のネタ">自分のネタ</option><option value="AIの案">AIの案</option><option value="参考投稿">参考投稿</option>
+            </TextField>
+            <ToggleButtonGroup exclusive value={exampleRating} onChange={(_, v) => v && setExampleRating(v)} size="small">
+              <ToggleButton value="like">好き</ToggleButton><ToggleButton value="neutral">普通</ToggleButton><ToggleButton value="skip">ボツ</ToggleButton>
+            </ToggleButtonGroup>
+          </Stack>
+          <Box>
+            <Typography fontWeight={800}>どの笑い？（複数選択可）</Typography>
+            <Stack direction="row" flexWrap="wrap" useFlexGap spacing={0.6} sx={{ mt: 0.7 }}>
+              {SIGNALS.map(([id, label]) => <Chip key={id} size="small" clickable label={label} color={exampleSignals.includes(id) ? 'secondary' : 'default'} variant={exampleSignals.includes(id) ? 'filled' : 'outlined'} onClick={() => setExampleSignals((current) => current.includes(id) ? current.filter((v) => v !== id) : [...current, id])} />)}
+            </Stack>
+          </Box>
+          <TextField fullWidth label="刺さった／滑った理由" placeholder="例：発想は普通なのに、具体物が急に変で好き。説明が長くて冷めた。" value={exampleReason} onChange={(e) => setExampleReason(e.target.value)} inputProps={{ maxLength: 1000 }} />
+          <Button variant="contained" onClick={saveExample} disabled={!exampleText.trim() || saving}>センス帳に保存</Button>
+          <Divider />
+          <Stack direction="row" spacing={0.6} flexWrap="wrap" useFlexGap>
+            {[['all', '全部'], ['like', '好き'], ['neutral', '普通'], ['skip', 'ボツ']].map(([id, label]) => <Chip key={id} clickable label={label} color={exampleFilter === id ? 'primary' : 'default'} variant={exampleFilter === id ? 'filled' : 'outlined'} onClick={() => setExampleFilter(id)} />)}
+          </Stack>
+          {filteredExamples.length ? filteredExamples.map((item) => <Paper key={item.id} variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+            <Stack spacing={0.8}>
+              <Stack direction="row" justifyContent="space-between" alignItems="center"><Chip size="small" label={item.source || '記録'} /><Typography variant="caption" color="text.secondary">{item.rating === 'like' ? '好き' : item.rating === 'skip' ? 'ボツ' : '普通'}</Typography></Stack>
+              <Typography sx={{ whiteSpace: 'pre-wrap' }}>{item.text}</Typography>
+              {item.reason && <Typography variant="body2" color="text.secondary">理由：{item.reason}</Typography>}
+              {item.signals?.length > 0 && <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>{item.signals.map((id) => <Chip key={id} size="small" variant="outlined" label={SIGNALS.find(([key]) => key === id)?.[1] || id} />)}</Stack>}
+              <Stack direction="row" spacing={0.5}><Button size="small" onClick={() => rateExample(item, 'like')}>好き</Button><Button size="small" onClick={() => rateExample(item, 'neutral')}>普通</Button><Button size="small" color="error" onClick={() => rateExample(item, 'skip')}>ボツ</Button></Stack>
+            </Stack>
+          </Paper>) : <Typography color="text.secondary">まだ記録がありません。まずは自分のネタを1つ入れてみてください。</Typography>}
+        </Stack>
+      </Paper>}
+
+      {view === 'practice' && recentResponses.length > 0 && (
         <Paper elevation={0} variant="outlined" sx={{ mt: 1.5, p: 1.5, borderRadius: 2.5 }}>
           <Typography fontWeight={900}>最近の回答</Typography>
           <Stack spacing={1} sx={{ mt: 1 }}>
