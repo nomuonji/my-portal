@@ -20,6 +20,7 @@ const COLLECTIONS = Object.freeze({
   hobby_tags: { label: '趣味タグ', documentIdsAsData: true },
   ogiri_responses: { label: '大喜利回答', tagsField: 'signals' },
   creative_profile: { label: '創造性プロファイル' },
+  humor_examples: { label: 'センス帳', tagsField: 'signals' },
 });
 
 function db() {
