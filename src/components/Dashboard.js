@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   onSnapshot,
   serverTimestamp,
@@ -41,8 +42,11 @@ import PsychologyAltOutlinedIcon from '@mui/icons-material/PsychologyAltOutlined
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import TaskAltOutlinedIcon from '@mui/icons-material/TaskAltOutlined';
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 
 const queueColumns = [
+  { id: 'backlog', label: 'Backlog', hint: '明示的に後回し', icon: Inventory2OutlinedIcon },
   { id: 'ready', label: 'Ready', hint: '取得可能', icon: BoltIcon },
   { id: 'in_progress', label: 'Working', hint: '進行中・再開可能', icon: PendingActionsOutlinedIcon },
   { id: 'running', label: 'Running', hint: 'Agentが今作業中', icon: SmartToyOutlinedIcon },
@@ -52,6 +56,17 @@ const queueColumns = [
 
 const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
 const priorityLabel = { critical: 'CRITICAL', high: 'HIGH', medium: 'MEDIUM', low: 'LOW' };
+
+const manualStatusOptions = [
+  { value: 'backlog', label: 'Backlog' },
+  { value: 'ready', label: 'Ready' },
+  { value: 'in_progress', label: 'Working' },
+  { value: 'running', label: 'Running', disabled: true },
+  { value: 'blocked', label: 'Blocked' },
+  { value: 'review', label: 'Review' },
+  { value: 'done', label: 'Done' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
 
 const toMillis = (value) => {
   if (!value) return 0;
@@ -220,6 +235,11 @@ function Dashboard() {
     [projects],
   );
 
+  const projectById = useMemo(
+    () => new Map(projects.map((project) => [project.id, project])),
+    [projects],
+  );
+
   const activeRuns = useMemo(
     () => runs
       .filter((item) => item.status === 'active')
@@ -310,6 +330,49 @@ function Dashboard() {
     }
   };
 
+  const moveWorkItem = async (item, nextStatus) => {
+    if (!item?.id || !nextStatus || nextStatus === item.status || nextStatus === 'running') return;
+    try {
+      const patch = {
+        status: nextStatus,
+        updatedAt: serverTimestamp(),
+        revision: Number(item.revision || 1) + 1,
+      };
+
+      // Human UI is an explicit override. Leaving Running must also release
+      // the current claim/lease so another agent does not see stale ownership.
+      if (item.status === 'running') {
+        patch.claimedBy = null;
+        patch.claimedModel = null;
+        patch.runId = null;
+        patch.leaseExpiresAt = null;
+        patch.lastHeartbeatAt = serverTimestamp();
+      }
+
+      if (nextStatus === 'done') {
+        patch.completedBy = 'human';
+        patch.finishedAt = serverTimestamp();
+      } else {
+        patch.finishedAt = null;
+      }
+
+      await updateDoc(doc(db, 'memos', 'agent-control', 'workItems', item.id), patch);
+    } catch (error) {
+      console.error('Failed to move work item:', error);
+    }
+  };
+
+  const deleteWorkItem = async (item) => {
+    if (!item?.id) return;
+    const label = item.title || 'このWork Item';
+    if (!window.confirm(`「${label}」を完全に削除しますか？`)) return;
+    try {
+      await deleteDoc(doc(db, 'memos', 'agent-control', 'workItems', item.id));
+    } catch (error) {
+      console.error('Failed to delete work item:', error);
+    }
+  };
+
   const queueFor = (status) => agentWork
     .filter((item) => item.status === status)
     .sort((a, b) => {
@@ -319,7 +382,8 @@ function Dashboard() {
     });
 
   const kpis = [
-    { label: 'Ready', value: queueFor('ready').length + queueFor('backlog').length, sub: '着手可能' },
+    { label: 'Backlog', value: queueFor('backlog').length, sub: '明示的に後回し' },
+    { label: 'Ready', value: queueFor('ready').length, sub: '着手可能' },
     { label: 'Working', value: queueFor('in_progress').length, sub: '進行中・待機' },
     { label: 'Running', value: queueFor('running').length, sub: 'いまAgentが実行中' },
     { label: 'Blocked', value: queueFor('blocked').length, sub: '要判断 / 外部待ち' },
@@ -399,7 +463,7 @@ function Dashboard() {
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: { xs: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)', xl: 'repeat(6, 1fr)' },
+          gridTemplateColumns: { xs: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)', xl: 'repeat(7, 1fr)' },
           gap: 1,
           mb: 1.5,
         }}
@@ -679,11 +743,7 @@ function Dashboard() {
           <Box
             sx={{
               display: 'grid',
-              gridTemplateColumns: {
-                xs: '1fr',
-                md: 'repeat(2, 1fr)',
-                xl: 'repeat(5, 1fr)',
-              },
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
               gap: 1,
             }}
           >
@@ -784,9 +844,13 @@ function Dashboard() {
                             {item.projectId && (
                               <Chip
                                 size="small"
-                                label="Project"
+                                label={'Project · ' + (projectById.get(item.projectId)?.name || item.projectId)}
                                 variant="outlined"
-                                sx={{ height: 20, fontSize: '0.58rem' }}
+                                clickable={projectById.has(item.projectId)}
+                                onClick={projectById.has(item.projectId)
+                                  ? () => navigate('/project/details/' + item.projectId)
+                                  : undefined}
+                                sx={{ height: 20, fontSize: '0.58rem', maxWidth: '100%' }}
                               />
                             )}
                             {item.metadata?.linear && (
@@ -823,6 +887,42 @@ function Dashboard() {
                               {item.blockedReason}
                             </Alert>
                           )}
+
+                          <Box sx={{ display: 'flex', gap: 0.6, alignItems: 'center', mt: 0.9 }}>
+                            <FormControl size="small" sx={{ minWidth: 118, flex: 1 }}>
+                              <Select
+                                value={item.status}
+                                onChange={(event) => moveWorkItem(item, event.target.value)}
+                                aria-label="Work Item status"
+                                sx={{
+                                  height: 30,
+                                  fontSize: '0.68rem',
+                                  '& .MuiSelect-select': { py: 0.45 },
+                                }}
+                              >
+                                {manualStatusOptions.map((option) => (
+                                  <MenuItem
+                                    key={option.value}
+                                    value={option.value}
+                                    disabled={option.disabled}
+                                    sx={{ fontSize: '0.76rem' }}
+                                  >
+                                    {option.label}
+                                    {option.value === 'running' ? ' · Agent実行専用' : ''}
+                                  </MenuItem>
+                                ))}
+                              </Select>
+                            </FormControl>
+                            <Button
+                              size="small"
+                              color="error"
+                              startIcon={<DeleteOutlineIcon />}
+                              onClick={() => deleteWorkItem(item)}
+                              sx={{ minWidth: 0, px: 0.8, fontSize: '0.65rem' }}
+                            >
+                              削除
+                            </Button>
+                          </Box>
                         </CardContent>
                       </Card>
                     ))}
