@@ -7,7 +7,7 @@ import {
   serverTimestamp,
   updateDoc,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { auth, db } from '../firebase';
 import {
   Alert,
   Box,
@@ -80,6 +80,14 @@ function Dashboard() {
   const [projects, setProjects] = useState([]);
   const [runs, setRuns] = useState([]);
   const [memos, setMemos] = useState([]);
+  const [linearOverview, setLinearOverview] = useState({
+    configured: null,
+    issues: [],
+    unlinkedIssues: [],
+  });
+  const [linearLoading, setLinearLoading] = useState(false);
+  const [linearError, setLinearError] = useState('');
+  const [linearImporting, setLinearImporting] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState('');
   const [draft, setDraft] = useState({
@@ -114,6 +122,72 @@ function Dashboard() {
     ];
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, []);
+
+  const loadControlPlane = async ({ quiet = false } = {}) => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+
+    try {
+      if (!quiet) setLinearLoading(true);
+      setLinearError('');
+      const token = await currentUser.getIdToken();
+      const response = await fetch('/api/agent-ideas?resource=control_plane&limit=100', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Control Planeの取得に失敗しました。');
+      setLinearOverview({
+        configured: payload.linear?.configured === true,
+        issues: payload.linear?.issues || [],
+        unlinkedIssues: payload.linear?.unlinkedIssues || [],
+        error: payload.linear?.error || '',
+      });
+      if (payload.linear?.error) setLinearError(payload.linear.error);
+    } catch (error) {
+      console.error('Failed to load Linear control plane:', error);
+      setLinearError(error.message || 'Linearの取得に失敗しました。');
+    } finally {
+      if (!quiet) setLinearLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadControlPlane();
+    const interval = window.setInterval(() => loadControlPlane({ quiet: true }), 60000);
+    return () => window.clearInterval(interval);
+    // Agent HQ mounts only for an authenticated user; auth.currentUser is read at request time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const importLinearIssue = async (issue) => {
+    const currentUser = auth.currentUser;
+    if (!currentUser || !issue?.id) return;
+    try {
+      setLinearImporting(issue.id);
+      setLinearError('');
+      const token = await currentUser.getIdToken();
+      const response = await fetch('/api/agent-ideas', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'linear_issue_import',
+          issue: issue.id,
+          executionMode: 'agent',
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Work Item化に失敗しました。');
+      await loadControlPlane({ quiet: true });
+    } catch (error) {
+      console.error('Failed to import Linear issue:', error);
+      setLinearError(error.message || 'Linear IssueのWork Item化に失敗しました。');
+    } finally {
+      setLinearImporting('');
+    }
+  };
 
   const openWork = useMemo(
     () => workItems.filter((item) => !['done', 'cancelled'].includes(item.status)),
@@ -374,6 +448,143 @@ function Dashboard() {
         ))}
       </Box>
 
+      <Paper
+        elevation={0}
+        sx={{
+          p: 1.25,
+          mb: 1.5,
+          border: '1px solid ' + border,
+          background: glass,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.7, mb: 0.9, flexWrap: 'wrap' }}>
+          <HubOutlinedIcon color="primary" />
+          <Box sx={{ flex: 1, minWidth: 180 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
+              Linear Inbox
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Linearの未完了Issue。Agentが実行するものだけWork Item化して、claim / lease管理へ移します。
+            </Typography>
+          </Box>
+          <Chip
+            size="small"
+            label={linearOverview.configured === false
+              ? '未接続'
+              : `未取込 ${linearOverview.unlinkedIssues.length} / Open ${linearOverview.issues.length}`}
+            sx={{ height: 21 }}
+          />
+          <Button size="small" onClick={() => loadControlPlane()} disabled={linearLoading}>
+            {linearLoading ? '更新中…' : '更新'}
+          </Button>
+        </Box>
+
+        {linearError && (
+          <Alert severity="warning" sx={{ mb: 1 }}>
+            {linearError}
+          </Alert>
+        )}
+
+        {linearOverview.configured === false ? (
+          <Alert severity="info">
+            LINEAR_API_KEYがまだ利用できません。Netlifyの環境変数を確認してください。
+          </Alert>
+        ) : (
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)', xl: 'repeat(3, 1fr)' },
+              gap: 0.8,
+            }}
+          >
+            {linearOverview.unlinkedIssues.slice(0, 18).map((issue) => (
+              <Card key={issue.id} elevation={0} sx={{ border: '1px solid ' + border }}>
+                <CardContent sx={{ p: '12px !important' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.6 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 900, flex: 1 }}>
+                      {issue.id} · {issue.title || 'Untitled'}
+                    </Typography>
+                    <Chip
+                      size="small"
+                      label={issue.status || issue.statusType || 'Linear'}
+                      variant="outlined"
+                      sx={{ height: 18, fontSize: '0.52rem' }}
+                    />
+                  </Box>
+
+                  {issue.description && (
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{
+                        display: '-webkit-box',
+                        WebkitLineClamp: 3,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                        mt: 0.55,
+                        lineHeight: 1.5,
+                        whiteSpace: 'pre-wrap',
+                      }}
+                    >
+                      {issue.description}
+                    </Typography>
+                  )}
+
+                  <Box sx={{ display: 'flex', gap: 0.5, mt: 0.8, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {issue.project && (
+                      <Chip size="small" label={typeof issue.project === 'string' ? issue.project : issue.project.name} sx={{ height: 19, fontSize: '0.55rem' }} />
+                    )}
+                    {issue.assignee && (
+                      <Chip size="small" label={typeof issue.assignee === 'string' ? issue.assignee : issue.assignee.name} variant="outlined" sx={{ height: 19, fontSize: '0.55rem' }} />
+                    )}
+                    {(issue.labels || []).slice(0, 3).map((label) => (
+                      <Chip
+                        key={typeof label === 'string' ? label : label.name}
+                        size="small"
+                        label={typeof label === 'string' ? label : label.name}
+                        variant="outlined"
+                        sx={{ height: 19, fontSize: '0.55rem' }}
+                      />
+                    ))}
+                  </Box>
+
+                  <Box sx={{ display: 'flex', gap: 0.6, mt: 1, flexWrap: 'wrap' }}>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      onClick={() => importLinearIssue(issue)}
+                      disabled={linearImporting === issue.id}
+                    >
+                      {linearImporting === issue.id ? '取込中…' : 'Work Item化'}
+                    </Button>
+                    {issue.url && (
+                      <Button
+                        size="small"
+                        component="a"
+                        href={issue.url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Linear
+                      </Button>
+                    )}
+                    <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto', alignSelf: 'center' }}>
+                      {formatDate(issue.updatedAt)}
+                    </Typography>
+                  </Box>
+                </CardContent>
+              </Card>
+            ))}
+            {!linearLoading && linearOverview.configured !== false && linearOverview.unlinkedIssues.length === 0 && (
+              <Box sx={{ p: 1.4, border: '1px dashed ' + border, borderRadius: 2 }}>
+                <Typography variant="body2" color="text.secondary">
+                  未取り込みのLinear Issueはありません。
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        )}
+      </Paper>
 
       <Paper
         elevation={0}

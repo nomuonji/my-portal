@@ -139,6 +139,12 @@ export default async (request: Request) => {
       if (resource === "profile") {
         return json(await contextStore.profileGetContext({ includeInferred: true, limit: 200 }));
       }
+      if (resource === "control_plane") {
+        return json(await contextStore.controlPlaneOverview({
+          limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 80, 10), 200),
+          includeLinear: url.searchParams.get("includeLinear") !== "false",
+        }));
+      }
       if (resource === "context") {
         const id = url.searchParams.get("id") || "";
         return json(await store.ideaGetContext({ id, includeArtifacts: true }));
@@ -210,6 +216,27 @@ export default async (request: Request) => {
         return json(await contextStore.profileFactUpdate({
           id: body.id,
           patch: body.patch || {},
+        }));
+      }
+      if (action === "linear_issue_import") {
+        return json(await contextStore.linearIssueImportToWorkItem({
+          issue: body.issue,
+          workItemId: body.workItemId,
+          executionMode: body.executionMode || "agent",
+          humanReason: body.humanReason,
+          spaceId: body.spaceId,
+          projectId: body.projectId,
+          syncStatus: body.syncStatus !== false,
+        }, { agent: "portal-ui", model: "my-portal-ui" }));
+      }
+      if (action === "linear_work_item_push") {
+        return json(await contextStore.workItemPushToLinear({
+          id: body.id,
+          issue: body.issue,
+          team: body.team,
+          project: body.project,
+          assignee: body.assignee,
+          syncStatus: body.syncStatus !== false,
         }));
       }
       return json({ error: "Unknown action" }, 400);
