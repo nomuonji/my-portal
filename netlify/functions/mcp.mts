@@ -25,7 +25,7 @@ const migration: any = (migrationImport as any).default ?? migrationImport;
 const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...portalToolsModule.TOOLS, ...socialToolsModule.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "1.4.0-netlify";
+const SERVER_VERSION = "1.4.1-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -185,7 +185,20 @@ async function resolveOAuthClient(clientId: string) {
   }
 
   const metadataUrl = cimdUrl(clientId);
-  if (!metadataUrl) return null;
+  if (!metadataUrl) {
+    // Some Remote MCP clients (for example Groq) do not use ChatGPT CIMD or
+    // dynamic client registration. Treat a bounded opaque client_id as an
+    // unregistered public PKCE client. Authorization still requires the
+    // My Portal access key, and the issued code remains bound to the exact
+    // client_id, redirect_uri, resource, and PKCE challenge.
+    const validOpaqueClientId =
+      Boolean(clientId) &&
+      clientId.length <= 2048 &&
+      !/[\\u0000-\\u001F\\u007F]/.test(clientId);
+    return validOpaqueClientId
+      ? { clientId, redirectUris: [], kind: "public-pkce" }
+      : null;
+  }
   try {
     const response = await fetch(metadataUrl, {
       headers: { Accept: "application/json" },
@@ -581,11 +594,16 @@ async function handleAuthorize(request: Request) {
     const challenge = url.searchParams.get("code_challenge") || "";
     const scope = requestedScopes(url.searchParams.get("scope"));
     const resource = requestedResource(url.searchParams.get("resource"), request);
+    const redirectAllowed = Boolean(
+      client &&
+      redirectUri &&
+      (client.kind === "public-pkce" || client.redirectUris.includes(redirectUri.toString()))
+    );
     if (
       url.searchParams.get("response_type") !== "code" ||
       !redirectUri ||
       !client ||
-      !client.redirectUris.includes(redirectUri.toString()) ||
+      !redirectAllowed ||
       !challenge ||
       url.searchParams.get("code_challenge_method") !== "S256" ||
       !scope ||
@@ -783,9 +801,11 @@ export default async (request: Request) => {
       linear: linearBridge.configSummary(),
       oauth: {
         configured: oauthConfigured,
-        clientRegistration: "cimd",
+        clientRegistration: "cimd+public-pkce",
         cimd: true,
         legacyDcr: true,
+        publicPkceFallback: true,
+        directAccessKeyBearer: true,
         pkce: "S256",
         dedicatedSigningKeyConfigured: Boolean(env("AGENT_IDEAS_MCP_SIGNING_KEY")),
       },
