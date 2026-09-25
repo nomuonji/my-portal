@@ -310,7 +310,7 @@ Dashboardは人間向けのメモ一覧ではなく、エージェントが作�
 
 Spaceの `nextActions` はテーマの再開地点として残すが、複数エージェントが実際に作業する対象はWork Itemへ昇格させる。
 
-主な状態: `backlog` / `ready` / `in_progress` / `running` / `blocked` / `review` / `done` / `cancelled`。`backlog` は近い将来の実行対象から明示的に外して後回しにした仕事、`ready` はすぐ取得可能、`in_progress` は継続中だが現在Agentが触っていない状態、`running` はAgentがclaim済みで今まさに実行中の状態。単に作業を中断しただけの継続タスクをbacklogへ落とさない。
+主な状態: `backlog` / `ready` / `in_progress` / `running` / `blocked` / `review` / `archived`。`backlog` は近い将来の実行対象から明示的に外して後回しにした仕事、`ready` はすぐ取得可能、`in_progress` は継続中だが現在Agentが触っていない状態、`running` は現在作業中の状態で、Agentがclaimした場合は `claimedBy` とleaseも付く。`archived` は完了・取り下げをまとめた終端状態。単に作業を中断しただけの継続タスクをbacklogへ落とさない。
 
 さらに `executionMode = agent | human` を持つ。`human` は専用の **Human Tasks** 箱へ表示し、Agent Queueから除外する。
 
@@ -331,7 +331,7 @@ Work Itemは `spaceId`, `projectId`, `sourceType`, `sourceId`, `priority`, `depe
 5. 必要に応じて `idea_run_start`
 6. 調査・実装・制作。長時間なら `work_item_heartbeat`
 7. `idea_run_finish`
-8. `work_item_finish(status=done|review|blocked)` または中断時に `work_item_release`
+8. `work_item_finish(status=archived|review|blocked)` または中断時に `work_item_release`
 
 `control_plane_overview` はWork Itemだけでなく、active Runs、Spaces、Projects、未キュー化のSpace next actions、従来メモの `next_action` / `inbox` / `project` も横断して返す。
 
@@ -345,7 +345,7 @@ Dashboard UIも同じControl Planeの人間向けビューとし、Ready / Worki
 - 物理世界での操作
 - 人間本人にしか確定できない入力
 
-この場合Agentは `work_item_delegate_to_human` を呼び、`executionMode=human`、`status=ready` にして専用箱へ引き渡す。引き渡し理由と、Agentがそこまでに完了した内容を `humanReason` / `resultSummary` に残す。Human Tasksを人間が完了したら `done`、Agentへ戻せる状態になったら `executionMode=agent` + `ready` に戻す。
+この場合Agentは `work_item_delegate_to_human` を呼び、`executionMode=human`、`status=ready` にして専用箱へ引き渡す。引き渡し理由と、Agentがそこまでに完了した内容を `humanReason` / `resultSummary` に残す。Human Tasksを人間が完了したら `archived`、Agentへ戻せる状態になったら `executionMode=agent` + `ready` に戻す。
 
 ## Linear external task source
 
