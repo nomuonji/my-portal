@@ -22,7 +22,7 @@ const COLLECTION_ENUM = [
 const collectionSchema = {
   type: 'string',
   enum: COLLECTION_ENUM,
-  description: 'My Portal の既存データコレクション。',
+  description: 'My Portal の既存データコレクション。projectsはIdea置き場ではなく、GitHub repositories / MCP tools / Spaces / Work Itemsを束ねる実装ワークスペース。',
 };
 
 const objectSchema = {
@@ -58,7 +58,7 @@ const TOOLS = [
   },
   {
     name: 'portal_search',
-    description: 'My Portal本体DBを検索します。短文メモ、アイデア、ストック、趣味、プロジェクトに加えて、大喜利回答・創造性プロファイル・センス帳の好き嫌い例も参照できる読み取り専用ツールです。',
+    description: 'My Portal本体DBを検索します。projectsを読む場合は、repositories[] と mcpTools[] を含む実装ワークスペースとして解釈してください。短文メモ、アイデア、ストック、趣味、大喜利回答・創造性プロファイルも参照できます。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -75,7 +75,7 @@ const TOOLS = [
   },
   {
     name: 'portal_create',
-    description: 'My Portal本体DBへ新規作成します。通常のエージェント保存先には使わず、ユーザーがPortal本体への具体的な追加を明示的に依頼・承認した場合のみconfirm=trueで実行してください。',
+    description: 'My Portal本体DBへ新規作成します。projectsを作る場合は projectType=implementation_workspace, schemaVersion=2, repositories[], mcpTools[], spaceIds[], tags[] を標準フィールドとして使ってください。通常のエージェント保存先には使わず、ユーザーがPortal本体への具体的な追加を明示的に依頼・承認した場合のみconfirm=trueで実行してください。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -92,7 +92,7 @@ const TOOLS = [
   },
   {
     name: 'portal_update',
-    description: 'My Portal本体DBの既存データを部分更新します。通常のエージェント作業では使用せず、ユーザーがこの変更を明示的に依頼・承認した場合のみconfirm=trueで実行してください。',
+    description: 'My Portal本体DBの既存データを部分更新します。projectsでは repositories[], mcpTools[], spaceIds[], tags[] を実装コンテキストとして維持してください。通常のエージェント作業では使用せず、ユーザーがこの変更を明示的に依頼・承認した場合のみconfirm=trueで実行してください。',
     inputSchema: {
       type: 'object',
       properties: {
