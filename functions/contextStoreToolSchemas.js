@@ -319,7 +319,7 @@ const TOOLS = [
   },
   {
     name: 'work_item_release',
-    description: 'Release a claimed item when the agent stops without completing it. Prefer in_progress when the task remains active but is temporarily idle, ready when it should be immediately claimable, and backlog only for deliberate deferral.'
+    description: 'Release a claimed item when the agent stops without completing it. Prefer in_progress when the task remains active but is temporarily idle, ready when it should be immediately claimable, and backlog only for deliberate deferral.',
     inputSchema: objectSchema({
       id: string('Work item ID.', 160),
       agent: string('Current owning agent.', 120),
