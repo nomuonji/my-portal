@@ -14,7 +14,7 @@ import {
   Alert,
   Box,
   Button,
-  Divider,
+  Chip,
   FormControl,
   IconButton,
   InputLabel,
@@ -24,19 +24,43 @@ import {
   Stack,
   TextField,
   Typography,
+  useTheme,
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import {
   Add as AddIcon,
   ArrowBack as ArrowBackIcon,
   Delete as DeleteIcon,
+  FolderOutlined as FolderOutlinedIcon,
+  GitHub as GitHubIcon,
+  HubOutlined as HubOutlinedIcon,
+  PsychologyAltOutlined as PsychologyAltOutlinedIcon,
+  SellOutlined as SellOutlinedIcon,
 } from '@mui/icons-material';
 
 const blankRepo = () => ({ fullName: '', url: '', role: '' });
 const blankTool = () => ({ name: '', purpose: '' });
 
+function Section({ icon, title, description, children, border, surface }) {
+  return (
+    <Paper elevation={0} sx={{ p: { xs: 1.4, sm: 1.7 }, border: `1px solid ${border}`, background: surface }}>
+      <Box sx={{ display: 'flex', gap: 0.9, alignItems: 'flex-start', mb: 1.35 }}>
+        <Box sx={{ mt: 0.1, color: 'primary.main' }}>{icon}</Box>
+        <Box>
+          <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>{title}</Typography>
+          {description && <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.55 }}>{description}</Typography>}
+        </Box>
+      </Box>
+      {children}
+    </Paper>
+  );
+}
+
 function ProjectForm() {
   const { projectId } = useParams();
   const navigate = useNavigate();
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
 
   const [projectName, setProjectName] = useState('');
   const [projectDescription, setProjectDescription] = useState('');
@@ -78,6 +102,13 @@ function ProjectForm() {
     };
     fetchProject();
   }, [projectId, navigate]);
+
+  const border = isDark
+    ? alpha(theme.palette.common.white, 0.09)
+    : 'rgba(83, 124, 149, 0.16)';
+  const surface = isDark
+    ? alpha(theme.palette.background.paper, 0.86)
+    : 'rgba(255,255,255,0.82)';
 
   const updateRepo = (index, field, value) => {
     setRepositories((items) => items.map((item, itemIndex) => (
@@ -132,7 +163,7 @@ function ProjectForm() {
           createdAt: serverTimestamp(),
         });
       }
-      navigate('/project');
+      navigate(projectId ? `/project/details/${projectId}` : '/project');
     } catch (saveError) {
       console.error('Failed to save project:', saveError);
       setError('プロジェクトの保存に失敗しました。');
@@ -140,7 +171,7 @@ function ProjectForm() {
   };
 
   const handleDeleteProject = async () => {
-    if (!projectId || !window.confirm('このプロジェクトを削除しますか？')) return;
+    if (!projectId || !window.confirm('このProjectを削除しますか？')) return;
     try {
       await deleteDoc(doc(db, 'projects', projectId));
       navigate('/project');
@@ -151,122 +182,228 @@ function ProjectForm() {
   };
 
   return (
-    <Paper sx={{ p: { xs: 2, sm: 3 }, maxWidth: 960, mx: 'auto' }} elevation={0}>
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-        <IconButton onClick={() => navigate('/project')} sx={{ mr: 1 }}>
-          <ArrowBackIcon />
-        </IconButton>
-        <Box sx={{ flex: 1 }}>
-          <Typography variant="overline" color="text.secondary">IMPLEMENTATION WORKSPACE</Typography>
-          <Typography variant="h4" sx={{ fontWeight: 900 }}>
-            {projectId ? 'プロジェクトを編集' : '新しいプロジェクト'}
-          </Typography>
-        </Box>
-        {projectId && (
-          <IconButton onClick={handleDeleteProject} color="error">
-            <DeleteIcon />
-          </IconButton>
-        )}
+    <Box sx={{ maxWidth: 1080, mx: 'auto', p: { xs: 0.6, sm: 1, md: 1.5 } }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate(projectId ? `/project/details/${projectId}` : '/project')}>
+          {projectId ? 'Project詳細' : 'Projects'}
+        </Button>
       </Box>
 
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, lineHeight: 1.7 }}>
-        Projectはアイデア置き場ではなく、1つ以上のGitHub repo・MCP・Space・Work Itemを束ねる実装単位です。
-      </Typography>
+      <Paper
+        elevation={0}
+        sx={{
+          p: { xs: 1.6, md: 2.1 },
+          mb: 1.2,
+          border: `1px solid ${border}`,
+          background: surface,
+          backdropFilter: 'blur(18px) saturate(135%)',
+        }}
+      >
+        <Box sx={{ display: 'flex', gap: 1.2, alignItems: 'flex-start' }}>
+          <Box
+            sx={{
+              width: 42,
+              height: 42,
+              borderRadius: 2.2,
+              display: 'grid',
+              placeItems: 'center',
+              bgcolor: alpha(theme.palette.primary.main, isDark ? 0.16 : 0.08),
+              color: 'primary.main',
+              flexShrink: 0,
+            }}
+          >
+            <FolderOutlinedIcon />
+          </Box>
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 900, letterSpacing: '0.13em' }}>
+              IMPLEMENTATION WORKSPACE
+            </Typography>
+            <Typography variant="h4" sx={{ fontWeight: 900, letterSpacing: '-0.035em' }}>
+              {projectId ? 'Projectを編集' : '新しいProject'}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 760, lineHeight: 1.65 }}>
+              Projectはアイデア置き場ではなく、実際に動いている開発・運用単位です。repoと接続toolを中心に登録し、必要な場合だけ長期テーマを関連付けます。
+            </Typography>
+          </Box>
+          {projectId && (
+            <IconButton onClick={handleDeleteProject} color="error" aria-label="Projectを削除">
+              <DeleteIcon />
+            </IconButton>
+          )}
+        </Box>
+      </Paper>
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {error && <Alert severity="error" sx={{ mb: 1.2 }}>{error}</Alert>}
 
-      <Stack spacing={2.2}>
-        <TextField label="プロジェクト名" value={projectName} onChange={(e) => setProjectName(e.target.value)} fullWidth />
-        <TextField
-          label="目的 / スコープ"
-          value={projectDescription}
-          onChange={(e) => setProjectDescription(e.target.value)}
-          fullWidth
-          multiline
-          minRows={4}
-          placeholder="何をまとめるProjectなのか、境界や目的を書く"
-        />
+      <Stack spacing={1.2}>
+        <Section
+          icon={<FolderOutlinedIcon fontSize="small" />}
+          title="基本情報"
+          description="このProjectが何を実装・運用する単位なのかを短く定義します。"
+          border={border}
+          surface={surface}
+        >
+          <Stack spacing={1.2}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 190px' }, gap: 1 }}>
+              <TextField
+                label="Project名"
+                value={projectName}
+                onChange={(event) => setProjectName(event.target.value)}
+                fullWidth
+                autoFocus={!projectId}
+              />
+              <FormControl fullWidth>
+                <InputLabel id="project-status-label">ステータス</InputLabel>
+                <Select
+                  labelId="project-status-label"
+                  value={projectStatus}
+                  label="ステータス"
+                  onChange={(event) => setProjectStatus(event.target.value)}
+                >
+                  <MenuItem value="active">進行中</MenuItem>
+                  <MenuItem value="paused">一時停止</MenuItem>
+                  <MenuItem value="completed">完了</MenuItem>
+                  <MenuItem value="archived">アーカイブ</MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
+            <TextField
+              label="目的 / スコープ"
+              value={projectDescription}
+              onChange={(event) => setProjectDescription(event.target.value)}
+              fullWidth
+              multiline
+              minRows={4}
+              placeholder="何をまとめるProjectなのか、何を含み・何を含まないか"
+            />
+          </Stack>
+        </Section>
 
-        <FormControl fullWidth>
-          <InputLabel id="project-status-label">ステータス</InputLabel>
-          <Select labelId="project-status-label" value={projectStatus} label="ステータス" onChange={(e) => setProjectStatus(e.target.value)}>
-            <MenuItem value="active">進行中</MenuItem>
-            <MenuItem value="paused">一時停止</MenuItem>
-            <MenuItem value="completed">完了</MenuItem>
-            <MenuItem value="archived">アーカイブ</MenuItem>
-          </Select>
-        </FormControl>
-
-        <Divider />
-
-        <Box>
-          <Typography variant="h6" sx={{ fontWeight: 900, mb: 0.5 }}>GitHub repositories</Typography>
-          <Typography variant="caption" color="text.secondary">
-            単一repoでも複数repoでも可。Projectを開けば実装対象が分かる状態にします。
-          </Typography>
-          <Stack spacing={1.2} sx={{ mt: 1.2 }}>
+        <Section
+          icon={<GitHubIcon fontSize="small" />}
+          title="Repositories"
+          description="Projectの実装資産。単一repoでも、複数repoを束ねる上位Projectでも構いません。"
+          border={border}
+          surface={surface}
+        >
+          <Stack spacing={0.85}>
             {repositories.map((item, index) => (
-              <Box key={index} sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1.25fr 1fr auto' }, gap: 1 }}>
-                <TextField size="small" label="owner/repo" value={item.fullName} onChange={(e) => updateRepo(index, 'fullName', e.target.value)} />
-                <TextField size="small" label="GitHub URL" value={item.url} onChange={(e) => updateRepo(index, 'url', e.target.value)} />
-                <TextField size="small" label="役割" placeholder="frontend / operator / infra..." value={item.role} onChange={(e) => updateRepo(index, 'role', e.target.value)} />
-                <IconButton aria-label="repositoryを削除" onClick={() => setRepositories((items) => items.filter((_, i) => i !== index))}>
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
-              </Box>
+              <Paper key={index} elevation={0} sx={{ p: 1, border: `1px solid ${border}`, background: 'transparent' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, mb: 0.75 }}>
+                  <Chip size="small" label={`repo ${index + 1}`} sx={{ height: 21, fontSize: '0.58rem', fontWeight: 900 }} />
+                  <IconButton
+                    aria-label="repositoryを削除"
+                    size="small"
+                    onClick={() => setRepositories((items) => items.filter((_, itemIndex) => itemIndex !== index))}
+                    sx={{ ml: 'auto' }}
+                  >
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1.15fr 1fr' }, gap: 0.8 }}>
+                  <TextField size="small" label="owner/repo" placeholder="nomuonji/my-portal" value={item.fullName} onChange={(event) => updateRepo(index, 'fullName', event.target.value)} />
+                  <TextField size="small" label="GitHub URL" value={item.url} onChange={(event) => updateRepo(index, 'url', event.target.value)} />
+                  <TextField size="small" label="役割" placeholder="core / managed site / infra..." value={item.role} onChange={(event) => updateRepo(index, 'role', event.target.value)} />
+                </Box>
+              </Paper>
             ))}
             <Button startIcon={<AddIcon />} onClick={() => setRepositories((items) => [...items, blankRepo()])} sx={{ alignSelf: 'flex-start' }}>
               repoを追加
             </Button>
           </Stack>
-        </Box>
+        </Section>
 
-        <Divider />
-
-        <Box>
-          <Typography variant="h6" sx={{ fontWeight: 900, mb: 0.5 }}>Related MCP tools</Typography>
-          <Typography variant="caption" color="text.secondary">
-            このProjectを進めるときに使うMCP/connector/tool名と用途を保存します。
-          </Typography>
-          <Stack spacing={1.2} sx={{ mt: 1.2 }}>
+        <Section
+          icon={<HubOutlinedIcon fontSize="small" />}
+          title="Connected tools"
+          description="このProjectを進めるとき、Agentが利用するMCP / connector / deploy toolと役割。"
+          border={border}
+          surface={surface}
+        >
+          <Stack spacing={0.85}>
             {mcpTools.map((item, index) => (
-              <Box key={index} sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '0.9fr 2fr auto' }, gap: 1 }}>
-                <TextField size="small" label="MCP / tool" placeholder="GitHub / my_portal / Tweets Operator..." value={item.name} onChange={(e) => updateTool(index, 'name', e.target.value)} />
-                <TextField size="small" label="用途" value={item.purpose} onChange={(e) => updateTool(index, 'purpose', e.target.value)} />
-                <IconButton aria-label="MCP toolを削除" onClick={() => setMcpTools((items) => items.filter((_, i) => i !== index))}>
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
-              </Box>
+              <Paper key={index} elevation={0} sx={{ p: 1, border: `1px solid ${border}`, background: 'transparent' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, mb: 0.75 }}>
+                  <Chip size="small" label={`tool ${index + 1}`} sx={{ height: 21, fontSize: '0.58rem', fontWeight: 900 }} />
+                  <IconButton
+                    aria-label="toolを削除"
+                    size="small"
+                    onClick={() => setMcpTools((items) => items.filter((_, itemIndex) => itemIndex !== index))}
+                    sx={{ ml: 'auto' }}
+                  >
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '0.9fr 2fr' }, gap: 0.8 }}>
+                  <TextField size="small" label="MCP / tool" placeholder="GitHub / My Portal / Tweets Operator..." value={item.name} onChange={(event) => updateTool(index, 'name', event.target.value)} />
+                  <TextField size="small" label="用途" placeholder="このProjectで何に使うか" value={item.purpose} onChange={(event) => updateTool(index, 'purpose', event.target.value)} />
+                </Box>
+              </Paper>
             ))}
             <Button startIcon={<AddIcon />} onClick={() => setMcpTools((items) => [...items, blankTool()])} sx={{ alignSelf: 'flex-start' }}>
-              MCP toolを追加
+              toolを追加
             </Button>
           </Stack>
+        </Section>
+
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.2 }}>
+          <Section
+            icon={<PsychologyAltOutlinedIcon fontSize="small" />}
+            title="関連する長期テーマ"
+            description="実装の背景にある長期テーマがある場合だけ関連付けます。Agent HQには常時表示しません。"
+            border={border}
+            surface={surface}
+          >
+            <TextField
+              label="長期テーマ IDs"
+              value={spaceIdsText}
+              onChange={(event) => setSpaceIdsText(event.target.value)}
+              helperText="カンマ区切り。空でも問題ありません。"
+              fullWidth
+            />
+          </Section>
+
+          <Section
+            icon={<SellOutlinedIcon fontSize="small" />}
+            title="Tags"
+            description="検索・分類用。Projectの構造そのものはrepo / toolで表現します。"
+            border={border}
+            surface={surface}
+          >
+            <TextField
+              label="タグ"
+              value={tagsText}
+              onChange={(event) => setTagsText(event.target.value)}
+              helperText="カンマ区切り"
+              fullWidth
+            />
+          </Section>
         </Box>
-
-        <Divider />
-
-        <TextField
-          label="関連Space IDs"
-          value={spaceIdsText}
-          onChange={(e) => setSpaceIdsText(e.target.value)}
-          helperText="カンマ区切り。長期的な思考テーマをProjectへ関連付けたい場合のみ。"
-          fullWidth
-        />
-        <TextField
-          label="タグ"
-          value={tagsText}
-          onChange={(e) => setTagsText(e.target.value)}
-          helperText="カンマ区切り"
-          fullWidth
-        />
       </Stack>
 
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 3 }}>
-        <Button variant="outlined" onClick={() => navigate('/project')}>キャンセル</Button>
-        <Button variant="contained" onClick={handleSaveProject}>{projectId ? '更新' : '作成'}</Button>
-      </Box>
-    </Paper>
+      <Paper
+        elevation={0}
+        sx={{
+          position: 'sticky',
+          bottom: 8,
+          mt: 1.4,
+          p: 1,
+          border: `1px solid ${border}`,
+          background: isDark ? alpha(theme.palette.background.paper, 0.94) : 'rgba(255,255,255,0.94)',
+          backdropFilter: 'blur(16px)',
+          zIndex: 2,
+        }}
+      >
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.8 }}>
+          <Button variant="outlined" onClick={() => navigate(projectId ? `/project/details/${projectId}` : '/project')}>
+            キャンセル
+          </Button>
+          <Button variant="contained" onClick={handleSaveProject}>
+            {projectId ? '変更を保存' : 'Projectを作成'}
+          </Button>
+        </Box>
+      </Paper>
+    </Box>
   );
 }
 
