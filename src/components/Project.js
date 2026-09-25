@@ -68,6 +68,8 @@ function Project() {
       project.description,
       project.status,
       ...(project.tags || []),
+      ...(project.repositories || []).flatMap((repo) => [repo.fullName, repo.url, repo.role]),
+      ...(project.mcpTools || []).flatMap((tool) => [tool.name, tool.purpose]),
     ].filter(Boolean).join(' ').toLowerCase().includes(keyword));
   }, [projects, searchText]);
 
@@ -107,7 +109,7 @@ function Project() {
               <Chip size="small" label={`${filteredProjects.length} / ${projects.length}`} sx={{ height: 23, fontSize: '0.66rem', fontWeight: 800 }} />
             </Box>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.55, maxWidth: 720, lineHeight: 1.65 }}>
-              継続して進めるテーマや制作物をまとめて、次に開くべき仕事がすぐ分かるようにします。
+              GitHub repo・MCP tool・Space・Work Itemを束ねる実装ワークスペースです。複数repoにまたがる開発単位もここでまとめます。
             </Typography>
           </Box>
           <Button variant="contained" startIcon={<AddCircleOutlineIcon />} onClick={() => navigate('/project/new')}>
@@ -151,7 +153,7 @@ function Project() {
             {projects.length === 0 ? 'まだプロジェクトがありません' : '一致するプロジェクトがありません'}
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            {projects.length === 0 ? '新しいプロジェクトを作成して、ここから育てていけます。' : '検索語を変えてみてください。'}
+            {projects.length === 0 ? 'repoやMCPを束ねる実装Projectを作成できます。' : '検索語を変えてみてください。'}
           </Typography>
         </Paper>
       ) : (
@@ -216,6 +218,8 @@ function Project() {
 
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, flexWrap: 'wrap', mt: 1.4 }}>
                     {project.status && <Chip size="small" label={project.status} sx={{ height: 21, fontSize: '0.6rem', fontWeight: 700 }} />}
+                    <Chip size="small" variant="outlined" label={`${project.repositories?.length || 0} repos`} sx={{ height: 21, fontSize: '0.6rem' }} />
+                    <Chip size="small" variant="outlined" label={`${project.mcpTools?.length || 0} MCP`} sx={{ height: 21, fontSize: '0.6rem' }} />
                     {(project.tags || []).slice(0, 2).map((tag) => (
                       <Chip key={tag} size="small" variant="outlined" label={`#${tag}`} sx={{ height: 21, fontSize: '0.6rem' }} />
                     ))}
