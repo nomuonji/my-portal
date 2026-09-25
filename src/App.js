@@ -124,7 +124,7 @@ function App() {
   const pageTitle = useMemo(() => {
     const path = location.pathname;
     if (path === '/' || path.startsWith('/boards')) return 'ボード';
-    if (path.startsWith('/dashboard')) return 'ダッシュボード';
+    if (path.startsWith('/dashboard')) return 'Agent HQ';
     if (path.startsWith('/thinking')) return '思考テーマ';
     if (path.startsWith('/agent-ideas')) return 'Agent Ideas';
     if (path.startsWith('/ogiri')) return '大喜利ラボ';
@@ -298,7 +298,7 @@ function App() {
             </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/dashboard')} component={Link} to="/dashboard" onClick={navClick}>
               <ListItemIcon><DashboardIcon /></ListItemIcon>
-              <ListItemText primary="ダッシュボード" />
+              <ListItemText primary="Agent HQ" secondary="実行キュー / Agents / 再開地点" />
             </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/thinking')} component={Link} to="/thinking" onClick={navClick}>
               <ListItemIcon><PsychologyAltIcon /></ListItemIcon>
@@ -547,7 +547,7 @@ function App() {
             <BottomNavigationAction value="/thinking" label="思考" icon={<PsychologyAltIcon />} component={Link} to="/thinking" />
             <BottomNavigationAction value="/agent-ideas" label="Agent" icon={<SmartToyIcon />} component={Link} to="/agent-ideas" />
             <BottomNavigationAction value="/ogiri" label="大喜利" icon={<EmojiObjectsIcon />} component={Link} to="/ogiri" />
-            <BottomNavigationAction value="/dashboard" label="ダッシュ" icon={<DashboardIcon />} component={Link} to="/dashboard" />
+            <BottomNavigationAction value="/dashboard" label="Agent HQ" icon={<DashboardIcon />} component={Link} to="/dashboard" />
           </BottomNavigation>
         )}
 

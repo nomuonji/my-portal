@@ -23,7 +23,7 @@ const migration: any = (migrationImport as any).default ?? migrationImport;
 const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...portalToolsModule.TOOLS, ...socialToolsModule.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "0.9.0-netlify";
+const SERVER_VERSION = "1.0.0-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -326,6 +326,15 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
         legacyBootstrap,
       });
     }
+    case "control_plane_overview": return structured(await contextStore.controlPlaneOverview(args));
+    case "work_item_create": return structured(await contextStore.workItemCreate(args));
+    case "work_item_get": return structured(await contextStore.workItemGet(args));
+    case "work_item_search": return structured(await contextStore.workItemSearch(args));
+    case "work_item_update": return structured(await contextStore.workItemUpdate(args));
+    case "work_item_claim": return structured(await contextStore.workItemClaim(args));
+    case "work_item_heartbeat": return structured(await contextStore.workItemHeartbeat(args));
+    case "work_item_finish": return structured(await contextStore.workItemFinish(args));
+    case "work_item_release": return structured(await contextStore.workItemRelease(args));
     case "space_create": return structured(await contextStore.spaceCreate(args));
     case "space_get": return structured(await contextStore.spaceGet(args));
     case "space_search": return structured(await contextStore.spaceSearch(args));
@@ -480,7 +489,7 @@ async function handleRpc(message: any) {
         protocolVersion,
         capabilities: { tools: { listChanged: true } },
         serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
-        instructions: "My Portal is a Context Store + Thinking Workspace. Use space_search then space_get_context to resume long-running themes. Use profile_get_context for scoped User Model facts, preserving explicit vs inferred evidence. If the host is temporarily exposing an older cached tool schema without the new Context Store tools, use idea_search with query prefixed by `space:` to search Spaces and idea_get_context with id `space:<spaceId>` to fetch the same Space Context Pack. Thinking Spaces and Agent Ideas are separate storage layers, but idea_* tools are interoperable: spaceId targets durable Thinking Space ideas, categoryId targets Agent Ideas board items, and ID-based reads/updates resolve the correct layer automatically. Use space_* / profile_* / decision_* / opportunity_* for long-running thinking themes. Use method_search then method_get_context for reusable, versioned Agent Methods/Protocols; start method executions with idea_run_start + methodId so the exact methodVersionId is persisted for later evaluation and improvement. Agent Ideas mirrors the Portal board hierarchy: ideas/hobbies/stocks as the large categories and the Portal tags beneath them. Use idea_generation_work to find mirrored tag categories that need replenishment, then idea_create with categoryId. When the user adopts an Agent Idea, use idea_promote_to_portal so it is copied into the matching Portal board/tag and marked promoted with provenance retained. Existing portal_* data (including short idea/hobby/stock boards and projects) remains separate; portal_delete requires explicit confirm=true. social_* tools manage the personal SNS archive: search historical posts, import official X archive posts in batches, and update only review metadata such as category/tags/starred/note.",
+        instructions: "My Portal is an Agent Control Plane + Context Store + Thinking Workspace. Autonomous work should begin with control_plane_overview. Claim executable work with work_item_claim before acting, heartbeat long work, and finish/release the item with a durable handoff so parallel agents do not duplicate effort. Use space_search then space_get_context to resume long-running themes. Use profile_get_context for scoped User Model facts, preserving explicit vs inferred evidence. If the host is temporarily exposing an older cached tool schema without the new Context Store tools, use idea_search with query prefixed by `space:` to search Spaces and idea_get_context with id `space:<spaceId>` to fetch the same Space Context Pack. Thinking Spaces and Agent Ideas are separate storage layers, but idea_* tools are interoperable: spaceId targets durable Thinking Space ideas, categoryId targets Agent Ideas board items, and ID-based reads/updates resolve the correct layer automatically. Use space_* / profile_* / decision_* / opportunity_* for long-running thinking themes. Use method_search then method_get_context for reusable, versioned Agent Methods/Protocols; start method executions with idea_run_start + methodId so the exact methodVersionId is persisted for later evaluation and improvement. Agent Ideas mirrors the Portal board hierarchy: ideas/hobbies/stocks as the large categories and the Portal tags beneath them. Use idea_generation_work to find mirrored tag categories that need replenishment, then idea_create with categoryId. When the user adopts an Agent Idea, use idea_promote_to_portal so it is copied into the matching Portal board/tag and marked promoted with provenance retained. Existing portal_* data (including short idea/hobby/stock boards and projects) remains separate; portal_delete requires explicit confirm=true. social_* tools manage the personal SNS archive: search historical posts, import official X archive posts in batches, and update only review metadata such as category/tags/starred/note.",
       },
     };
   }

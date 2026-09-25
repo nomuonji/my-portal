@@ -274,3 +274,39 @@ ChatGPTなどのMCP hostが接続済みserverのtool schemaを一時的にcache�
 MCP initializeでは `tools.listChanged = true` を宣言し、host側がtool listの変更を再取得できることを示す。
 
 この互換経路は `0.5.1-netlify` で導入した。
+
+
+## Agent Control Plane / Work Item
+
+Dashboardは人間向けのメモ一覧ではなく、エージェントが作業を開始・再開・並列実行するための **Agent Control Plane** として扱う。
+
+### Work Item
+
+論理的な `workItems` は `memos/agent-control/workItems` サブコレクションに保存する。既存の `memos/{document=**}` ルール配下なので、現在のPortal認証をそのまま使えて追加のRulesデプロイを要求しない。
+
+Spaceの `nextActions` はテーマの再開地点として残すが、複数エージェントが実際に作業する対象はWork Itemへ昇格させる。
+
+主な状態: `backlog` / `ready` / `in_progress` / `blocked` / `review` / `done` / `cancelled`。
+
+Work Itemは `spaceId`, `projectId`, `sourceType`, `sourceId`, `priority`, `dependencies`, `claimedBy`, `runId`, `leaseExpiresAt`, `resultSummary`, `nextActions` を持てる。
+
+### Claim / Lease
+
+並列エージェントの重複作業を避けるため、実行前に `work_item_claim` を必須に近い運用とする。claimには期限付きleaseを持たせ、長時間作業は `work_item_heartbeat` で延長する。lease切れは別エージェントが再取得できる。
+
+### Agent entrypoint
+
+自律作業の開始時は原則:
+
+1. `control_plane_overview`
+2. `ready` のWork Itemを選ぶ。必要なら未キュー化のSpace next actionから `work_item_create`
+3. `work_item_claim`
+4. `spaceId` があれば `space_get_context`
+5. 必要に応じて `idea_run_start`
+6. 調査・実装・制作。長時間なら `work_item_heartbeat`
+7. `idea_run_finish`
+8. `work_item_finish(status=done|review|blocked)` または中断時に `work_item_release`
+
+`control_plane_overview` はWork Itemだけでなく、active Runs、Spaces、Projects、未キュー化のSpace next actions、従来メモの `next_action` / `inbox` / `project` も横断して返す。
+
+Dashboard UIも同じControl Planeの人間向けビューとし、Ready / Working / Blocked / Review、Active Agents、Spaces / Projects、未キュー化Next Actions、従来Inboxを一画面に表示する。

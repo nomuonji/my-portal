@@ -1,504 +1,876 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { auth, db } from '../firebase';
-import { collection, deleteDoc, doc, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
 import {
+  addDoc,
+  collection,
+  onSnapshot,
+  serverTimestamp,
+} from 'firebase/firestore';
+import { db } from '../firebase';
+import {
+  Alert,
   Box,
   Button,
+  Card,
+  CardContent,
   Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  IconButton,
+  Divider,
+  FormControl,
+  InputLabel,
+  MenuItem,
   Paper,
+  Select,
   Stack,
   TextField,
-  Tooltip,
   Typography,
   useTheme,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import { DragDropContext, Draggable, Droppable } from '@hello-pangea/dnd';
 import { useNavigate } from 'react-router-dom';
-import { marked } from 'marked';
-import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
-import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
-import CloseIcon from '@mui/icons-material/Close';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import AddTaskIcon from '@mui/icons-material/AddTask';
+import BoltIcon from '@mui/icons-material/Bolt';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
-import InboxOutlinedIcon from '@mui/icons-material/InboxOutlined';
-import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
+import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
-import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
-import SearchIcon from '@mui/icons-material/Search';
+import PsychologyAltOutlinedIcon from '@mui/icons-material/PsychologyAltOutlined';
+import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
+import TaskAltOutlinedIcon from '@mui/icons-material/TaskAltOutlined';
+import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 
-const laneDefinitions = [
-  { id: 'next_action', title: '進行中', hint: '次の行動', color: '#5577e8', icon: PlayCircleOutlineIcon },
-  { id: 'inbox', title: '受信箱', hint: '未整理', color: '#e6a33b', icon: InboxOutlinedIcon },
-  { id: 'project', title: 'プロジェクト', hint: '複数ステップ', color: '#8b62dc', icon: FolderOutlinedIcon },
-  { id: 'someday_maybe', title: '保留', hint: 'いつか / 多分', color: '#77869a', icon: PauseCircleOutlineIcon },
-  { id: 'reference', title: '参照資料', hint: 'あとで参照', color: '#2f9ba7', icon: BookmarkBorderIcon },
-  { id: 'done', title: '完了', hint: '完了済み', color: '#38a56c', icon: CheckCircleOutlineIcon },
+const queueColumns = [
+  { id: 'ready', label: 'Ready', hint: '取得可能', icon: BoltIcon },
+  { id: 'in_progress', label: 'Working', hint: 'Agentが実行中', icon: SmartToyOutlinedIcon },
+  { id: 'blocked', label: 'Blocked', hint: '判断・外部条件待ち', icon: WarningAmberOutlinedIcon },
+  { id: 'review', label: 'Review', hint: '確認・引継ぎ待ち', icon: TaskAltOutlinedIcon },
 ];
 
-const cleanText = (text = '') => text
-  .replace(/```[\s\S]*?```/g, ' ')
-  .replace(/[`*_>#\[\]()~-]/g, ' ')
-  .replace(/\s+/g, ' ')
-  .trim();
+const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+const priorityLabel = { critical: 'CRITICAL', high: 'HIGH', medium: 'MEDIUM', low: 'LOW' };
 
-const formatDate = (value) => {
-  if (!value) return '—';
-  try {
-    const date = typeof value.toDate === 'function' ? value.toDate() : new Date(value);
-    if (Number.isNaN(date.getTime())) return '—';
-    return new Intl.DateTimeFormat('ja-JP', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(date);
-  } catch (error) {
-    return '—';
-  }
+const toMillis = (value) => {
+  if (!value) return 0;
+  if (typeof value.toMillis === 'function') return value.toMillis();
+  if (typeof value.toDate === 'function') return value.toDate().getTime();
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
 };
 
+const formatDate = (value) => {
+  const millis = toMillis(value);
+  if (!millis) return '—';
+  return new Intl.DateTimeFormat('ja-JP', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(millis));
+};
+
+const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+
 function Dashboard() {
+  const [workItems, setWorkItems] = useState([]);
+  const [spaces, setSpaces] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [runs, setRuns] = useState([]);
   const [memos, setMemos] = useState([]);
-  const [selectedMemoId, setSelectedMemoId] = useState(null);
-  const [searchText, setSearchText] = useState('');
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [memoToDelete, setMemoToDelete] = useState(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [draft, setDraft] = useState({
+    title: '',
+    objective: '',
+    priority: 'medium',
+    spaceId: '',
+    projectId: '',
+  });
   const theme = useTheme();
   const navigate = useNavigate();
   const isDark = theme.palette.mode === 'dark';
 
   useEffect(() => {
-    const q = query(collection(db, 'memos'), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setMemos(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
-    });
-    return () => unsubscribe();
+    const unsubscribers = [
+      onSnapshot(collection(db, 'memos', 'agent-control', 'workItems'), (snapshot) => {
+        setWorkItems(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
+      }),
+      onSnapshot(collection(db, 'spaces'), (snapshot) => {
+        setSpaces(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
+      }),
+      onSnapshot(collection(db, 'projects'), (snapshot) => {
+        setProjects(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
+      }),
+      onSnapshot(collection(db, 'runs'), (snapshot) => {
+        setRuns(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
+      }),
+      onSnapshot(collection(db, 'memos'), (snapshot) => {
+        setMemos(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
+      }),
+    ];
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, []);
 
-  useEffect(() => {
-    if (memos.length === 0) {
-      setSelectedMemoId(null);
-      return;
-    }
-    if (!selectedMemoId || !memos.some((memo) => memo.id === selectedMemoId)) {
-      setSelectedMemoId(memos[0].id);
-    }
-  }, [memos, selectedMemoId]);
-
-  const filteredMemos = useMemo(() => {
-    const keyword = searchText.trim().toLowerCase();
-    if (!keyword) return memos;
-    return memos.filter((memo) => {
-      const haystack = [
-        memo.text,
-        memo.context,
-        memo.project_name,
-        ...(memo.tags || []),
-      ].filter(Boolean).join(' ').toLowerCase();
-      return haystack.includes(keyword);
-    });
-  }, [memos, searchText]);
-
-  const selectedMemo = useMemo(
-    () => memos.find((memo) => memo.id === selectedMemoId) || null,
-    [memos, selectedMemoId],
+  const openWork = useMemo(
+    () => workItems.filter((item) => !['done', 'cancelled'].includes(item.status)),
+    [workItems],
   );
 
-  const onDragEnd = async ({ destination, draggableId, source }) => {
-    if (!destination || destination.droppableId === source.droppableId) return;
-    if (!destination.droppableId.startsWith('status-')) return;
+  const activeSpaces = useMemo(
+    () => spaces
+      .filter((item) => item.status === 'active')
+      .sort((a, b) => toMillis(b.updatedAt || b.createdAt) - toMillis(a.updatedAt || a.createdAt)),
+    [spaces],
+  );
 
-    const status = destination.droppableId.replace('status-', '');
+  const activeProjects = useMemo(
+    () => projects
+      .filter((item) => !['done', 'completed', 'archived', 'cancelled'].includes(String(item.status || '').toLowerCase()))
+      .sort((a, b) => toMillis(b.updatedAt || b.createdAt) - toMillis(a.updatedAt || a.createdAt)),
+    [projects],
+  );
+
+  const activeRuns = useMemo(
+    () => runs
+      .filter((item) => item.status === 'active')
+      .sort((a, b) => toMillis(b.updatedAt || b.startedAt) - toMillis(a.updatedAt || a.startedAt)),
+    [runs],
+  );
+
+  const actionMemos = useMemo(
+    () => memos
+      .filter((item) => ['next_action', 'inbox', 'project'].includes(item.status))
+      .sort((a, b) => toMillis(b.updatedAt || b.createdAt) - toMillis(a.updatedAt || a.createdAt))
+      .slice(0, 8),
+    [memos],
+  );
+
+  const unqueuedActions = useMemo(() => {
+    const output = [];
+    activeSpaces.forEach((space) => {
+      (space.nextActions || []).forEach((action) => {
+        const normalized = clean(action).toLowerCase();
+        const exists = openWork.some((item) => (
+          item.spaceId === space.id &&
+          [item.title, item.objective].some((value) => clean(value).toLowerCase() === normalized)
+        ));
+        if (!exists && normalized) output.push({ space, action });
+      });
+    });
+    return output.slice(0, 10);
+  }, [activeSpaces, openWork]);
+
+  const border = isDark
+    ? alpha(theme.palette.common.white, 0.1)
+    : 'rgba(73, 112, 138, 0.16)';
+  const glass = isDark
+    ? alpha(theme.palette.background.paper, 0.84)
+    : 'rgba(255,255,255,0.76)';
+
+  const createWorkItem = async (preset = null) => {
+    const source = preset || draft;
+    const title = clean(source.title);
+    if (!title) {
+      setCreateError('タイトルは必須です。');
+      return;
+    }
+
     try {
-      await updateDoc(doc(db, 'memos', draggableId), { status });
+      setCreateError('');
+      await addDoc(collection(db, 'memos', 'agent-control', 'workItems'), {
+        title,
+        objective: clean(source.objective),
+        instructions: '',
+        status: 'ready',
+        priority: source.priority || 'medium',
+        spaceId: source.spaceId || null,
+        projectId: source.projectId || null,
+        sourceType: source.sourceType || 'manual',
+        sourceId: source.sourceId || null,
+        dependencies: [],
+        tags: [],
+        claimedBy: null,
+        claimedModel: null,
+        runId: null,
+        leaseExpiresAt: null,
+        lastHeartbeatAt: null,
+        blockedReason: '',
+        resultSummary: '',
+        nextActions: [],
+        metadata: {},
+        revision: 1,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      setDraft({ title: '', objective: '', priority: 'medium', spaceId: '', projectId: '' });
+      setCreateOpen(false);
     } catch (error) {
-      console.error('Failed to update memo status:', error);
+      console.error('Failed to create work item:', error);
+      setCreateError('Work Itemの作成に失敗しました。');
     }
   };
 
-  const openDeleteConfirm = (memoId) => {
-    setMemoToDelete(memoId);
-    setDeleteConfirmOpen(true);
-  };
+  const queueFor = (status) => openWork
+    .filter((item) => item.status === status)
+    .sort((a, b) => {
+      const priorityDiff = (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2);
+      if (priorityDiff !== 0) return priorityDiff;
+      return toMillis(b.updatedAt || b.createdAt) - toMillis(a.updatedAt || a.createdAt);
+    });
 
-  const closeDeleteConfirm = () => {
-    setMemoToDelete(null);
-    setDeleteConfirmOpen(false);
-  };
+  const kpis = [
+    { label: 'Ready', value: queueFor('ready').length + queueFor('backlog').length, sub: '着手可能' },
+    { label: 'Working', value: queueFor('in_progress').length, sub: activeRuns.length + ' active runs' },
+    { label: 'Blocked', value: queueFor('blocked').length, sub: '要判断 / 外部待ち' },
+    {
+      label: 'Coverage',
+      value: activeSpaces.length + activeProjects.length,
+      sub: activeSpaces.length + ' spaces / ' + activeProjects.length + ' projects',
+    },
+  ];
 
-  const handleDeleteMemo = async () => {
-    if (!memoToDelete) return;
-    try {
-      await deleteDoc(doc(db, 'memos', memoToDelete));
-      closeDeleteConfirm();
-    } catch (error) {
-      console.error('Failed to delete memo:', error);
-    }
-  };
-
-  const getLaneMemos = (status) => filteredMemos.filter((memo) => memo.status === status);
-
-  const laneBackground = isDark
-    ? alpha(theme.palette.background.paper, 0.76)
-    : 'rgba(255, 255, 255, 0.54)';
-
-  const boardBorder = isDark
-    ? alpha(theme.palette.common.white, 0.09)
-    : 'rgba(89, 129, 154, 0.18)';
-
-  const renderCard = (memo, index, laneColor) => {
-    const title = cleanText(memo.text) || '無題のメモ';
-    const selected = memo.id === selectedMemoId;
-
-    return (
-      <Draggable key={memo.id} draggableId={memo.id} index={index}>
-        {(provided, snapshot) => (
-          <Paper
-            ref={provided.innerRef}
-            {...provided.draggableProps}
-            {...provided.dragHandleProps}
-            onClick={() => setSelectedMemoId(memo.id)}
-            elevation={0}
-            sx={{
-              width: 228,
-              minHeight: 86,
-              flexShrink: 0,
-              px: 1.25,
-              py: 1.1,
-              cursor: snapshot.isDragging ? 'grabbing' : 'pointer',
-              border: selected
-                ? `1px solid ${alpha(laneColor, 0.9)}`
-                : `1px solid ${boardBorder}`,
-              background: selected
-                ? alpha(laneColor, isDark ? 0.15 : 0.08)
-                : isDark
-                  ? alpha(theme.palette.background.paper, 0.92)
-                  : 'rgba(255,255,255,0.88)',
-              boxShadow: snapshot.isDragging
-                ? '0 14px 30px rgba(26, 67, 92, 0.22)'
-                : selected
-                  ? `0 5px 16px ${alpha(laneColor, 0.16)}`
-                  : '0 3px 10px rgba(50, 88, 110, 0.08)',
-              transition: 'border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease',
-              '&:hover': {
-                transform: 'translateY(-1px)',
-                boxShadow: '0 7px 18px rgba(50, 88, 110, 0.14)',
-              },
-            }}
-          >
+  return (
+    <Box sx={{ minHeight: '100%', pb: 4 }}>
+      <Paper
+        elevation={0}
+        sx={{
+          p: { xs: 1.6, md: 2.2 },
+          mb: 1.5,
+          border: '1px solid ' + border,
+          background: glass,
+          backdropFilter: 'blur(18px) saturate(135%)',
+        }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            gap: 2,
+            alignItems: { xs: 'flex-start', md: 'center' },
+            flexDirection: { xs: 'column', md: 'row' },
+          }}
+        >
+          <Box sx={{ flex: 1 }}>
+            <Typography
+              variant="overline"
+              sx={{ fontWeight: 900, letterSpacing: '0.14em', color: 'text.secondary' }}
+            >
+              AGENT CONTROL PLANE
+            </Typography>
+            <Typography variant="h4" sx={{ fontWeight: 900, letterSpacing: '-0.035em' }}>
+              Agent HQ
+            </Typography>
             <Typography
               variant="body2"
-              sx={{
-                fontWeight: 700,
-                fontSize: '0.76rem',
-                lineHeight: 1.45,
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
-                minHeight: 34,
-              }}
+              color="text.secondary"
+              sx={{ mt: 0.7, maxWidth: 850, lineHeight: 1.7 }}
             >
-              {title}
+              ここをエージェントの作業管制塔として使います。Work Itemを取得して実行し、
+              Space / Project / Run の文脈を引き継ぎながら、複数エージェントが競合せず並列に進められる状態を可視化します。
             </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.55, mt: 0.9, minWidth: 0 }}>
-              {memo.project_name && (
-                <Chip
-                  label={memo.project_name}
-                  size="small"
-                  sx={{
-                    maxWidth: 106,
-                    height: 19,
-                    fontSize: '0.58rem',
-                    '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' },
-                  }}
-                />
-              )}
-              {(memo.tags || []).slice(0, 1).map((tag) => (
-                <Chip
-                  key={tag}
-                  label={`#${tag}`}
-                  size="small"
-                  variant="outlined"
-                  sx={{ height: 19, fontSize: '0.58rem', maxWidth: 92 }}
-                />
-              ))}
-              {(memo.tags || []).length > 1 && (
-                <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto', fontSize: '0.62rem' }}>
-                  +{memo.tags.length - 1}
-                </Typography>
-              )}
-            </Box>
-          </Paper>
-        )}
-      </Draggable>
-    );
-  };
+          </Box>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Button
+              variant="outlined"
+              startIcon={<PsychologyAltOutlinedIcon />}
+              onClick={() => navigate('/thinking')}
+            >
+              思考テーマ
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<FolderOutlinedIcon />}
+              onClick={() => navigate('/project')}
+            >
+              Projects
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<AddTaskIcon />}
+              onClick={() => setCreateOpen(true)}
+            >
+              Work Item追加
+            </Button>
+          </Stack>
+        </Box>
+      </Paper>
 
-  const DetailPanel = () => (
-    <Paper
-      elevation={0}
-      sx={{
-        width: 305,
-        flexShrink: 0,
-        alignSelf: 'stretch',
-        display: { xs: 'none', lg: 'flex' },
-        flexDirection: 'column',
-        overflow: 'hidden',
-        border: `1px solid ${boardBorder}`,
-        background: isDark ? alpha(theme.palette.background.paper, 0.92) : 'rgba(255,255,255,0.72)',
-        backdropFilter: 'blur(18px) saturate(135%)',
-        boxShadow: '0 10px 32px rgba(61, 101, 126, 0.10)',
-      }}
-    >
-      <Box sx={{ px: 2, py: 1.55, borderBottom: `1px solid ${boardBorder}` }}>
-        <Typography variant="overline" sx={{ fontWeight: 800, letterSpacing: '0.12em', color: 'text.secondary' }}>
-          SELECTED NOTE
-        </Typography>
-        <Typography variant="subtitle1" sx={{ mt: -0.25, fontWeight: 800 }}>
-          {selectedMemo ? cleanText(selectedMemo.text).slice(0, 72) || '無題のメモ' : 'メモを選択'}
-        </Typography>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' },
+          gap: 1,
+          mb: 1.5,
+        }}
+      >
+        {kpis.map((item) => (
+          <Paper
+            key={item.label}
+            elevation={0}
+            sx={{ p: 1.4, border: '1px solid ' + border, background: glass }}
+          >
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>
+              {item.label}
+            </Typography>
+            <Typography variant="h4" sx={{ mt: 0.2, fontWeight: 900 }}>
+              {item.value}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {item.sub}
+            </Typography>
+          </Paper>
+        ))}
       </Box>
 
-      {selectedMemo ? (
-        <>
-          <Box sx={{ px: 2, py: 1.5, display: 'grid', gap: 1.05 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-              <Typography variant="caption" color="text.secondary">状態</Typography>
-              <Chip
-                size="small"
-                label={laneDefinitions.find((lane) => lane.id === selectedMemo.status)?.title || selectedMemo.status || '未設定'}
-                sx={{ height: 22, fontSize: '0.66rem', fontWeight: 700 }}
-              />
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-              <Typography variant="caption" color="text.secondary">更新</Typography>
-              <Typography variant="caption" sx={{ fontWeight: 600 }}>{formatDate(selectedMemo.updatedAt || selectedMemo.createdAt)}</Typography>
-            </Box>
-            {selectedMemo.context && (
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-                <Typography variant="caption" color="text.secondary">コンテキスト</Typography>
-                <Typography variant="caption" sx={{ fontWeight: 700 }}>@{selectedMemo.context}</Typography>
-              </Box>
-            )}
-            {selectedMemo.project_name && (
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-                <Typography variant="caption" color="text.secondary">プロジェクト</Typography>
-                <Typography variant="caption" sx={{ fontWeight: 700, textAlign: 'right' }}>{selectedMemo.project_name}</Typography>
-              </Box>
-            )}
-          </Box>
-
-          <Box sx={{ px: 2, py: 1.35, borderTop: `1px solid ${boardBorder}`, borderBottom: `1px solid ${boardBorder}` }}>
-            <Typography variant="caption" sx={{ display: 'block', mb: 0.8, color: 'text.secondary', fontWeight: 800 }}>
-              タグ
-            </Typography>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.6 }}>
-              {(selectedMemo.tags || []).length > 0
-                ? selectedMemo.tags.map((tag) => <Chip key={tag} size="small" label={`#${tag}`} sx={{ height: 22, fontSize: '0.64rem' }} />)
-                : <Typography variant="caption" color="text.secondary">タグなし</Typography>}
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', xl: 'minmax(0, 2.2fr) minmax(300px, 0.8fr)' },
+          gap: 1.5,
+          mb: 1.5,
+        }}
+      >
+        <Paper
+          elevation={0}
+          sx={{ p: 1.25, border: '1px solid ' + border, background: glass, minWidth: 0 }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+            <HubOutlinedIcon color="primary" />
+            <Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
+                Execution Queue
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                claimされた仕事はWorkingへ移り、完了・レビュー・ブロックまで履歴を残します。
+              </Typography>
             </Box>
           </Box>
 
           <Box
             sx={{
-              px: 2,
-              py: 1.6,
-              flexGrow: 1,
-              overflowY: 'auto',
-              '& p': { mt: 0, mb: 1.1, fontSize: '0.78rem', lineHeight: 1.65 },
-              '& ul, & ol': { pl: 2.4, fontSize: '0.78rem' },
-              '& h1, & h2, & h3': { fontSize: '0.95rem', mb: 1 },
-              '& pre': { overflowX: 'auto', p: 1, borderRadius: 1.5, backgroundColor: alpha(theme.palette.text.primary, 0.06) },
-            }}
-            dangerouslySetInnerHTML={{ __html: marked.parse(selectedMemo.text || '') }}
-          />
-
-          <Box sx={{ p: 1.5, display: 'grid', gridTemplateColumns: '1fr auto', gap: 1, borderTop: `1px solid ${boardBorder}` }}>
-            <Button variant="contained" startIcon={<EditOutlinedIcon />} onClick={() => navigate(`/memo/${selectedMemo.id}`)}>
-              編集
-            </Button>
-            <Tooltip title="削除">
-              <IconButton color="error" onClick={() => openDeleteConfirm(selectedMemo.id)}>
-                <DeleteOutlineIcon />
-              </IconButton>
-            </Tooltip>
-          </Box>
-        </>
-      ) : (
-        <Box sx={{ p: 2 }}>
-          <Typography variant="body2" color="text.secondary">右側のカードを選択すると詳細を表示します。</Typography>
-        </Box>
-      )}
-    </Paper>
-  );
-
-  return (
-    <Box sx={{ minHeight: '100%', p: { xs: 0.5, sm: 1 }, position: 'relative' }}>
-      <Box
-        sx={{
-          position: 'absolute',
-          inset: 0,
-          pointerEvents: 'none',
-          borderRadius: 4,
-          background: isDark
-            ? 'radial-gradient(circle at 12% 8%, rgba(91,115,232,0.12), transparent 31%), radial-gradient(circle at 88% 10%, rgba(75,179,190,0.10), transparent 34%)'
-            : 'radial-gradient(circle at 10% 8%, rgba(115,190,231,0.18), transparent 30%), radial-gradient(circle at 88% 0%, rgba(145,190,218,0.16), transparent 34%)',
-        }}
-      />
-
-      <Box sx={{ position: 'relative', display: 'flex', gap: 1.25, alignItems: 'stretch', minHeight: { lg: 'calc(100vh - 104px)' } }}>
-        <DetailPanel />
-
-        <Box sx={{ minWidth: 0, flexGrow: 1, display: 'flex', flexDirection: 'column', gap: 1.1 }}>
-          <Paper
-            elevation={0}
-            sx={{
-              px: { xs: 1.25, sm: 1.7 },
-              py: 1.15,
-              display: 'flex',
-              alignItems: { xs: 'stretch', sm: 'center' },
-              flexDirection: { xs: 'column', sm: 'row' },
+              display: 'grid',
+              gridTemplateColumns: {
+                xs: '1fr',
+                md: 'repeat(2, 1fr)',
+                xl: 'repeat(4, 1fr)',
+              },
               gap: 1,
-              border: `1px solid ${boardBorder}`,
-              background: laneBackground,
-              backdropFilter: 'blur(14px) saturate(130%)',
             }}
           >
-            <Box sx={{ minWidth: 155 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 900, letterSpacing: '-0.02em' }}>作業ボード</Typography>
-              <Typography variant="caption" color="text.secondary">ドラッグして状態を変更</Typography>
-            </Box>
-            <TextField
-              value={searchText}
-              onChange={(event) => setSearchText(event.target.value)}
-              placeholder="メモ・タグ・プロジェクトを検索…"
-              size="small"
-              fullWidth
-              InputProps={{ startAdornment: <SearchIcon sx={{ mr: 0.8, fontSize: 19, color: 'text.secondary' }} /> }}
-              sx={{
-                maxWidth: 520,
-                '& .MuiOutlinedInput-root': {
-                  height: 36,
-                  backgroundColor: isDark ? alpha(theme.palette.common.black, 0.12) : 'rgba(255,255,255,0.58)',
-                },
-              }}
-            />
-            <Box sx={{ ml: { sm: 'auto' }, display: 'flex', gap: 0.75 }}>
-              <Button size="small" variant="outlined" startIcon={<LightbulbOutlinedIcon />} onClick={() => navigate('/idea')}>
-                アイデア
-              </Button>
-              <Button size="small" variant="contained" startIcon={<AddCircleOutlineIcon />} onClick={() => navigate('/memo')}>
-                メモ追加
-              </Button>
-            </Box>
-          </Paper>
+            {queueColumns.map((column) => {
+              const Icon = column.icon;
+              const items = queueFor(column.id);
+              return (
+                <Box key={column.id} sx={{ minWidth: 0 }}>
+                  <Box sx={{ px: 0.5, py: 0.6, display: 'flex', alignItems: 'center', gap: 0.6 }}>
+                    <Icon sx={{ fontSize: 18 }} />
+                    <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>
+                      {column.label}
+                    </Typography>
+                    <Chip
+                      size="small"
+                      label={items.length}
+                      sx={{ height: 20, ml: 'auto', fontSize: '0.62rem' }}
+                    />
+                  </Box>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ px: 0.5, display: 'block', mb: 0.7 }}
+                  >
+                    {column.hint}
+                  </Typography>
 
-          <DragDropContext onDragEnd={onDragEnd}>
-            <Box sx={{ display: 'grid', gap: 0.9, pb: 1.5 }}>
-              {laneDefinitions.map((lane) => {
-                const laneMemos = getLaneMemos(lane.id);
-                const LaneIcon = lane.icon;
-                return (
-                  <Droppable key={lane.id} droppableId={`status-${lane.id}`} direction="horizontal">
-                    {(provided, snapshot) => (
-                      <Paper
-                        ref={provided.innerRef}
-                        {...provided.droppableProps}
+                  <Stack spacing={0.8}>
+                    {items.slice(0, 8).map((item) => (
+                      <Card
+                        key={item.id}
                         elevation={0}
                         sx={{
-                          position: 'relative',
-                          minHeight: 116,
-                          pl: 1.05,
-                          pr: 0.75,
-                          py: 0.8,
-                          display: 'grid',
-                          gridTemplateColumns: { xs: '88px minmax(0, 1fr)', sm: '130px minmax(0, 1fr)' },
-                          gap: 0.8,
-                          alignItems: 'stretch',
-                          overflow: 'hidden',
-                          border: `1px solid ${snapshot.isDraggingOver ? alpha(lane.color, 0.65) : boardBorder}`,
-                          background: snapshot.isDraggingOver ? alpha(lane.color, isDark ? 0.12 : 0.08) : laneBackground,
-                          backdropFilter: 'blur(14px) saturate(130%)',
-                          boxShadow: snapshot.isDraggingOver ? `0 0 0 2px ${alpha(lane.color, 0.08)}` : 'none',
-                          transition: 'background-color 160ms ease, border-color 160ms ease',
-                          '&::before': {
-                            content: '""',
-                            position: 'absolute',
-                            left: 0,
-                            top: 0,
-                            bottom: 0,
-                            width: 4,
-                            backgroundColor: lane.color,
-                          },
+                          border: '1px solid ' + border,
+                          background: isDark
+                            ? alpha(theme.palette.background.paper, 0.92)
+                            : 'rgba(255,255,255,0.9)',
                         }}
                       >
-                        <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', pl: 0.55, minWidth: 0 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.65 }}>
-                            <LaneIcon sx={{ fontSize: 18, color: lane.color }} />
-                            <Typography sx={{ fontSize: { xs: '0.73rem', sm: '0.82rem' }, fontWeight: 900, whiteSpace: 'nowrap' }}>
-                              {lane.title}
+                        <CardContent sx={{ p: '11px !important' }}>
+                          <Box sx={{ display: 'flex', gap: 0.7, alignItems: 'flex-start' }}>
+                            <Typography
+                              variant="body2"
+                              sx={{ fontWeight: 850, lineHeight: 1.4, flex: 1 }}
+                            >
+                              {item.title || 'Untitled'}
+                            </Typography>
+                            <Chip
+                              size="small"
+                              label={priorityLabel[item.priority] || 'MEDIUM'}
+                              variant="outlined"
+                              sx={{ height: 18, fontSize: '0.52rem' }}
+                            />
+                          </Box>
+
+                          {item.objective && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                                mt: 0.55,
+                                lineHeight: 1.45,
+                              }}
+                            >
+                              {item.objective}
+                            </Typography>
+                          )}
+
+                          <Box
+                            sx={{
+                              display: 'flex',
+                              gap: 0.5,
+                              alignItems: 'center',
+                              mt: 0.8,
+                              flexWrap: 'wrap',
+                            }}
+                          >
+                            {item.claimedBy && (
+                              <Chip
+                                size="small"
+                                icon={<SmartToyOutlinedIcon />}
+                                label={item.claimedBy}
+                                sx={{ height: 20, fontSize: '0.58rem' }}
+                              />
+                            )}
+                            {item.spaceId && (
+                              <Chip
+                                size="small"
+                                label="Space"
+                                variant="outlined"
+                                sx={{ height: 20, fontSize: '0.58rem' }}
+                              />
+                            )}
+                            {item.projectId && (
+                              <Chip
+                                size="small"
+                                label="Project"
+                                variant="outlined"
+                                sx={{ height: 20, fontSize: '0.58rem' }}
+                              />
+                            )}
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ ml: 'auto', fontSize: '0.58rem' }}
+                            >
+                              {formatDate(item.updatedAt || item.createdAt)}
                             </Typography>
                           </Box>
-                          <Typography variant="caption" color="text.secondary" sx={{ mt: 0.3, fontSize: '0.62rem' }}>
-                            {lane.hint}
-                          </Typography>
-                          <Chip
-                            label={`${laneMemos.length}件`}
-                            size="small"
-                            sx={{ mt: 0.7, width: 'fit-content', height: 19, fontSize: '0.6rem', fontWeight: 800 }}
-                          />
-                        </Box>
 
-                        <Box sx={{ minWidth: 0, overflowX: 'auto', overflowY: 'hidden', py: 0.25 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'stretch', gap: 0.75, minWidth: 'min-content', minHeight: 88 }}>
-                            {laneMemos.map((memo, index) => renderCard(memo, index, lane.color))}
-                            {laneMemos.length === 0 && (
-                              <Box
-                                sx={{
-                                  width: 210,
-                                  minHeight: 84,
-                                  borderRadius: 2,
-                                  border: `1px dashed ${alpha(lane.color, 0.32)}`,
-                                  display: 'grid',
-                                  placeItems: 'center',
-                                  color: 'text.secondary',
-                                  fontSize: '0.7rem',
-                                }}
-                              >
-                                ここへドロップ
-                              </Box>
-                            )}
-                            {provided.placeholder}
-                          </Box>
-                        </Box>
-                      </Paper>
+                          {item.blockedReason && (
+                            <Alert
+                              severity="warning"
+                              sx={{
+                                mt: 0.8,
+                                py: 0,
+                                '& .MuiAlert-message': { fontSize: '0.68rem' },
+                              }}
+                            >
+                              {item.blockedReason}
+                            </Alert>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
+                    {items.length === 0 && (
+                      <Box
+                        sx={{
+                          p: 1.4,
+                          border: '1px dashed ' + border,
+                          borderRadius: 2,
+                          textAlign: 'center',
+                        }}
+                      >
+                        <Typography variant="caption" color="text.secondary">
+                          なし
+                        </Typography>
+                      </Box>
                     )}
-                  </Droppable>
-                );
-              })}
+                  </Stack>
+                </Box>
+              );
+            })}
+          </Box>
+        </Paper>
+
+        <Stack spacing={1.5}>
+          <Paper
+            elevation={0}
+            sx={{ p: 1.25, border: '1px solid ' + border, background: glass }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.7, mb: 0.9 }}>
+              <SmartToyOutlinedIcon color="primary" />
+              <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
+                Active Agents
+              </Typography>
+              <Chip size="small" label={activeRuns.length} sx={{ ml: 'auto', height: 21 }} />
             </Box>
-          </DragDropContext>
-        </Box>
+            <Stack spacing={0.7}>
+              {activeRuns.slice(0, 8).map((run) => (
+                <Box
+                  key={run.id}
+                  sx={{ p: 0.9, borderRadius: 2, border: '1px solid ' + border }}
+                >
+                  <Typography variant="caption" sx={{ fontWeight: 900 }}>
+                    {run.agent || 'agent'}
+                    {run.model ? ' · ' + run.model : ''}
+                  </Typography>
+                  <Typography
+                    variant="body2"
+                    sx={{ mt: 0.2, fontSize: '0.75rem', lineHeight: 1.45 }}
+                  >
+                    {run.objective || 'Run in progress'}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {formatDate(run.updatedAt || run.startedAt)}
+                  </Typography>
+                </Box>
+              ))}
+              {activeRuns.length === 0 && (
+                <Typography variant="body2" color="text.secondary">
+                  現在アクティブなRunはありません。
+                </Typography>
+              )}
+            </Stack>
+          </Paper>
+
+          <Paper
+            elevation={0}
+            sx={{ p: 1.25, border: '1px solid ' + border, background: glass }}
+          >
+            <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
+              Unqueued Next Actions
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Spaceにはあるが、まだ実行キュー化されていない次の行動。
+            </Typography>
+            <Stack spacing={0.7} sx={{ mt: 1 }}>
+              {unqueuedActions.map(({ space, action }) => (
+                <Box
+                  key={space.id + ':' + action}
+                  sx={{ p: 0.8, borderRadius: 2, border: '1px solid ' + border }}
+                >
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>
+                    {space.title}
+                  </Typography>
+                  <Typography variant="body2" sx={{ mt: 0.2, fontSize: '0.75rem' }}>
+                    {action}
+                  </Typography>
+                  <Button
+                    size="small"
+                    startIcon={<AddTaskIcon />}
+                    sx={{ mt: 0.5 }}
+                    onClick={() => createWorkItem({
+                      title: action,
+                      objective: action,
+                      priority: 'medium',
+                      spaceId: space.id,
+                      projectId: '',
+                      sourceType: 'space_next_action',
+                      sourceId: space.id,
+                    })}
+                  >
+                    キューへ
+                  </Button>
+                </Box>
+              ))}
+              {unqueuedActions.length === 0 && (
+                <Typography variant="body2" color="text.secondary">
+                  未キュー化のNext Actionはありません。
+                </Typography>
+              )}
+            </Stack>
+          </Paper>
+        </Stack>
       </Box>
 
-      <Dialog open={deleteConfirmOpen} onClose={closeDeleteConfirm}>
-        <DialogTitle>メモを削除</DialogTitle>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' },
+          gap: 1.5,
+          mb: 1.5,
+        }}
+      >
+        <Paper
+          elevation={0}
+          sx={{ p: 1.25, border: '1px solid ' + border, background: glass }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.7, mb: 1 }}>
+            <PsychologyAltOutlinedIcon color="primary" />
+            <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
+              Spaces · 再開地点
+            </Typography>
+            <Chip size="small" label={activeSpaces.length} sx={{ ml: 'auto', height: 21 }} />
+          </Box>
+          <Stack spacing={0.8}>
+            {activeSpaces.slice(0, 8).map((space) => (
+              <Box
+                key={space.id}
+                sx={{ p: 1, borderRadius: 2, border: '1px solid ' + border, cursor: 'pointer' }}
+                onClick={() => navigate('/thinking')}
+              >
+                <Typography variant="body2" sx={{ fontWeight: 900 }}>
+                  {space.title}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                    mt: 0.35,
+                    lineHeight: 1.45,
+                  }}
+                >
+                  {space.currentBrief || space.goal || space.summary || 'Briefなし'}
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', mt: 0.7 }}>
+                  <Chip
+                    size="small"
+                    label={(space.nextActions || []).length + ' next'}
+                    variant="outlined"
+                    sx={{ height: 20, fontSize: '0.58rem' }}
+                  />
+                  <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
+                    {formatDate(space.updatedAt || space.createdAt)}
+                  </Typography>
+                </Box>
+              </Box>
+            ))}
+            {activeSpaces.length === 0 && (
+              <Typography variant="body2" color="text.secondary">
+                Active Spaceはありません。
+              </Typography>
+            )}
+          </Stack>
+        </Paper>
+
+        <Paper
+          elevation={0}
+          sx={{ p: 1.25, border: '1px solid ' + border, background: glass }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.7, mb: 1 }}>
+            <FolderOutlinedIcon color="primary" />
+            <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
+              Projects · 実行単位
+            </Typography>
+            <Chip size="small" label={activeProjects.length} sx={{ ml: 'auto', height: 21 }} />
+          </Box>
+          <Stack spacing={0.8}>
+            {activeProjects.slice(0, 8).map((project) => (
+              <Box
+                key={project.id}
+                sx={{ p: 1, borderRadius: 2, border: '1px solid ' + border, cursor: 'pointer' }}
+                onClick={() => navigate('/project/details/' + project.id)}
+              >
+                <Typography variant="body2" sx={{ fontWeight: 900 }}>
+                  {project.name || 'Untitled Project'}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                    mt: 0.35,
+                    lineHeight: 1.45,
+                  }}
+                >
+                  {project.description || '説明なし'}
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', mt: 0.7 }}>
+                  {project.status && (
+                    <Chip
+                      size="small"
+                      label={project.status}
+                      sx={{ height: 20, fontSize: '0.58rem' }}
+                    />
+                  )}
+                  <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
+                    {formatDate(project.updatedAt || project.createdAt)}
+                  </Typography>
+                </Box>
+              </Box>
+            ))}
+            {activeProjects.length === 0 && (
+              <Typography variant="body2" color="text.secondary">
+                Active Projectはありません。
+              </Typography>
+            )}
+          </Stack>
+        </Paper>
+      </Box>
+
+      <Paper
+        elevation={0}
+        sx={{ p: 1.25, border: '1px solid ' + border, background: glass }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.7, mb: 0.9 }}>
+          <PauseCircleOutlineIcon color="primary" />
+          <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
+            Legacy Inbox · 捕捉漏れ候補
+          </Typography>
+          <Chip size="small" label={actionMemos.length} sx={{ ml: 'auto', height: 21 }} />
+        </Box>
+        <Typography variant="caption" color="text.secondary">
+          従来メモの next_action / inbox / project。必要なものはWork Itemへ昇格させます。
+        </Typography>
+        <Divider sx={{ my: 1 }} />
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)', xl: 'repeat(4, 1fr)' },
+            gap: 0.8,
+          }}
+        >
+          {actionMemos.map((memo) => (
+            <Box
+              key={memo.id}
+              sx={{ p: 0.9, borderRadius: 2, border: '1px solid ' + border }}
+            >
+              <Typography
+                variant="body2"
+                sx={{
+                  fontWeight: 800,
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                }}
+              >
+                {clean(memo.text) || '無題のメモ'}
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 0.5, mt: 0.7, alignItems: 'center' }}>
+                <Chip
+                  size="small"
+                  label={memo.status}
+                  sx={{ height: 19, fontSize: '0.55rem' }}
+                />
+                <Button
+                  size="small"
+                  sx={{ ml: 'auto' }}
+                  onClick={() => navigate('/memo/' + memo.id)}
+                >
+                  開く
+                </Button>
+              </Box>
+            </Box>
+          ))}
+          {actionMemos.length === 0 && (
+            <Typography variant="body2" color="text.secondary">
+              対象メモはありません。
+            </Typography>
+          )}
+        </Box>
+      </Paper>
+
+      <Dialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Work Itemを追加</DialogTitle>
         <DialogContent>
-          <Typography>このメモを削除しますか？この操作は元に戻せません。</Typography>
+          <Stack spacing={1.4} sx={{ mt: 0.5 }}>
+            {createError && <Alert severity="error">{createError}</Alert>}
+            <TextField
+              label="タイトル"
+              value={draft.title}
+              onChange={(event) => setDraft((current) => ({
+                ...current,
+                title: event.target.value,
+              }))}
+              autoFocus
+            />
+            <TextField
+              label="目的 / 完了条件"
+              value={draft.objective}
+              onChange={(event) => setDraft((current) => ({
+                ...current,
+                objective: event.target.value,
+              }))}
+              multiline
+              minRows={3}
+            />
+            <FormControl>
+              <InputLabel>優先度</InputLabel>
+              <Select
+                label="優先度"
+                value={draft.priority}
+                onChange={(event) => setDraft((current) => ({
+                  ...current,
+                  priority: event.target.value,
+                }))}
+              >
+                <MenuItem value="critical">Critical</MenuItem>
+                <MenuItem value="high">High</MenuItem>
+                <MenuItem value="medium">Medium</MenuItem>
+                <MenuItem value="low">Low</MenuItem>
+              </Select>
+            </FormControl>
+            <FormControl>
+              <InputLabel>Space</InputLabel>
+              <Select
+                label="Space"
+                value={draft.spaceId}
+                onChange={(event) => setDraft((current) => ({
+                  ...current,
+                  spaceId: event.target.value,
+                }))}
+              >
+                <MenuItem value="">紐付けなし</MenuItem>
+                {activeSpaces.map((space) => (
+                  <MenuItem key={space.id} value={space.id}>
+                    {space.title}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl>
+              <InputLabel>Project</InputLabel>
+              <Select
+                label="Project"
+                value={draft.projectId}
+                onChange={(event) => setDraft((current) => ({
+                  ...current,
+                  projectId: event.target.value,
+                }))}
+              >
+                <MenuItem value="">紐付けなし</MenuItem>
+                {activeProjects.map((project) => (
+                  <MenuItem key={project.id} value={project.id}>
+                    {project.name || project.id}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={closeDeleteConfirm}>キャンセル</Button>
-          <Button onClick={handleDeleteMemo} color="error" variant="contained">削除</Button>
+          <Button onClick={() => setCreateOpen(false)}>キャンセル</Button>
+          <Button
+            variant="contained"
+            startIcon={<AddTaskIcon />}
+            onClick={() => createWorkItem()}
+          >
+            追加
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

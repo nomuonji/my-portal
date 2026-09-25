@@ -10,6 +10,7 @@ const COLLECTIONS = Object.freeze({
   opportunities: 'opportunities',
   methods: 'methods',
   methodVersions: 'methodVersions',
+  workItems: 'memos/agent-control/workItems',
 });
 
 const THINKING_COLLECTIONS = Object.freeze({
@@ -33,6 +34,8 @@ const DECISION_STATUSES = ['active', 'superseded', 'reversed'];
 const OPPORTUNITY_STATUSES = ['active', 'watching', 'paused', 'closed', 'rejected', 'completed'];
 const METHOD_STATUSES = ['active', 'paused', 'archived'];
 const METHOD_VERSION_STATUSES = ['draft', 'active', 'superseded', 'archived'];
+const WORK_ITEM_STATUSES = ['backlog', 'ready', 'in_progress', 'blocked', 'review', 'done', 'cancelled'];
+const WORK_ITEM_PRIORITIES = ['critical', 'high', 'medium', 'low'];
 
 function db() {
   return DATABASE_ID === '(default)' ? getFirestore() : getFirestore(DATABASE_ID);
@@ -1619,6 +1622,339 @@ async function bootstrapYoutubeEssayMethod() {
   };
 }
 
+
+function timestampMillis(value) {
+  if (!value) return 0;
+  if (typeof value.toMillis === 'function') return value.toMillis();
+  if (typeof value.toDate === 'function') return value.toDate().getTime();
+  return Date.parse(value) || 0;
+}
+
+function workItemPayload(input) {
+  return {
+    title: assertString(input.title, 'title', { max: 500 }),
+    objective: clampString(input.objective, 12000) || '',
+    instructions: clampString(input.instructions, 16000) || '',
+    status: assertEnum(input.status, WORK_ITEM_STATUSES, 'status', 'ready'),
+    priority: assertEnum(input.priority, WORK_ITEM_PRIORITIES, 'priority', 'medium'),
+    spaceId: clampString(input.spaceId, 160) || null,
+    projectId: clampString(input.projectId, 160) || null,
+    sourceType: clampString(input.sourceType, 80) || 'manual',
+    sourceId: clampString(input.sourceId, 500) || null,
+    dependencies: stringArray(input.dependencies, 50, 160),
+    tags: stringArray(input.tags, 50, 100),
+    dueAt: clampString(input.dueAt, 120) || null,
+    metadata: jsonSafe(input.metadata || {}),
+    revision: 1,
+  };
+}
+
+async function workItemCreate(input, actor = {}) {
+  const payload = workItemPayload(input);
+  if (payload.spaceId) await spaceGet({ id: payload.spaceId });
+  const ref = db().collection(COLLECTIONS.workItems).doc();
+  const now = FieldValue.serverTimestamp();
+  await ref.set({
+    ...payload,
+    claimedBy: null,
+    claimedModel: null,
+    runId: null,
+    leaseExpiresAt: null,
+    lastHeartbeatAt: null,
+    blockedReason: '',
+    resultSummary: '',
+    nextActions: [],
+    createdBy: createdBy(input.createdBy, actor),
+    createdAt: now,
+    updatedAt: now,
+  });
+  return documentToObject(await ref.get());
+}
+
+async function workItemGet(input) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const snapshot = await db().collection(COLLECTIONS.workItems).doc(id).get();
+  if (!snapshot.exists) throw new Error('Work item not found: ' + id);
+  return documentToObject(snapshot);
+}
+
+async function workItemSearch(input = {}) {
+  const limit = Math.min(Math.max(Number(input.limit) || 50, 1), 200);
+  const scanLimit = Math.min(Math.max(Number(input.scanLimit) || Math.max(limit * 5, 100), limit), 1000);
+  const snapshot = await db().collection(COLLECTIONS.workItems).limit(scanLimit).get();
+  const q = clampString(input.query, 400)?.toLowerCase();
+  const status = clampString(input.status, 40);
+  const priority = clampString(input.priority, 40);
+  const spaceId = clampString(input.spaceId, 160);
+  const projectId = clampString(input.projectId, 160);
+  const agent = clampString(input.agent, 120)?.toLowerCase();
+  const items = sortRecent(snapshot.docs.map(documentToObject))
+    .filter((item) => {
+      if (status && item.status !== status) return false;
+      if (priority && item.priority !== priority) return false;
+      if (spaceId && item.spaceId !== spaceId) return false;
+      if (projectId && item.projectId !== projectId) return false;
+      if (agent && String(item.claimedBy || '').toLowerCase() !== agent) return false;
+      if (q) {
+        const haystack = [
+          item.title,
+          item.objective,
+          item.instructions,
+          item.blockedReason,
+          item.resultSummary,
+          ...(item.tags || []),
+          ...(item.nextActions || []),
+        ].filter(Boolean).join('\n').toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    })
+    .slice(0, limit);
+  return { items, count: items.length, scanned: snapshot.size, databaseId: DATABASE_ID };
+}
+
+async function workItemUpdate(input) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const patch = input.patch && typeof input.patch === 'object' ? input.patch : {};
+  const nextSpaceId = patch.spaceId !== undefined ? (clampString(patch.spaceId, 160) || null) : undefined;
+  if (nextSpaceId) await spaceGet({ id: nextSpaceId });
+  const ref = db().collection(COLLECTIONS.workItems).doc(id);
+
+  await db().runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    if (!snapshot.exists) throw new Error('Work item not found: ' + id);
+    const current = snapshot.data();
+    if (input.expectedRevision !== undefined && Number(input.expectedRevision) !== Number(current.revision || 1)) {
+      throw new Error('Revision conflict: expected ' + input.expectedRevision + ', actual ' + (current.revision || 1));
+    }
+    const update = {
+      revision: Number(current.revision || 1) + 1,
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    if (patch.title !== undefined) update.title = assertString(patch.title, 'patch.title', { max: 500 });
+    if (patch.objective !== undefined) update.objective = clampString(patch.objective, 12000) || '';
+    if (patch.instructions !== undefined) update.instructions = clampString(patch.instructions, 16000) || '';
+    if (patch.status !== undefined) update.status = assertEnum(patch.status, WORK_ITEM_STATUSES, 'patch.status', current.status || 'ready');
+    if (patch.priority !== undefined) update.priority = assertEnum(patch.priority, WORK_ITEM_PRIORITIES, 'patch.priority', current.priority || 'medium');
+    if (patch.spaceId !== undefined) update.spaceId = nextSpaceId;
+    if (patch.projectId !== undefined) update.projectId = clampString(patch.projectId, 160) || null;
+    if (patch.sourceType !== undefined) update.sourceType = clampString(patch.sourceType, 80) || 'manual';
+    if (patch.sourceId !== undefined) update.sourceId = clampString(patch.sourceId, 500) || null;
+    if (patch.dependencies !== undefined) update.dependencies = stringArray(patch.dependencies, 50, 160);
+    if (patch.tags !== undefined) update.tags = stringArray(patch.tags, 50, 100);
+    if (patch.dueAt !== undefined) update.dueAt = clampString(patch.dueAt, 120) || null;
+    if (patch.blockedReason !== undefined) update.blockedReason = clampString(patch.blockedReason, 6000) || '';
+    if (patch.resultSummary !== undefined) update.resultSummary = clampString(patch.resultSummary, 12000) || '';
+    if (patch.nextActions !== undefined) update.nextActions = stringArray(patch.nextActions, 100, 3000);
+    if (patch.metadata !== undefined) update.metadata = jsonSafe(patch.metadata || {});
+    if (patch.metadataPatch !== undefined) update.metadata = { ...(current.metadata || {}), ...jsonSafe(patch.metadataPatch || {}) };
+    tx.update(ref, update);
+  });
+  return workItemGet({ id });
+}
+
+async function workItemClaim(input, actor = {}) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const agent = assertString(input.agent || actor.agent, 'agent', { max: 120 });
+  const model = clampString(input.model || actor.model, 120) || null;
+  const leaseMinutes = Math.min(Math.max(Number(input.leaseMinutes) || 60, 10), 1440);
+  const ref = db().collection(COLLECTIONS.workItems).doc(id);
+  const nowMs = Date.now();
+
+  await db().runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    if (!snapshot.exists) throw new Error('Work item not found: ' + id);
+    const current = snapshot.data();
+    if (['done', 'cancelled'].includes(current.status)) throw new Error('Work item is already closed: ' + current.status);
+    const currentLeaseMs = timestampMillis(current.leaseExpiresAt);
+    const leaseActive = current.claimedBy && currentLeaseMs > nowMs;
+    if (leaseActive && current.claimedBy !== agent) {
+      throw new Error('Work item is claimed by ' + current.claimedBy + ' until ' + new Date(currentLeaseMs).toISOString());
+    }
+    tx.update(ref, {
+      status: 'in_progress',
+      claimedBy: agent,
+      claimedModel: model,
+      runId: clampString(input.runId, 160) || current.runId || null,
+      leaseExpiresAt: new Date(nowMs + leaseMinutes * 60 * 1000),
+      lastHeartbeatAt: FieldValue.serverTimestamp(),
+      revision: Number(current.revision || 1) + 1,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+  return workItemGet({ id });
+}
+
+async function workItemHeartbeat(input) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const agent = assertString(input.agent, 'agent', { max: 120 });
+  const leaseMinutes = Math.min(Math.max(Number(input.leaseMinutes) || 60, 10), 1440);
+  const ref = db().collection(COLLECTIONS.workItems).doc(id);
+
+  await db().runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    if (!snapshot.exists) throw new Error('Work item not found: ' + id);
+    const current = snapshot.data();
+    if (current.claimedBy !== agent) throw new Error('Work item is not claimed by ' + agent);
+    if (current.status !== 'in_progress') throw new Error('Work item is not in progress');
+    tx.update(ref, {
+      leaseExpiresAt: new Date(Date.now() + leaseMinutes * 60 * 1000),
+      lastHeartbeatAt: FieldValue.serverTimestamp(),
+      runId: clampString(input.runId, 160) || current.runId || null,
+      revision: Number(current.revision || 1) + 1,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+  return workItemGet({ id });
+}
+
+async function workItemFinish(input) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const agent = assertString(input.agent, 'agent', { max: 120 });
+  const outcomeStatus = assertEnum(input.status, ['done', 'blocked', 'review'], 'status', 'done');
+  const ref = db().collection(COLLECTIONS.workItems).doc(id);
+
+  await db().runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    if (!snapshot.exists) throw new Error('Work item not found: ' + id);
+    const current = snapshot.data();
+    if (current.claimedBy && current.claimedBy !== agent) throw new Error('Work item is claimed by ' + current.claimedBy);
+    tx.update(ref, {
+      status: outcomeStatus,
+      completedBy: agent,
+      resultSummary: clampString(input.resultSummary, 12000) || current.resultSummary || '',
+      blockedReason: outcomeStatus === 'blocked'
+        ? (clampString(input.blockedReason, 6000) || current.blockedReason || '')
+        : '',
+      nextActions: input.nextActions !== undefined
+        ? stringArray(input.nextActions, 100, 3000)
+        : (current.nextActions || []),
+      metadata: { ...(current.metadata || {}), ...jsonSafe(input.metadataPatch || {}) },
+      leaseExpiresAt: null,
+      lastHeartbeatAt: FieldValue.serverTimestamp(),
+      finishedAt: outcomeStatus === 'done' ? FieldValue.serverTimestamp() : null,
+      revision: Number(current.revision || 1) + 1,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+  return workItemGet({ id });
+}
+
+async function workItemRelease(input) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const agent = assertString(input.agent, 'agent', { max: 120 });
+  const targetStatus = assertEnum(input.status, ['ready', 'backlog'], 'status', 'ready');
+  const ref = db().collection(COLLECTIONS.workItems).doc(id);
+
+  await db().runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    if (!snapshot.exists) throw new Error('Work item not found: ' + id);
+    const current = snapshot.data();
+    if (current.claimedBy && current.claimedBy !== agent) throw new Error('Work item is claimed by ' + current.claimedBy);
+    tx.update(ref, {
+      status: targetStatus,
+      claimedBy: null,
+      claimedModel: null,
+      runId: null,
+      leaseExpiresAt: null,
+      lastHeartbeatAt: FieldValue.serverTimestamp(),
+      revision: Number(current.revision || 1) + 1,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+  return workItemGet({ id });
+}
+
+async function controlPlaneOverview(input = {}) {
+  const limit = Math.min(Math.max(Number(input.limit) || 80, 10), 200);
+  const database = db();
+  const [workSnapshot, spaceSnapshot, runSnapshot, projectSnapshot, memoSnapshot] = await Promise.all([
+    database.collection(COLLECTIONS.workItems).limit(Math.max(limit, 100)).get(),
+    database.collection(COLLECTIONS.spaces).limit(100).get(),
+    database.collection(THINKING_COLLECTIONS.runs).limit(100).get(),
+    database.collection('projects').limit(100).get(),
+    database.collection('memos').limit(150).get(),
+  ]);
+
+  const rawWork = workSnapshot.docs.map((snapshot) => ({ id: snapshot.id, ...snapshot.data() }));
+  const workItems = sortRecent(rawWork.map((item) => serialize(item)));
+  const spaces = sortRecent(spaceSnapshot.docs.map(documentToObject)).filter((item) => item.status === 'active');
+  const runs = sortRecent(runSnapshot.docs.map(documentToObject)).filter((item) => item.status === 'active');
+  const projects = sortRecent(projectSnapshot.docs.map(documentToObject)).filter((item) => {
+    const status = String(item.status || '').toLowerCase();
+    return !['done', 'completed', 'archived', 'cancelled'].includes(status);
+  });
+  const actionMemos = sortRecent(memoSnapshot.docs.map(documentToObject))
+    .filter((item) => ['next_action', 'inbox', 'project'].includes(item.status))
+    .slice(0, 50);
+
+  const nowMs = Date.now();
+  const staleLeases = rawWork
+    .filter((item) =>
+      item.status === 'in_progress' &&
+      item.claimedBy &&
+      timestampMillis(item.leaseExpiresAt) > 0 &&
+      timestampMillis(item.leaseExpiresAt) <= nowMs
+    )
+    .map((item) => serialize(item));
+
+  const openWork = workItems.filter((item) => !['done', 'cancelled'].includes(item.status));
+  const priorityRank = { critical: 0, high: 1, medium: 2, low: 3 };
+  const recommendedNext = openWork
+    .filter((item) => ['ready', 'backlog'].includes(item.status))
+    .sort((a, b) => (priorityRank[a.priority] ?? 2) - (priorityRank[b.priority] ?? 2))
+    .slice(0, 20);
+
+  const unqueuedNextActions = [];
+  for (const space of spaces) {
+    for (const action of (space.nextActions || [])) {
+      const normalized = String(action || '').trim().toLowerCase();
+      if (!normalized) continue;
+      const exists = openWork.some((item) =>
+        item.spaceId === space.id &&
+        [item.title, item.objective].some((value) => String(value || '').trim().toLowerCase() === normalized)
+      );
+      if (!exists) unqueuedNextActions.push({ spaceId: space.id, spaceTitle: space.title, action });
+    }
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    counts: {
+      ready: openWork.filter((item) => item.status === 'ready').length,
+      backlog: openWork.filter((item) => item.status === 'backlog').length,
+      inProgress: openWork.filter((item) => item.status === 'in_progress').length,
+      blocked: openWork.filter((item) => item.status === 'blocked').length,
+      review: openWork.filter((item) => item.status === 'review').length,
+      activeSpaces: spaces.length,
+      activeProjects: projects.length,
+      activeRuns: runs.length,
+      staleLeases: staleLeases.length,
+      unqueuedNextActions: unqueuedNextActions.length,
+      actionMemos: actionMemos.length,
+    },
+    recommendedNext,
+    inProgress: openWork.filter((item) => item.status === 'in_progress'),
+    blocked: openWork.filter((item) => item.status === 'blocked'),
+    review: openWork.filter((item) => item.status === 'review'),
+    staleLeases,
+    activeRuns: runs.slice(0, 30),
+    activeSpaces: spaces.slice(0, 50),
+    activeProjects: projects.slice(0, 50),
+    unqueuedNextActions: unqueuedNextActions.slice(0, 100),
+    actionMemos,
+    operatingProtocol: [
+      'Call control_plane_overview before starting autonomous work.',
+      'Prefer a ready work item; create one for an unqueued Space next action when appropriate.',
+      'Claim exactly one work item before execution so parallel agents do not duplicate effort.',
+      'Load the linked Space with space_get_context and start a Run when the task requires durable research or production context.',
+      'Heartbeat long-running work before the lease expires.',
+      'Finish as done, review, or blocked with a result summary and concrete next actions.',
+      'Release the item if you stop without producing a durable result.',
+    ],
+  };
+}
+
 async function healthCheck() {
   const started = Date.now();
   const [spaceSample, profileSample, methodSample] = await Promise.all([
@@ -1650,7 +1986,18 @@ module.exports = {
   OPPORTUNITY_STATUSES,
   METHOD_STATUSES,
   METHOD_VERSION_STATUSES,
+  WORK_ITEM_STATUSES,
+  WORK_ITEM_PRIORITIES,
   healthCheck,
+  controlPlaneOverview,
+  workItemCreate,
+  workItemGet,
+  workItemSearch,
+  workItemUpdate,
+  workItemClaim,
+  workItemHeartbeat,
+  workItemFinish,
+  workItemRelease,
   spaceCreate,
   spaceGet,
   spaceUpdate,
