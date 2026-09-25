@@ -212,7 +212,7 @@ const TOOLS = [
   },
   {
     name: 'work_item_create',
-    description: 'Create a durable executable work item for the Agent Control Plane. Prefer this over hiding execution tasks only inside free-form Space nextActions.',
+    description: 'Create a durable executable work item for the Agent Control Plane. Use in_progress for ongoing work; running is reserved for work_item_claim.',
     inputSchema: objectSchema(workItemFields, ['title']),
     annotations: { readOnlyHint: false, destructiveHint: false },
   },
@@ -240,7 +240,7 @@ const TOOLS = [
   },
   {
     name: 'work_item_update',
-    description: 'Edit work-item planning metadata. Use claim/heartbeat/finish/release for ownership and execution lifecycle instead of directly mutating lease fields.',
+    description: 'Edit work-item planning metadata. running is claim-only; use work_item_claim to enter realtime execution.',
     inputSchema: objectSchema({
       id: string('Work item ID.', 160),
       expectedRevision: { type: 'integer', minimum: 1 },
@@ -323,7 +323,7 @@ const TOOLS = [
     inputSchema: objectSchema({
       id: string('Work item ID.', 160),
       agent: string('Current owning agent.', 120),
-      status: { type: 'string', enum: ['ready', 'backlog'], default: 'ready' },
+      status: { type: 'string', enum: ['ready', 'in_progress', 'backlog'], default: 'ready', description: 'Use in_progress when the task remains ongoing but the agent is no longer actively executing it.' },
     }, ['id', 'agent']),
     annotations: { readOnlyHint: false, destructiveHint: false },
   },
