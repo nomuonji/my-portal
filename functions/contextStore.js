@@ -1933,7 +1933,7 @@ async function workItemClaim(input, actor = {}) {
     const snapshot = await tx.get(ref);
     if (!snapshot.exists) throw new Error('Work item not found: ' + id);
     const current = snapshot.data();
-    if (['done', 'cancelled'].includes(current.status)) throw new Error('Work item is already closed: ' + current.status);
+    if (['archived', 'done', 'cancelled'].includes(current.status)) throw new Error('Work item is already closed: ' + current.status);
     if ((current.executionMode || 'agent') === 'human') throw new Error('Human task cannot be claimed by an agent; complete it in Human Tasks or delegate it back to agent mode');
     const currentLeaseMs = timestampMillis(current.leaseExpiresAt);
     const leaseActive = current.claimedBy && currentLeaseMs > nowMs;
