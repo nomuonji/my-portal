@@ -288,11 +288,13 @@ Spaceの `nextActions` はテーマの再開地点として残すが、複数エ
 
 主な状態: `backlog` / `ready` / `in_progress` / `blocked` / `review` / `done` / `cancelled`。
 
+さらに `executionMode = agent | human` を持つ。`human` は専用の **Human Tasks** 箱へ表示し、Agent Queueから除外する。
+
 Work Itemは `spaceId`, `projectId`, `sourceType`, `sourceId`, `priority`, `dependencies`, `claimedBy`, `runId`, `leaseExpiresAt`, `resultSummary`, `nextActions` を持てる。
 
 ### Claim / Lease
 
-並列エージェントの重複作業を避けるため、実行前に `work_item_claim` を必須に近い運用とする。claimには期限付きleaseを持たせ、長時間作業は `work_item_heartbeat` で延長する。lease切れは別エージェントが再取得できる。
+並列エージェントの重複作業を避けるため、実行前に `work_item_claim` を必須に近い運用とする。Human Taskは `work_item_claim` を拒否する。claimには期限付きleaseを持たせ、長時間作業は `work_item_heartbeat` で延長する。lease切れは別エージェントが再取得できる。
 
 ### Agent entrypoint
 
@@ -310,3 +312,13 @@ Work Itemは `spaceId`, `projectId`, `sourceType`, `sourceId`, `priority`, `depe
 `control_plane_overview` はWork Itemだけでなく、active Runs、Spaces、Projects、未キュー化のSpace next actions、従来メモの `next_action` / `inbox` / `project` も横断して返す。
 
 Dashboard UIも同じControl Planeの人間向けビューとし、Ready / Working / Blocked / Review、Active Agents、Spaces / Projects、未キュー化Next Actions、従来Inboxを一画面に表示する。
+### Human Tasks
+
+人間の操作・判断が必要な仕事はAgent Queueに残さない。
+
+- 明示的なユーザー判断・承認
+- Agentがアクセスできないログイン・本人確認・支払い・権限付与
+- 物理世界での操作
+- 人間本人にしか確定できない入力
+
+この場合Agentは `work_item_delegate_to_human` を呼び、`executionMode=human`、`status=ready` にして専用箱へ引き渡す。引き渡し理由と、Agentがそこまでに完了した内容を `humanReason` / `resultSummary` に残す。Human Tasksを人間が完了したら `done`、Agentへ戻せる状態になったら `executionMode=agent` + `ready` に戻す。

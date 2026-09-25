@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   addDoc,
   collection,
+  doc,
   onSnapshot,
   serverTimestamp,
+  updateDoc,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
@@ -34,6 +36,7 @@ import AddTaskIcon from '@mui/icons-material/AddTask';
 import BoltIcon from '@mui/icons-material/Bolt';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
+import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
 import PsychologyAltOutlinedIcon from '@mui/icons-material/PsychologyAltOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
@@ -83,6 +86,7 @@ function Dashboard() {
     title: '',
     objective: '',
     priority: 'medium',
+    executionMode: 'agent',
     spaceId: '',
     projectId: '',
   });
@@ -114,6 +118,22 @@ function Dashboard() {
   const openWork = useMemo(
     () => workItems.filter((item) => !['done', 'cancelled'].includes(item.status)),
     [workItems],
+  );
+
+  const humanTasks = useMemo(
+    () => openWork
+      .filter((item) => item.executionMode === 'human')
+      .sort((a, b) => {
+        const priorityDiff = (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2);
+        if (priorityDiff !== 0) return priorityDiff;
+        return toMillis(b.updatedAt || b.createdAt) - toMillis(a.updatedAt || a.createdAt);
+      }),
+    [openWork],
+  );
+
+  const agentWork = useMemo(
+    () => openWork.filter((item) => (item.executionMode || 'agent') === 'agent'),
+    [openWork],
   );
 
   const activeSpaces = useMemo(
@@ -183,6 +203,8 @@ function Dashboard() {
         instructions: '',
         status: 'ready',
         priority: source.priority || 'medium',
+        executionMode: source.executionMode || 'agent',
+        humanReason: clean(source.humanReason),
         spaceId: source.spaceId || null,
         projectId: source.projectId || null,
         sourceType: source.sourceType || 'manual',
@@ -202,7 +224,7 @@ function Dashboard() {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-      setDraft({ title: '', objective: '', priority: 'medium', spaceId: '', projectId: '' });
+      setDraft({ title: '', objective: '', priority: 'medium', executionMode: 'agent', spaceId: '', projectId: '' });
       setCreateOpen(false);
     } catch (error) {
       console.error('Failed to create work item:', error);
@@ -210,7 +232,37 @@ function Dashboard() {
     }
   };
 
-  const queueFor = (status) => openWork
+
+  const completeHumanTask = async (item) => {
+    try {
+      await updateDoc(doc(db, 'memos', 'agent-control', 'workItems', item.id), {
+        status: 'done',
+        completedBy: 'human',
+        finishedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        revision: Number(item.revision || 1) + 1,
+      });
+    } catch (error) {
+      console.error('Failed to complete human task:', error);
+    }
+  };
+
+  const returnHumanTaskToAgent = async (item) => {
+    try {
+      await updateDoc(doc(db, 'memos', 'agent-control', 'workItems', item.id), {
+        executionMode: 'agent',
+        status: 'ready',
+        humanReason: '',
+        requestedBy: null,
+        updatedAt: serverTimestamp(),
+        revision: Number(item.revision || 1) + 1,
+      });
+    } catch (error) {
+      console.error('Failed to return human task to agent:', error);
+    }
+  };
+
+  const queueFor = (status) => agentWork
     .filter((item) => item.status === status)
     .sort((a, b) => {
       const priorityDiff = (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2);
@@ -222,6 +274,7 @@ function Dashboard() {
     { label: 'Ready', value: queueFor('ready').length + queueFor('backlog').length, sub: '着手可能' },
     { label: 'Working', value: queueFor('in_progress').length, sub: activeRuns.length + ' active runs' },
     { label: 'Blocked', value: queueFor('blocked').length, sub: '要判断 / 外部待ち' },
+    { label: 'Human', value: humanTasks.length, sub: '人間の操作・判断待ち' },
     {
       label: 'Coverage',
       value: activeSpaces.length + activeProjects.length,
@@ -297,7 +350,7 @@ function Dashboard() {
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: { xs: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' },
+          gridTemplateColumns: { xs: 'repeat(2, 1fr)', lg: 'repeat(5, 1fr)' },
           gap: 1,
           mb: 1.5,
         }}
@@ -320,6 +373,87 @@ function Dashboard() {
           </Paper>
         ))}
       </Box>
+
+
+      <Paper
+        elevation={0}
+        sx={{
+          p: 1.25,
+          mb: 1.5,
+          border: '1px solid ' + border,
+          background: glass,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.7, mb: 0.9 }}>
+          <PersonOutlineIcon color="primary" />
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
+              Human Tasks
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              本人の操作・判断・承認など、人間が担当する必要がある仕事。Agent Queueには流れません。
+            </Typography>
+          </Box>
+          <Chip size="small" label={humanTasks.length} sx={{ height: 21 }} />
+        </Box>
+
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)', xl: 'repeat(3, 1fr)' },
+            gap: 0.8,
+          }}
+        >
+          {humanTasks.slice(0, 12).map((item) => (
+            <Card key={item.id} elevation={0} sx={{ border: '1px solid ' + border }}>
+              <CardContent sx={{ p: '12px !important' }}>
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.6 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 900, flex: 1 }}>
+                    {item.title || 'Untitled'}
+                  </Typography>
+                  <Chip
+                    size="small"
+                    label={priorityLabel[item.priority] || 'MEDIUM'}
+                    variant="outlined"
+                    sx={{ height: 18, fontSize: '0.52rem' }}
+                  />
+                </Box>
+
+                {(item.humanReason || item.objective) && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.55, lineHeight: 1.5 }}>
+                    {item.humanReason || item.objective}
+                  </Typography>
+                )}
+
+                {item.resultSummary && (
+                  <Typography variant="caption" sx={{ display: 'block', mt: 0.6, lineHeight: 1.5 }}>
+                    Agent側完了: {item.resultSummary}
+                  </Typography>
+                )}
+
+                <Box sx={{ display: 'flex', gap: 0.6, mt: 1, flexWrap: 'wrap' }}>
+                  <Button size="small" variant="contained" onClick={() => completeHumanTask(item)}>
+                    完了
+                  </Button>
+                  <Button size="small" variant="outlined" onClick={() => returnHumanTaskToAgent(item)}>
+                    Agentへ戻す
+                  </Button>
+                  <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto', alignSelf: 'center' }}>
+                    {formatDate(item.updatedAt || item.createdAt)}
+                  </Typography>
+                </Box>
+              </CardContent>
+            </Card>
+          ))}
+          {humanTasks.length === 0 && (
+            <Box sx={{ p: 1.4, border: '1px dashed ' + border, borderRadius: 2 }}>
+              <Typography variant="body2" color="text.secondary">
+                現在、人間の対応待ちはありません。
+              </Typography>
+            </Box>
+          )}
+        </Box>
+      </Paper>
 
       <Box
         sx={{
@@ -576,6 +710,7 @@ function Dashboard() {
                       priority: 'medium',
                       spaceId: space.id,
                       projectId: '',
+                      executionMode: 'agent',
                       sourceType: 'space_next_action',
                       sourceId: space.id,
                     })}
@@ -822,6 +957,20 @@ function Dashboard() {
                 <MenuItem value="high">High</MenuItem>
                 <MenuItem value="medium">Medium</MenuItem>
                 <MenuItem value="low">Low</MenuItem>
+              </Select>
+            </FormControl>
+            <FormControl>
+              <InputLabel>担当</InputLabel>
+              <Select
+                label="担当"
+                value={draft.executionMode}
+                onChange={(event) => setDraft((current) => ({
+                  ...current,
+                  executionMode: event.target.value,
+                }))}
+              >
+                <MenuItem value="agent">Agent</MenuItem>
+                <MenuItem value="human">Human</MenuItem>
               </Select>
             </FormControl>
             <FormControl>

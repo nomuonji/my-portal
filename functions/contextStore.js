@@ -36,6 +36,7 @@ const METHOD_STATUSES = ['active', 'paused', 'archived'];
 const METHOD_VERSION_STATUSES = ['draft', 'active', 'superseded', 'archived'];
 const WORK_ITEM_STATUSES = ['backlog', 'ready', 'in_progress', 'blocked', 'review', 'done', 'cancelled'];
 const WORK_ITEM_PRIORITIES = ['critical', 'high', 'medium', 'low'];
+const WORK_ITEM_EXECUTION_MODES = ['agent', 'human'];
 
 function db() {
   return DATABASE_ID === '(default)' ? getFirestore() : getFirestore(DATABASE_ID);
@@ -1637,6 +1638,8 @@ function workItemPayload(input) {
     instructions: clampString(input.instructions, 16000) || '',
     status: assertEnum(input.status, WORK_ITEM_STATUSES, 'status', 'ready'),
     priority: assertEnum(input.priority, WORK_ITEM_PRIORITIES, 'priority', 'medium'),
+    executionMode: assertEnum(input.executionMode, WORK_ITEM_EXECUTION_MODES, 'executionMode', 'agent'),
+    humanReason: clampString(input.humanReason, 6000) || '',
     spaceId: clampString(input.spaceId, 160) || null,
     projectId: clampString(input.projectId, 160) || null,
     sourceType: clampString(input.sourceType, 80) || 'manual',
@@ -1687,6 +1690,7 @@ async function workItemSearch(input = {}) {
   const priority = clampString(input.priority, 40);
   const spaceId = clampString(input.spaceId, 160);
   const projectId = clampString(input.projectId, 160);
+  const executionMode = clampString(input.executionMode, 20);
   const agent = clampString(input.agent, 120)?.toLowerCase();
   const items = sortRecent(snapshot.docs.map(documentToObject))
     .filter((item) => {
@@ -1694,6 +1698,7 @@ async function workItemSearch(input = {}) {
       if (priority && item.priority !== priority) return false;
       if (spaceId && item.spaceId !== spaceId) return false;
       if (projectId && item.projectId !== projectId) return false;
+      if (executionMode && (item.executionMode || 'agent') !== executionMode) return false;
       if (agent && String(item.claimedBy || '').toLowerCase() !== agent) return false;
       if (q) {
         const haystack = [
@@ -1736,6 +1741,8 @@ async function workItemUpdate(input) {
     if (patch.instructions !== undefined) update.instructions = clampString(patch.instructions, 16000) || '';
     if (patch.status !== undefined) update.status = assertEnum(patch.status, WORK_ITEM_STATUSES, 'patch.status', current.status || 'ready');
     if (patch.priority !== undefined) update.priority = assertEnum(patch.priority, WORK_ITEM_PRIORITIES, 'patch.priority', current.priority || 'medium');
+    if (patch.executionMode !== undefined) update.executionMode = assertEnum(patch.executionMode, WORK_ITEM_EXECUTION_MODES, 'patch.executionMode', current.executionMode || 'agent');
+    if (patch.humanReason !== undefined) update.humanReason = clampString(patch.humanReason, 6000) || '';
     if (patch.spaceId !== undefined) update.spaceId = nextSpaceId;
     if (patch.projectId !== undefined) update.projectId = clampString(patch.projectId, 160) || null;
     if (patch.sourceType !== undefined) update.sourceType = clampString(patch.sourceType, 80) || 'manual';
@@ -1766,6 +1773,7 @@ async function workItemClaim(input, actor = {}) {
     if (!snapshot.exists) throw new Error('Work item not found: ' + id);
     const current = snapshot.data();
     if (['done', 'cancelled'].includes(current.status)) throw new Error('Work item is already closed: ' + current.status);
+    if ((current.executionMode || 'agent') === 'human') throw new Error('Human task cannot be claimed by an agent; complete it in Human Tasks or delegate it back to agent mode');
     const currentLeaseMs = timestampMillis(current.leaseExpiresAt);
     const leaseActive = current.claimedBy && currentLeaseMs > nowMs;
     if (leaseActive && current.claimedBy !== agent) {
@@ -1840,6 +1848,40 @@ async function workItemFinish(input) {
   return workItemGet({ id });
 }
 
+
+async function workItemDelegateToHuman(input, actor = {}) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const ref = db().collection(COLLECTIONS.workItems).doc(id);
+  const requester = clampString(input.requestedBy || actor.agent, 120) || 'agent';
+
+  await db().runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    if (!snapshot.exists) throw new Error('Work item not found: ' + id);
+    const current = snapshot.data();
+    if (['done', 'cancelled'].includes(current.status)) {
+      throw new Error('Work item is already closed: ' + current.status);
+    }
+    tx.update(ref, {
+      executionMode: 'human',
+      status: 'ready',
+      humanReason: assertString(input.reason, 'reason', { max: 6000 }),
+      requestedBy: requester,
+      resultSummary: clampString(input.resultSummary, 12000) || current.resultSummary || '',
+      nextActions: input.nextActions !== undefined
+        ? stringArray(input.nextActions, 100, 3000)
+        : (current.nextActions || []),
+      claimedBy: null,
+      claimedModel: null,
+      runId: null,
+      leaseExpiresAt: null,
+      lastHeartbeatAt: FieldValue.serverTimestamp(),
+      revision: Number(current.revision || 1) + 1,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+  return workItemGet({ id });
+}
+
 async function workItemRelease(input) {
   const id = assertString(input.id, 'id', { max: 160 });
   const agent = assertString(input.agent, 'agent', { max: 120 });
@@ -1899,8 +1941,10 @@ async function controlPlaneOverview(input = {}) {
     .map((item) => serialize(item));
 
   const openWork = workItems.filter((item) => !['done', 'cancelled'].includes(item.status));
+  const agentWork = openWork.filter((item) => (item.executionMode || 'agent') === 'agent');
+  const humanTasks = openWork.filter((item) => item.executionMode === 'human');
   const priorityRank = { critical: 0, high: 1, medium: 2, low: 3 };
-  const recommendedNext = openWork
+  const recommendedNext = agentWork
     .filter((item) => ['ready', 'backlog'].includes(item.status))
     .sort((a, b) => (priorityRank[a.priority] ?? 2) - (priorityRank[b.priority] ?? 2))
     .slice(0, 20);
@@ -1921,11 +1965,12 @@ async function controlPlaneOverview(input = {}) {
   return {
     generatedAt: new Date().toISOString(),
     counts: {
-      ready: openWork.filter((item) => item.status === 'ready').length,
-      backlog: openWork.filter((item) => item.status === 'backlog').length,
-      inProgress: openWork.filter((item) => item.status === 'in_progress').length,
-      blocked: openWork.filter((item) => item.status === 'blocked').length,
-      review: openWork.filter((item) => item.status === 'review').length,
+      ready: agentWork.filter((item) => item.status === 'ready').length,
+      backlog: agentWork.filter((item) => item.status === 'backlog').length,
+      inProgress: agentWork.filter((item) => item.status === 'in_progress').length,
+      blocked: agentWork.filter((item) => item.status === 'blocked').length,
+      review: agentWork.filter((item) => item.status === 'review').length,
+      humanTasks: humanTasks.length,
       activeSpaces: spaces.length,
       activeProjects: projects.length,
       activeRuns: runs.length,
@@ -1934,9 +1979,10 @@ async function controlPlaneOverview(input = {}) {
       actionMemos: actionMemos.length,
     },
     recommendedNext,
-    inProgress: openWork.filter((item) => item.status === 'in_progress'),
-    blocked: openWork.filter((item) => item.status === 'blocked'),
-    review: openWork.filter((item) => item.status === 'review'),
+    inProgress: agentWork.filter((item) => item.status === 'in_progress'),
+    blocked: agentWork.filter((item) => item.status === 'blocked'),
+    review: agentWork.filter((item) => item.status === 'review'),
+    humanTasks,
     staleLeases,
     activeRuns: runs.slice(0, 30),
     activeSpaces: spaces.slice(0, 50),
@@ -1946,7 +1992,8 @@ async function controlPlaneOverview(input = {}) {
     operatingProtocol: [
       'Call control_plane_overview before starting autonomous work.',
       'Prefer a ready work item; create one for an unqueued Space next action when appropriate.',
-      'Claim exactly one work item before execution so parallel agents do not duplicate effort.',
+      'Claim exactly one agent work item before execution so parallel agents do not duplicate effort.',
+      'If an item requires a human-only action, explicit user judgment, account approval, physical action, or unavailable credential, call work_item_delegate_to_human instead of leaving it buried in chat or blocking the agent queue.',
       'Load the linked Space with space_get_context and start a Run when the task requires durable research or production context.',
       'Heartbeat long-running work before the lease expires.',
       'Finish as done, review, or blocked with a result summary and concrete next actions.',
@@ -1988,6 +2035,7 @@ module.exports = {
   METHOD_VERSION_STATUSES,
   WORK_ITEM_STATUSES,
   WORK_ITEM_PRIORITIES,
+  WORK_ITEM_EXECUTION_MODES,
   healthCheck,
   controlPlaneOverview,
   workItemCreate,
@@ -1997,6 +2045,7 @@ module.exports = {
   workItemClaim,
   workItemHeartbeat,
   workItemFinish,
+  workItemDelegateToHuman,
   workItemRelease,
   spaceCreate,
   spaceGet,
