@@ -322,3 +322,16 @@ Dashboard UIも同じControl Planeの人間向けビューとし、Ready / Worki
 - 人間本人にしか確定できない入力
 
 この場合Agentは `work_item_delegate_to_human` を呼び、`executionMode=human`、`status=ready` にして専用箱へ引き渡す。引き渡し理由と、Agentがそこまでに完了した内容を `humanReason` / `resultSummary` に残す。Human Tasksを人間が完了したら `done`、Agentへ戻せる状態になったら `executionMode=agent` + `ready` に戻す。
+
+## Linear external task source
+
+LinearはMy Portalの第二の正本DBにはしない。Linear Issueは外部タスクソース、My Portal Work ItemはAgent実行制御の正本として扱う。
+
+- `control_plane_overview` はLinear連携が有効ならopen Issueを返す
+- Agentが実行するIssueは `linear_issue_import_to_work_item` でWork Item化してからclaimする
+- Work ItemからLinearへは `work_item_push_to_linear` で作成・更新する
+- My Portal固有bridgeにないLinear操作は `linear_tool_catalog` → `linear_tool_call` でLinear公式Remote MCPへ中継する
+- `LINEAR_API_KEY` はNetlify Functionsのsecret envにのみ保存し、Firestoreやクライアントへ出さない
+- API key未設定時はsystem-generated Human Taskを作成し、設定後に自動完了する
+
+詳細は `docs/LINEAR_INTEGRATION.md` を参照。

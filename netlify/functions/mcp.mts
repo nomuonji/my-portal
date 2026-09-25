@@ -9,6 +9,7 @@ import * as socialStoreImport from "../../functions/socialArchiveStore.js";
 import * as socialToolsImport from "../../functions/socialArchiveToolSchemas.js";
 import * as contextStoreImport from "../../functions/contextStore.js";
 import * as contextToolsImport from "../../functions/contextStoreToolSchemas.js";
+import * as linearBridgeImport from "../../functions/linearMcpBridge.js";
 import * as migrationImport from "../../functions/agentIdeasMigration.js";
 
 const agentStore: any = (agentStoreImport as any).default ?? agentStoreImport;
@@ -19,11 +20,12 @@ const socialStore: any = (socialStoreImport as any).default ?? socialStoreImport
 const socialToolsModule: any = (socialToolsImport as any).default ?? socialToolsImport;
 const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
 const contextToolsModule: any = (contextToolsImport as any).default ?? contextToolsImport;
+const linearBridge: any = (linearBridgeImport as any).default ?? linearBridgeImport;
 const migration: any = (migrationImport as any).default ?? migrationImport;
 const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...portalToolsModule.TOOLS, ...socialToolsModule.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "1.0.1-netlify";
+const SERVER_VERSION = "1.1.0-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -323,10 +325,16 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
         socialToolCount: socialToolsModule.TOOLS.length,
         database: await agentStore.healthCheck(),
         contextStore: await contextStore.healthCheck(),
+        linear: linearBridge.configSummary(),
         legacyBootstrap,
       });
     }
     case "control_plane_overview": return structured(await contextStore.controlPlaneOverview(args));
+    case "linear_status": return structured(await contextStore.linearStatus(args));
+    case "linear_tool_catalog": return structured(await contextStore.linearToolCatalog(args));
+    case "linear_tool_call": return structured(await contextStore.linearToolCall(args));
+    case "linear_issue_import_to_work_item": return structured(await contextStore.linearIssueImportToWorkItem(args));
+    case "work_item_push_to_linear": return structured(await contextStore.workItemPushToLinear(args));
     case "work_item_create": return structured(await contextStore.workItemCreate(args));
     case "work_item_get": return structured(await contextStore.workItemGet(args));
     case "work_item_search": return structured(await contextStore.workItemSearch(args));
@@ -490,7 +498,7 @@ async function handleRpc(message: any) {
         protocolVersion,
         capabilities: { tools: { listChanged: true } },
         serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
-        instructions: "My Portal is an Agent Control Plane + Context Store + Thinking Workspace. Autonomous work should begin with control_plane_overview. Claim executable agent work with work_item_claim before acting, heartbeat long work, and finish/release the item with a durable handoff so parallel agents do not duplicate effort. If a step genuinely requires a person, move it to the Human Tasks box with work_item_delegate_to_human instead of leaving it in the agent queue or only mentioning it in chat. Use space_search then space_get_context to resume long-running themes. Use profile_get_context for scoped User Model facts, preserving explicit vs inferred evidence. If the host is temporarily exposing an older cached tool schema without the new Context Store tools, use idea_search with query prefixed by `space:` to search Spaces and idea_get_context with id `space:<spaceId>` to fetch the same Space Context Pack. Thinking Spaces and Agent Ideas are separate storage layers, but idea_* tools are interoperable: spaceId targets durable Thinking Space ideas, categoryId targets Agent Ideas board items, and ID-based reads/updates resolve the correct layer automatically. Use space_* / profile_* / decision_* / opportunity_* for long-running thinking themes. Use method_search then method_get_context for reusable, versioned Agent Methods/Protocols; start method executions with idea_run_start + methodId so the exact methodVersionId is persisted for later evaluation and improvement. Agent Ideas mirrors the Portal board hierarchy: ideas/hobbies/stocks as the large categories and the Portal tags beneath them. Use idea_generation_work to find mirrored tag categories that need replenishment, then idea_create with categoryId. When the user adopts an Agent Idea, use idea_promote_to_portal so it is copied into the matching Portal board/tag and marked promoted with provenance retained. Existing portal_* data (including short idea/hobby/stock boards and projects) remains separate; portal_delete requires explicit confirm=true. social_* tools manage the personal SNS archive: search historical posts, import official X archive posts in batches, and update only review metadata such as category/tags/starred/note.",
+        instructions: "My Portal is an Agent Control Plane + Context Store + Thinking Workspace. Autonomous work should begin with control_plane_overview. Claim executable agent work with work_item_claim before acting, heartbeat long work, and finish/release the item with a durable handoff so parallel agents do not duplicate effort. Linear is an external task source: control_plane_overview includes open Linear issues when configured; import relevant issues with linear_issue_import_to_work_item before autonomous execution, and use work_item_push_to_linear to create/update linked Linear issues. For broader Linear operations, inspect linear_tool_catalog then call linear_tool_call, which proxies Linear's official Remote MCP without exposing the API key. If Linear setup is missing, the control plane creates a Human Task for the user to store LINEAR_API_KEY directly in Netlify. If a step genuinely requires a person, move it to the Human Tasks box with work_item_delegate_to_human instead of leaving it in the agent queue or only mentioning it in chat. Use space_search then space_get_context to resume long-running themes. Use profile_get_context for scoped User Model facts, preserving explicit vs inferred evidence. If the host is temporarily exposing an older cached tool schema without the new Context Store tools, use idea_search with query prefixed by `space:` to search Spaces and idea_get_context with id `space:<spaceId>` to fetch the same Space Context Pack. Thinking Spaces and Agent Ideas are separate storage layers, but idea_* tools are interoperable: spaceId targets durable Thinking Space ideas, categoryId targets Agent Ideas board items, and ID-based reads/updates resolve the correct layer automatically. Use space_* / profile_* / decision_* / opportunity_* for long-running thinking themes. Use method_search then method_get_context for reusable, versioned Agent Methods/Protocols; start method executions with idea_run_start + methodId so the exact methodVersionId is persisted for later evaluation and improvement. Agent Ideas mirrors the Portal board hierarchy: ideas/hobbies/stocks as the large categories and the Portal tags beneath them. Use idea_generation_work to find mirrored tag categories that need replenishment, then idea_create with categoryId. When the user adopts an Agent Idea, use idea_promote_to_portal so it is copied into the matching Portal board/tag and marked promoted with provenance retained. Existing portal_* data (including short idea/hobby/stock boards and projects) remains separate; portal_delete requires explicit confirm=true. social_* tools manage the personal SNS archive: search historical posts, import official X archive posts in batches, and update only review metadata such as category/tags/starred/note.",
       },
     };
   }
@@ -772,6 +780,7 @@ export default async (request: Request) => {
       contextStore: { databaseId: contextStore.DATABASE_ID, collections: contextStore.COLLECTIONS, database: contextDatabase },
       portal: { databaseId: portalStore.DATABASE_ID, database: portalDatabase },
       socialArchive: { databaseId: socialStore.DATABASE_ID, collections: socialStore.COLLECTIONS, database: socialDatabase },
+      linear: linearBridge.configSummary(),
       oauth: {
         configured: oauthConfigured,
         clientRegistration: "cimd",

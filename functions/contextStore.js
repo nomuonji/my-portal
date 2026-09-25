@@ -1,6 +1,7 @@
 const { createHash } = require('node:crypto');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const agentStore = require('./agentIdeasStore');
+const linearBridge = require('./linearMcpBridge');
 
 const DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTIONS = Object.freeze({
@@ -37,6 +38,7 @@ const METHOD_VERSION_STATUSES = ['draft', 'active', 'superseded', 'archived'];
 const WORK_ITEM_STATUSES = ['backlog', 'ready', 'in_progress', 'blocked', 'review', 'done', 'cancelled'];
 const WORK_ITEM_PRIORITIES = ['critical', 'high', 'medium', 'low'];
 const WORK_ITEM_EXECUTION_MODES = ['agent', 'human'];
+const LINEAR_SETUP_WORK_ITEM_ID = 'system-linear-integration-setup';
 
 function db() {
   return DATABASE_ID === '(default)' ? getFirestore() : getFirestore(DATABASE_ID);
@@ -1631,6 +1633,155 @@ function timestampMillis(value) {
   return Date.parse(value) || 0;
 }
 
+function linearPriorityToWorkItem(value) {
+  const priority = Number(value?.value ?? value);
+  if (priority === 1) return 'critical';
+  if (priority === 2) return 'high';
+  if (priority === 4) return 'low';
+  return 'medium';
+}
+
+function workItemPriorityToLinear(value) {
+  if (value === 'critical') return 1;
+  if (value === 'high') return 2;
+  if (value === 'medium') return 3;
+  if (value === 'low') return 4;
+  return 0;
+}
+
+function linearStatusToWorkItem(statusType) {
+  const type = String(statusType || '').toLowerCase();
+  if (type === 'completed') return 'done';
+  if (type === 'canceled' || type === 'cancelled') return 'cancelled';
+  if (type === 'backlog' || type === 'triage') return 'backlog';
+  return 'ready';
+}
+
+function workItemStatusToLinear(status) {
+  if (status === 'backlog') return 'backlog';
+  if (status === 'done') return 'completed';
+  if (status === 'cancelled') return 'canceled';
+  if (['in_progress', 'blocked', 'review'].includes(status)) return 'started';
+  return 'unstarted';
+}
+
+function linearLabelNames(labels) {
+  if (!Array.isArray(labels)) return [];
+  return labels
+    .map((label) => typeof label === 'string' ? label : label?.name)
+    .filter(Boolean)
+    .map((label) => String(label).slice(0, 100));
+}
+
+function linearIssueMetadata(issue) {
+  return {
+    issueId: clampString(issue?.id, 200) || null,
+    identifier: clampString(issue?.identifier, 200) || clampString(issue?.id, 200) || null,
+    url: clampString(issue?.url, 3000) || '',
+    status: clampString(typeof issue?.status === 'string' ? issue.status : issue?.status?.name, 160) || '',
+    statusType: clampString(issue?.statusType || issue?.status?.type, 80) || '',
+    priority: Number(issue?.priority?.value ?? issue?.priority ?? 0) || 0,
+    project: clampString(typeof issue?.project === 'string' ? issue.project : issue?.project?.name, 500) || '',
+    team: clampString(typeof issue?.team === 'string' ? issue.team : issue?.team?.name, 300) || '',
+    assignee: clampString(typeof issue?.assignee === 'string' ? issue.assignee : issue?.assignee?.name, 300) || '',
+    delegate: clampString(typeof issue?.delegate === 'string' ? issue.delegate : issue?.delegate?.name, 300) || '',
+    dueDate: clampString(issue?.dueDate, 120) || null,
+    updatedAt: clampString(issue?.updatedAt, 120) || null,
+    syncedAt: new Date().toISOString(),
+  };
+}
+
+async function ensureLinearSetupTask() {
+  const ref = db().collection(COLLECTIONS.workItems).doc(LINEAR_SETUP_WORK_ITEM_ID);
+  const configured = linearBridge.isConfigured();
+
+  await db().runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    const current = snapshot.exists ? snapshot.data() : null;
+
+    if (configured) {
+      if (
+        current &&
+        current.sourceType === 'system_integration' &&
+        current.sourceId === 'linear' &&
+        !['done', 'cancelled'].includes(current.status)
+      ) {
+        tx.update(ref, {
+          status: 'done',
+          completedBy: 'system',
+          resultSummary: 'LINEAR_API_KEYを検出しました。My Portal MCPからLinear公式Remote MCPを利用できます。',
+          finishedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+          revision: Number(current.revision || 1) + 1,
+        });
+      }
+      return;
+    }
+
+    if (
+      current &&
+      current.sourceType === 'system_integration' &&
+      current.sourceId === 'linear' &&
+      current.executionMode === 'human' &&
+      current.status === 'ready'
+    ) {
+      return;
+    }
+
+    const now = FieldValue.serverTimestamp();
+    const payload = {
+      title: 'Linear連携: APIキーをNetlifyへ設定',
+      objective: 'My Portal MCPからLinearのIssue・Project・Comment等を読み書きできるようにする。',
+      instructions: 'Linearの Settings > Account > Security & Access でPersonal API keyを作成し、Netlify site my-portal-agent の秘密環境変数 LINEAR_API_KEY に直接保存する。キーはチャットやWork Item本文に貼らない。必要なら LINEAR_TEAM_KEY=MY も設定する。',
+      status: 'ready',
+      priority: 'high',
+      executionMode: 'human',
+      humanReason: 'Linearの個人APIキー発行とNetlifyへの秘密情報登録は本人操作が必要です。',
+      spaceId: null,
+      projectId: null,
+      sourceType: 'system_integration',
+      sourceId: 'linear',
+      dependencies: [],
+      tags: ['integration', 'linear'],
+      dueAt: null,
+      metadata: {
+        integration: 'linear',
+        envVar: 'LINEAR_API_KEY',
+        optionalTeamEnvVar: 'LINEAR_TEAM_KEY',
+        defaultTeamKey: linearBridge.teamKey(),
+        secretHandling: 'Store directly in Netlify. Never paste the API key into chat or Firestore.',
+      },
+      claimedBy: null,
+      claimedModel: null,
+      runId: null,
+      leaseExpiresAt: null,
+      lastHeartbeatAt: null,
+      blockedReason: '',
+      resultSummary: '',
+      nextActions: [
+        'LinearでPersonal API keyを発行する',
+        'NetlifyのLINEAR_API_KEYへ保存する',
+        'My Portal MCPを再接続してlinear_statusを確認する',
+      ],
+      requestedBy: 'system',
+      updatedAt: now,
+      revision: Number(current?.revision || 0) + 1,
+    };
+
+    if (snapshot.exists) {
+      tx.set(ref, payload, { merge: true });
+    } else {
+      tx.set(ref, {
+        ...payload,
+        createdBy: { type: 'system', agent: 'my-portal', model: null },
+        createdAt: now,
+      });
+    }
+  });
+
+  return documentToObject(await ref.get());
+}
+
 function workItemPayload(input) {
   return {
     title: assertString(input.title, 'title', { max: 500 }),
@@ -1907,8 +2058,169 @@ async function workItemRelease(input) {
   return workItemGet({ id });
 }
 
+async function linearStatus() {
+  return linearBridge.status();
+}
+
+async function linearToolCatalog(input = {}) {
+  return linearBridge.toolCatalog(input);
+}
+
+async function linearToolCall(input = {}) {
+  return linearBridge.callTool(input);
+}
+
+async function findLinearLinkedWorkItem(issue) {
+  const issueId = clampString(issue?.id, 200);
+  const identifier = clampString(issue?.identifier, 200);
+  const snapshot = await db().collection(COLLECTIONS.workItems).limit(1000).get();
+  const items = snapshot.docs.map((docSnapshot) => ({ id: docSnapshot.id, ...docSnapshot.data() }));
+
+  return items.find((item) => {
+    const linear = item.metadata?.linear || {};
+    return (
+      (issueId && [item.sourceId, linear.issueId, linear.identifier].includes(issueId)) ||
+      (identifier && [item.sourceId, linear.issueId, linear.identifier].includes(identifier))
+    );
+  }) || null;
+}
+
+async function linearIssueImportToWorkItem(input = {}, actor = {}) {
+  const issueRef = assertString(input.issue, 'issue', { max: 300 });
+  const remote = await linearBridge.callTool({
+    name: 'get_issue',
+    arguments: {
+      id: issueRef,
+      includeRelations: true,
+    },
+  });
+  const issue = remote.data;
+  if (!issue || typeof issue !== 'object') throw new Error('Linear issue could not be read: ' + issueRef);
+
+  let existing = null;
+  if (input.workItemId) existing = await workItemGet({ id: input.workItemId });
+  if (!existing) existing = await findLinearLinkedWorkItem(issue);
+
+  const linearMeta = linearIssueMetadata(issue);
+  const title = clampString(issue.title, 500) || issueRef;
+  const objective = clampString(issue.description, 12000) || '';
+  const nextStatus = linearStatusToWorkItem(issue.statusType || issue.status?.type);
+  const nextPriority = linearPriorityToWorkItem(issue.priority);
+  const labels = linearLabelNames(issue.labels);
+  const dueAt = clampString(issue.dueDate, 120) || null;
+
+  if (!existing) {
+    const item = await workItemCreate({
+      title,
+      objective,
+      instructions: '',
+      status: nextStatus,
+      priority: nextPriority,
+      executionMode: input.executionMode || 'agent',
+      humanReason: input.executionMode === 'human'
+        ? (clampString(input.humanReason, 6000) || 'Linear Issueを人間担当として取り込みました。')
+        : '',
+      spaceId: input.spaceId || null,
+      projectId: input.projectId || null,
+      sourceType: 'linear_issue',
+      sourceId: linearMeta.identifier || linearMeta.issueId || issueRef,
+      dependencies: [],
+      tags: labels,
+      dueAt,
+      metadata: {
+        linear: linearMeta,
+      },
+      createdBy: input.createdBy,
+    }, actor);
+    return { created: true, synced: true, workItem: item, linearIssue: issue };
+  }
+
+  const preserveExecutionState = existing.status === 'in_progress' && existing.claimedBy;
+  const patch = {
+    title,
+    objective,
+    priority: nextPriority,
+    dueAt,
+    tags: labels.length ? labels : existing.tags,
+    metadataPatch: { linear: linearMeta },
+  };
+
+  if (input.executionMode) patch.executionMode = input.executionMode;
+  if (input.spaceId !== undefined) patch.spaceId = input.spaceId;
+  if (input.projectId !== undefined) patch.projectId = input.projectId;
+  if (input.syncStatus !== false && !preserveExecutionState) patch.status = nextStatus;
+
+  const item = await workItemUpdate({
+    id: existing.id,
+    patch,
+  });
+
+  return { created: false, synced: true, workItem: item, linearIssue: issue };
+}
+
+async function workItemPushToLinear(input = {}) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const item = await workItemGet({ id });
+  if (!linearBridge.isConfigured()) {
+    throw new Error('LINEAR_API_KEY is not configured. Complete the Linear setup Human Task first.');
+  }
+
+  const linked = item.metadata?.linear || {};
+  const issueId = clampString(input.issue || linked.issueId || linked.identifier, 300);
+  const team = clampString(input.team || linked.team || linearBridge.teamKey(), 300) || linearBridge.teamKey();
+  const descriptionParts = [];
+  if (item.objective) descriptionParts.push(item.objective);
+  if (item.instructions) descriptionParts.push('## Execution notes\n' + item.instructions);
+  if (item.resultSummary) descriptionParts.push('## Latest My Portal result\n' + item.resultSummary);
+
+  const args = {
+    title: item.title,
+    description: descriptionParts.join('\n\n'),
+    priority: workItemPriorityToLinear(item.priority),
+    ...(input.syncStatus === false ? {} : { state: workItemStatusToLinear(item.status) }),
+    ...(input.assignee !== undefined ? { assignee: input.assignee || null } : {}),
+    ...(input.project !== undefined ? { project: input.project || null } : {}),
+    ...(item.dueAt && /^\d{4}-\d{2}-\d{2}/.test(item.dueAt) ? { dueDate: item.dueAt.slice(0, 10) } : {}),
+  };
+
+  if (issueId) {
+    args.id = issueId;
+  } else {
+    args.team = team;
+  }
+
+  const remote = await linearBridge.callTool({
+    name: 'save_issue',
+    arguments: args,
+  });
+  const issue = remote.data;
+  if (!issue || typeof issue !== 'object') throw new Error('Linear save_issue did not return an issue object');
+
+  const linearMeta = linearIssueMetadata(issue);
+  const updated = await workItemUpdate({
+    id,
+    patch: {
+      metadataPatch: {
+        linear: {
+          ...linked,
+          ...linearMeta,
+          team: linearMeta.team || team,
+        },
+      },
+    },
+  });
+
+  return {
+    created: !issueId,
+    synced: true,
+    workItem: updated,
+    linearIssue: issue,
+  };
+}
+
 async function controlPlaneOverview(input = {}) {
   const limit = Math.min(Math.max(Number(input.limit) || 80, 10), 200);
+  await ensureLinearSetupTask();
   const database = db();
   const [workSnapshot, spaceSnapshot, runSnapshot, projectSnapshot, memoSnapshot] = await Promise.all([
     database.collection(COLLECTIONS.workItems).limit(Math.max(limit, 100)).get(),
@@ -1930,6 +2242,25 @@ async function controlPlaneOverview(input = {}) {
     .filter((item) => ['next_action', 'inbox', 'project'].includes(item.status))
     .slice(0, 50);
 
+  let linear = {
+    ...linearBridge.configSummary(),
+    ok: linearBridge.isConfigured(),
+    issues: [],
+    error: null,
+  };
+  if (input.includeLinear !== false) {
+    try {
+      const openLinear = await linearBridge.listOpenIssues({ limit: Math.min(limit, 100) });
+      linear = { ...linear, ...openLinear, ok: true };
+    } catch (error) {
+      linear = {
+        ...linear,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   const nowMs = Date.now();
   const staleLeases = rawWork
     .filter((item) =>
@@ -1941,6 +2272,21 @@ async function controlPlaneOverview(input = {}) {
     .map((item) => serialize(item));
 
   const openWork = workItems.filter((item) => !['done', 'cancelled'].includes(item.status));
+
+  const linkedLinearKeys = new Map();
+  workItems.forEach((item) => {
+    const linked = item.metadata?.linear || {};
+    [item.sourceType === 'linear_issue' ? item.sourceId : null, linked.issueId, linked.identifier]
+      .filter(Boolean)
+      .forEach((key) => linkedLinearKeys.set(String(key), item.id));
+  });
+  const linearIssues = (linear.issues || []).map((issue) => {
+    const keys = [issue.id, issue.identifier].filter(Boolean).map(String);
+    const linkedWorkItemId = keys.map((key) => linkedLinearKeys.get(key)).find(Boolean) || null;
+    return { ...issue, linkedWorkItemId };
+  });
+  const unlinkedLinearIssues = linearIssues.filter((issue) => !issue.linkedWorkItemId);
+
   const agentWork = openWork.filter((item) => (item.executionMode || 'agent') === 'agent');
   const humanTasks = openWork.filter((item) => item.executionMode === 'human');
   const priorityRank = { critical: 0, high: 1, medium: 2, low: 3 };
@@ -1977,6 +2323,8 @@ async function controlPlaneOverview(input = {}) {
       staleLeases: staleLeases.length,
       unqueuedNextActions: unqueuedNextActions.length,
       actionMemos: actionMemos.length,
+      linearOpen: linearIssues.length,
+      linearUnlinked: unlinkedLinearIssues.length,
     },
     recommendedNext,
     inProgress: agentWork.filter((item) => item.status === 'in_progress'),
@@ -1989,14 +2337,20 @@ async function controlPlaneOverview(input = {}) {
     activeProjects: projects.slice(0, 50),
     unqueuedNextActions: unqueuedNextActions.slice(0, 100),
     actionMemos,
+    linear: {
+      ...linear,
+      issues: linearIssues.slice(0, 100),
+      unlinkedIssues: unlinkedLinearIssues.slice(0, 100),
+    },
     operatingProtocol: [
       'Call control_plane_overview before starting autonomous work.',
-      'Prefer a ready work item; create one for an unqueued Space next action when appropriate.',
+      'Prefer a ready work item; create one for an unqueued Space next action when appropriate. Linear issues are external candidates: import relevant unlinked issues with linear_issue_import_to_work_item before autonomous execution.',
       'Claim exactly one agent work item before execution so parallel agents do not duplicate effort.',
       'If an item requires a human-only action, explicit user judgment, account approval, physical action, or unavailable credential, call work_item_delegate_to_human instead of leaving it buried in chat or blocking the agent queue.',
       'Load the linked Space with space_get_context and start a Run when the task requires durable research or production context.',
       'Heartbeat long-running work before the lease expires.',
       'Finish as done, review, or blocked with a result summary and concrete next actions.',
+      'If the Work Item is linked to Linear, call work_item_push_to_linear after meaningful status/result changes so the external issue stays aligned.',
       'Release the item if you stop without producing a durable result.',
     ],
   };
@@ -2036,7 +2390,13 @@ module.exports = {
   WORK_ITEM_STATUSES,
   WORK_ITEM_PRIORITIES,
   WORK_ITEM_EXECUTION_MODES,
+  LINEAR_SETUP_WORK_ITEM_ID,
   healthCheck,
+  linearStatus,
+  linearToolCatalog,
+  linearToolCall,
+  linearIssueImportToWorkItem,
+  workItemPushToLinear,
   controlPlaneOverview,
   workItemCreate,
   workItemGet,
