@@ -194,7 +194,10 @@ async function resolveOAuthClient(clientId: string) {
     const validOpaqueClientId =
       Boolean(clientId) &&
       clientId.length <= 2048 &&
-      !/[\\u0000-\\u001F\\u007F]/.test(clientId);
+      !Array.from(clientId).some((char) => {
+        const code = char.charCodeAt(0);
+        return code < 0x20 || code === 0x7f;
+      });
     return validOpaqueClientId
       ? { clientId, redirectUris: [], kind: "public-pkce" }
       : null;
