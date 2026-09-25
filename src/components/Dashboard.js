@@ -1035,7 +1035,7 @@ function Dashboard() {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.7, mb: 1 }}>
             <FolderOutlinedIcon color="primary" />
             <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
-              Projects · 実行単位
+              Projects · 実装ワークスペース
             </Typography>
             <Chip size="small" label={activeProjects.length} sx={{ ml: 'auto', height: 21 }} />
           </Box>
@@ -1071,6 +1071,18 @@ function Dashboard() {
                       sx={{ height: 20, fontSize: '0.58rem' }}
                     />
                   )}
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={(project.repositories || []).length + ' repos'}
+                    sx={{ height: 20, fontSize: '0.58rem' }}
+                  />
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={(project.mcpTools || []).length + ' MCP'}
+                    sx={{ height: 20, fontSize: '0.58rem' }}
+                  />
                   <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
                     {formatDate(project.updatedAt || project.createdAt)}
                   </Typography>
