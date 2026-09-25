@@ -69,7 +69,7 @@ const workItemFields = {
   dependencies: stringArray('Work item IDs that should be considered before execution.', 50),
   tags: stringArray('Loose tags.', 50),
   dueAt: string('Optional ISO date/time or human deadline text.', 120),
-  metadata: jsonObject('Structured execution metadata. When a task actively touches a shared target, set metadata.resources to stable keys such as ["repo:owner/name"] so other agents can see the overlap.'),
+  metadata: jsonObject('Structured execution metadata.'),
 };
 
 const methodFields = {
@@ -150,7 +150,7 @@ const TOOLS = [
   },
   {
     name: 'control_plane_overview',
-    description: 'Primary Agent HQ entrypoint. Returns executable work, active claims/runs, blocked work, stale leases, active Spaces/Projects, unqueued Space next-actions, and actionable legacy memos. Autonomous agents should call this before deciding what to start or resume, and avoid shared targets already listed in metadata.resources on other in-progress work items.',
+    description: 'Primary Agent HQ entrypoint. Returns executable work, currently running work, active claims/runs, blocked work, stale leases, active Spaces/Projects, unqueued Space next-actions, and actionable legacy memos. Autonomous agents should call this before deciding what to start or resume.',
     inputSchema: objectSchema({
       limit: { type: 'integer', minimum: 10, maximum: 200, default: 80 },
       includeLinear: { type: 'boolean', default: true, description: 'Include open Linear issues as external work candidates when the Linear integration is configured.' },
@@ -212,7 +212,7 @@ const TOOLS = [
   },
   {
     name: 'work_item_create',
-    description: 'Create a durable executable work item for the Agent Control Plane. Prefer this over hiding execution tasks only inside free-form Space nextActions.',
+    description: 'Create a durable executable work item for the Agent Control Plane. Use in_progress for ongoing work; running is reserved for work_item_claim.',
     inputSchema: objectSchema(workItemFields, ['title']),
     annotations: { readOnlyHint: false, destructiveHint: false },
   },
@@ -240,7 +240,7 @@ const TOOLS = [
   },
   {
     name: 'work_item_update',
-    description: 'Edit work-item planning metadata. Use claim/heartbeat/finish/release for ownership and execution lifecycle instead of directly mutating lease fields.',
+    description: 'Edit work-item planning metadata. running is claim-only; use work_item_claim to enter realtime execution.',
     inputSchema: objectSchema({
       id: string('Work item ID.', 160),
       expectedRevision: { type: 'integer', minimum: 1 },
@@ -270,7 +270,7 @@ const TOOLS = [
   },
   {
     name: 'work_item_claim',
-    description: 'Atomically claim a work item with a lease before starting. Prevents two autonomous agents from doing the same work in parallel. Expired leases may be reclaimed.',
+    description: 'Atomically claim a work item with a lease before starting. Claiming changes status to running, meaning an agent is actively executing it now. Expired leases may be reclaimed.',
     inputSchema: objectSchema({
       id: string('Work item ID.', 160),
       agent: string('Stable agent/worker name.', 120),
@@ -282,7 +282,7 @@ const TOOLS = [
   },
   {
     name: 'work_item_heartbeat',
-    description: 'Extend an active work-item lease while a long-running agent is still working.',
+    description: 'Extend the lease of a running work item while the owning agent is actively working.',
     inputSchema: objectSchema({
       id: string('Work item ID.', 160),
       agent: string('Agent that currently owns the item.', 120),
@@ -323,7 +323,7 @@ const TOOLS = [
     inputSchema: objectSchema({
       id: string('Work item ID.', 160),
       agent: string('Current owning agent.', 120),
-      status: { type: 'string', enum: ['ready', 'backlog'], default: 'ready' },
+      status: { type: 'string', enum: ['ready', 'in_progress', 'backlog'], default: 'ready', description: 'Use in_progress when the task remains ongoing but the agent is no longer actively executing it.' },
     }, ['id', 'agent']),
     annotations: { readOnlyHint: false, destructiveHint: false },
   },

@@ -59,7 +59,7 @@ linear_issue_import_to_work_item({
 })
 ```
 
-同じLinear Issueがすでにリンクされていれば新規作成せず更新する。実行中かつclaim済みのWork Itemは、Linear側の状態変更でローカルの `in_progress` を上書きしない。
+同じLinear Issueがすでにリンクされていれば新規作成せず更新する。Agentがclaim済みで `running` のWork Itemは、Linear側の状態変更でローカルのリアルタイム実行状態を上書きしない。
 
 状態の基本マッピング:
 
@@ -68,7 +68,7 @@ linear_issue_import_to_work_item({
 - Linear completed -> Work Item done
 - Linear canceled -> Work Item cancelled
 
-Linearのstartedを直接Work Item `in_progress` にしないのは、My Portalでは `in_progress` がAgent claim/leaseとセットの実行状態だから。
+LinearのstartedはWork Item `in_progress` に同期できる。My Portalの `running` だけがAgent claim/leaseとセットのリアルタイム実行状態だから。
 
 ### Work Item -> Linear
 

@@ -35,7 +35,7 @@ const DECISION_STATUSES = ['active', 'superseded', 'reversed'];
 const OPPORTUNITY_STATUSES = ['active', 'watching', 'paused', 'closed', 'rejected', 'completed'];
 const METHOD_STATUSES = ['active', 'paused', 'archived'];
 const METHOD_VERSION_STATUSES = ['draft', 'active', 'superseded', 'archived'];
-const WORK_ITEM_STATUSES = ['backlog', 'ready', 'in_progress', 'blocked', 'review', 'done', 'cancelled'];
+const WORK_ITEM_STATUSES = ['backlog', 'ready', 'in_progress', 'running', 'blocked', 'review', 'done', 'cancelled'];
 const WORK_ITEM_PRIORITIES = ['critical', 'high', 'medium', 'low'];
 const WORK_ITEM_EXECUTION_MODES = ['agent', 'human'];
 const LINEAR_SETUP_WORK_ITEM_ID = 'system-linear-integration-setup';
@@ -1657,6 +1657,7 @@ function linearStatusToWorkItem(statusType) {
   if (type === 'completed') return 'done';
   if (type === 'canceled' || type === 'cancelled') return 'cancelled';
   if (type === 'backlog' || type === 'triage') return 'backlog';
+  if (type === 'started') return 'in_progress';
   return 'ready';
 }
 
@@ -1664,7 +1665,7 @@ function workItemStatusToLinear(status) {
   if (status === 'backlog') return 'backlog';
   if (status === 'done') return 'completed';
   if (status === 'cancelled') return 'canceled';
-  if (['in_progress', 'blocked', 'review'].includes(status)) return 'started';
+  if (['in_progress', 'running', 'blocked', 'review'].includes(status)) return 'started';
   return 'unstarted';
 }
 
@@ -1808,6 +1809,7 @@ function workItemPayload(input) {
 
 async function workItemCreate(input, actor = {}) {
   const payload = workItemPayload(input);
+  if (payload.status === 'running') throw new Error('running is claim-only; create as ready or in_progress, then call work_item_claim');
   if (payload.spaceId) await spaceGet({ id: payload.spaceId });
   const ref = db().collection(COLLECTIONS.workItems).doc();
   const now = FieldValue.serverTimestamp();
@@ -1893,7 +1895,14 @@ async function workItemUpdate(input) {
     if (patch.title !== undefined) update.title = assertString(patch.title, 'patch.title', { max: 500 });
     if (patch.objective !== undefined) update.objective = clampString(patch.objective, 12000) || '';
     if (patch.instructions !== undefined) update.instructions = clampString(patch.instructions, 16000) || '';
-    if (patch.status !== undefined) update.status = assertEnum(patch.status, WORK_ITEM_STATUSES, 'patch.status', current.status || 'ready');
+    if (patch.status !== undefined) {
+      const nextStatus = assertEnum(patch.status, WORK_ITEM_STATUSES, 'patch.status', current.status || 'ready');
+      if (nextStatus === 'running') throw new Error('running is claim-only; call work_item_claim instead');
+      if (current.status === 'running' && nextStatus !== 'running') {
+        throw new Error('Use work_item_finish, work_item_release, or work_item_delegate_to_human to leave running state');
+      }
+      update.status = nextStatus;
+    }
     if (patch.priority !== undefined) update.priority = assertEnum(patch.priority, WORK_ITEM_PRIORITIES, 'patch.priority', current.priority || 'medium');
     if (patch.executionMode !== undefined) update.executionMode = assertEnum(patch.executionMode, WORK_ITEM_EXECUTION_MODES, 'patch.executionMode', current.executionMode || 'agent');
     if (patch.humanReason !== undefined) update.humanReason = clampString(patch.humanReason, 6000) || '';
@@ -1934,7 +1943,7 @@ async function workItemClaim(input, actor = {}) {
       throw new Error('Work item is claimed by ' + current.claimedBy + ' until ' + new Date(currentLeaseMs).toISOString());
     }
     tx.update(ref, {
-      status: 'in_progress',
+      status: 'running',
       claimedBy: agent,
       claimedModel: model,
       runId: clampString(input.runId, 160) || current.runId || null,
@@ -1958,7 +1967,7 @@ async function workItemHeartbeat(input) {
     if (!snapshot.exists) throw new Error('Work item not found: ' + id);
     const current = snapshot.data();
     if (current.claimedBy !== agent) throw new Error('Work item is not claimed by ' + agent);
-    if (current.status !== 'in_progress') throw new Error('Work item is not in progress');
+    if (current.status !== 'running') throw new Error('Work item is not currently running');
     tx.update(ref, {
       leaseExpiresAt: new Date(Date.now() + leaseMinutes * 60 * 1000),
       lastHeartbeatAt: FieldValue.serverTimestamp(),
@@ -1992,6 +2001,8 @@ async function workItemFinish(input) {
         ? stringArray(input.nextActions, 100, 3000)
         : (current.nextActions || []),
       metadata: { ...(current.metadata || {}), ...jsonSafe(input.metadataPatch || {}) },
+      claimedBy: null,
+      claimedModel: null,
       leaseExpiresAt: null,
       lastHeartbeatAt: FieldValue.serverTimestamp(),
       finishedAt: outcomeStatus === 'done' ? FieldValue.serverTimestamp() : null,
@@ -2039,7 +2050,7 @@ async function workItemDelegateToHuman(input, actor = {}) {
 async function workItemRelease(input) {
   const id = assertString(input.id, 'id', { max: 160 });
   const agent = assertString(input.agent, 'agent', { max: 120 });
-  const targetStatus = assertEnum(input.status, ['ready', 'backlog'], 'status', 'ready');
+  const targetStatus = assertEnum(input.status, ['ready', 'in_progress', 'backlog'], 'status', 'ready');
   const ref = db().collection(COLLECTIONS.workItems).doc(id);
 
   await db().runTransaction(async (tx) => {
@@ -2138,7 +2149,7 @@ async function linearIssueImportToWorkItem(input = {}, actor = {}) {
     return { created: true, synced: true, workItem: item, linearIssue: issue };
   }
 
-  const preserveExecutionState = existing.status === 'in_progress' && existing.claimedBy;
+  const preserveExecutionState = existing.status === 'running' && existing.claimedBy;
   const patch = {
     title,
     objective,
@@ -2267,7 +2278,7 @@ async function controlPlaneOverview(input = {}) {
   const nowMs = Date.now();
   const staleLeases = rawWork
     .filter((item) =>
-      item.status === 'in_progress' &&
+      item.status === 'running' &&
       item.claimedBy &&
       timestampMillis(item.leaseExpiresAt) > 0 &&
       timestampMillis(item.leaseExpiresAt) <= nowMs
@@ -2294,7 +2305,7 @@ async function controlPlaneOverview(input = {}) {
   const humanTasks = openWork.filter((item) => item.executionMode === 'human');
   const priorityRank = { critical: 0, high: 1, medium: 2, low: 3 };
   const recommendedNext = agentWork
-    .filter((item) => ['ready', 'backlog'].includes(item.status))
+    .filter((item) => ['in_progress', 'ready', 'backlog'].includes(item.status))
     .sort((a, b) => (priorityRank[a.priority] ?? 2) - (priorityRank[b.priority] ?? 2))
     .slice(0, 20);
 
@@ -2317,6 +2328,7 @@ async function controlPlaneOverview(input = {}) {
       ready: agentWork.filter((item) => item.status === 'ready').length,
       backlog: agentWork.filter((item) => item.status === 'backlog').length,
       inProgress: agentWork.filter((item) => item.status === 'in_progress').length,
+      running: agentWork.filter((item) => item.status === 'running').length,
       blocked: agentWork.filter((item) => item.status === 'blocked').length,
       review: agentWork.filter((item) => item.status === 'review').length,
       humanTasks: humanTasks.length,
@@ -2331,6 +2343,7 @@ async function controlPlaneOverview(input = {}) {
     },
     recommendedNext,
     inProgress: agentWork.filter((item) => item.status === 'in_progress'),
+    running: agentWork.filter((item) => item.status === 'running'),
     blocked: agentWork.filter((item) => item.status === 'blocked'),
     review: agentWork.filter((item) => item.status === 'review'),
     humanTasks,
@@ -2347,8 +2360,8 @@ async function controlPlaneOverview(input = {}) {
     },
     operatingProtocol: [
       'Call control_plane_overview before starting autonomous work.',
-      'Prefer a ready work item; create one for an unqueued Space next action when appropriate. Linear issues are external candidates: import relevant unlinked issues with linear_issue_import_to_work_item before autonomous execution.',
-      'Claim exactly one agent work item before execution so parallel agents do not duplicate effort.',
+      'Prefer a resumable in_progress item or a ready work item; create one for an unqueued Space next action when appropriate. Never start a running item owned by another active lease. Linear issues are external candidates: import relevant unlinked issues with linear_issue_import_to_work_item before autonomous execution.',
+      'Claim exactly one agent work item before execution. Claiming moves it to running; in_progress means the task is ongoing but no agent is actively executing it right now.',
       'If an item requires a human-only action, explicit user judgment, account approval, physical action, or unavailable credential, call work_item_delegate_to_human instead of leaving it buried in chat or blocking the agent queue.',
       'Load the linked Space with space_get_context and start a Run when the task requires durable research or production context.',
       'Heartbeat long-running work before the lease expires.',
