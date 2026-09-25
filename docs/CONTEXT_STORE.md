@@ -314,7 +314,7 @@ Spaceの `nextActions` はテーマの再開地点として残すが、複数エ
 
 さらに `executionMode = agent | human` を持つ。`human` は専用の **Human Tasks** 箱へ表示し、Agent Queueから除外する。
 
-Work Itemは `spaceId`, `projectId`, `sourceType`, `sourceId`, `priority`, `dependencies`, `claimedBy`, `runId`, `leaseExpiresAt`, `resultSummary`, `nextActions` を持てる。Agent同士の現在作業の可視化は `running` + `claimedBy` + lease を正本とし、repo単位の擬似ロックは持たせない。
+Work Itemは `spaceId`, `projectId`, `sourceType`, `sourceId`, `priority`, `dependencies`, `claimedBy`, `runId`, `leaseExpiresAt`, `resultSummary`, `nextActions` を持てる。`running` はUI上の「現在作業中」を表し、Agentが所有している場合だけ `claimedBy` + lease が実行所有権の正本になる。repo単位の擬似ロックは持たせない。
 
 ### Claim / Lease
 
