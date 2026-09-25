@@ -773,7 +773,7 @@ function Dashboard() {
                             {item.spaceId && (
                               <Chip
                                 size="small"
-                                label="Space"
+                                label="長期テーマ"
                                 variant="outlined"
                                 sx={{ height: 20, fontSize: '0.58rem' }}
                               />
@@ -1026,9 +1026,9 @@ function Dashboard() {
               </Select>
             </FormControl>
             <FormControl>
-              <InputLabel>Space</InputLabel>
+              <InputLabel>長期テーマ</InputLabel>
               <Select
-                label="Space"
+                label="長期テーマ"
                 value={draft.spaceId}
                 onChange={(event) => setDraft((current) => ({
                   ...current,
