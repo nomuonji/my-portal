@@ -1809,6 +1809,7 @@ function workItemPayload(input) {
 
 async function workItemCreate(input, actor = {}) {
   const payload = workItemPayload(input);
+  if (payload.status === 'running') throw new Error('running is claim-only; create as ready or in_progress, then call work_item_claim');
   if (payload.spaceId) await spaceGet({ id: payload.spaceId });
   const ref = db().collection(COLLECTIONS.workItems).doc();
   const now = FieldValue.serverTimestamp();
@@ -1894,7 +1895,11 @@ async function workItemUpdate(input) {
     if (patch.title !== undefined) update.title = assertString(patch.title, 'patch.title', { max: 500 });
     if (patch.objective !== undefined) update.objective = clampString(patch.objective, 12000) || '';
     if (patch.instructions !== undefined) update.instructions = clampString(patch.instructions, 16000) || '';
-    if (patch.status !== undefined) update.status = assertEnum(patch.status, WORK_ITEM_STATUSES, 'patch.status', current.status || 'ready');
+    if (patch.status !== undefined) {
+      const nextStatus = assertEnum(patch.status, WORK_ITEM_STATUSES, 'patch.status', current.status || 'ready');
+      if (nextStatus === 'running') throw new Error('running is claim-only; call work_item_claim instead');
+      update.status = nextStatus;
+    }
     if (patch.priority !== undefined) update.priority = assertEnum(patch.priority, WORK_ITEM_PRIORITIES, 'patch.priority', current.priority || 'medium');
     if (patch.executionMode !== undefined) update.executionMode = assertEnum(patch.executionMode, WORK_ITEM_EXECUTION_MODES, 'patch.executionMode', current.executionMode || 'agent');
     if (patch.humanReason !== undefined) update.humanReason = clampString(patch.humanReason, 6000) || '';
@@ -2042,7 +2047,7 @@ async function workItemDelegateToHuman(input, actor = {}) {
 async function workItemRelease(input) {
   const id = assertString(input.id, 'id', { max: 160 });
   const agent = assertString(input.agent, 'agent', { max: 120 });
-  const targetStatus = assertEnum(input.status, ['ready', 'backlog'], 'status', 'ready');
+  const targetStatus = assertEnum(input.status, ['ready', 'in_progress', 'backlog'], 'status', 'ready');
   const ref = db().collection(COLLECTIONS.workItems).doc(id);
 
   await db().runTransaction(async (tx) => {
