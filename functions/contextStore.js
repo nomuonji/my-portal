@@ -2305,7 +2305,7 @@ async function controlPlaneOverview(input = {}) {
   const humanTasks = openWork.filter((item) => item.executionMode === 'human');
   const priorityRank = { critical: 0, high: 1, medium: 2, low: 3 };
   const recommendedNext = agentWork
-    .filter((item) => ['in_progress', 'ready', 'backlog'].includes(item.status))
+    .filter((item) => ['in_progress', 'ready'].includes(item.status))
     .sort((a, b) => (priorityRank[a.priority] ?? 2) - (priorityRank[b.priority] ?? 2))
     .slice(0, 20);
 
