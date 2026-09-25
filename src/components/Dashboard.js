@@ -22,6 +22,7 @@ import {
   DialogTitle,
   FormControl,
   InputLabel,
+  IconButton,
   MenuItem,
   Paper,
   Select,
@@ -45,6 +46,7 @@ import TaskAltOutlinedIcon from '@mui/icons-material/TaskAltOutlined';
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
+import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 
 const queueColumns = [
@@ -54,21 +56,11 @@ const queueColumns = [
   { id: 'running', label: 'Running', hint: 'Agentが今作業中', icon: SmartToyOutlinedIcon },
   { id: 'blocked', label: 'Blocked', hint: '判断・外部条件待ち', icon: WarningAmberOutlinedIcon },
   { id: 'review', label: 'Review', hint: '確認・引継ぎ待ち', icon: TaskAltOutlinedIcon },
+  { id: 'archived', label: 'Archived', hint: '完了・取り下げ済み', icon: ArchiveOutlinedIcon },
 ];
 
 const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
 const priorityLabel = { critical: 'CRITICAL', high: 'HIGH', medium: 'MEDIUM', low: 'LOW' };
-
-const manualStatusOptions = [
-  { value: 'backlog', label: 'Backlog' },
-  { value: 'ready', label: 'Ready' },
-  { value: 'in_progress', label: 'Working' },
-  { value: 'running', label: 'Running', disabled: true },
-  { value: 'blocked', label: 'Blocked' },
-  { value: 'review', label: 'Review' },
-  { value: 'done', label: 'Done' },
-  { value: 'cancelled', label: 'Cancelled' },
-];
 
 const toMillis = (value) => {
   if (!value) return 0;
@@ -95,7 +87,6 @@ function Dashboard() {
   const [workItems, setWorkItems] = useState([]);
   const [spaces, setSpaces] = useState([]);
   const [projects, setProjects] = useState([]);
-  const [runs, setRuns] = useState([]);
   const [linearOverview, setLinearOverview] = useState({
     configured: null,
     issues: [],
@@ -128,9 +119,6 @@ function Dashboard() {
       }),
       onSnapshot(collection(db, 'projects'), (snapshot) => {
         setProjects(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
-      }),
-      onSnapshot(collection(db, 'runs'), (snapshot) => {
-        setRuns(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
       }),
     ];
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
@@ -203,7 +191,7 @@ function Dashboard() {
   };
 
   const openWork = useMemo(
-    () => workItems.filter((item) => !['done', 'cancelled'].includes(item.status)),
+    () => workItems.filter((item) => !['archived', 'done', 'cancelled'].includes(item.status)),
     [workItems],
   );
 
@@ -218,9 +206,14 @@ function Dashboard() {
     [openWork],
   );
 
+  const allAgentWork = useMemo(
+    () => workItems.filter((item) => (item.executionMode || 'agent') === 'agent'),
+    [workItems],
+  );
+
   const agentWork = useMemo(
-    () => openWork.filter((item) => (item.executionMode || 'agent') === 'agent'),
-    [openWork],
+    () => allAgentWork.filter((item) => !['archived', 'done', 'cancelled'].includes(item.status)),
+    [allAgentWork],
   );
 
   const activeSpaces = useMemo(
@@ -240,13 +233,6 @@ function Dashboard() {
   const projectById = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects],
-  );
-
-  const activeRuns = useMemo(
-    () => runs
-      .filter((item) => item.status === 'active')
-      .sort((a, b) => toMillis(b.updatedAt || b.startedAt) - toMillis(a.updatedAt || a.startedAt)),
-    [runs],
   );
 
 
@@ -306,7 +292,7 @@ function Dashboard() {
   const completeHumanTask = async (item) => {
     try {
       await updateDoc(doc(db, 'memos', 'agent-control', 'workItems', item.id), {
-        status: 'done',
+        status: 'archived',
         completedBy: 'human',
         finishedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -333,7 +319,10 @@ function Dashboard() {
   };
 
   const moveWorkItem = async (item, nextStatus) => {
-    if (!item?.id || !nextStatus || nextStatus === item.status || nextStatus === 'running') return;
+    if (!item?.id || !nextStatus) return;
+    const currentStatus = ['done', 'cancelled'].includes(item.status) ? 'archived' : item.status;
+    if (nextStatus === currentStatus) return;
+
     try {
       const patch = {
         status: nextStatus,
@@ -341,9 +330,18 @@ function Dashboard() {
         revision: Number(item.revision || 1) + 1,
       };
 
-      // Human UI is an explicit override. Leaving Running must also release
-      // the current claim/lease so another agent does not see stale ownership.
-      if (item.status === 'running') {
+      // Manual movement into Running is allowed. It marks the card as active,
+      // but leaves ownership empty until an Agent actually claims it.
+      if (nextStatus === 'running') {
+        patch.claimedBy = null;
+        patch.claimedModel = null;
+        patch.runId = null;
+        patch.leaseExpiresAt = null;
+        patch.lastHeartbeatAt = null;
+      }
+
+      // Leaving an Agent-owned Running state from the UI is an explicit human override.
+      if (currentStatus === 'running' && nextStatus !== 'running') {
         patch.claimedBy = null;
         patch.claimedModel = null;
         patch.runId = null;
@@ -351,10 +349,11 @@ function Dashboard() {
         patch.lastHeartbeatAt = serverTimestamp();
       }
 
-      if (nextStatus === 'done') {
+      if (nextStatus === 'archived') {
         patch.completedBy = 'human';
         patch.finishedAt = serverTimestamp();
       } else {
+        patch.completedBy = null;
         patch.finishedAt = null;
       }
 
@@ -377,15 +376,15 @@ function Dashboard() {
 
   const handleWorkItemDragEnd = ({ draggableId, source, destination }) => {
     if (!destination) return;
-    if (destination.droppableId === 'running') return;
     if (source.droppableId === destination.droppableId) return;
-    const item = agentWork.find((candidate) => candidate.id === draggableId);
+    const item = allAgentWork.find((candidate) => candidate.id === draggableId);
     if (!item) return;
     moveWorkItem(item, destination.droppableId);
   };
 
-  const queueFor = (status) => agentWork
-    .filter((item) => item.status === status)
+  const queueFor = (status) => (status === 'archived'
+    ? allAgentWork.filter((item) => ['archived', 'done', 'cancelled'].includes(item.status))
+    : agentWork.filter((item) => item.status === status))
     .sort((a, b) => {
       const priorityDiff = (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2);
       if (priorityDiff !== 0) return priorityDiff;
@@ -398,6 +397,7 @@ function Dashboard() {
     { label: 'Working', value: queueFor('in_progress').length, sub: '進行中・待機' },
     { label: 'Running', value: queueFor('running').length, sub: 'いまAgentが実行中' },
     { label: 'Blocked', value: queueFor('blocked').length, sub: '要判断 / 外部待ち' },
+    { label: 'Archived', value: queueFor('archived').length, sub: '完了・取り下げ' },
     { label: 'Human', value: humanTasks.length, sub: '人間の操作・判断待ち' },
     {
       label: 'Projects',
@@ -474,7 +474,7 @@ function Dashboard() {
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: { xs: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)', xl: 'repeat(7, 1fr)' },
+          gridTemplateColumns: { xs: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)', xl: 'repeat(8, 1fr)' },
           gap: 1,
           mb: 1.5,
         }}
@@ -751,7 +751,7 @@ function Dashboard() {
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: { xs: '1fr', xl: 'minmax(0, 2.2fr) minmax(300px, 0.8fr)' },
+          gridTemplateColumns: '1fr',
           gap: 1.5,
           mb: 1.5,
         }}
@@ -767,7 +767,7 @@ function Dashboard() {
                 Execution Queue
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                継続中はWorking、Agentがclaimして今まさに触っている間だけRunningです。カード左上のハンドルをドラッグして列間を移動できます。
+                カード左上のハンドルをドラッグして状態を移動します。Runningにも手動で移動でき、完了・取り下げはArchivedへまとめます。
               </Typography>
             </Box>
           </Box>
@@ -787,7 +787,6 @@ function Dashboard() {
                 <Droppable
                   key={column.id}
                   droppableId={column.id}
-                  isDropDisabled={column.id === 'running'}
                 >
                   {(dropProvided, dropSnapshot) => (
                     <Box
@@ -964,42 +963,18 @@ function Dashboard() {
                             </Alert>
                           )}
 
-                          <Box sx={{ display: 'flex', gap: 0.6, alignItems: 'center', mt: 0.9 }}>
-                            <FormControl size="small" sx={{ minWidth: 118, flex: 1 }}>
-                              <Select
-                                value={item.status}
-                                onChange={(event) => moveWorkItem(item, event.target.value)}
-                                aria-label="Work Item status"
-                                sx={{
-                                  height: 30,
-                                  fontSize: '0.68rem',
-                                  '& .MuiSelect-select': { py: 0.45 },
-                                }}
-                              >
-                                {manualStatusOptions.map((option) => (
-                                  <MenuItem
-                                    key={option.value}
-                                    value={option.value}
-                                    disabled={option.disabled}
-                                    sx={{ fontSize: '0.76rem' }}
-                                  >
-                                    {option.label}
-                                    {option.value === 'running' ? ' · Agent実行専用' : ''}
-                                  </MenuItem>
-                                ))}
-                              </Select>
-                            </FormControl>
-                            <Button
+                          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 0.45 }}>
+                            <IconButton
                               size="small"
                               color="error"
-                              startIcon={<DeleteOutlineIcon />}
+                              title="削除"
+                              aria-label="Work Itemを削除"
                               onClick={() => deleteWorkItem(item)}
-                              sx={{ minWidth: 0, px: 0.8, fontSize: '0.65rem' }}
+                              sx={{ width: 26, height: 26 }}
                             >
-                              削除
-                            </Button>
-                          </Box>
-                            </CardContent>
+                              <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                          </Box>                            </CardContent>
                           </Card>
                         )}
                       </Draggable>
@@ -1029,47 +1004,6 @@ function Dashboard() {
           </DragDropContext>
         </Paper>
 
-        <Stack spacing={1.5}>
-          <Paper
-            elevation={0}
-            sx={{ p: 1.25, border: '1px solid ' + border, background: glass }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.7, mb: 0.9 }}>
-              <SmartToyOutlinedIcon color="primary" />
-              <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
-                Active Agents
-              </Typography>
-              <Chip size="small" label={activeRuns.length} sx={{ ml: 'auto', height: 21 }} />
-            </Box>
-            <Stack spacing={0.7}>
-              {activeRuns.slice(0, 8).map((run) => (
-                <Box
-                  key={run.id}
-                  sx={{ p: 0.9, borderRadius: 2, border: '1px solid ' + border }}
-                >
-                  <Typography variant="caption" sx={{ fontWeight: 900 }}>
-                    {run.agent || 'agent'}
-                    {run.model ? ' · ' + run.model : ''}
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    sx={{ mt: 0.2, fontSize: '0.75rem', lineHeight: 1.45 }}
-                  >
-                    {run.objective || 'Run in progress'}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {formatDate(run.updatedAt || run.startedAt)}
-                  </Typography>
-                </Box>
-              ))}
-              {activeRuns.length === 0 && (
-                <Typography variant="body2" color="text.secondary">
-                  現在アクティブなRunはありません。
-                </Typography>
-              )}
-            </Stack>
-          </Paper>
-        </Stack>
       </Box>
 
       <Box
