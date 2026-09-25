@@ -438,6 +438,17 @@ function Dashboard() {
                   <Button size="small" variant="outlined" onClick={() => returnHumanTaskToAgent(item)}>
                     Agentへ戻す
                   </Button>
+                  {item.metadata?.linear?.url && (
+                    <Button
+                      size="small"
+                      component="a"
+                      href={item.metadata.linear.url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Linear
+                    </Button>
+                  )}
                   <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto', alignSelf: 'center' }}>
                     {formatDate(item.updatedAt || item.createdAt)}
                   </Typography>
@@ -589,6 +600,19 @@ function Dashboard() {
                                 size="small"
                                 label="Project"
                                 variant="outlined"
+                                sx={{ height: 20, fontSize: '0.58rem' }}
+                              />
+                            )}
+                            {item.metadata?.linear && (
+                              <Chip
+                                size="small"
+                                label={'Linear · ' + (item.metadata.linear.identifier || item.metadata.linear.issueId || 'linked')}
+                                variant="outlined"
+                                component={item.metadata.linear.url ? 'a' : 'div'}
+                                href={item.metadata.linear.url || undefined}
+                                target={item.metadata.linear.url ? '_blank' : undefined}
+                                rel={item.metadata.linear.url ? 'noreferrer' : undefined}
+                                clickable={Boolean(item.metadata.linear.url)}
                                 sx={{ height: 20, fontSize: '0.58rem' }}
                               />
                             )}
