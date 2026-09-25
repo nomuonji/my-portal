@@ -671,7 +671,7 @@ function Dashboard() {
                 Execution Queue
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                claimされた仕事はWorkingへ移り、完了・レビュー・ブロックまで履歴を残します。
+                継続中はWorking、Agentがclaimして今まさに触っている間だけRunningとして表示します。
               </Typography>
             </Box>
           </Box>
@@ -682,7 +682,7 @@ function Dashboard() {
               gridTemplateColumns: {
                 xs: '1fr',
                 md: 'repeat(2, 1fr)',
-                xl: 'repeat(4, 1fr)',
+                xl: 'repeat(5, 1fr)',
               },
               gap: 1,
             }}
