@@ -681,12 +681,33 @@ function Dashboard() {
                   </Typography>
                 )}
 
+                {item.projectId && (
+                  <Chip
+                    size="small"
+                    label={'Project · ' + (projectById.get(item.projectId)?.name || item.projectId)}
+                    variant="outlined"
+                    clickable={projectById.has(item.projectId)}
+                    onClick={projectById.has(item.projectId)
+                      ? () => navigate('/project/details/' + item.projectId)
+                      : undefined}
+                    sx={{ height: 20, fontSize: '0.58rem', mt: 0.7 }}
+                  />
+                )}
+
                 <Box sx={{ display: 'flex', gap: 0.6, mt: 1, flexWrap: 'wrap' }}>
                   <Button size="small" variant="contained" onClick={() => completeHumanTask(item)}>
                     完了
                   </Button>
                   <Button size="small" variant="outlined" onClick={() => returnHumanTaskToAgent(item)}>
                     Agentへ戻す
+                  </Button>
+                  <Button
+                    size="small"
+                    color="error"
+                    startIcon={<DeleteOutlineIcon />}
+                    onClick={() => deleteWorkItem(item)}
+                  >
+                    削除
                   </Button>
                   {item.metadata?.linear?.url && (
                     <Button
