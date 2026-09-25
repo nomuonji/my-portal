@@ -54,16 +54,40 @@ Agent側は原則として:
 
 ### Project
 
-具体的に実行するプロジェクト。
+**実装資産を束ねる開発ワークスペース**。Ideaの昇格先ではあるが、単なる企画メモ置き場にはしない。
 
-SpaceとProjectは分離する。
+Projectは単一repoにも、複数repoをまたぐ上位フォルダ的な単位にもできる。
 
 例:
 
-- Space: お金を稼ぐ方法を探す
-- Project: 野良案件監視ツールを作る
+- Space: SNS運用・収益化について長期的に考える
+- Project: Affiliate Distribution Platform
+  - GitHub: `nomuonji/tweets`, `nomuonji/sites`, `nomuonji/my-portal`
+  - MCP: Tweets Operator, Sites Operator, GitHub
+  - Work Items: 各repoをまたぐ実装・検証タスク
 
-既存 `projects` collectionはそのまま維持し、必要なProjectだけ将来的に `spaceId` でSpaceへ紐づける。
+canonical fields:
+
+- `name`
+- `description`: Projectの目的・境界
+- `status`: `active | paused | completed | archived`
+- `projectType: "implementation_workspace"`
+- `schemaVersion: 2`
+- `repositories[]`
+  - `fullName`: `owner/repo`
+  - `url`
+  - `role`: frontend / operator / infra / data など
+- `mcpTools[]`
+  - `name`
+  - `purpose`
+- `spaceIds[]`: 関連する長期思考Space
+- `tags[]`
+
+実際の作業はProject本体にTODO文字列として埋め込まず、`projectId` を持つ Work Item として管理する。
+
+Agentは `control_plane_overview` でactive Projectを取得でき、Projectのrepo/MCP情報を実行コンテキストとして使う。個別Projectの詳細は `portal_get(collection="projects")`、関連作業は `work_item_search({ projectId })` で取得できる。
+
+2026-09-25以前の旧Project 9件は企画Ideaに近かったため、`プロジェクト候補` タグ付きで `ideas` collectionへ移行し、旧Project collectionからは削除した。
 
 ### Idea
 

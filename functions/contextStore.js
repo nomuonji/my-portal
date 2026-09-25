@@ -624,12 +624,12 @@ async function spaceGetContext(input) {
   opportunities.forEach((item) => { if (item.createdInRunId) runIds.add(item.createdInRunId); });
   const methods = sortRecent(methodSnapshot.docs.map(documentToObject));
 
-  const [sourcesAll, runsAll, agentRunsAll, artifactsAll, projectsSnapshot] = await Promise.all([
+  const [sourcesAll, runsAll, agentRunsAll, artifactsAll, projectsAll] = await Promise.all([
     getRecentCollection(THINKING_COLLECTIONS.sources, 300),
     getRecentCollection(THINKING_COLLECTIONS.runs, 220),
     getRecentCollection('agent_idea_runs', 220).catch(() => []),
     input.includeArtifacts === false ? Promise.resolve([]) : getRecentCollection(THINKING_COLLECTIONS.artifacts, 220),
-    database.collection('projects').where('spaceId', '==', space.id).limit(50).get().catch(() => ({ docs: [] })),
+    getRecentCollection('projects', 150).catch(() => []),
   ]);
 
   const sources = sourcesAll
@@ -647,7 +647,10 @@ async function spaceGetContext(input) {
     .filter((item) => item.spaceId === space.id || ideaIds.has(item.ideaId) || runIds.has(item.createdInRunId))
     .slice(0, recentLimit);
 
-  const projects = sortRecent((projectsSnapshot.docs || []).map(documentToObject));
+  const projects = sortRecent(projectsAll.filter((project) =>
+    project.spaceId === space.id ||
+    (Array.isArray(project.spaceIds) && project.spaceIds.includes(space.id))
+  )).slice(0, 50);
   const themeLocalConstraints = profileContext.items.filter((fact) => String(fact.scope || '') === `space:${space.id}`);
   const relevantProfileFacts = profileContext.items.filter((fact) => String(fact.scope || '') !== `space:${space.id}`);
   const activeIdeas = ideas.filter((item) => item.status === 'active' && !['wild_gig', 'opportunity_source'].includes(item.type));
