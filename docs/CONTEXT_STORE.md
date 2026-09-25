@@ -310,15 +310,15 @@ Dashboardは人間向けのメモ一覧ではなく、エージェントが作�
 
 Spaceの `nextActions` はテーマの再開地点として残すが、複数エージェントが実際に作業する対象はWork Itemへ昇格させる。
 
-主な状態: `backlog` / `ready` / `in_progress` / `blocked` / `review` / `done` / `cancelled`。
+主な状態: `backlog` / `ready` / `in_progress` / `running` / `blocked` / `review` / `done` / `cancelled`。`in_progress` は継続中だが現在Agentが触っていない状態、`running` はAgentがclaim済みで今まさに実行中の状態。
 
 さらに `executionMode = agent | human` を持つ。`human` は専用の **Human Tasks** 箱へ表示し、Agent Queueから除外する。
 
-Work Itemは `spaceId`, `projectId`, `sourceType`, `sourceId`, `priority`, `dependencies`, `claimedBy`, `runId`, `leaseExpiresAt`, `resultSummary`, `nextActions` を持てる。さらに、同じrepoや外部対象への同時作業を避けたい場合は `metadata.resources` に `repo:owner/name` のような安定したresource keyを入れる。`in_progress` の別Work Itemとresourceが重なっている場合、Agentは原則その対象を触らない。これはハードロックではなく、Agent同士の協調用の可視属性として扱う。
+Work Itemは `spaceId`, `projectId`, `sourceType`, `sourceId`, `priority`, `dependencies`, `claimedBy`, `runId`, `leaseExpiresAt`, `resultSummary`, `nextActions` を持てる。Agent同士の現在作業の可視化は `running` + `claimedBy` + lease を正本とし、repo単位の擬似ロックは持たせない。
 
 ### Claim / Lease
 
-並列エージェントの重複作業を避けるため、実行前に `work_item_claim` を必須に近い運用とする。Human Taskは `work_item_claim` を拒否する。claimには期限付きleaseを持たせ、長時間作業は `work_item_heartbeat` で延長する。lease切れは別エージェントが再取得できる。
+並列エージェントの重複作業を避けるため、実行前に `work_item_claim` を必須に近い運用とする。Human Taskは `work_item_claim` を拒否する。claimするとstatusは `running` になり、`claimedBy` と期限付きleaseで「今どのAgentが触っているか」を表す。長時間作業は `work_item_heartbeat` で延長する。終了・review・blocked・releaseで `running` を抜ける。lease切れは別エージェントが再取得できる。
 
 ### Agent entrypoint
 
@@ -335,7 +335,7 @@ Work Itemは `spaceId`, `projectId`, `sourceType`, `sourceId`, `priority`, `depe
 
 `control_plane_overview` はWork Itemだけでなく、active Runs、Spaces、Projects、未キュー化のSpace next actions、従来メモの `next_action` / `inbox` / `project` も横断して返す。
 
-Dashboard UIも同じControl Planeの人間向けビューとし、Ready / Working / Blocked / Review、Active Agents、Spaces / Projects、未キュー化Next Actions、従来Inboxを一画面に表示する。
+Dashboard UIも同じControl Planeの人間向けビューとし、Ready / Working / Running / Blocked / Reviewを区別する。Workingは継続中、Runningはリアルタイム実行中を表す。
 ### Human Tasks
 
 人間の操作・判断が必要な仕事はAgent Queueに残さない。
