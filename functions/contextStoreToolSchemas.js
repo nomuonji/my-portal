@@ -293,7 +293,7 @@ const TOOLS = [
   },
   {
     name: 'work_item_finish',
-    description: 'Finish or hand off claimed work as done, review, or blocked. Always persist a result summary and useful next actions when available.',
+    description: 'Finish or hand off claimed work as archived, review, or blocked. Archived is the single closed state for completed or withdrawn work. Always persist a result summary and useful next actions when available.',
     inputSchema: objectSchema({
       id: string('Work item ID.', 160),
       agent: string('Agent completing the work.', 120),
