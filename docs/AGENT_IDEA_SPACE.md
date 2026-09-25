@@ -170,7 +170,11 @@ https://my-portal-agent.netlify.app/mcp
 
 旧Dynamic Client Registration (DCR) client_id は既存接続との後方互換のため受理するが、OAuth discoveryでは新規登録方式として広告しない。
 
-接続時のユーザー認可は Agent Idea Space 専用アクセスキーで行う。MCP endpoint 自体を無認証公開にはしない。
+Groq など CIMD / DCR を使わず opaque な `client_id` と PKCE で接続する Remote MCP client も受理する。この fallback でも認可画面で Agent Idea Space 専用アクセスキーが必須で、authorization code は `client_id` / `redirect_uri` / resource / PKCE challenge に束縛する。
+
+また、Remote MCP API から固定ヘッダー認証を使う場合は、同じアクセスキーを `Authorization: Bearer <access-key>` として直接送信できる。サーバーは平文キーを保存せず、既存の SHA-256 hash と timing-safe に比較する。
+
+MCP endpoint 自体を無認証公開にはしない。
 
 ### MCP tools
 
@@ -248,4 +252,4 @@ GET https://my-portal-agent.netlify.app/.well-known/oauth-authorization-server
 GET https://my-portal-agent.netlify.app/.well-known/oauth-protected-resource/mcp
 ```
 
-OAuth metadata では `client_id_metadata_document_supported: true`、PKCE `S256`、`offline_access` が確認できること。healthでは `serverVersion`、tool count、Firestore接続状態を確認する。
+OAuth metadata では `client_id_metadata_document_supported: true`、PKCE `S256`、`offline_access` が確認できること。healthでは `serverVersion`、tool count、Firestore接続状態に加えて `publicPkceFallback: true` と `directAccessKeyBearer: true` を確認する。
