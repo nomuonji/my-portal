@@ -297,7 +297,7 @@ const TOOLS = [
     inputSchema: objectSchema({
       id: string('Work item ID.', 160),
       agent: string('Agent completing the work.', 120),
-      status: { type: 'string', enum: ['done', 'blocked', 'review'], default: 'done' },
+      status: { type: 'string', enum: ['archived', 'blocked', 'review'], default: 'archived' },
       resultSummary: string('Durable result/handoff summary.', 12000),
       blockedReason: string('Required in practice when status=blocked.', 6000),
       nextActions: stringArray('Concrete follow-up actions.', 100),
