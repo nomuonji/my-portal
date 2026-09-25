@@ -282,7 +282,7 @@ const TOOLS = [
   },
   {
     name: 'work_item_heartbeat',
-    description: 'Extend the lease of a running work item while the owning agent is actively working.'
+    description: 'Extend the lease of a running work item while the owning agent is actively working.',
     inputSchema: objectSchema({
       id: string('Work item ID.', 160),
       agent: string('Agent that currently owns the item.', 120),
