@@ -31,6 +31,7 @@ import {
   useTheme,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
+import { DragDropContext, Draggable, Droppable } from '@hello-pangea/dnd';
 import { useNavigate } from 'react-router-dom';
 import AddTaskIcon from '@mui/icons-material/AddTask';
 import BoltIcon from '@mui/icons-material/Bolt';
@@ -44,6 +45,7 @@ import TaskAltOutlinedIcon from '@mui/icons-material/TaskAltOutlined';
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 
 const queueColumns = [
   { id: 'backlog', label: 'Backlog', hint: '明示的に後回し', icon: Inventory2OutlinedIcon },
@@ -371,6 +373,15 @@ function Dashboard() {
     } catch (error) {
       console.error('Failed to delete work item:', error);
     }
+  };
+
+  const handleWorkItemDragEnd = ({ draggableId, source, destination }) => {
+    if (!destination) return;
+    if (destination.droppableId === 'running') return;
+    if (source.droppableId === destination.droppableId) return;
+    const item = agentWork.find((candidate) => candidate.id === draggableId);
+    if (!item) return;
+    moveWorkItem(item, destination.droppableId);
   };
 
   const queueFor = (status) => agentWork
@@ -761,18 +772,39 @@ function Dashboard() {
             </Box>
           </Box>
 
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-              gap: 1,
-            }}
-          >
-            {queueColumns.map((column) => {
+          <DragDropContext onDragEnd={handleWorkItemDragEnd}>
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap: 1,
+              }}
+            >
+              {queueColumns.map((column) => {
               const Icon = column.icon;
               const items = queueFor(column.id);
               return (
-                <Box key={column.id} sx={{ minWidth: 0 }}>
+                <Droppable
+                  key={column.id}
+                  droppableId={column.id}
+                  isDropDisabled={column.id === 'running'}
+                >
+                  {(dropProvided, dropSnapshot) => (
+                    <Box
+                      ref={dropProvided.innerRef}
+                      {...dropProvided.droppableProps}
+                      sx={{
+                        minWidth: 0,
+                        borderRadius: 2,
+                        outline: dropSnapshot.isDraggingOver
+                          ? '2px solid ' + alpha(theme.palette.primary.main, 0.45)
+                          : '2px solid transparent',
+                        background: dropSnapshot.isDraggingOver
+                          ? alpha(theme.palette.primary.main, isDark ? 0.08 : 0.04)
+                          : 'transparent',
+                        transition: 'background 120ms ease, outline 120ms ease',
+                      }}
+                    >
                   <Box sx={{ px: 0.5, py: 0.6, display: 'flex', alignItems: 'center', gap: 0.6 }}>
                     <Icon sx={{ fontSize: 18 }} />
                     <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>
@@ -793,19 +825,42 @@ function Dashboard() {
                   </Typography>
 
                   <Stack spacing={0.8}>
-                    {items.slice(0, 8).map((item) => (
-                      <Card
-                        key={item.id}
-                        elevation={0}
-                        sx={{
-                          border: '1px solid ' + border,
-                          background: isDark
-                            ? alpha(theme.palette.background.paper, 0.92)
-                            : 'rgba(255,255,255,0.9)',
-                        }}
-                      >
-                        <CardContent sx={{ p: '11px !important' }}>
-                          <Box sx={{ display: 'flex', gap: 0.7, alignItems: 'flex-start' }}>
+                    {items.slice(0, 8).map((item, index) => (
+                      <Draggable key={item.id} draggableId={item.id} index={index}>
+                        {(dragProvided, dragSnapshot) => (
+                          <Card
+                            ref={dragProvided.innerRef}
+                            {...dragProvided.draggableProps}
+                            elevation={dragSnapshot.isDragging ? 5 : 0}
+                            sx={{
+                              border: '1px solid ' + border,
+                              background: isDark
+                                ? alpha(theme.palette.background.paper, 0.92)
+                                : 'rgba(255,255,255,0.9)',
+                              opacity: dragSnapshot.isDragging ? 0.92 : 1,
+                            }}
+                          >
+                            <CardContent sx={{ p: '11px !important' }}>
+                          <Box sx={{ display: 'flex', gap: 0.45, alignItems: 'flex-start' }}>
+                            <Box
+                              {...dragProvided.dragHandleProps}
+                              title="ドラッグして移動"
+                              sx={{
+                                display: 'grid',
+                                placeItems: 'center',
+                                mt: '-2px',
+                                ml: '-4px',
+                                width: 24,
+                                height: 24,
+                                borderRadius: 1,
+                                color: 'text.disabled',
+                                cursor: 'grab',
+                                flexShrink: 0,
+                                '&:active': { cursor: 'grabbing' },
+                              }}
+                            >
+                              <DragIndicatorIcon sx={{ fontSize: 18 }} />
+                            </Box>
                             <Typography
                               variant="body2"
                               sx={{ fontWeight: 850, lineHeight: 1.4, flex: 1 }}
@@ -944,9 +999,12 @@ function Dashboard() {
                               削除
                             </Button>
                           </Box>
-                        </CardContent>
-                      </Card>
+                            </CardContent>
+                          </Card>
+                        )}
+                      </Draggable>
                     ))}
+                    {dropProvided.placeholder}
                     {items.length === 0 && (
                       <Box
                         sx={{
@@ -962,10 +1020,13 @@ function Dashboard() {
                       </Box>
                     )}
                   </Stack>
-                </Box>
+                    </Box>
+                  )}
+                </Droppable>
               );
             })}
-          </Box>
+            </Box>
+          </DragDropContext>
         </Paper>
 
         <Stack spacing={1.5}>
