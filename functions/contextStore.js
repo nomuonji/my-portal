@@ -35,7 +35,7 @@ const DECISION_STATUSES = ['active', 'superseded', 'reversed'];
 const OPPORTUNITY_STATUSES = ['active', 'watching', 'paused', 'closed', 'rejected', 'completed'];
 const METHOD_STATUSES = ['active', 'paused', 'archived'];
 const METHOD_VERSION_STATUSES = ['draft', 'active', 'superseded', 'archived'];
-const WORK_ITEM_STATUSES = ['backlog', 'ready', 'in_progress', 'running', 'blocked', 'review', 'done', 'cancelled'];
+const WORK_ITEM_STATUSES = ['backlog', 'ready', 'in_progress', 'running', 'blocked', 'review', 'archived'];
 const WORK_ITEM_PRIORITIES = ['critical', 'high', 'medium', 'low'];
 const WORK_ITEM_EXECUTION_MODES = ['agent', 'human'];
 const LINEAR_SETUP_WORK_ITEM_ID = 'system-linear-integration-setup';
@@ -1654,8 +1654,7 @@ function workItemPriorityToLinear(value) {
 
 function linearStatusToWorkItem(statusType) {
   const type = String(statusType || '').toLowerCase();
-  if (type === 'completed') return 'done';
-  if (type === 'canceled' || type === 'cancelled') return 'cancelled';
+  if (type === 'completed' || type === 'canceled' || type === 'cancelled') return 'archived';
   if (type === 'backlog' || type === 'triage') return 'backlog';
   if (type === 'started') return 'in_progress';
   return 'ready';
@@ -1663,8 +1662,7 @@ function linearStatusToWorkItem(statusType) {
 
 function workItemStatusToLinear(status) {
   if (status === 'backlog') return 'backlog';
-  if (status === 'done') return 'completed';
-  if (status === 'cancelled') return 'canceled';
+  if (status === 'archived') return 'completed';
   if (['in_progress', 'running', 'blocked', 'review'].includes(status)) return 'started';
   return 'unstarted';
 }
@@ -1708,10 +1706,10 @@ async function ensureLinearSetupTask() {
         current &&
         current.sourceType === 'system_integration' &&
         current.sourceId === 'linear' &&
-        !['done', 'cancelled'].includes(current.status)
+        !['archived', 'done', 'cancelled'].includes(current.status)
       ) {
         tx.update(ref, {
-          status: 'done',
+          status: 'archived',
           completedBy: 'system',
           resultSummary: 'LINEAR_API_KEYを検出しました。My Portal MCPからLinear公式Remote MCPを利用できます。',
           finishedAt: FieldValue.serverTimestamp(),
@@ -1982,7 +1980,8 @@ async function workItemHeartbeat(input) {
 async function workItemFinish(input) {
   const id = assertString(input.id, 'id', { max: 160 });
   const agent = assertString(input.agent, 'agent', { max: 120 });
-  const outcomeStatus = assertEnum(input.status, ['done', 'blocked', 'review'], 'status', 'done');
+  const requestedStatus = assertEnum(input.status, ['archived', 'blocked', 'review', 'done'], 'status', 'archived');
+  const outcomeStatus = requestedStatus === 'done' ? 'archived' : requestedStatus;
   const ref = db().collection(COLLECTIONS.workItems).doc(id);
 
   await db().runTransaction(async (tx) => {
@@ -2005,7 +2004,7 @@ async function workItemFinish(input) {
       claimedModel: null,
       leaseExpiresAt: null,
       lastHeartbeatAt: FieldValue.serverTimestamp(),
-      finishedAt: outcomeStatus === 'done' ? FieldValue.serverTimestamp() : null,
+      finishedAt: outcomeStatus === 'archived' ? FieldValue.serverTimestamp() : null,
       revision: Number(current.revision || 1) + 1,
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -2023,7 +2022,7 @@ async function workItemDelegateToHuman(input, actor = {}) {
     const snapshot = await tx.get(ref);
     if (!snapshot.exists) throw new Error('Work item not found: ' + id);
     const current = snapshot.data();
-    if (['done', 'cancelled'].includes(current.status)) {
+    if (['archived', 'done', 'cancelled'].includes(current.status)) {
       throw new Error('Work item is already closed: ' + current.status);
     }
     tx.update(ref, {
@@ -2232,9 +2231,29 @@ async function workItemPushToLinear(input = {}) {
   };
 }
 
+async function migrateLegacyWorkItemStatuses() {
+  const snapshot = await db().collection(COLLECTIONS.workItems).limit(1000).get();
+  const legacy = snapshot.docs.filter((docSnapshot) => ['done', 'cancelled'].includes(docSnapshot.data()?.status));
+  if (!legacy.length) return 0;
+
+  const batch = db().batch();
+  legacy.forEach((docSnapshot) => {
+    const current = docSnapshot.data() || {};
+    batch.update(docSnapshot.ref, {
+      status: 'archived',
+      legacyStatus: current.status,
+      finishedAt: current.finishedAt || FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      revision: Number(current.revision || 1) + 1,
+    });
+  });
+  await batch.commit();
+  return legacy.length;
+}
+
 async function controlPlaneOverview(input = {}) {
   const limit = Math.min(Math.max(Number(input.limit) || 80, 10), 200);
-  await ensureLinearSetupTask();
+  await Promise.all([ensureLinearSetupTask(), migrateLegacyWorkItemStatuses()]);
   const database = db();
   const [workSnapshot, spaceSnapshot, runSnapshot, projectSnapshot, memoSnapshot] = await Promise.all([
     database.collection(COLLECTIONS.workItems).limit(Math.max(limit, 100)).get(),
@@ -2285,7 +2304,7 @@ async function controlPlaneOverview(input = {}) {
     )
     .map((item) => serialize(item));
 
-  const openWork = workItems.filter((item) => !['done', 'cancelled'].includes(item.status));
+  const openWork = workItems.filter((item) => !['archived', 'done', 'cancelled'].includes(item.status));
 
   const linkedLinearKeys = new Map();
   workItems.forEach((item) => {
@@ -2331,6 +2350,7 @@ async function controlPlaneOverview(input = {}) {
       running: agentWork.filter((item) => item.status === 'running').length,
       blocked: agentWork.filter((item) => item.status === 'blocked').length,
       review: agentWork.filter((item) => item.status === 'review').length,
+      archived: workItems.filter((item) => ['archived', 'done', 'cancelled'].includes(item.status)).length,
       humanTasks: humanTasks.length,
       activeSpaces: spaces.length,
       activeProjects: projects.length,
@@ -2365,7 +2385,7 @@ async function controlPlaneOverview(input = {}) {
       'If an item requires a human-only action, explicit user judgment, account approval, physical action, or unavailable credential, call work_item_delegate_to_human instead of leaving it buried in chat or blocking the agent queue.',
       'Load the linked Space with space_get_context and start a Run when the task requires durable research or production context.',
       'Heartbeat long-running work before the lease expires.',
-      'Finish as done, review, or blocked with a result summary and concrete next actions.',
+      'Finish as archived, review, or blocked with a result summary and concrete next actions.',
       'If the Work Item is linked to Linear, call work_item_push_to_linear after meaningful status/result changes so the external issue stays aligned.',
       'Release the item if you stop without producing a durable result.',
     ],
