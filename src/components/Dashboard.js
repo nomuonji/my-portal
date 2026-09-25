@@ -712,14 +712,16 @@ function Dashboard() {
                   <Button size="small" variant="outlined" onClick={() => returnHumanTaskToAgent(item)}>
                     Agentへ戻す
                   </Button>
-                  <Button
+                  <IconButton
                     size="small"
                     color="error"
-                    startIcon={<DeleteOutlineIcon />}
+                    title="削除"
+                    aria-label="Human Taskを削除"
                     onClick={() => deleteWorkItem(item)}
+                    sx={{ width: 28, height: 28 }}
                   >
-                    削除
-                  </Button>
+                    <DeleteOutlineIcon sx={{ fontSize: 17 }} />
+                  </IconButton>
                   {item.metadata?.linear?.url && (
                     <Button
                       size="small"
