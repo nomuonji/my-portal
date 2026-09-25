@@ -19,7 +19,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   FormControl,
   InputLabel,
   MenuItem,
@@ -37,7 +36,6 @@ import BoltIcon from '@mui/icons-material/Bolt';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
-import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
 import PsychologyAltOutlinedIcon from '@mui/icons-material/PsychologyAltOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import TaskAltOutlinedIcon from '@mui/icons-material/TaskAltOutlined';
@@ -79,7 +77,6 @@ function Dashboard() {
   const [spaces, setSpaces] = useState([]);
   const [projects, setProjects] = useState([]);
   const [runs, setRuns] = useState([]);
-  const [memos, setMemos] = useState([]);
   const [linearOverview, setLinearOverview] = useState({
     configured: null,
     issues: [],
@@ -115,9 +112,6 @@ function Dashboard() {
       }),
       onSnapshot(collection(db, 'runs'), (snapshot) => {
         setRuns(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
-      }),
-      onSnapshot(collection(db, 'memos'), (snapshot) => {
-        setMemos(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
       }),
     ];
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
@@ -231,28 +225,6 @@ function Dashboard() {
     [runs],
   );
 
-  const actionMemos = useMemo(
-    () => memos
-      .filter((item) => ['next_action', 'inbox', 'project'].includes(item.status))
-      .sort((a, b) => toMillis(b.updatedAt || b.createdAt) - toMillis(a.updatedAt || a.createdAt))
-      .slice(0, 8),
-    [memos],
-  );
-
-  const unqueuedActions = useMemo(() => {
-    const output = [];
-    activeSpaces.forEach((space) => {
-      (space.nextActions || []).forEach((action) => {
-        const normalized = clean(action).toLowerCase();
-        const exists = openWork.some((item) => (
-          item.spaceId === space.id &&
-          [item.title, item.objective].some((value) => clean(value).toLowerCase() === normalized)
-        ));
-        if (!exists && normalized) output.push({ space, action });
-      });
-    });
-    return output.slice(0, 10);
-  }, [activeSpaces, openWork]);
 
   const border = isDark
     ? alpha(theme.palette.common.white, 0.1)
@@ -350,9 +322,9 @@ function Dashboard() {
     { label: 'Blocked', value: queueFor('blocked').length, sub: '要判断 / 外部待ち' },
     { label: 'Human', value: humanTasks.length, sub: '人間の操作・判断待ち' },
     {
-      label: 'Coverage',
-      value: activeSpaces.length + activeProjects.length,
-      sub: activeSpaces.length + ' spaces / ' + activeProjects.length + ' projects',
+      label: 'Projects',
+      value: activeProjects.length,
+      sub: 'implementation workspaces',
     },
   ];
 
@@ -801,7 +773,7 @@ function Dashboard() {
                             {item.spaceId && (
                               <Chip
                                 size="small"
-                                label="Space"
+                                label="長期テーマ"
                                 variant="outlined"
                                 sx={{ height: 20, fontSize: '0.58rem' }}
                               />
@@ -912,122 +884,17 @@ function Dashboard() {
               )}
             </Stack>
           </Paper>
-
-          <Paper
-            elevation={0}
-            sx={{ p: 1.25, border: '1px solid ' + border, background: glass }}
-          >
-            <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
-              Unqueued Next Actions
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Spaceにはあるが、まだ実行キュー化されていない次の行動。
-            </Typography>
-            <Stack spacing={0.7} sx={{ mt: 1 }}>
-              {unqueuedActions.map(({ space, action }) => (
-                <Box
-                  key={space.id + ':' + action}
-                  sx={{ p: 0.8, borderRadius: 2, border: '1px solid ' + border }}
-                >
-                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>
-                    {space.title}
-                  </Typography>
-                  <Typography variant="body2" sx={{ mt: 0.2, fontSize: '0.75rem' }}>
-                    {action}
-                  </Typography>
-                  <Button
-                    size="small"
-                    startIcon={<AddTaskIcon />}
-                    sx={{ mt: 0.5 }}
-                    onClick={() => createWorkItem({
-                      title: action,
-                      objective: action,
-                      priority: 'medium',
-                      spaceId: space.id,
-                      projectId: '',
-                      executionMode: 'agent',
-                      sourceType: 'space_next_action',
-                      sourceId: space.id,
-                    })}
-                  >
-                    キューへ
-                  </Button>
-                </Box>
-              ))}
-              {unqueuedActions.length === 0 && (
-                <Typography variant="body2" color="text.secondary">
-                  未キュー化のNext Actionはありません。
-                </Typography>
-              )}
-            </Stack>
-          </Paper>
         </Stack>
       </Box>
 
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' },
+          gridTemplateColumns: '1fr',
           gap: 1.5,
           mb: 1.5,
         }}
       >
-        <Paper
-          elevation={0}
-          sx={{ p: 1.25, border: '1px solid ' + border, background: glass }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.7, mb: 1 }}>
-            <PsychologyAltOutlinedIcon color="primary" />
-            <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
-              Spaces · 再開地点
-            </Typography>
-            <Chip size="small" label={activeSpaces.length} sx={{ ml: 'auto', height: 21 }} />
-          </Box>
-          <Stack spacing={0.8}>
-            {activeSpaces.slice(0, 8).map((space) => (
-              <Box
-                key={space.id}
-                sx={{ p: 1, borderRadius: 2, border: '1px solid ' + border, cursor: 'pointer' }}
-                onClick={() => navigate('/thinking')}
-              >
-                <Typography variant="body2" sx={{ fontWeight: 900 }}>
-                  {space.title}
-                </Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden',
-                    mt: 0.35,
-                    lineHeight: 1.45,
-                  }}
-                >
-                  {space.currentBrief || space.goal || space.summary || 'Briefなし'}
-                </Typography>
-                <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', mt: 0.7 }}>
-                  <Chip
-                    size="small"
-                    label={(space.nextActions || []).length + ' next'}
-                    variant="outlined"
-                    sx={{ height: 20, fontSize: '0.58rem' }}
-                  />
-                  <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
-                    {formatDate(space.updatedAt || space.createdAt)}
-                  </Typography>
-                </Box>
-              </Box>
-            ))}
-            {activeSpaces.length === 0 && (
-              <Typography variant="body2" color="text.secondary">
-                Active Spaceはありません。
-              </Typography>
-            )}
-          </Stack>
-        </Paper>
-
         <Paper
           elevation={0}
           sx={{ p: 1.25, border: '1px solid ' + border, background: glass }}
@@ -1098,69 +965,6 @@ function Dashboard() {
         </Paper>
       </Box>
 
-      <Paper
-        elevation={0}
-        sx={{ p: 1.25, border: '1px solid ' + border, background: glass }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.7, mb: 0.9 }}>
-          <PauseCircleOutlineIcon color="primary" />
-          <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
-            Legacy Inbox · 捕捉漏れ候補
-          </Typography>
-          <Chip size="small" label={actionMemos.length} sx={{ ml: 'auto', height: 21 }} />
-        </Box>
-        <Typography variant="caption" color="text.secondary">
-          従来メモの next_action / inbox / project。必要なものはWork Itemへ昇格させます。
-        </Typography>
-        <Divider sx={{ my: 1 }} />
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)', xl: 'repeat(4, 1fr)' },
-            gap: 0.8,
-          }}
-        >
-          {actionMemos.map((memo) => (
-            <Box
-              key={memo.id}
-              sx={{ p: 0.9, borderRadius: 2, border: '1px solid ' + border }}
-            >
-              <Typography
-                variant="body2"
-                sx={{
-                  fontWeight: 800,
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical',
-                  overflow: 'hidden',
-                }}
-              >
-                {clean(memo.text) || '無題のメモ'}
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 0.5, mt: 0.7, alignItems: 'center' }}>
-                <Chip
-                  size="small"
-                  label={memo.status}
-                  sx={{ height: 19, fontSize: '0.55rem' }}
-                />
-                <Button
-                  size="small"
-                  sx={{ ml: 'auto' }}
-                  onClick={() => navigate('/memo/' + memo.id)}
-                >
-                  開く
-                </Button>
-              </Box>
-            </Box>
-          ))}
-          {actionMemos.length === 0 && (
-            <Typography variant="body2" color="text.secondary">
-              対象メモはありません。
-            </Typography>
-          )}
-        </Box>
-      </Paper>
-
       <Dialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}
@@ -1221,9 +1025,9 @@ function Dashboard() {
               </Select>
             </FormControl>
             <FormControl>
-              <InputLabel>Space</InputLabel>
+              <InputLabel>長期テーマ</InputLabel>
               <Select
-                label="Space"
+                label="長期テーマ"
                 value={draft.spaceId}
                 onChange={(event) => setDraft((current) => ({
                   ...current,
