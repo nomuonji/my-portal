@@ -65,8 +65,8 @@ linear_issue_import_to_work_item({
 
 - Linear backlog / triage -> Work Item backlog
 - Linear unstarted / started -> Work Item ready
-- Linear completed -> Work Item done
-- Linear canceled -> Work Item cancelled
+- Linear completed -> Work Item archived
+- Linear canceled -> Work Item archived
 
 LinearのstartedはWork Item `in_progress` に同期できる。My Portalの `running` だけがAgent claim/leaseとセットのリアルタイム実行状態だから。
 
