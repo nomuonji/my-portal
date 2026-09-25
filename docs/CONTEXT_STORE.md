@@ -314,7 +314,7 @@ Spaceの `nextActions` はテーマの再開地点として残すが、複数エ
 
 さらに `executionMode = agent | human` を持つ。`human` は専用の **Human Tasks** 箱へ表示し、Agent Queueから除外する。
 
-Work Itemは `spaceId`, `projectId`, `sourceType`, `sourceId`, `priority`, `dependencies`, `claimedBy`, `runId`, `leaseExpiresAt`, `resultSummary`, `nextActions` を持てる。
+Work Itemは `spaceId`, `projectId`, `sourceType`, `sourceId`, `priority`, `dependencies`, `claimedBy`, `runId`, `leaseExpiresAt`, `resultSummary`, `nextActions` を持てる。さらに、同じrepoや外部対象への同時作業を避けたい場合は `metadata.resources` に `repo:owner/name` のような安定したresource keyを入れる。`in_progress` の別Work Itemとresourceが重なっている場合、Agentは原則その対象を触らない。これはハードロックではなく、Agent同士の協調用の可視属性として扱う。
 
 ### Claim / Lease
 
