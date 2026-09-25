@@ -35,7 +35,7 @@ const DECISION_STATUSES = ['active', 'superseded', 'reversed'];
 const OPPORTUNITY_STATUSES = ['active', 'watching', 'paused', 'closed', 'rejected', 'completed'];
 const METHOD_STATUSES = ['active', 'paused', 'archived'];
 const METHOD_VERSION_STATUSES = ['draft', 'active', 'superseded', 'archived'];
-const WORK_ITEM_STATUSES = ['backlog', 'ready', 'in_progress', 'blocked', 'review', 'done', 'cancelled'];
+const WORK_ITEM_STATUSES = ['backlog', 'ready', 'in_progress', 'running', 'blocked', 'review', 'done', 'cancelled'];
 const WORK_ITEM_PRIORITIES = ['critical', 'high', 'medium', 'low'];
 const WORK_ITEM_EXECUTION_MODES = ['agent', 'human'];
 const LINEAR_SETUP_WORK_ITEM_ID = 'system-linear-integration-setup';
@@ -1934,7 +1934,7 @@ async function workItemClaim(input, actor = {}) {
       throw new Error('Work item is claimed by ' + current.claimedBy + ' until ' + new Date(currentLeaseMs).toISOString());
     }
     tx.update(ref, {
-      status: 'in_progress',
+      status: 'running',
       claimedBy: agent,
       claimedModel: model,
       runId: clampString(input.runId, 160) || current.runId || null,
@@ -1958,7 +1958,7 @@ async function workItemHeartbeat(input) {
     if (!snapshot.exists) throw new Error('Work item not found: ' + id);
     const current = snapshot.data();
     if (current.claimedBy !== agent) throw new Error('Work item is not claimed by ' + agent);
-    if (current.status !== 'in_progress') throw new Error('Work item is not in progress');
+    if (current.status !== 'running') throw new Error('Work item is not currently running');
     tx.update(ref, {
       leaseExpiresAt: new Date(Date.now() + leaseMinutes * 60 * 1000),
       lastHeartbeatAt: FieldValue.serverTimestamp(),
@@ -1992,6 +1992,8 @@ async function workItemFinish(input) {
         ? stringArray(input.nextActions, 100, 3000)
         : (current.nextActions || []),
       metadata: { ...(current.metadata || {}), ...jsonSafe(input.metadataPatch || {}) },
+      claimedBy: null,
+      claimedModel: null,
       leaseExpiresAt: null,
       lastHeartbeatAt: FieldValue.serverTimestamp(),
       finishedAt: outcomeStatus === 'done' ? FieldValue.serverTimestamp() : null,
@@ -2267,7 +2269,7 @@ async function controlPlaneOverview(input = {}) {
   const nowMs = Date.now();
   const staleLeases = rawWork
     .filter((item) =>
-      item.status === 'in_progress' &&
+      item.status === 'running' &&
       item.claimedBy &&
       timestampMillis(item.leaseExpiresAt) > 0 &&
       timestampMillis(item.leaseExpiresAt) <= nowMs
@@ -2317,6 +2319,7 @@ async function controlPlaneOverview(input = {}) {
       ready: agentWork.filter((item) => item.status === 'ready').length,
       backlog: agentWork.filter((item) => item.status === 'backlog').length,
       inProgress: agentWork.filter((item) => item.status === 'in_progress').length,
+      running: agentWork.filter((item) => item.status === 'running').length,
       blocked: agentWork.filter((item) => item.status === 'blocked').length,
       review: agentWork.filter((item) => item.status === 'review').length,
       humanTasks: humanTasks.length,
@@ -2331,6 +2334,7 @@ async function controlPlaneOverview(input = {}) {
     },
     recommendedNext,
     inProgress: agentWork.filter((item) => item.status === 'in_progress'),
+    running: agentWork.filter((item) => item.status === 'running'),
     blocked: agentWork.filter((item) => item.status === 'blocked'),
     review: agentWork.filter((item) => item.status === 'review'),
     humanTasks,
@@ -2348,7 +2352,7 @@ async function controlPlaneOverview(input = {}) {
     operatingProtocol: [
       'Call control_plane_overview before starting autonomous work.',
       'Prefer a ready work item; create one for an unqueued Space next action when appropriate. Linear issues are external candidates: import relevant unlinked issues with linear_issue_import_to_work_item before autonomous execution.',
-      'Claim exactly one agent work item before execution so parallel agents do not duplicate effort.',
+      'Claim exactly one agent work item before execution. Claiming moves it to running; in_progress means the task is ongoing but no agent is actively executing it right now.',
       'If an item requires a human-only action, explicit user judgment, account approval, physical action, or unavailable credential, call work_item_delegate_to_human instead of leaving it buried in chat or blocking the agent queue.',
       'Load the linked Space with space_get_context and start a Run when the task requires durable research or production context.',
       'Heartbeat long-running work before the lease expires.',
