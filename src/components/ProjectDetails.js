@@ -47,11 +47,12 @@ const statusLabel = {
   running: 'Running',
   blocked: 'Blocked',
   review: 'Review',
-  done: 'Done',
-  cancelled: 'Cancelled',
+  archived: 'Archived',
+  done: 'Archived',
+  cancelled: 'Archived',
 };
 
-const workStatusOrder = ['running', 'in_progress', 'blocked', 'review', 'ready', 'backlog', 'done', 'cancelled'];
+const workStatusOrder = ['running', 'in_progress', 'blocked', 'review', 'ready', 'backlog', 'archived', 'done', 'cancelled'];
 
 function ProjectDetails() {
   const { projectId } = useParams();
@@ -122,8 +123,8 @@ function ProjectDetails() {
   const workStats = useMemo(() => ({
     running: workItems.filter((item) => item.status === 'running').length,
     working: workItems.filter((item) => item.status === 'in_progress').length,
-    open: workItems.filter((item) => !['done', 'cancelled'].includes(item.status)).length,
-    done: workItems.filter((item) => item.status === 'done').length,
+    open: workItems.filter((item) => !['archived', 'done', 'cancelled'].includes(item.status)).length,
+    archived: workItems.filter((item) => ['archived', 'done', 'cancelled'].includes(item.status)).length,
   }), [workItems]);
 
   const border = isDark
@@ -238,7 +239,7 @@ function ProjectDetails() {
             ['Open work', workStats.open],
             ['Working', workStats.working],
             ['Running', workStats.running],
-            ['Done', workStats.done],
+            ['Archived', workStats.archived],
           ].map(([label, value]) => (
             <Box key={label} sx={{ p: 0.9, borderRadius: 2, border: `1px solid ${border}`, background: isDark ? alpha(theme.palette.common.white, 0.025) : 'rgba(255,255,255,0.48)' }}>
               <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>{label}</Typography>
