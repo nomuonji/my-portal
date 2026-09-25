@@ -1662,7 +1662,8 @@ function linearStatusToWorkItem(statusType) {
 
 function workItemStatusToLinear(status) {
   if (status === 'backlog') return 'backlog';
-  if (status === 'archived') return 'completed';
+  if (status === 'archived' || status === 'done') return 'completed';
+  if (status === 'cancelled') return 'canceled';
   if (['in_progress', 'running', 'blocked', 'review'].includes(status)) return 'started';
   return 'unstarted';
 }
@@ -2253,7 +2254,8 @@ async function migrateLegacyWorkItemStatuses() {
 
 async function controlPlaneOverview(input = {}) {
   const limit = Math.min(Math.max(Number(input.limit) || 80, 10), 200);
-  await Promise.all([ensureLinearSetupTask(), migrateLegacyWorkItemStatuses()]);
+  await migrateLegacyWorkItemStatuses();
+  await ensureLinearSetupTask();
   const database = db();
   const [workSnapshot, spaceSnapshot, runSnapshot, projectSnapshot, memoSnapshot] = await Promise.all([
     database.collection(COLLECTIONS.workItems).limit(Math.max(limit, 100)).get(),
