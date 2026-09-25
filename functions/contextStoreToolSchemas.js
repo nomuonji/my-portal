@@ -212,7 +212,7 @@ const TOOLS = [
   },
   {
     name: 'work_item_create',
-    description: 'Create a durable executable work item for the Agent Control Plane. Use in_progress for ongoing work; running is reserved for work_item_claim.',
+    description: 'Create a durable executable work item for the Agent Control Plane. Use backlog only for work deliberately deferred from near-term execution, ready for immediately claimable work, and in_progress for ongoing work that is currently idle. running is reserved for work_item_claim.',
     inputSchema: objectSchema(workItemFields, ['title']),
     annotations: { readOnlyHint: false, destructiveHint: false },
   },
@@ -319,7 +319,7 @@ const TOOLS = [
   },
   {
     name: 'work_item_release',
-    description: 'Release a claimed item back to ready/backlog when the agent must stop without completing or handing it off.',
+    description: 'Release a claimed item when the agent stops without completing it. Prefer in_progress when the task remains active but is temporarily idle, ready when it should be immediately claimable, and backlog only for deliberate deferral.'
     inputSchema: objectSchema({
       id: string('Work item ID.', 160),
       agent: string('Current owning agent.', 120),
