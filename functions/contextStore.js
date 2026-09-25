@@ -2350,6 +2350,7 @@ async function controlPlaneOverview(input = {}) {
       'Load the linked Space with space_get_context and start a Run when the task requires durable research or production context.',
       'Heartbeat long-running work before the lease expires.',
       'Finish as done, review, or blocked with a result summary and concrete next actions.',
+      'If the Work Item is linked to Linear, call work_item_push_to_linear after meaningful status/result changes so the external issue stays aligned.',
       'Release the item if you stop without producing a durable result.',
     ],
   };
