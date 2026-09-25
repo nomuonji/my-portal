@@ -69,7 +69,7 @@ const workItemFields = {
   dependencies: stringArray('Work item IDs that should be considered before execution.', 50),
   tags: stringArray('Loose tags.', 50),
   dueAt: string('Optional ISO date/time or human deadline text.', 120),
-  metadata: jsonObject('Structured execution metadata.'),
+  metadata: jsonObject('Structured execution metadata. When a task actively touches a shared target, set metadata.resources to stable keys such as ["repo:owner/name"] so other agents can see the overlap.'),
 };
 
 const methodFields = {
@@ -150,7 +150,7 @@ const TOOLS = [
   },
   {
     name: 'control_plane_overview',
-    description: 'Primary Agent HQ entrypoint. Returns executable work, active claims/runs, blocked work, stale leases, active Spaces/Projects, unqueued Space next-actions, and actionable legacy memos. Autonomous agents should call this before deciding what to start or resume.',
+    description: 'Primary Agent HQ entrypoint. Returns executable work, active claims/runs, blocked work, stale leases, active Spaces/Projects, unqueued Space next-actions, and actionable legacy memos. Autonomous agents should call this before deciding what to start or resume, and avoid shared targets already listed in metadata.resources on other in-progress work items.',
     inputSchema: objectSchema({
       limit: { type: 'integer', minimum: 10, maximum: 200, default: 80 },
       includeLinear: { type: 'boolean', default: true, description: 'Include open Linear issues as external work candidates when the Linear integration is configured.' },
