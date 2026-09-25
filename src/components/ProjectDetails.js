@@ -40,7 +40,6 @@ const statusLabel = {
   active: '進行中',
   paused: '一時停止',
   completed: '完了',
-  archived: 'アーカイブ',
   backlog: 'Backlog',
   ready: 'Ready',
   in_progress: 'Working',
