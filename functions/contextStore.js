@@ -1898,6 +1898,9 @@ async function workItemUpdate(input) {
     if (patch.status !== undefined) {
       const nextStatus = assertEnum(patch.status, WORK_ITEM_STATUSES, 'patch.status', current.status || 'ready');
       if (nextStatus === 'running') throw new Error('running is claim-only; call work_item_claim instead');
+      if (current.status === 'running' && nextStatus !== 'running') {
+        throw new Error('Use work_item_finish, work_item_release, or work_item_delegate_to_human to leave running state');
+      }
       update.status = nextStatus;
     }
     if (patch.priority !== undefined) update.priority = assertEnum(patch.priority, WORK_ITEM_PRIORITIES, 'patch.priority', current.priority || 'medium');
