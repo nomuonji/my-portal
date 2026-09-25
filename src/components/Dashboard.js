@@ -36,6 +36,7 @@ import BoltIcon from '@mui/icons-material/Bolt';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
+import PendingActionsOutlinedIcon from '@mui/icons-material/PendingActionsOutlined';
 import PsychologyAltOutlinedIcon from '@mui/icons-material/PsychologyAltOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import TaskAltOutlinedIcon from '@mui/icons-material/TaskAltOutlined';
@@ -43,7 +44,8 @@ import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 
 const queueColumns = [
   { id: 'ready', label: 'Ready', hint: '取得可能', icon: BoltIcon },
-  { id: 'in_progress', label: 'Working', hint: 'Agentが実行中', icon: SmartToyOutlinedIcon },
+  { id: 'in_progress', label: 'Working', hint: '進行中・再開可能', icon: PendingActionsOutlinedIcon },
+  { id: 'running', label: 'Running', hint: 'Agentが今作業中', icon: SmartToyOutlinedIcon },
   { id: 'blocked', label: 'Blocked', hint: '判断・外部条件待ち', icon: WarningAmberOutlinedIcon },
   { id: 'review', label: 'Review', hint: '確認・引継ぎ待ち', icon: TaskAltOutlinedIcon },
 ];
@@ -318,7 +320,8 @@ function Dashboard() {
 
   const kpis = [
     { label: 'Ready', value: queueFor('ready').length + queueFor('backlog').length, sub: '着手可能' },
-    { label: 'Working', value: queueFor('in_progress').length, sub: activeRuns.length + ' active runs' },
+    { label: 'Working', value: queueFor('in_progress').length, sub: '進行中・待機' },
+    { label: 'Running', value: queueFor('running').length, sub: 'いまAgentが実行中' },
     { label: 'Blocked', value: queueFor('blocked').length, sub: '要判断 / 外部待ち' },
     { label: 'Human', value: humanTasks.length, sub: '人間の操作・判断待ち' },
     {
@@ -396,7 +399,7 @@ function Dashboard() {
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: { xs: 'repeat(2, 1fr)', lg: 'repeat(5, 1fr)' },
+          gridTemplateColumns: { xs: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)', xl: 'repeat(6, 1fr)' },
           gap: 1,
           mb: 1.5,
         }}
