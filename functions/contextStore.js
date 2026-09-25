@@ -1657,6 +1657,7 @@ function linearStatusToWorkItem(statusType) {
   if (type === 'completed') return 'done';
   if (type === 'canceled' || type === 'cancelled') return 'cancelled';
   if (type === 'backlog' || type === 'triage') return 'backlog';
+  if (type === 'started') return 'in_progress';
   return 'ready';
 }
 
@@ -1664,7 +1665,7 @@ function workItemStatusToLinear(status) {
   if (status === 'backlog') return 'backlog';
   if (status === 'done') return 'completed';
   if (status === 'cancelled') return 'canceled';
-  if (['in_progress', 'blocked', 'review'].includes(status)) return 'started';
+  if (['in_progress', 'running', 'blocked', 'review'].includes(status)) return 'started';
   return 'unstarted';
 }
 
@@ -2140,7 +2141,7 @@ async function linearIssueImportToWorkItem(input = {}, actor = {}) {
     return { created: true, synced: true, workItem: item, linearIssue: issue };
   }
 
-  const preserveExecutionState = existing.status === 'in_progress' && existing.claimedBy;
+  const preserveExecutionState = existing.status === 'running' && existing.claimedBy;
   const patch = {
     title,
     objective,
@@ -2296,7 +2297,7 @@ async function controlPlaneOverview(input = {}) {
   const humanTasks = openWork.filter((item) => item.executionMode === 'human');
   const priorityRank = { critical: 0, high: 1, medium: 2, low: 3 };
   const recommendedNext = agentWork
-    .filter((item) => ['ready', 'backlog'].includes(item.status))
+    .filter((item) => ['in_progress', 'ready', 'backlog'].includes(item.status))
     .sort((a, b) => (priorityRank[a.priority] ?? 2) - (priorityRank[b.priority] ?? 2))
     .slice(0, 20);
 
@@ -2351,7 +2352,7 @@ async function controlPlaneOverview(input = {}) {
     },
     operatingProtocol: [
       'Call control_plane_overview before starting autonomous work.',
-      'Prefer a ready work item; create one for an unqueued Space next action when appropriate. Linear issues are external candidates: import relevant unlinked issues with linear_issue_import_to_work_item before autonomous execution.',
+      'Prefer a resumable in_progress item or a ready work item; create one for an unqueued Space next action when appropriate. Never start a running item owned by another active lease. Linear issues are external candidates: import relevant unlinked issues with linear_issue_import_to_work_item before autonomous execution.',
       'Claim exactly one agent work item before execution. Claiming moves it to running; in_progress means the task is ongoing but no agent is actively executing it right now.',
       'If an item requires a human-only action, explicit user judgment, account approval, physical action, or unavailable credential, call work_item_delegate_to_human instead of leaving it buried in chat or blocking the agent queue.',
       'Load the linked Space with space_get_context and start a Run when the task requires durable research or production context.',
