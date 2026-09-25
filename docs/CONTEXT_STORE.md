@@ -310,7 +310,7 @@ Dashboardは人間向けのメモ一覧ではなく、エージェントが作�
 
 Spaceの `nextActions` はテーマの再開地点として残すが、複数エージェントが実際に作業する対象はWork Itemへ昇格させる。
 
-主な状態: `backlog` / `ready` / `in_progress` / `running` / `blocked` / `review` / `done` / `cancelled`。`in_progress` は継続中だが現在Agentが触っていない状態、`running` はAgentがclaim済みで今まさに実行中の状態。
+主な状態: `backlog` / `ready` / `in_progress` / `running` / `blocked` / `review` / `done` / `cancelled`。`backlog` は近い将来の実行対象から明示的に外して後回しにした仕事、`ready` はすぐ取得可能、`in_progress` は継続中だが現在Agentが触っていない状態、`running` はAgentがclaim済みで今まさに実行中の状態。単に作業を中断しただけの継続タスクをbacklogへ落とさない。
 
 さらに `executionMode = agent | human` を持つ。`human` は専用の **Human Tasks** 箱へ表示し、Agent Queueから除外する。
 
