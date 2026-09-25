@@ -1718,6 +1718,16 @@ async function ensureLinearSetupTask() {
       return;
     }
 
+    if (
+      current &&
+      current.sourceType === 'system_integration' &&
+      current.sourceId === 'linear' &&
+      current.executionMode === 'human' &&
+      current.status === 'ready'
+    ) {
+      return;
+    }
+
     const now = FieldValue.serverTimestamp();
     const payload = {
       title: 'Linear連携: APIキーをNetlifyへ設定',
@@ -2142,7 +2152,6 @@ async function linearIssueImportToWorkItem(input = {}, actor = {}) {
 
   const item = await workItemUpdate({
     id: existing.id,
-    expectedRevision: existing.revision,
     patch,
   });
 
@@ -2190,7 +2199,6 @@ async function workItemPushToLinear(input = {}) {
   const linearMeta = linearIssueMetadata(issue);
   const updated = await workItemUpdate({
     id,
-    expectedRevision: item.revision,
     patch: {
       metadataPatch: {
         linear: {
