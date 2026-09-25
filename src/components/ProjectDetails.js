@@ -44,13 +44,14 @@ const statusLabel = {
   backlog: 'Backlog',
   ready: 'Ready',
   in_progress: 'Working',
+  running: 'Running',
   blocked: 'Blocked',
   review: 'Review',
   done: 'Done',
   cancelled: 'Cancelled',
 };
 
-const workStatusOrder = ['in_progress', 'blocked', 'review', 'ready', 'backlog', 'done', 'cancelled'];
+const workStatusOrder = ['running', 'in_progress', 'blocked', 'review', 'ready', 'backlog', 'done', 'cancelled'];
 
 function ProjectDetails() {
   const { projectId } = useParams();
@@ -119,6 +120,7 @@ function ProjectDetails() {
   )), [workItems]);
 
   const workStats = useMemo(() => ({
+    running: workItems.filter((item) => item.status === 'running').length,
     working: workItems.filter((item) => item.status === 'in_progress').length,
     open: workItems.filter((item) => !['done', 'cancelled'].includes(item.status)).length,
     done: workItems.filter((item) => item.status === 'done').length,
@@ -226,7 +228,7 @@ function ProjectDetails() {
           sx={{
             mt: 1.9,
             display: 'grid',
-            gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(5, minmax(100px, 1fr))' },
+            gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(3, minmax(100px, 1fr))', lg: 'repeat(6, minmax(100px, 1fr))' },
             gap: 0.75,
           }}
         >
@@ -235,6 +237,7 @@ function ProjectDetails() {
             ['Connected tools', tools.length],
             ['Open work', workStats.open],
             ['Working', workStats.working],
+            ['Running', workStats.running],
             ['Done', workStats.done],
           ].map(([label, value]) => (
             <Box key={label} sx={{ p: 0.9, borderRadius: 2, border: `1px solid ${border}`, background: isDark ? alpha(theme.palette.common.white, 0.025) : 'rgba(255,255,255,0.48)' }}>
