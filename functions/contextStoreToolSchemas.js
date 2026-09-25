@@ -153,8 +153,62 @@ const TOOLS = [
     description: 'Primary Agent HQ entrypoint. Returns executable work, active claims/runs, blocked work, stale leases, active Spaces/Projects, unqueued Space next-actions, and actionable legacy memos. Autonomous agents should call this before deciding what to start or resume.',
     inputSchema: objectSchema({
       limit: { type: 'integer', minimum: 10, maximum: 200, default: 80 },
+      includeLinear: { type: 'boolean', default: true, description: 'Include open Linear issues as external work candidates when the Linear integration is configured.' },
     }),
     annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'linear_status',
+    description: 'Check whether My Portal can reach the connected Linear workspace through Linear official Remote MCP. The API key itself is never returned.',
+    inputSchema: objectSchema({}),
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'linear_tool_catalog',
+    description: 'List/search the tools currently exposed by Linear official Remote MCP. Use this before linear_tool_call when you need Linear functionality beyond the typed issue/work-item bridge.',
+    inputSchema: objectSchema({
+      query: string('Optional substring over Linear tool names and descriptions.', 300),
+      limit: { type: 'integer', minimum: 1, maximum: 250, default: 100 },
+      refresh: { type: 'boolean', default: false },
+    }),
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'linear_tool_call',
+    description: 'Proxy a Linear official MCP tool through My Portal. Pass the exact Linear tool name and its arguments. Destructive, merge, or sharing tools require confirm=true. Prefer typed My Portal bridge tools for routine issue ↔ Work Item synchronization.',
+    inputSchema: objectSchema({
+      name: string('Exact Linear MCP tool name from linear_tool_catalog.', 160),
+      arguments: jsonObject('Arguments passed verbatim to the selected Linear MCP tool.'),
+      confirm: { type: 'boolean', default: false, description: 'Required for destructive, merge, delete, share, or unshare operations.' },
+    }, ['name']),
+    annotations: { readOnlyHint: false, destructiveHint: true },
+  },
+  {
+    name: 'linear_issue_import_to_work_item',
+    description: 'Import or refresh a Linear issue as a durable My Portal Work Item. Existing linkage is reused to avoid duplicates. A claimed in-progress Work Item keeps its local execution state while remote metadata refreshes.',
+    inputSchema: objectSchema({
+      issue: string('Linear issue ID or identifier such as MY-29.', 300),
+      workItemId: string('Optional exact existing Work Item to refresh from this Linear issue.', 160),
+      executionMode: workItemFields.executionMode,
+      humanReason: workItemFields.humanReason,
+      spaceId: workItemFields.spaceId,
+      projectId: workItemFields.projectId,
+      syncStatus: { type: 'boolean', default: true, description: 'Refresh local status from Linear when the Work Item is not actively claimed.' },
+    }, ['issue']),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  {
+    name: 'work_item_push_to_linear',
+    description: 'Create a Linear issue from a My Portal Work Item or update its already-linked Linear issue. Persists the Linear link back into Work Item metadata. By default status is synchronized using Linear workflow state types.',
+    inputSchema: objectSchema({
+      id: string('My Portal Work Item ID.', 160),
+      issue: string('Optional Linear issue ID/identifier override. Omit to use the stored linkage or create a new issue.', 300),
+      team: string('Linear team name/key/ID for issue creation. Defaults to LINEAR_TEAM_KEY (MY).', 300),
+      project: string('Optional Linear project name/ID/identifier. Empty string removes on update.', 500),
+      assignee: string('Optional Linear assignee user/name/email or me. Empty string removes on update.', 300),
+      syncStatus: { type: 'boolean', default: true },
+    }, ['id']),
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: 'work_item_create',
