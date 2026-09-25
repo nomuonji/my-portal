@@ -767,7 +767,7 @@ function Dashboard() {
                 Execution Queue
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                継続中はWorking、Agentがclaimして今まさに触っている間だけRunningとして表示します。
+                継続中はWorking、Agentがclaimして今まさに触っている間だけRunningです。カード左上のハンドルをドラッグして列間を移動できます。
               </Typography>
             </Box>
           </Box>
