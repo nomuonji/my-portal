@@ -884,8 +884,7 @@ function Dashboard() {
               )}
             </Stack>
           </Paper>
-
-                  </Stack>
+        </Stack>
       </Box>
 
       <Box
@@ -896,7 +895,7 @@ function Dashboard() {
           mb: 1.5,
         }}
       >
-                <Paper
+        <Paper
           elevation={0}
           sx={{ p: 1.25, border: '1px solid ' + border, background: glass }}
         >
@@ -966,7 +965,7 @@ function Dashboard() {
         </Paper>
       </Box>
 
-            <Dialog
+      <Dialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         fullWidth
