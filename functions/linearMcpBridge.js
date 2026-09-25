@@ -256,7 +256,10 @@ async function callTool(input = {}) {
     throw new Error('Unknown Linear MCP tool: ' + name + '. Call linear_tool_catalog first.');
   }
 
-  if (DESTRUCTIVE_OR_SENSITIVE_TOOLS.has(name) && input.confirm !== true) {
+  const requiresConfirm =
+    DESTRUCTIVE_OR_SENSITIVE_TOOLS.has(name) ||
+    /^(delete_|merge_|share_|unshare_)/.test(name);
+  if (requiresConfirm && input.confirm !== true) {
     throw new Error(name + ' requires confirm=true because it is destructive or changes sharing/merge state.');
   }
 
