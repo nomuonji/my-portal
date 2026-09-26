@@ -142,6 +142,8 @@ export default function ManagerJobsPanel({ projects = [] }) {
   const [methodDraft, setMethodDraft] = useState(emptyMethodDraft);
   const [methodBaseline, setMethodBaseline] = useState(emptyMethodDraft);
   const [methodContextLoading, setMethodContextLoading] = useState(false);
+  const [managerContext, setManagerContext] = useState(null);
+  const [managerContextLoading, setManagerContextLoading] = useState(false);
 
   const projectById = useMemo(
     () => new Map(projects.map((item) => [item.id, item])),
@@ -157,6 +159,17 @@ export default function ManagerJobsPanel({ projects = [] }) {
       !== JSON.stringify(comparableMethodDraft(methodBaseline)),
     [methodDraft, methodBaseline],
   );
+
+  const managedWork = useMemo(() => {
+    const items = (managerContext?.currentQueue || [])
+      .filter((item) => item.sourceType === 'manager_job' && item.sourceId === editing?.id);
+    const rank = { blocked: 0, review: 1, running: 2, in_progress: 3, ready: 4, backlog: 5 };
+    return [...items].sort((a, b) => {
+      const statusGap = (rank[a.status] ?? 9) - (rank[b.status] ?? 9);
+      if (statusGap) return statusGap;
+      return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
+    });
+  }, [managerContext, editing]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -207,10 +220,29 @@ export default function ManagerJobsPanel({ projects = [] }) {
     }
   };
 
+  const loadManagerContext = async (jobId) => {
+    if (!jobId) {
+      setManagerContext(null);
+      return;
+    }
+    setManagerContextLoading(true);
+    try {
+      const result = await api('?resource=manager_job_context&id=' + encodeURIComponent(jobId) + '&historyLimit=8');
+      setManagerContext(result);
+    } catch (err) {
+      setManagerContext(null);
+      setError('Managed Workの読み込みに失敗しました: ' + err.message);
+    } finally {
+      setManagerContextLoading(false);
+    }
+  };
+
   const openCreate = () => {
     setEditing(null);
     setDraft(emptyDraft);
     resetMethodEditor();
+    setManagerContext(null);
+    setManagerContextLoading(false);
     setEditOpen(true);
   };
 
@@ -231,7 +263,9 @@ export default function ManagerJobsPanel({ projects = [] }) {
       allowedActionTypesText: (job.allowedActionTypes || job.metadata?.allowedActionTypes || []).join('\n'),
     });
     resetMethodEditor();
+    setManagerContext(null);
     setEditOpen(true);
+    loadManagerContext(job.id);
     if (job.methodId) loadMethodContext(job.methodId);
   };
 
@@ -555,6 +589,15 @@ export default function ManagerJobsPanel({ projects = [] }) {
                     {!!jobTargets(job).length && <Chip size="small" label={'管理対象 ' + jobTargets(job).length + '件'} variant="outlined" sx={{ height: 20, fontSize: '0.56rem' }} />}
                   </Stack>
 
+                  {!!job.managedWorkSummary?.open && (
+                    <Stack direction="row" spacing={0.45} useFlexGap flexWrap="wrap" sx={{ mt: 0.65 }}>
+                      <Chip size="small" label={'Managed ' + job.managedWorkSummary.open} sx={{ height: 19, fontSize: '0.55rem', fontWeight: 800 }} />
+                      {!!job.managedWorkSummary.running && <Chip size="small" color="success" variant="outlined" label={'Running ' + job.managedWorkSummary.running} sx={{ height: 19, fontSize: '0.55rem' }} />}
+                      {!!job.managedWorkSummary.blocked && <Chip size="small" color="warning" variant="outlined" label={'Blocked ' + job.managedWorkSummary.blocked} sx={{ height: 19, fontSize: '0.55rem' }} />}
+                      {!!job.managedWorkSummary.review && <Chip size="small" color="info" variant="outlined" label={'Review ' + job.managedWorkSummary.review} sx={{ height: 19, fontSize: '0.55rem' }} />}
+                    </Stack>
+                  )}
+
                   <Box sx={{ mt: 0.9, p: 0.8, borderRadius: 1.4, bgcolor: alpha(theme.palette.primary.main, isDark ? 0.08 : 0.04) }}>
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                       前回: {formatDate(job.lastFinishedAt || job.lastStartedAt)}
@@ -773,6 +816,88 @@ export default function ManagerJobsPanel({ projects = [] }) {
                 </Box>
               </Stack>
             </Paper>
+
+            {editing && (
+              <Paper variant="outlined" sx={{ p: 1.4 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, flexWrap: 'wrap', mb: 0.9 }}>
+                  <Box sx={{ flex: 1, minWidth: 180 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 950 }}>
+                      Managed Work
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      このManagerが生み出し、まだ管轄している未完了タスクだけ表示します。
+                    </Typography>
+                  </Box>
+                  {!managerContextLoading && <Chip size="small" label={managedWork.length + ' open'} sx={{ height: 20 }} />}
+                </Box>
+
+                {managerContextLoading && (
+                  <Typography variant="body2" color="text.secondary">Managed Workを読み込み中…</Typography>
+                )}
+
+                {!managerContextLoading && managedWork.length === 0 && (
+                  <Typography variant="caption" color="text.secondary">
+                    現在、このManager由来の未完了Work Itemはありません。
+                  </Typography>
+                )}
+
+                {!managerContextLoading && managedWork.length > 0 && (
+                  <Stack spacing={0.55}>
+                    {managedWork.slice(0, 8).map((item) => (
+                      <Box
+                        key={item.id}
+                        sx={{
+                          display: 'grid',
+                          gridTemplateColumns: { xs: 'auto 1fr', md: 'auto minmax(0,1fr) auto' },
+                          gap: 0.7,
+                          alignItems: 'start',
+                          p: 0.75,
+                          borderRadius: 1.2,
+                          bgcolor: alpha(theme.palette.text.primary, isDark ? 0.04 : 0.025),
+                        }}
+                      >
+                        <Chip
+                          size="small"
+                          label={item.status}
+                          color={item.status === 'blocked' ? 'warning' : item.status === 'running' ? 'success' : item.status === 'review' ? 'info' : 'default'}
+                          variant="outlined"
+                          sx={{ height: 19, fontSize: '0.54rem' }}
+                        />
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="caption" sx={{ display: 'block', fontWeight: 850, lineHeight: 1.35 }}>
+                            {item.title}
+                          </Typography>
+                          {item.managerReason && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                                mt: 0.2,
+                                lineHeight: 1.35,
+                              }}
+                            >
+                              {item.managerReason}
+                            </Typography>
+                          )}
+                        </Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' }, whiteSpace: 'nowrap' }}>
+                          {formatDate(item.updatedAt)}
+                        </Typography>
+                      </Box>
+                    ))}
+                    {managedWork.length > 8 && (
+                      <Typography variant="caption" color="text.secondary">
+                        ほか {managedWork.length - 8} 件
+                      </Typography>
+                    )}
+                  </Stack>
+                )}
+              </Paper>
+            )}
 
             <Paper
               variant="outlined"
