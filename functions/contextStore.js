@@ -45,6 +45,53 @@ const MANAGER_JOB_CONCURRENCY_POLICIES = ['skip_if_open', 'allow_overlap'];
 const EXECUTION_DELIVERY_STATUSES = ['local_ready', 'committed', 'live_verified'];
 const MANAGER_RUN_STATUSES = ['ready', 'running', 'completed', 'failed'];
 const LINEAR_SETUP_WORK_ITEM_ID = 'system-linear-integration-setup';
+const INCIDENT_SEVERITIES = ['low', 'medium', 'high', 'critical'];
+const ESCALATION_CATEGORIES = ['capability', 'safety', 'external_dependency', 'state', 'validation', 'tool_error', 'unknown'];
+
+const AGENT_HQ_OPERATING_MODEL = Object.freeze({
+  version: 1,
+  updatedAt: '2026-09-27',
+  docs: {
+    operatingModel: 'docs/AGENT_HQ_OPERATING_MODEL.md',
+    decisionLog: 'docs/AGENT_HQ_DECISION_LOG.md',
+  },
+  organization: ['human', 'manager', 'work_bundle', 'worker', 'manager'],
+  roles: {
+    human: 'Sets mission, boundaries, major policy, and genuinely human-only decisions.',
+    manager: 'Owns mission outcomes, reconciles queue state, delegates executable bundles, receives Worker escalations, and creates structural Incidents.',
+    worker: 'Claims executable work, delivers and validates it, and reports execution problems to its Manager before any Incident escalation.',
+  },
+  stateSemantics: {
+    backlog: 'Deliberately deferred from near-term execution.',
+    ready: 'Unclaimed and executable by the intended current Worker.',
+    running: 'Actively claimed and being executed now.',
+    in_progress: 'Unfinished and idle, with a known compatible route to resume.',
+    blocked: 'Unfinished and currently not executable because of capability, safety, permission, external dependency, or another concrete blocker.',
+    review: 'Implementation and validation are complete; only Manager/Human judgment remains.',
+    archived: 'Closed terminal history: completed, withdrawn, merged, or resolved.',
+  },
+  invariants: [
+    'Never put unfinished capability or write failures into review.',
+    'Do not count a Work Item as ready when the intended Worker cannot complete it end-to-end.',
+    'Review is a judgment-only state, not a generic handoff bucket.',
+    'Do not move ongoing work to backlog merely because an execution session ended.',
+    'Do not blindly retry the same Worker with the same capability or safety failure.',
+    'Do not bundle work across incompatible safety, lock, release, approval, or validation boundaries.',
+    'System Incidents are not ordinary Worker queue inventory.',
+  ],
+  escalation: {
+    workerToManagerFirst: true,
+    localProblem: 'Manager fixes or reroutes the Work Item; no Incident.',
+    incidentThreshold: [
+      'same class of problem recurs',
+      'fixing one Work Item would not prevent recurrence elsewhere',
+      'Operating Model, Method, code, schema, connector, or scheduler must change',
+      'Manager cannot resolve it through normal reconciliation',
+      'data loss, authentication, permissions, or safety boundary is involved',
+    ],
+    humanThreshold: 'Mission, policy, important architecture, quality/safety boundary, credential/permission, or genuinely human-only decision.',
+  },
+});
 
 function db() {
   return DATABASE_ID === '(default)' ? getFirestore() : getFirestore(DATABASE_ID);
@@ -2263,6 +2310,22 @@ async function managerRunCreateWorkItem(input, actor = {}) {
     });
     if (payload.status === 'running') throw new Error('Manager-created Work Items cannot start as running; create ready or in_progress');
 
+    if (payload.status === 'ready' && job.metadata?.readyRequiresCapabilityMatch === true) {
+      const execution = payload.metadata?.execution || {};
+      const requiredCapabilities = stringArray(execution.requiredCapabilities, 50, 120);
+      const workerCapabilities = stringArray(job.metadata?.workerCapabilityProfile?.capabilities, 100, 120);
+      if (!requiredCapabilities.length) {
+        throw new Error('Ready Work Items for this Manager Job require metadata.execution.requiredCapabilities');
+      }
+      if (!execution.validationStrategy || typeof execution.validationStrategy !== 'object' || Array.isArray(execution.validationStrategy)) {
+        throw new Error('Ready Work Items for this Manager Job require metadata.execution.validationStrategy');
+      }
+      const missingCapabilities = requiredCapabilities.filter((capability) => !workerCapabilities.includes(capability));
+      if (missingCapabilities.length) {
+        throw new Error('Ready Work Item requires unavailable Worker capabilities: ' + missingCapabilities.join(', '));
+      }
+    }
+
     const now = FieldValue.serverTimestamp();
     tx.set(itemRef, {
       ...payload,
@@ -2308,8 +2371,19 @@ async function managerRunReconcileWorkItem(input) {
     throw new Error('Cannot reconcile a Work Item actively claimed by ' + item.claimedBy);
   }
   const patch = input.patch && typeof input.patch === 'object' ? { ...input.patch } : {};
+  const existingEscalation = item.metadata?.escalation;
   patch.metadataPatch = {
     ...(patch.metadataPatch || {}),
+    ...(existingEscalation?.status === 'reported'
+      ? {
+        escalation: {
+          ...existingEscalation,
+          status: 'handled',
+          handledByManagerRunId: runId,
+          handledAt: new Date().toISOString(),
+        },
+      }
+      : {}),
     lastManagerTouch: {
       managerJobId: run.managerJobId,
       managerRunId: runId,
@@ -2431,6 +2505,8 @@ async function workItemSearch(input = {}) {
   const spaceId = clampString(input.spaceId, 160);
   const projectId = clampString(input.projectId, 160);
   const executionMode = clampString(input.executionMode, 20);
+  const sourceType = clampString(input.sourceType, 80);
+  const sourceId = clampString(input.sourceId, 500);
   const agent = clampString(input.agent, 120)?.toLowerCase();
   const items = sortRecent(snapshot.docs.map(documentToObject))
     .filter((item) => {
@@ -2439,6 +2515,8 @@ async function workItemSearch(input = {}) {
       if (spaceId && item.spaceId !== spaceId) return false;
       if (projectId && item.projectId !== projectId) return false;
       if (executionMode && (item.executionMode || 'agent') !== executionMode) return false;
+      if (sourceType && item.sourceType !== sourceType) return false;
+      if (sourceId && item.sourceId !== sourceId) return false;
       if (agent && String(item.claimedBy || '').toLowerCase() !== agent) return false;
       if (q) {
         const haystack = [
@@ -2753,6 +2831,155 @@ async function workItemRelease(input) {
   return workItemGet({ id });
 }
 
+function agentHqOperatingModel() {
+  return AGENT_HQ_OPERATING_MODEL;
+}
+
+async function workItemReportProblem(input) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const agent = assertString(input.agent, 'agent', { max: 120 });
+  const status = assertEnum(input.status, ['in_progress', 'blocked'], 'status', 'blocked');
+  const category = assertEnum(input.category, ESCALATION_CATEGORIES, 'category', 'unknown');
+  const symptom = assertString(input.symptom, 'symptom', { max: 6000 });
+  const ref = db().collection(COLLECTIONS.workItems).doc(id);
+
+  await db().runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    if (!snapshot.exists) throw new Error('Work item not found: ' + id);
+    const current = snapshot.data();
+    if (current.status !== 'running') {
+      throw new Error('Worker problem reports require a currently running Work Item');
+    }
+    if (current.claimedBy !== agent) throw new Error('Work item is not claimed by ' + agent);
+    const escalation = {
+      status: 'reported',
+      reportedTo: 'manager',
+      reportedBy: agent,
+      reportedAt: new Date().toISOString(),
+      category,
+      symptom,
+      attempted: stringArray(input.attempted, 50, 2000),
+      evidence: stringArray(input.evidence, 50, 3000),
+      affectedWork: clampString(input.affectedWork, 6000) || '',
+      requiredCapability: clampString(input.requiredCapability, 240) || null,
+      nextPossibleStep: clampString(input.nextPossibleStep, 6000) || '',
+    };
+    tx.update(ref, {
+      status,
+      blockedReason: status === 'blocked' ? symptom : '',
+      resultSummary: clampString(input.resultSummary, 12000) || current.resultSummary || '',
+      nextActions: input.nextActions !== undefined
+        ? stringArray(input.nextActions, 100, 3000)
+        : (current.nextActions || []),
+      metadata: {
+        ...(current.metadata || {}),
+        escalation,
+      },
+      claimedBy: null,
+      claimedModel: null,
+      runId: null,
+      leaseExpiresAt: null,
+      lastHeartbeatAt: FieldValue.serverTimestamp(),
+      revision: Number(current.revision || 1) + 1,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+  return workItemGet({ id });
+}
+
+async function systemIncidentCreate(input, actor = {}) {
+  const severity = assertEnum(input.severity, INCIDENT_SEVERITIES, 'severity', 'medium');
+  const detectedBy = assertEnum(input.detectedBy, ['worker', 'manager', 'human'], 'detectedBy', 'manager');
+  const symptom = assertString(input.symptom, 'symptom', { max: 6000 });
+  const affectedManagerJobIds = stringArray(input.affectedManagerJobIds, 50, 160);
+  const sourceManagerJobId = clampString(input.managerJobId, 160) || affectedManagerJobIds[0] || null;
+  return workItemCreate({
+    title: input.title,
+    objective: clampString(input.objective, 12000) || 'Diagnose, repair, regression-check, and prevent recurrence of this Agent HQ system incident.',
+    instructions: clampString(input.instructions, 16000) || 'Treat this as a structural operating-system record, not ordinary Worker queue inventory.',
+    status: 'in_progress',
+    priority: severity === 'critical' ? 'critical' : severity === 'high' ? 'high' : 'medium',
+    executionMode: input.executionMode || 'agent',
+    humanReason: input.humanReason,
+    projectId: clampString(input.projectId, 160) || null,
+    sourceType: 'system_incident',
+    sourceId: sourceManagerJobId,
+    tags: [...stringArray(input.tags, 40, 100), 'system-incident'],
+    metadata: {
+      incident: {
+        status: 'investigating',
+        severity,
+        detectedBy,
+        symptom,
+        rootCause: clampString(input.rootCause, 12000) || '',
+        affectedManagerJobIds,
+        relatedWorkItemIds: stringArray(input.relatedWorkItemIds, 100, 160),
+        fix: clampString(input.fix, 12000) || '',
+        prevention: clampString(input.prevention, 12000) || '',
+        operatingModelChanged: input.operatingModelChanged === true,
+        evidence: stringArray(input.evidence, 100, 3000),
+        openedAt: new Date().toISOString(),
+      },
+    },
+  }, actor);
+}
+
+async function systemIncidentSearch(input = {}) {
+  const limit = Math.min(Math.max(Number(input.limit) || 50, 1), 200);
+  const snapshot = await db().collection(COLLECTIONS.workItems).limit(1000).get();
+  const severity = clampString(input.severity, 20);
+  const incidentStatus = clampString(input.incidentStatus, 40);
+  const managerJobId = clampString(input.managerJobId, 160);
+  const includeResolved = input.includeResolved !== false;
+  const items = sortRecent(snapshot.docs.map(documentToObject))
+    .filter((item) => item.sourceType === 'system_incident')
+    .filter((item) => includeResolved || item.status !== 'archived')
+    .filter((item) => !severity || item.metadata?.incident?.severity === severity)
+    .filter((item) => !incidentStatus || item.metadata?.incident?.status === incidentStatus)
+    .filter((item) => !managerJobId || item.sourceId === managerJobId || (item.metadata?.incident?.affectedManagerJobIds || []).includes(managerJobId))
+    .slice(0, limit);
+  return {
+    items,
+    count: items.length,
+    openCount: items.filter((item) => item.status !== 'archived').length,
+    databaseId: DATABASE_ID,
+  };
+}
+
+async function systemIncidentResolve(input) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const incident = await workItemGet({ id });
+  if (incident.sourceType !== 'system_incident') throw new Error('Work item is not a system incident: ' + id);
+  const rootCause = assertString(input.rootCause, 'rootCause', { max: 12000 });
+  const fix = assertString(input.fix, 'fix', { max: 12000 });
+  const prevention = assertString(input.prevention, 'prevention', { max: 12000 });
+  const currentIncident = incident.metadata?.incident || {};
+  return workItemFinish({
+    id,
+    agent: assertString(input.agent, 'agent', { max: 120 }),
+    status: 'archived',
+    resultSummary: clampString(input.summary, 12000) || fix,
+    nextActions: stringArray(input.nextActions, 100, 3000),
+    metadataPatch: {
+      incident: {
+        ...currentIncident,
+        status: 'resolved',
+        rootCause,
+        fix,
+        prevention,
+        operatingModelChanged: input.operatingModelChanged === true || currentIncident.operatingModelChanged === true,
+        evidence: [
+          ...stringArray(currentIncident.evidence, 100, 3000),
+          ...stringArray(input.evidence, 100, 3000),
+        ].slice(0, 100),
+        regressionCheck: clampString(input.regressionCheck, 6000) || '',
+        resolvedAt: new Date().toISOString(),
+        resolvedBy: assertString(input.agent, 'agent', { max: 120 }),
+      },
+    },
+  });
+}
+
 async function linearStatus() {
   return linearBridge.status();
 }
@@ -2992,6 +3219,11 @@ async function controlPlaneOverview(input = {}) {
     .map((item) => serialize(item));
 
   const openWork = workItems.filter((item) => !['archived', 'done', 'cancelled'].includes(item.status));
+  const systemIncidents = workItems.filter((item) => item.sourceType === 'system_incident');
+  const activeSystemIncidents = systemIncidents.filter((item) => !['archived', 'done', 'cancelled'].includes(item.status));
+  const recentResolvedSystemIncidents = systemIncidents
+    .filter((item) => ['archived', 'done', 'cancelled'].includes(item.status))
+    .slice(0, 20);
 
   const linkedLinearKeys = new Map();
   workItems.forEach((item) => {
@@ -3007,8 +3239,11 @@ async function controlPlaneOverview(input = {}) {
   });
   const unlinkedLinearIssues = linearIssues.filter((issue) => !issue.linkedWorkItemId);
 
-  const agentWork = openWork.filter((item) => (item.executionMode || 'agent') === 'agent');
-  const humanTasks = openWork.filter((item) => item.executionMode === 'human');
+  const agentWork = openWork.filter((item) => (item.executionMode || 'agent') === 'agent' && item.sourceType !== 'system_incident');
+  const humanTasks = openWork.filter((item) => item.executionMode === 'human' && item.sourceType !== 'system_incident');
+  const managerEscalations = openWork
+    .filter((item) => item.metadata?.escalation?.status === 'reported')
+    .sort((a, b) => Date.parse(b.metadata?.escalation?.reportedAt || b.updatedAt || '') - Date.parse(a.metadata?.escalation?.reportedAt || a.updatedAt || ''));
   const priorityRank = { critical: 0, high: 1, medium: 2, low: 3 };
   const recommendedNext = agentWork
     .filter((item) => ['in_progress', 'ready'].includes(item.status))
@@ -3050,6 +3285,8 @@ async function controlPlaneOverview(input = {}) {
       actionMemos: actionMemos.length,
       linearOpen: linearIssues.length,
       linearUnlinked: unlinkedLinearIssues.length,
+      activeSystemIncidents: activeSystemIncidents.length,
+      managerEscalations: managerEscalations.length,
     },
     recommendedNext,
     inProgress: agentWork.filter((item) => item.status === 'in_progress'),
@@ -3057,6 +3294,12 @@ async function controlPlaneOverview(input = {}) {
     blocked: agentWork.filter((item) => item.status === 'blocked'),
     review: agentWork.filter((item) => item.status === 'review'),
     humanTasks,
+    managerEscalations: managerEscalations.slice(0, 50),
+    systemIncidents: {
+      active: activeSystemIncidents.slice(0, 50),
+      recentResolved: recentResolvedSystemIncidents,
+    },
+    operatingModel: AGENT_HQ_OPERATING_MODEL,
     staleLeases,
     activeManagerJobs: managerJobs.slice(0, 50),
     managerRuns: managerRuns.slice(0, 50),
@@ -3078,9 +3321,10 @@ async function controlPlaneOverview(input = {}) {
       'If an item requires a human-only action, explicit user judgment, account approval, physical action, or unavailable credential, call work_item_delegate_to_human instead of leaving it buried in chat or blocking the agent queue.',
       'Load the linked Space with space_get_context and start a Run when the task requires durable research or production context.',
       'Heartbeat long-running work before the lease expires.',
-      'Finish as archived, review, or blocked with a result summary and concrete next actions.',
+      'Finish as archived only when done. Review means implementation and validation are complete and only judgment remains. If unfinished work hits a capability, safety, validation, tool, state, or external-dependency problem, use work_item_report_problem to report it to the Manager as in_progress or blocked.',
+      'Workers report problems to Managers first. Managers fix local task/routing problems and create system_incident records only for structural, recurring, cross-task, or manager-unresolvable failures.',
       'If the Work Item is linked to Linear, call work_item_push_to_linear after meaningful status/result changes so the external issue stays aligned.',
-      'Release the item if you stop without producing a durable result.',
+      'Release the item if you stop without producing a durable result and no problem report is needed.',
     ],
   };
 }
@@ -3127,6 +3371,9 @@ module.exports = {
   MANAGER_JOB_CONCURRENCY_POLICIES,
   MANAGER_RUN_STATUSES,
   LINEAR_SETUP_WORK_ITEM_ID,
+  INCIDENT_SEVERITIES,
+  ESCALATION_CATEGORIES,
+  AGENT_HQ_OPERATING_MODEL,
   healthCheck,
   linearStatus,
   linearToolCatalog,
@@ -3156,6 +3403,11 @@ module.exports = {
   workItemFinish,
   workItemDelegateToHuman,
   workItemRelease,
+  workItemReportProblem,
+  agentHqOperatingModel,
+  systemIncidentCreate,
+  systemIncidentSearch,
+  systemIncidentResolve,
   spaceCreate,
   spaceGet,
   spaceUpdate,
