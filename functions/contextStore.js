@@ -1897,7 +1897,7 @@ function managerJobPayload(input) {
     spaceId: clampString(input.spaceId, 160) || null,
     projectId: clampString(input.projectId, 160) || null,
     methodId: clampString(input.methodId, 160) || null,
-    defaultWorkerMethodId: clampString(input.defaultWorkerMethodId, 160) || null,
+    defaultWorkerMethodId: clampString(input.defaultWorkerMethodId || input.metadata?.defaultWorkerMethodId, 160) || null,
     concurrencyPolicy: assertEnum(
       input.concurrencyPolicy,
       MANAGER_JOB_CONCURRENCY_POLICIES,
@@ -2390,10 +2390,19 @@ async function managerRunCreateWorkItem(input, actor = {}) {
       if (existing) return;
     }
 
-    const workerMethodId = clampString(input.workerMethodId, 160) || job.defaultWorkerMethodId || null;
+    const workerMethodId = clampString(input.workerMethodId, 160)
+      || job.defaultWorkerMethodId
+      || job.metadata?.defaultWorkerMethodId
+      || null;
+    let workerMethodRequirements = normalizeRuntimeRequirements({});
     if (workerMethodId) {
       const workerMethodSnapshot = await tx.get(db().collection(COLLECTIONS.methods).doc(workerMethodId));
       if (!workerMethodSnapshot.exists) throw new Error('Worker Method not found: ' + workerMethodId);
+      const workerMethod = workerMethodSnapshot.data();
+      if (!workerMethod.currentVersionId) throw new Error('Worker Method has no active version: ' + workerMethodId);
+      const workerVersionSnapshot = await tx.get(db().collection(COLLECTIONS.methodVersions).doc(workerMethod.currentVersionId));
+      if (!workerVersionSnapshot.exists) throw new Error('Worker Method active version not found: ' + workerMethod.currentVersionId);
+      workerMethodRequirements = normalizeRuntimeRequirements(workerVersionSnapshot.data().protocol?.runtimeRequirements || {});
     }
 
     const targetId = clampString(input.targetId, 160) || null;
@@ -2440,17 +2449,24 @@ async function managerRunCreateWorkItem(input, actor = {}) {
 
     if (payload.status === 'ready' && job.metadata?.readyRequiresCapabilityMatch === true) {
       const execution = payload.metadata?.execution || {};
-      const requiredCapabilities = stringArray(execution.requiredCapabilities, 50, 120);
-      const workerCapabilities = stringArray(job.metadata?.workerCapabilityProfile?.capabilities, 100, 120);
-      if (!requiredCapabilities.length) {
-        throw new Error('Ready Work Items for this Manager Job require metadata.execution.requiredCapabilities');
+      const itemRequirements = {
+        requiredCapabilities: stringArray(execution.requiredCapabilities, 50, 160),
+        requiredTools: stringArray(execution.requiredTools, 50, 160),
+      };
+      const combinedRequirements = mergeRuntimeRequirements(workerMethodRequirements, itemRequirements);
+      const expectedAvailability = {
+        capabilities: stringArray(job.metadata?.workerCapabilityProfile?.capabilities, 100, 160),
+        tools: stringArray(job.metadata?.workerCapabilityProfile?.tools, 100, 160),
+      };
+      if (!workerMethodId) {
+        throw new Error('Ready Work Items for this Manager Job require a Worker Method');
       }
       if (!execution.validationStrategy || typeof execution.validationStrategy !== 'object' || Array.isArray(execution.validationStrategy)) {
         throw new Error('Ready Work Items for this Manager Job require metadata.execution.validationStrategy');
       }
-      const missingCapabilities = requiredCapabilities.filter((capability) => !workerCapabilities.includes(capability));
-      if (missingCapabilities.length) {
-        throw new Error('Ready Work Item requires unavailable Worker capabilities: ' + missingCapabilities.join(', '));
+      const expectedGap = compareRuntimeRequirements(combinedRequirements, expectedAvailability);
+      if (!expectedGap.ok) {
+        throw new Error('Ready Work Item requires capabilities/tools outside the configured Worker profile: ' + JSON.stringify(expectedGap));
       }
     }
 
@@ -2585,7 +2601,7 @@ function workItemPayload(input) {
     projectId: clampString(input.projectId, 160) || null,
     sourceType: clampString(input.sourceType, 80) || 'manual',
     sourceId: clampString(input.sourceId, 500) || null,
-    workerMethodId: clampString(input.workerMethodId, 160) || null,
+    workerMethodId: clampString(input.workerMethodId || input.metadata?.workerMethodId, 160) || null,
     workerMethodVersionId: null,
     workerMethodVersionNumber: null,
     runtimeRequirements: null,
@@ -2732,12 +2748,13 @@ async function workItemUpdate(input) {
 }
 
 async function resolveWorkerMethodExecution(item) {
-  if (!item?.workerMethodId) return null;
+  const workerMethodId = item?.workerMethodId || item?.metadata?.workerMethodId || null;
+  if (!workerMethodId) return null;
   if (item.workerMethodVersionId) {
     const version = await methodVersionGet({ id: item.workerMethodVersionId });
-    if (version.methodId !== item.workerMethodId) throw new Error('Pinned Worker Method version does not belong to Worker Method');
+    if (version.methodId !== workerMethodId) throw new Error('Pinned Worker Method version does not belong to Worker Method');
     return {
-      methodId: item.workerMethodId,
+      methodId: workerMethodId,
       methodVersionId: version.id,
       methodVersionNumber: version.versionNumber,
       instructions: version.instructions || '',
@@ -2745,8 +2762,8 @@ async function resolveWorkerMethodExecution(item) {
       qualityGates: version.qualityGates || [],
     };
   }
-  const context = await methodGetContext({ id: item.workerMethodId, versionLimit: 3, runLimit: 3 });
-  if (!context.executionContract) throw new Error('Worker Method has no active version: ' + item.workerMethodId);
+  const context = await methodGetContext({ id: workerMethodId, versionLimit: 3, runLimit: 3 });
+  if (!context.executionContract) throw new Error('Worker Method has no active version: ' + workerMethodId);
   return context.executionContract;
 }
 
@@ -2775,6 +2792,7 @@ async function workItemClaim(input, actor = {}) {
   const model = clampString(input.model || actor.model, 120) || null;
   const leaseMinutes = Math.min(Math.max(Number(input.leaseMinutes) || 60, 10), 1440);
   const initialItem = await workItemGet({ id });
+  const initialWorkerMethodId = initialItem.workerMethodId || initialItem.metadata?.workerMethodId || null;
   const workerMethod = await resolveWorkerMethodExecution(initialItem);
   const taskRequirements = {
     requiredCapabilities: initialItem.metadata?.execution?.requiredCapabilities || [],
@@ -2804,7 +2822,8 @@ async function workItemClaim(input, actor = {}) {
     const snapshot = await tx.get(ref);
     if (!snapshot.exists) throw new Error('Work item not found: ' + id);
     const current = snapshot.data();
-    if (current.workerMethodId !== initialItem.workerMethodId || current.workerMethodVersionId !== initialItem.workerMethodVersionId) {
+    const currentWorkerMethodId = current.workerMethodId || current.metadata?.workerMethodId || null;
+    if (currentWorkerMethodId !== initialWorkerMethodId || current.workerMethodVersionId !== initialItem.workerMethodVersionId) {
       throw new Error('Worker Method changed during claim; retry');
     }
     if (['archived', 'done', 'cancelled'].includes(current.status)) throw new Error('Work item is already closed: ' + current.status);
@@ -2818,6 +2837,7 @@ async function workItemClaim(input, actor = {}) {
       status: 'running',
       claimedBy: agent,
       claimedModel: model,
+      workerMethodId: initialWorkerMethodId,
       workerMethodVersionId: workerMethod?.methodVersionId || current.workerMethodVersionId || null,
       workerMethodVersionNumber: workerMethod?.methodVersionNumber || current.workerMethodVersionNumber || null,
       runtimeRequirements,
