@@ -110,7 +110,7 @@ async function api(path = '', options = {}) {
     },
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || 'Recurring Jobs API error (' + response.status + ')');
+  if (!response.ok) throw new Error(payload.error || 'Manager Jobs API error (' + response.status + ')');
   return payload;
 }
 
@@ -163,7 +163,7 @@ export default function RecurringJobsPanel({ projects = [] }) {
     setError('');
     try {
       const [jobResult, methodResult] = await Promise.all([
-        api('?resource=recurring_jobs'),
+        api('?resource=manager_jobs'),
         api('?resource=methods'),
       ]);
       setJobs(jobResult.items || []);
@@ -282,7 +282,7 @@ export default function RecurringJobsPanel({ projects = [] }) {
           action: 'method_version_create',
           methodId: draft.methodId,
           changeSummary: clean(methodDraft.versionNote)
-            || ('Recurring Job「' + (editing?.title || draft.title || draft.id) + '」の編集画面から更新'),
+            || ('Manager Job「' + (editing?.title || draft.title || draft.id) + '」の編集画面から更新'),
           instructions: next.instructions,
           protocol,
           qualityGates: next.qualityGatesText
@@ -299,7 +299,7 @@ export default function RecurringJobsPanel({ projects = [] }) {
 
   const save = async () => {
     if (!clean(draft.title)) {
-      setError('Recurring Jobのタイトルは必須です。');
+      setError('Manager Jobのタイトルは必須です。');
       return;
     }
     if (draft.methodId && !methodContext && !methodContextLoading) {
@@ -316,7 +316,7 @@ export default function RecurringJobsPanel({ projects = [] }) {
         await api('', {
           method: 'POST',
           body: JSON.stringify({
-            action: 'recurring_job_update',
+            action: 'manager_job_update',
             id: editing.id,
             expectedRevision: editing.revision,
             patch: {
@@ -335,13 +335,13 @@ export default function RecurringJobsPanel({ projects = [] }) {
           }),
         });
         setNotice(methodWasUpdated
-          ? 'Recurring Jobを更新し、Methodの新versionを反映しました。'
-          : 'Recurring Jobを更新しました。');
+          ? 'Manager Jobを更新し、Methodの新versionを反映しました。'
+          : 'Manager Jobを更新しました。');
       } else {
         await api('', {
           method: 'POST',
           body: JSON.stringify({
-            action: 'recurring_job_create',
+            action: 'manager_job_create',
             id: clean(draft.id) || undefined,
             title: clean(draft.title),
             objective: clean(draft.objective),
@@ -357,8 +357,8 @@ export default function RecurringJobsPanel({ projects = [] }) {
           }),
         });
         setNotice(methodWasUpdated
-          ? 'Recurring Jobを作成し、Methodの新versionを反映しました。'
-          : 'Recurring Jobを作成しました。外部スケジュールは別途ChatGPT等で設定してください。');
+          ? 'Manager Jobを作成し、Methodの新versionを反映しました。'
+          : 'Manager Jobを作成しました。外部スケジュールは別途ChatGPT等で設定してください。');
       }
 
       setEditOpen(false);
@@ -377,7 +377,7 @@ export default function RecurringJobsPanel({ projects = [] }) {
       await api('', {
         method: 'POST',
         body: JSON.stringify({
-          action: 'recurring_job_update',
+          action: 'manager_job_update',
           id: job.id,
           expectedRevision: job.revision,
           patch: { status },
@@ -396,18 +396,18 @@ export default function RecurringJobsPanel({ projects = [] }) {
       const result = await api('', {
         method: 'POST',
         body: JSON.stringify({
-          action: 'recurring_job_start',
+          action: 'manager_job_start',
           id: job.id,
           invocationId: 'portal-ui:' + job.id + ':' + Date.now(),
           requestedBy: 'portal-ui',
         }),
       });
       if (result.skipped) {
-        setNotice('既存の未完了Work Itemを再開してください: ' + result.workItem?.id);
+        setNotice('既存の未完了Manager Runがあります: ' + result.managerRun?.id);
       } else if (result.duplicate) {
-        setNotice('同じ実行IDのWork Itemがすでにあります。');
+        setNotice('同じ起動IDのManager Runがすでにあります。');
       } else {
-        setNotice('Ready Work Itemを作成しました。Agent Queueからclaimして実行できます。');
+        setNotice('Manager Runを作成しました。外部AgentはこのRunをclaimして、Queueの観測・整理・Work Item生成を行います。');
       }
       await refresh();
     } catch (err) {
@@ -424,7 +424,7 @@ export default function RecurringJobsPanel({ projects = [] }) {
     setHistoryLoading(true);
     setError('');
     try {
-      const result = await api('?resource=recurring_job_history&id=' + encodeURIComponent(job.id) + '&limit=40');
+      const result = await api('?resource=manager_job_history&id=' + encodeURIComponent(job.id) + '&limit=40');
       setHistory(result.items || []);
     } catch (err) {
       setError(err.message);
@@ -435,17 +435,18 @@ export default function RecurringJobsPanel({ projects = [] }) {
 
   const copyTriggerPrompt = async (job) => {
     const prompt = [
-      'My PortalのRecurring Job「' + job.id + '」を実行してください。',
-      'recurring_job_start({ id: "' + job.id + '" }) を呼びます。スケジューラが再送時にも同じイベントIDを渡せる場合だけinvocationIdを追加してください。既存Work Itemが返った場合はそれを再開し、work_item_claimしてください。',
-      '実行前に recurring_job_get_context({ id: "' + job.id + '" }) を読み、Job固有のinstructions、Project、紐付いたMethodのactive versionに従ってください。',
-      '対象が割り当てられていればその対象で具体的な作業を進め、安全な作業がなければ別対象を選んで試した対象も記録してください。測定待ちの実験は別対象の作業を止めません。',
+      'My PortalのManager Job「' + job.id + '」を実行してください。',
+      'manager_job_start({ id: "' + job.id + '" }) を呼び、返されたManager Runを manager_run_claim してください。スケジューラの再送IDがある場合だけinvocationIdを渡してください。',
+      'manager_job_get_context({ id: "' + job.id + '" }) を読み、現在のQueue、Project、管理対象、紐付いたMethodのactive versionを確認してください。',
+      'Manager自身が本作業を抱え込まず、Observe → Reconcile → Decide → Delegate の順で管理してください。必要な作業は manager_run_create_work_item で0〜N件生成し、既存Work Itemの優先度変更・整理・archive等は manager_run_reconcile_work_item を使ってください。',
       jobNeedsReceipt(job)
-        ? '完了時はwork_item_finishのexecutionReceiptに実際の対象、変更種別、成果物、確認結果を記録してください。作業ができなければblockedReasonを具体的に残してください。'
-        : '完了後はwork_item_finishで結果とnextActionsを残してください。',
+        ? 'このManager Jobから生成する実作業には、完了時にexecutionReceiptで対象・作業種別・成果物・確認結果を残させてください。'
+        : '生成するWork Itemには、実行Agentが迷わないobjective / instructions / acceptance criteriaを含めてください。',
+      '新しく作るべき仕事が0件でも正常です。最後に manager_run_finish で観測・判断・生成/整理結果を保存してください。',
     ].join('\n');
     try {
       await navigator.clipboard.writeText(prompt);
-      setNotice('外部ChatGPT用の起動指示をコピーしました。');
+      setNotice('外部ChatGPT用のManager起動指示をコピーしました。');
     } catch (err) {
       setError('コピーに失敗しました: ' + err.message);
     }
@@ -468,10 +469,10 @@ export default function RecurringJobsPanel({ projects = [] }) {
           <RepeatRoundedIcon color="primary" />
           <Box sx={{ flex: 1, minWidth: 220 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
-              Recurring Jobs
+              Manager Jobs
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              繰り返し行う仕事の正本。実行時刻・cron・timezoneは持たず、ChatGPT等の外部スケジューラがJob IDを指定して起動します。
+              対象領域を観測し、Queueを整理して必要なWork Itemを0〜N件生み出すマネージャー。実行時刻・cron・timezoneは外部スケジューラが担当します。
             </Typography>
           </Box>
           <Chip size="small" label={visibleJobs.length} sx={{ height: 21 }} />
@@ -551,7 +552,7 @@ export default function RecurringJobsPanel({ projects = [] }) {
                       />
                     )}
                     <Chip size="small" label={job.concurrencyPolicy === 'allow_overlap' ? '重複実行可' : '重複実行防止'} variant="outlined" sx={{ height: 20, fontSize: '0.56rem' }} />
-                    {!!jobTargets(job).length && <Chip size="small" label={'対象 ' + jobTargets(job).length + '件を順番に実行'} variant="outlined" sx={{ height: 20, fontSize: '0.56rem' }} />}
+                    {!!jobTargets(job).length && <Chip size="small" label={'管理対象 ' + jobTargets(job).length + '件'} variant="outlined" sx={{ height: 20, fontSize: '0.56rem' }} />}
                   </Stack>
 
                   <Box sx={{ mt: 0.9, p: 0.8, borderRadius: 1.4, bgcolor: alpha(theme.palette.primary.main, isDark ? 0.08 : 0.04) }}>
@@ -584,7 +585,7 @@ export default function RecurringJobsPanel({ projects = [] }) {
                       onClick={() => runNow(job)}
                       disabled={job.status !== 'active' || runningId === job.id}
                     >
-                      {runningId === job.id ? '作成中…' : '実行'}
+                      {runningId === job.id ? '起動中…' : 'Manager起動'}
                     </Button>
                     <Button size="small" startIcon={<HistoryOutlinedIcon />} onClick={() => openHistory(job)}>
                       履歴
@@ -622,7 +623,7 @@ export default function RecurringJobsPanel({ projects = [] }) {
 
           {!loading && visibleJobs.length === 0 && (
             <Box sx={{ p: 2, border: '1px dashed ' + border, borderRadius: 2 }}>
-              <Typography variant="body2" sx={{ fontWeight: 800 }}>Recurring Jobはまだありません</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 800 }}>Manager Jobはまだありません</Typography>
               <Typography variant="caption" color="text.secondary">
                 定期的に外部ChatGPTへ任せたい仕事を登録し、目的・手順・Project・Methodをここに集約できます。
               </Typography>
@@ -632,7 +633,7 @@ export default function RecurringJobsPanel({ projects = [] }) {
       </Paper>
 
       <Dialog open={editOpen} onClose={() => !saving && setEditOpen(false)} fullWidth maxWidth="lg">
-        <DialogTitle>{editing ? 'Recurring Job 詳細・編集' : 'Recurring Jobを追加'}</DialogTitle>
+        <DialogTitle>{editing ? 'Manager Job 詳細・編集' : 'Manager Jobを追加'}</DialogTitle>
         <DialogContent>
           <Stack spacing={1.6} sx={{ mt: 0.8 }}>
             <Paper variant="outlined" sx={{ p: 1.4 }}>
@@ -674,20 +675,20 @@ export default function RecurringJobsPanel({ projects = [] }) {
                   fullWidth
                 />
                 <TextField
-                  label="順番に作業する対象（1行に1件）"
+                  label="観測・管理対象（1行に1件）"
                   value={draft.rotationTargetsText}
                   onChange={(event) => setDraft((prev) => ({ ...prev, rotationTargetsText: event.target.value }))}
                   multiline
                   minRows={3}
-                  helperText="サイト運用ならhostを記入します。最後に実作業をした対象が古い順に、次回の対象を割り当てます。"
+                  helperText="サイト運用ならhost等を記入します。Managerが状況確認・Work Item発見の対象として使います。自動で実作業を割り当てるための欄ではありません。"
                   fullWidth
                 />
                 <FormControlLabel
                   control={<Checkbox checked={draft.requireExecutionReceipt} onChange={(event) => setDraft((prev) => ({ ...prev, requireExecutionReceipt: event.target.checked }))} />}
-                  label="完了時に成果物と確認結果の記録を必須にする"
+                  label="このManagerが生成した実作業に成果物・確認結果の記録を要求する"
                 />
                 <TextField
-                  label="完了として認める作業種別（1行に1件、任意）"
+                  label="生成する実作業で認める作業種別（1行に1件、任意）"
                   value={draft.allowedActionTypesText}
                   onChange={(event) => setDraft((prev) => ({ ...prev, allowedActionTypesText: event.target.value }))}
                   multiline
@@ -697,7 +698,7 @@ export default function RecurringJobsPanel({ projects = [] }) {
                 />
                 {!!editing && jobTargets(editing).length > 0 && (
                   <Box sx={{ maxHeight: 170, overflowY: 'auto', border: '1px solid ' + border, borderRadius: 1, p: 1 }}>
-                    <Typography variant="caption" sx={{ fontWeight: 800 }}>対象ごとの最終作業</Typography>
+                    <Typography variant="caption" sx={{ fontWeight: 800 }}>管理対象ごとの最終実作業</Typography>
                     {jobTargets(editing).map((target) => (
                       <Typography key={target} variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                         {target} · {formatDate(editing.targetProgress?.[target]?.lastActionAt)}
@@ -740,8 +741,8 @@ export default function RecurringJobsPanel({ projects = [] }) {
                       value={draft.concurrencyPolicy}
                       onChange={(event) => setDraft((prev) => ({ ...prev, concurrencyPolicy: event.target.value }))}
                     >
-                      <MenuItem value="skip_if_open">未完了があれば新規作成しない</MenuItem>
-                      <MenuItem value="allow_overlap">重複実行を許可</MenuItem>
+                      <MenuItem value="skip_if_open">未完了Manager Runがあれば新規Runを作らない</MenuItem>
+                      <MenuItem value="allow_overlap">Manager Runの重複を許可</MenuItem>
                     </Select>
                   </FormControl>
                   <FormControl fullWidth>
@@ -783,7 +784,7 @@ export default function RecurringJobsPanel({ projects = [] }) {
             >
               <Box sx={{ display: 'flex', gap: 0.7, alignItems: 'center', flexWrap: 'wrap', mb: 1 }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 950, flex: 1 }}>
-                  Method · 実行方法
+                  Method · 管理方法
                 </Typography>
                 {methodContext?.currentVersion && (
                   <Chip
@@ -797,7 +798,7 @@ export default function RecurringJobsPanel({ projects = [] }) {
 
               {!draft.methodId && (
                 <Alert severity="info">
-                  Methodを選ぶと、実行手順・Protocol・Quality Gatesをここに常時表示します。Recurring JobではMethodを実行契約の中心として扱います。
+                  Methodを選ぶと、観測・整理・判断・Work Item化の手順、Protocol、Quality Gatesをここに常時表示します。Manager JobではMethodを管理契約の中心として扱います。
                 </Alert>
               )}
 
@@ -848,7 +849,7 @@ export default function RecurringJobsPanel({ projects = [] }) {
                     multiline
                     minRows={14}
                     fullWidth
-                    helperText="外部AgentがRecurring Jobを実行するときに読む中心的な手順です。"
+                    helperText="外部AgentがManager Jobを実行するときに読む中心的な手順です。"
                   />
 
                   <TextField
@@ -902,7 +903,7 @@ export default function RecurringJobsPanel({ projects = [] }) {
             </Paper>
 
             <Alert severity="info">
-              実行時刻・頻度・timezoneはMy Portalでは管理しません。外部ChatGPT等には、このJob IDだけを定期的に起動させます。
+              実行時刻・頻度・timezoneはMy Portalでは管理しません。外部ChatGPT等には、このManager Job IDだけを定期的に起動させます。Manager Jobは実作業ではなく、Queueを管理して仕事を生み出します。
             </Alert>
           </Stack>
         </DialogContent>
@@ -919,51 +920,36 @@ export default function RecurringJobsPanel({ projects = [] }) {
       </Dialog>
 
       <Dialog open={historyOpen} onClose={() => setHistoryOpen(false)} fullWidth maxWidth="md">
-        <DialogTitle>{historyJob?.title || 'Recurring Job'} · 実行履歴</DialogTitle>
+        <DialogTitle>{historyJob?.title || 'Manager Job'} · Manager Run履歴</DialogTitle>
         <DialogContent>
           {historyLoading && <Typography variant="body2">読み込み中…</Typography>}
           {!historyLoading && history.length === 0 && (
-            <Typography variant="body2" color="text.secondary">まだ実行履歴はありません。</Typography>
+            <Typography variant="body2" color="text.secondary">まだManager Run履歴はありません。</Typography>
           )}
           <Stack spacing={0.8} sx={{ mt: 0.5 }}>
             {history.map((item) => (
               <Paper key={item.id} variant="outlined" sx={{ p: 1.1 }}>
                 <Box sx={{ display: 'flex', gap: 0.7, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <Typography variant="body2" sx={{ fontWeight: 900, flex: 1 }}>{item.title}</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 900, flex: 1 }}>
+                    Manager Run · {item.id}
+                  </Typography>
                   <Chip size="small" label={item.status} sx={{ height: 20, fontSize: '0.58rem' }} />
                   <Typography variant="caption" color="text.secondary">{formatDate(item.finishedAt || item.updatedAt || item.createdAt)}</Typography>
                 </Box>
-                {item.metadata?.recurringJob?.methodVersionNumber && (
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.35 }}>
-                    Method version: v{item.metadata.recurringJob.methodVersionNumber}
+                <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap" sx={{ mt: 0.55 }}>
+                  <Chip size="small" variant="outlined" label={'作成 ' + (item.createdWorkItemIds || []).length} sx={{ height: 19, fontSize: '0.55rem' }} />
+                  <Chip size="small" variant="outlined" label={'更新 ' + (item.updatedWorkItemIds || []).length} sx={{ height: 19, fontSize: '0.55rem' }} />
+                  <Chip size="small" variant="outlined" label={'Archive ' + (item.archivedWorkItemIds || []).length} sx={{ height: 19, fontSize: '0.55rem' }} />
+                  {item.methodVersionNumber && <Chip size="small" variant="outlined" label={'Method v' + item.methodVersionNumber} sx={{ height: 19, fontSize: '0.55rem' }} />}
+                </Stack>
+                {item.summary && (
+                  <Typography variant="caption" sx={{ display: 'block', mt: 0.55, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
+                    {item.summary}
                   </Typography>
                 )}
-                {item.metadata?.recurringJob?.targetId && (
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                    割当対象: {item.metadata.recurringJob.targetId}
-                  </Typography>
-                )}
-                {item.executionReceipt && (
-                  <Box sx={{ mt: 0.4 }}>
-                    <Typography variant="caption" color="success.main" sx={{ display: 'block' }}>
-                      実作業: {item.executionReceipt.targetId} · {item.executionReceipt.actionType} · {item.executionReceipt.deliveryStatus}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', wordBreak: 'break-all' }}>
-                      成果物: {(item.executionReceipt.artifacts || []).join(' · ')}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                      確認: {item.executionReceipt.validation}
-                    </Typography>
-                  </Box>
-                )}
-                {item.resultSummary && (
-                  <Typography variant="caption" sx={{ display: 'block', mt: 0.45, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
-                    {item.resultSummary}
-                  </Typography>
-                )}
-                {item.blockedReason && (
-                  <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 0.45 }}>
-                    Blocked: {item.blockedReason}
+                {(item.decisions || []).length > 0 && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.45, whiteSpace: 'pre-wrap' }}>
+                    判断: {item.decisions.join(' / ')}
                   </Typography>
                 )}
               </Paper>

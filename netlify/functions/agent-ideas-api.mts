@@ -139,6 +139,9 @@ export default async (request: Request) => {
       if (resource === "profile") {
         return json(await contextStore.profileGetContext({ includeInferred: true, limit: 200 }));
       }
+      if (resource === "manager_jobs") {
+        return json(await contextStore.managerJobSearch({ limit: 100, scanLimit: 500 }));
+      }
       if (resource === "recurring_jobs") {
         return json(await contextStore.recurringJobSearch({ limit: 100, scanLimit: 500 }));
       }
@@ -151,6 +154,21 @@ export default async (request: Request) => {
           versionLimit: 20,
           runLimit: 20,
         }));
+      }
+      if (resource === "manager_job_context") {
+        return json(await contextStore.managerJobGetContext({
+          id: url.searchParams.get("id") || "",
+          historyLimit: Math.min(Math.max(Number(url.searchParams.get("historyLimit")) || 20, 1), 100),
+        }));
+      }
+      if (resource === "manager_job_history") {
+        return json(await contextStore.managerJobHistory({
+          id: url.searchParams.get("id") || "",
+          limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 30, 1), 200),
+        }));
+      }
+      if (resource === "manager_run") {
+        return json(await contextStore.managerRunGet({ id: url.searchParams.get("id") || "" }));
       }
       if (resource === "recurring_job_context") {
         return json(await contextStore.recurringJobGetContext({
@@ -260,6 +278,57 @@ export default async (request: Request) => {
           qualityGates: body.qualityGates || [],
           activate: body.activate === true,
         }, { agent: "portal-ui", model: "my-portal-ui" }));
+      }
+      if (action === "manager_job_create") {
+        return json(await contextStore.managerJobCreate({
+          id: body.id,
+          title: body.title,
+          objective: body.objective,
+          instructions: body.instructions,
+          status: body.status || "active",
+          priority: body.priority || "medium",
+          spaceId: body.spaceId,
+          projectId: body.projectId,
+          methodId: body.methodId,
+          concurrencyPolicy: body.concurrencyPolicy || "skip_if_open",
+          rotationTargets: body.rotationTargets || [],
+          requireExecutionReceipt: body.requireExecutionReceipt === true,
+          allowedActionTypes: body.allowedActionTypes || [],
+          tags: body.tags || [],
+          metadata: body.metadata || {},
+        }, { agent: "portal-ui", model: "my-portal-ui" }));
+      }
+      if (action === "manager_job_update") {
+        return json(await contextStore.managerJobUpdate({
+          id: body.id,
+          expectedRevision: body.expectedRevision,
+          patch: body.patch || {},
+        }));
+      }
+      if (action === "manager_job_start") {
+        return json(await contextStore.managerJobStart({
+          id: body.id,
+          invocationId: body.invocationId,
+          requestedBy: body.requestedBy || "portal-ui",
+        }, { agent: "portal-ui", model: "my-portal-ui" }));
+      }
+      if (action === "manager_run_claim") {
+        return json(await contextStore.managerRunClaim({
+          id: body.id,
+          agent: body.agent || "portal-ui",
+          model: body.model || "my-portal-ui",
+          leaseMinutes: body.leaseMinutes,
+        }));
+      }
+      if (action === "manager_run_finish") {
+        return json(await contextStore.managerRunFinish({
+          id: body.id,
+          agent: body.agent || "portal-ui",
+          status: body.status || "completed",
+          summary: body.summary,
+          observations: body.observations || [],
+          decisions: body.decisions || [],
+        }));
       }
       if (action === "recurring_job_create") {
         return json(await contextStore.recurringJobCreate({

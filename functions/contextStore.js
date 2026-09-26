@@ -13,6 +13,7 @@ const COLLECTIONS = Object.freeze({
   methodVersions: 'methodVersions',
   workItems: 'memos/agent-control/workItems',
   recurringJobs: 'memos/agent-control/recurringJobs',
+  managerRuns: 'memos/agent-control/managerRuns',
 });
 
 const THINKING_COLLECTIONS = Object.freeze({
@@ -42,6 +43,7 @@ const WORK_ITEM_EXECUTION_MODES = ['agent', 'human'];
 const RECURRING_JOB_STATUSES = ['active', 'paused', 'archived'];
 const RECURRING_JOB_CONCURRENCY_POLICIES = ['skip_if_open', 'allow_overlap'];
 const RECURRING_DELIVERY_STATUSES = ['local_ready', 'committed', 'live_verified'];
+const MANAGER_RUN_STATUSES = ['ready', 'running', 'completed', 'failed'];
 const LINEAR_SETUP_WORK_ITEM_ID = 'system-linear-integration-setup';
 
 function db() {
@@ -2128,6 +2130,420 @@ async function recurringJobStart(input, actor = {}) {
   return { ...outcome, job, workItem: await workItemGet({ id: itemRef.id }), method: methodExecution };
 }
 
+
+async function managerJobCreate(input, actor = {}) {
+  return recurringJobCreate(input, actor);
+}
+
+async function managerJobGet(input) {
+  return recurringJobGet(input);
+}
+
+async function managerJobSearch(input = {}) {
+  return recurringJobSearch(input);
+}
+
+async function managerJobUpdate(input) {
+  return recurringJobUpdate(input);
+}
+
+async function managerRunGet(input) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const snapshot = await db().collection(COLLECTIONS.managerRuns).doc(id).get();
+  if (!snapshot.exists) throw new Error('Manager run not found: ' + id);
+  return documentToObject(snapshot);
+}
+
+async function managerJobHistory(input) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  await managerJobGet({ id });
+  const limit = Math.min(Math.max(Number(input.limit) || 30, 1), 200);
+  const scanLimit = Math.min(Math.max(Number(input.scanLimit) || 300, limit), 1000);
+  const snapshot = await db().collection(COLLECTIONS.managerRuns).limit(scanLimit).get();
+  const items = sortRecent(snapshot.docs.map(documentToObject))
+    .filter((item) => item.managerJobId === id)
+    .slice(0, limit);
+  return { id, items, count: items.length, scanned: snapshot.size };
+}
+
+async function managerJobGetContext(input) {
+  const job = await managerJobGet({ id: input.id });
+  const [methodContext, managerHistory, legacyHistory, space, projectSnapshot, workSnapshot] = await Promise.all([
+    job.methodId
+      ? methodGetContext({
+        id: job.methodId,
+        versionLimit: Math.min(Math.max(Number(input.versionLimit) || 3, 1), 50),
+        runLimit: Math.min(Math.max(Number(input.runLimit) || 5, 1), 100),
+      })
+      : Promise.resolve(null),
+    managerJobHistory({ id: job.id, limit: Math.min(Math.max(Number(input.historyLimit) || 10, 1), 100) }),
+    recurringJobHistory({ id: job.id, limit: 10 }).catch(() => ({ items: [] })),
+    job.spaceId ? spaceGet({ id: job.spaceId }).catch(() => null) : Promise.resolve(null),
+    job.projectId ? db().collection('projects').doc(job.projectId).get() : Promise.resolve(null),
+    db().collection(COLLECTIONS.workItems).limit(1000).get(),
+  ]);
+
+  const queue = sortRecent(workSnapshot.docs.map(documentToObject))
+    .filter((item) => !['archived', 'done', 'cancelled'].includes(item.status))
+    .filter((item) => !job.projectId || item.projectId === job.projectId)
+    .slice(0, 120)
+    .map((item) => ({
+      id: item.id,
+      title: item.title,
+      status: item.status,
+      priority: item.priority,
+      executionMode: item.executionMode || 'agent',
+      projectId: item.projectId || null,
+      sourceType: item.sourceType || null,
+      sourceId: item.sourceId || null,
+      claimedBy: item.claimedBy || null,
+      blockedReason: clampString(item.blockedReason, 500) || '',
+      resultSummary: clampString(item.resultSummary, 800) || '',
+      updatedAt: item.updatedAt,
+    }));
+
+  return {
+    job,
+    managementContract: {
+      managerJobId: job.id,
+      objective: job.objective,
+      instructions: job.instructions,
+      projectId: job.projectId,
+      priority: job.priority,
+      concurrencyPolicy: job.concurrencyPolicy || 'skip_if_open',
+      observationTargets: jobRotationTargets(job),
+      targetProgress: job.targetProgress || {},
+      generatedWorkPolicy: {
+        requireExecutionReceipt: jobRequiresReceipt(job),
+        allowedActionTypes: job.allowedActionTypes || job.metadata?.allowedActionTypes || [],
+      },
+      method: methodContext?.executionContract || null,
+      loop: ['observe', 'reconcile', 'decide', 'delegate'],
+      principle: 'A Manager Run may create zero, one, or many Work Items. The Manager should manage the queue rather than perform the underlying worker task itself.',
+    },
+    method: methodContext,
+    space,
+    project: projectSnapshot && projectSnapshot.exists ? documentToObject(projectSnapshot) : null,
+    currentQueue: queue,
+    recentManagerRuns: managerHistory.items,
+    legacyRecurringExecutions: legacyHistory.items,
+  };
+}
+
+async function managerJobStart(input, actor = {}) {
+  const jobId = assertString(input.id, 'id', { max: 160 });
+  const initialJob = await managerJobGet({ id: jobId });
+  if (initialJob.status !== 'active') throw new Error('Manager job is not active: ' + initialJob.status);
+  const invocationId = clampString(input.invocationId, 300) || null;
+  const requestedBy = clampString(input.requestedBy || actor.agent, 120) || 'external-trigger';
+  const methodContext = initialJob.methodId
+    ? await methodGetContext({ id: initialJob.methodId, versionLimit: 3, runLimit: 3 })
+    : null;
+  const methodExecution = methodContext?.executionContract || null;
+
+  const jobRef = db().collection(COLLECTIONS.recurringJobs).doc(jobId);
+  const runs = db().collection(COLLECTIONS.managerRuns);
+  const runRef = runs.doc();
+  let outcome;
+
+  await db().runTransaction(async (tx) => {
+    const jobSnapshot = await tx.get(jobRef);
+    if (!jobSnapshot.exists) throw new Error('Manager job not found: ' + jobId);
+    const job = documentToObject(jobSnapshot);
+    if (job.status !== 'active') throw new Error('Manager job is not active: ' + job.status);
+    if (job.methodId !== initialJob.methodId) throw new Error('Manager job Method changed during start; retry');
+
+    const existingSnapshot = await tx.get(runs.where('managerJobId', '==', jobId).limit(200));
+    const existingRuns = sortRecent(existingSnapshot.docs.map(documentToObject));
+    const duplicate = invocationId && existingRuns.find((run) => run.invocationId === invocationId);
+    if (duplicate) {
+      outcome = { created: false, duplicate: true, skipped: false, reason: 'invocation_already_materialized', managerRun: duplicate };
+      return;
+    }
+    const open = (job.concurrencyPolicy || 'skip_if_open') === 'skip_if_open'
+      && existingRuns.find((run) => ['ready', 'running'].includes(run.status));
+    if (open) {
+      outcome = { created: false, duplicate: false, skipped: true, resumable: true, reason: 'open_manager_run_exists', managerRun: open };
+      return;
+    }
+
+    const now = FieldValue.serverTimestamp();
+    tx.set(runRef, {
+      managerJobId: jobId,
+      title: job.title,
+      objective: job.objective || '',
+      instructions: job.instructions || '',
+      projectId: job.projectId || null,
+      spaceId: job.spaceId || null,
+      priority: job.priority || 'medium',
+      methodId: methodExecution?.methodId || job.methodId || null,
+      methodVersionId: methodExecution?.methodVersionId || null,
+      methodVersionNumber: methodExecution?.methodVersionNumber || null,
+      observationTargets: jobRotationTargets(job),
+      invocationId,
+      requestedBy,
+      status: 'ready',
+      claimedBy: null,
+      claimedModel: null,
+      leaseExpiresAt: null,
+      lastHeartbeatAt: null,
+      createdWorkItemIds: [],
+      updatedWorkItemIds: [],
+      archivedWorkItemIds: [],
+      observations: [],
+      decisions: [],
+      summary: '',
+      createdBy: createdBy({}, actor),
+      createdAt: now,
+      updatedAt: now,
+      revision: 1,
+    });
+    tx.update(jobRef, {
+      lastStartedAt: now,
+      lastManagerRunId: runRef.id,
+      lastExecutionStatus: 'manager_ready',
+      startCount: FieldValue.increment(1),
+      updatedAt: now,
+    });
+    outcome = { created: true, duplicate: false, skipped: false };
+  });
+
+  const job = await managerJobGet({ id: jobId });
+  if (!outcome.created) return { ...outcome, job, method: methodExecution };
+  return { ...outcome, job, managerRun: await managerRunGet({ id: runRef.id }), method: methodExecution };
+}
+
+async function managerRunClaim(input, actor = {}) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const agent = assertString(input.agent || actor.agent, 'agent', { max: 120 });
+  const model = clampString(input.model || actor.model, 120) || null;
+  const leaseMinutes = Math.min(Math.max(Number(input.leaseMinutes) || 60, 10), 1440);
+  const ref = db().collection(COLLECTIONS.managerRuns).doc(id);
+  const nowMs = Date.now();
+
+  await db().runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    if (!snapshot.exists) throw new Error('Manager run not found: ' + id);
+    const current = snapshot.data();
+    if (!['ready', 'running'].includes(current.status)) throw new Error('Manager run is not claimable: ' + current.status);
+    const leaseMs = timestampMillis(current.leaseExpiresAt);
+    if (current.claimedBy && current.claimedBy !== agent && leaseMs > nowMs) {
+      throw new Error('Manager run is claimed by ' + current.claimedBy);
+    }
+    tx.update(ref, {
+      status: 'running',
+      claimedBy: agent,
+      claimedModel: model,
+      leaseExpiresAt: new Date(nowMs + leaseMinutes * 60 * 1000),
+      lastHeartbeatAt: FieldValue.serverTimestamp(),
+      startedAt: current.startedAt || FieldValue.serverTimestamp(),
+      revision: Number(current.revision || 1) + 1,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+  return managerRunGet({ id });
+}
+
+async function managerRunHeartbeat(input) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const agent = assertString(input.agent, 'agent', { max: 120 });
+  const leaseMinutes = Math.min(Math.max(Number(input.leaseMinutes) || 60, 10), 1440);
+  const ref = db().collection(COLLECTIONS.managerRuns).doc(id);
+  await db().runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    if (!snapshot.exists) throw new Error('Manager run not found: ' + id);
+    const current = snapshot.data();
+    if (current.status !== 'running' || current.claimedBy !== agent) {
+      throw new Error('Manager run is not claimed by ' + agent);
+    }
+    tx.update(ref, {
+      leaseExpiresAt: new Date(Date.now() + leaseMinutes * 60 * 1000),
+      lastHeartbeatAt: FieldValue.serverTimestamp(),
+      revision: Number(current.revision || 1) + 1,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+  return managerRunGet({ id });
+}
+
+async function managerRunCreateWorkItem(input, actor = {}) {
+  const runId = assertString(input.runId, 'runId', { max: 160 });
+  const agent = assertString(input.agent || actor.agent, 'agent', { max: 120 });
+  const runRef = db().collection(COLLECTIONS.managerRuns).doc(runId);
+  const itemRef = db().collection(COLLECTIONS.workItems).doc();
+  let existing = null;
+
+  await db().runTransaction(async (tx) => {
+    const runSnapshot = await tx.get(runRef);
+    if (!runSnapshot.exists) throw new Error('Manager run not found: ' + runId);
+    const run = runSnapshot.data();
+    if (run.status !== 'running' || run.claimedBy !== agent) throw new Error('Manager run is not claimed by ' + agent);
+    const jobRef = db().collection(COLLECTIONS.recurringJobs).doc(run.managerJobId);
+    const jobSnapshot = await tx.get(jobRef);
+    if (!jobSnapshot.exists) throw new Error('Manager job not found: ' + run.managerJobId);
+    const job = jobSnapshot.data();
+
+    const dedupeKey = clampString(input.dedupeKey, 300) || null;
+    if (dedupeKey) {
+      const candidateSnapshot = await tx.get(db().collection(COLLECTIONS.workItems).where('sourceId', '==', run.managerJobId).limit(1000));
+      existing = candidateSnapshot.docs
+        .map(documentToObject)
+        .find((item) =>
+          item.sourceType === 'manager_job'
+          && !['archived', 'done', 'cancelled'].includes(item.status)
+          && item.metadata?.managerJob?.dedupeKey === dedupeKey
+        ) || null;
+      if (existing) return;
+    }
+
+    const targetId = clampString(input.targetId, 160) || null;
+    const configuredTargets = jobRotationTargets(job);
+    if (targetId && configuredTargets.length && !configuredTargets.includes(targetId)) {
+      throw new Error('targetId must be one of the Manager Job observation targets');
+    }
+
+    const payload = workItemPayload({
+      title: input.title,
+      objective: input.objective,
+      instructions: input.instructions,
+      status: input.status || 'ready',
+      priority: input.priority || job.priority || 'medium',
+      executionMode: input.executionMode || 'agent',
+      humanReason: input.humanReason,
+      spaceId: input.spaceId !== undefined ? input.spaceId : (job.spaceId || null),
+      projectId: input.projectId !== undefined ? input.projectId : (job.projectId || null),
+      sourceType: 'manager_job',
+      sourceId: run.managerJobId,
+      dependencies: input.dependencies || [],
+      tags: [...(input.tags || []), 'manager-job'],
+      dueAt: input.dueAt,
+      metadata: {
+        ...(jsonSafe(input.metadata || {})),
+        managerJob: {
+          id: run.managerJobId,
+          managerRunId: runId,
+          dedupeKey,
+          reason: clampString(input.reason, 4000) || '',
+          targetId,
+          managerMethodId: run.methodId || null,
+          managerMethodVersionId: run.methodVersionId || null,
+          managerMethodVersionNumber: run.methodVersionNumber || null,
+        },
+        workerPolicy: {
+          requireExecutionReceipt: jobRequiresReceipt(job),
+          allowedActionTypes: job.allowedActionTypes || job.metadata?.allowedActionTypes || [],
+        },
+      },
+    });
+    if (payload.status === 'running') throw new Error('Manager-created Work Items cannot start as running; create ready or in_progress');
+
+    const now = FieldValue.serverTimestamp();
+    tx.set(itemRef, {
+      ...payload,
+      claimedBy: null,
+      claimedModel: null,
+      runId: null,
+      leaseExpiresAt: null,
+      lastHeartbeatAt: null,
+      blockedReason: '',
+      resultSummary: '',
+      nextActions: [],
+      createdBy: createdBy({}, actor),
+      createdAt: now,
+      updatedAt: now,
+    });
+    tx.update(runRef, {
+      createdWorkItemIds: FieldValue.arrayUnion(itemRef.id),
+      revision: Number(run.revision || 1) + 1,
+      updatedAt: now,
+    });
+    if (targetId) {
+      const targetProgress = { ...(job.targetProgress || {}) };
+      targetProgress[targetId] = {
+        ...(targetProgress[targetId] || {}),
+        lastAssignedAt: new Date().toISOString(),
+      };
+      tx.update(jobRef, { targetProgress, updatedAt: now });
+    }
+  });
+
+  if (existing) return { created: false, duplicate: true, workItem: existing, managerRun: await managerRunGet({ id: runId }) };
+  return { created: true, duplicate: false, workItem: await workItemGet({ id: itemRef.id }), managerRun: await managerRunGet({ id: runId }) };
+}
+
+async function managerRunReconcileWorkItem(input) {
+  const runId = assertString(input.runId, 'runId', { max: 160 });
+  const workItemId = assertString(input.workItemId, 'workItemId', { max: 160 });
+  const agent = assertString(input.agent, 'agent', { max: 120 });
+  const run = await managerRunGet({ id: runId });
+  if (run.status !== 'running' || run.claimedBy !== agent) throw new Error('Manager run is not claimed by ' + agent);
+  const item = await workItemGet({ id: workItemId });
+  if (item.status === 'running' && item.claimedBy && item.claimedBy !== agent) {
+    throw new Error('Cannot reconcile a Work Item actively claimed by ' + item.claimedBy);
+  }
+  const patch = input.patch && typeof input.patch === 'object' ? { ...input.patch } : {};
+  patch.metadataPatch = {
+    ...(patch.metadataPatch || {}),
+    lastManagerTouch: {
+      managerJobId: run.managerJobId,
+      managerRunId: runId,
+      reason: clampString(input.reason, 4000) || '',
+      at: new Date().toISOString(),
+    },
+  };
+  const updated = await workItemUpdate({ id: workItemId, patch });
+  const runRef = db().collection(COLLECTIONS.managerRuns).doc(runId);
+  await runRef.update({
+    ...(updated.status === 'archived'
+      ? { archivedWorkItemIds: FieldValue.arrayUnion(workItemId) }
+      : { updatedWorkItemIds: FieldValue.arrayUnion(workItemId) }),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  return { workItem: updated, managerRun: await managerRunGet({ id: runId }) };
+}
+
+async function managerRunFinish(input) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const agent = assertString(input.agent, 'agent', { max: 120 });
+  const status = assertEnum(input.status, ['completed', 'failed'], 'status', 'completed');
+  const ref = db().collection(COLLECTIONS.managerRuns).doc(id);
+
+  await db().runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    if (!snapshot.exists) throw new Error('Manager run not found: ' + id);
+    const current = snapshot.data();
+    if (['completed', 'failed'].includes(current.status)) throw new Error('Manager run is already closed: ' + current.status);
+    if (current.claimedBy && current.claimedBy !== agent) throw new Error('Manager run is claimed by ' + current.claimedBy);
+    const jobRef = db().collection(COLLECTIONS.recurringJobs).doc(current.managerJobId);
+    const jobSnapshot = await tx.get(jobRef);
+    if (!jobSnapshot.exists) throw new Error('Manager job not found: ' + current.managerJobId);
+    const now = FieldValue.serverTimestamp();
+    const summary = clampString(input.summary, 12000) || '';
+    tx.update(ref, {
+      status,
+      summary,
+      observations: stringArray(input.observations, 100, 3000),
+      decisions: stringArray(input.decisions, 100, 3000),
+      claimedBy: null,
+      claimedModel: null,
+      leaseExpiresAt: null,
+      lastHeartbeatAt: now,
+      finishedAt: now,
+      revision: Number(current.revision || 1) + 1,
+      updatedAt: now,
+    });
+    tx.update(jobRef, {
+      lastFinishedAt: now,
+      lastManagerRunId: id,
+      lastExecutionStatus: status === 'completed' ? 'manager_completed' : 'manager_failed',
+      lastResultSummary: summary,
+      finishCount: FieldValue.increment(1),
+      updatedAt: now,
+    });
+  });
+  return managerRunGet({ id });
+}
+
 function workItemPayload(input) {
   return {
     title: assertString(input.title, 'title', { max: 500 }),
@@ -2367,7 +2783,7 @@ async function workItemFinish(input) {
     const current = snapshot.data();
     if (['archived', 'done', 'cancelled'].includes(current.status)) throw new Error('Work item is already closed: ' + current.status);
     if (current.claimedBy && current.claimedBy !== agent) throw new Error('Work item is claimed by ' + current.claimedBy);
-    const jobRef = current.sourceType === 'recurring_job' && current.sourceId
+    const jobRef = ['recurring_job', 'manager_job'].includes(current.sourceType) && current.sourceId
       ? db().collection(COLLECTIONS.recurringJobs).doc(current.sourceId)
       : null;
     const jobSnapshot = jobRef ? await tx.get(jobRef) : null;
@@ -2405,7 +2821,7 @@ async function workItemFinish(input) {
     });
     if (jobRef && job) {
       const targetProgress = { ...(job.targetProgress || {}) };
-      const assignedTarget = current.metadata?.recurringJob?.targetId;
+      const assignedTarget = current.metadata?.managerJob?.targetId || current.metadata?.recurringJob?.targetId;
       if (outcomeStatus === 'blocked') {
         for (const attemptedTarget of stringArray(input.metadataPatch?.attemptedTargets, 100, 160)) {
           if (attemptedTarget === assignedTarget || !jobRotationTargets(job).includes(attemptedTarget)) continue;
@@ -2439,15 +2855,24 @@ async function workItemFinish(input) {
           ...(receipt.deliveryStatus === 'live_verified' ? { lastLiveAt: new Date().toISOString() } : {}),
         };
       }
-      tx.update(jobRef, {
-        lastFinishedAt: now,
-        lastWorkItemId: id,
-        lastExecutionStatus: outcomeStatus,
-        lastResultSummary: clampString(input.resultSummary, 12000) || current.resultSummary || '',
-        finishCount: FieldValue.increment(current.finishRecorded ? 0 : 1),
-        targetProgress,
-        updatedAt: now,
-      });
+      tx.update(jobRef, current.sourceType === 'recurring_job'
+        ? {
+          lastFinishedAt: now,
+          lastWorkItemId: id,
+          lastExecutionStatus: outcomeStatus,
+          lastResultSummary: clampString(input.resultSummary, 12000) || current.resultSummary || '',
+          finishCount: FieldValue.increment(current.finishRecorded ? 0 : 1),
+          targetProgress,
+          updatedAt: now,
+        }
+        : {
+          lastWorkerActionAt: now,
+          lastWorkerWorkItemId: id,
+          lastWorkerStatus: outcomeStatus,
+          lastWorkerResultSummary: clampString(input.resultSummary, 12000) || current.resultSummary || '',
+          targetProgress,
+          updatedAt: now,
+        });
     }
   });
   return workItemGet({ id });
@@ -2697,9 +3122,10 @@ async function controlPlaneOverview(input = {}) {
   await migrateLegacyWorkItemStatuses();
   await ensureLinearSetupTask();
   const database = db();
-  const [workSnapshot, recurringSnapshot, spaceSnapshot, runSnapshot, projectSnapshot, memoSnapshot] = await Promise.all([
+  const [workSnapshot, recurringSnapshot, managerRunSnapshot, spaceSnapshot, runSnapshot, projectSnapshot, memoSnapshot] = await Promise.all([
     database.collection(COLLECTIONS.workItems).limit(Math.max(limit, 100)).get(),
     database.collection(COLLECTIONS.recurringJobs).limit(100).get(),
+    database.collection(COLLECTIONS.managerRuns).limit(100).get(),
     database.collection(COLLECTIONS.spaces).limit(100).get(),
     database.collection(THINKING_COLLECTIONS.runs).limit(100).get(),
     database.collection('projects').limit(100).get(),
@@ -2709,6 +3135,7 @@ async function controlPlaneOverview(input = {}) {
   const rawWork = workSnapshot.docs.map((snapshot) => ({ id: snapshot.id, ...snapshot.data() }));
   const workItems = sortRecent(rawWork.map((item) => serialize(item)));
   const recurringJobs = sortRecent(recurringSnapshot.docs.map(documentToObject)).filter((item) => item.status === 'active');
+  const managerRuns = sortRecent(managerRunSnapshot.docs.map(documentToObject)).filter((item) => ['ready', 'running'].includes(item.status));
   const spaces = sortRecent(spaceSnapshot.docs.map(documentToObject)).filter((item) => item.status === 'active');
   const runs = sortRecent(runSnapshot.docs.map(documentToObject)).filter((item) => item.status === 'active');
   const projects = sortRecent(projectSnapshot.docs.map(documentToObject)).filter((item) => {
@@ -2798,7 +3225,10 @@ async function controlPlaneOverview(input = {}) {
       humanTasks: humanTasks.length,
       activeSpaces: spaces.length,
       activeProjects: projects.length,
+      activeManagerJobs: recurringJobs.length,
       activeRecurringJobs: recurringJobs.length,
+      readyManagerRuns: managerRuns.filter((item) => item.status === 'ready').length,
+      runningManagerRuns: managerRuns.filter((item) => item.status === 'running').length,
       activeRuns: runs.length,
       staleLeases: staleLeases.length,
       unqueuedNextActions: unqueuedNextActions.length,
@@ -2813,7 +3243,9 @@ async function controlPlaneOverview(input = {}) {
     review: agentWork.filter((item) => item.status === 'review'),
     humanTasks,
     staleLeases,
+    activeManagerJobs: recurringJobs.slice(0, 50),
     activeRecurringJobs: recurringJobs.slice(0, 50),
+    managerRuns: managerRuns.slice(0, 50),
     activeRuns: runs.slice(0, 30),
     activeSpaces: spaces.slice(0, 50),
     activeProjects: projects.slice(0, 50),
@@ -2828,7 +3260,7 @@ async function controlPlaneOverview(input = {}) {
       'Call control_plane_overview before starting autonomous work.',
       'Prefer a resumable in_progress item or a ready work item; create one for an unqueued Space next action when appropriate. Backlog means deliberately deferred from near-term execution, so do not move active or ongoing work there merely to stop working on it. Never start a running item owned by another active lease. Linear issues are external candidates: import relevant unlinked issues with linear_issue_import_to_work_item before autonomous execution.',
       'Claim exactly one agent work item before execution. Claiming moves it to running; in_progress means the task is ongoing but no agent is actively executing it right now.',
-      'Recurring Jobs define repeatable work but do not store schedules. External schedulers should call recurring_job_start with the job ID; that materializes a normal ready Work Item, then the usual claim/lease flow applies. For recurring Work Items, load recurring_job_get_context before execution.',
+      'Manager Jobs are schedule-agnostic queue managers. External schedulers should call manager_job_start, claim the returned Manager Run with manager_run_claim, load manager_job_get_context, then observe/reconcile/decide/delegate. A Manager Run may create zero or many Work Items and should not perform the underlying worker task itself. Use manager_run_create_work_item and manager_run_reconcile_work_item, then manager_run_finish. Legacy recurring_job_* tools remain for compatibility.',
       'If an item requires a human-only action, explicit user judgment, account approval, physical action, or unavailable credential, call work_item_delegate_to_human instead of leaving it buried in chat or blocking the agent queue.',
       'Load the linked Space with space_get_context and start a Run when the task requires durable research or production context.',
       'Heartbeat long-running work before the lease expires.',
@@ -2841,11 +3273,12 @@ async function controlPlaneOverview(input = {}) {
 
 async function healthCheck() {
   const started = Date.now();
-  const [spaceSample, profileSample, methodSample, recurringJobSample] = await Promise.all([
+  const [spaceSample, profileSample, methodSample, recurringJobSample, managerRunSample] = await Promise.all([
     db().collection(COLLECTIONS.spaces).limit(1).get(),
     db().collection(COLLECTIONS.profileFacts).limit(1).get(),
     db().collection(COLLECTIONS.methods).limit(1).get(),
     db().collection(COLLECTIONS.recurringJobs).limit(1).get(),
+    db().collection(COLLECTIONS.managerRuns).limit(1).get(),
   ]);
   return {
     ok: true,
@@ -2854,7 +3287,9 @@ async function healthCheck() {
     sampleSpaceCount: spaceSample.size,
     sampleProfileFactCount: profileSample.size,
     sampleMethodCount: methodSample.size,
+    sampleManagerJobCount: recurringJobSample.size,
     sampleRecurringJobCount: recurringJobSample.size,
+    sampleManagerRunCount: managerRunSample.size,
     latencyMs: Date.now() - started,
   };
 }
@@ -2877,6 +3312,7 @@ module.exports = {
   WORK_ITEM_EXECUTION_MODES,
   RECURRING_JOB_STATUSES,
   RECURRING_JOB_CONCURRENCY_POLICIES,
+  MANAGER_RUN_STATUSES,
   LINEAR_SETUP_WORK_ITEM_ID,
   healthCheck,
   linearStatus,
@@ -2885,6 +3321,19 @@ module.exports = {
   linearIssueImportToWorkItem,
   workItemPushToLinear,
   controlPlaneOverview,
+  managerJobCreate,
+  managerJobGet,
+  managerJobSearch,
+  managerJobUpdate,
+  managerJobHistory,
+  managerJobGetContext,
+  managerJobStart,
+  managerRunGet,
+  managerRunClaim,
+  managerRunHeartbeat,
+  managerRunCreateWorkItem,
+  managerRunReconcileWorkItem,
+  managerRunFinish,
   recurringJobCreate,
   recurringJobGet,
   recurringJobSearch,

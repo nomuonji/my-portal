@@ -341,45 +341,76 @@ Work Itemは `spaceId`, `projectId`, `sourceType`, `sourceId`, `priority`, `depe
 `control_plane_overview` はWork Itemだけでなく、active Runs、Spaces、Projects、未キュー化のSpace next actions、従来メモの `next_action` / `inbox` / `project` も横断して返す。
 
 Dashboard UIも同じControl Planeの人間向けビューとし、Ready / Working / Running / Blocked / Reviewを区別する。Workingは継続中、Runningはリアルタイム実行中を表す。
-### Recurring Jobs
+### Manager Jobs
 
-Recurring Jobは、**外部スケジューラから繰り返し起動される仕事の定義**をAgent HQに保存するEntity。
+Manager Jobは、**対象領域を観測し、既存Queueを整理し、その時点で必要なWork Itemを0〜N件生み出す管理Entity**。
 
-My Portalはスケジューラではないため、Recurring Jobにcron・実行時刻・timezone・nextRunAtは保存しない。ChatGPT Scheduled Tasks等の外部実行系が「いつ」を担当し、My Portalは「何を・どうやるか」と履歴を担当する。
+My Portalはスケジューラではない。cron・実行時刻・timezone・nextRunAtは保存せず、ChatGPT Scheduled Tasks等の外部実行系が「いつ起動するか」を担当する。My Portalは「何を観測し、どう判断し、何をWork Item化するか」と管理履歴を担当する。
 
-主なフィールド:
+Manager Jobは実作業そのものを行うJobではない。基本ループは:
 
-- `title`
-- `objective`
-- `instructions`: そのJob固有の手順・制約
-- `projectId`
-- `methodId`: Recurring Jobの主要な実行契約。active versionのinstructions / protocol / quality gatesをAgent HQ上で確認できる
-- `spaceId`: 高度な用途向けの互換フィールド。通常UIでは設定しない。長期思考テーマのcurrentBrief / sources / ideasを毎回引き継ぐJobでのみ利用する
-- `priority`
-- `status = active | paused | archived`
-- `concurrencyPolicy = skip_if_open | allow_overlap`
-- `rotationTargets[]`: 繰り返し作業の対象。未対応の対象を優先し、作業・検討・ブロックの経過時間から次回対象を選ぶ
-- `targetProgress`: 対象ごとの最終割当・最終実作業・最終公開確認・ブロックを実行結果から自動更新する
-- `requireExecutionReceipt`: 完了時に実作業の証拠を要求する
-- `allowedActionTypes[]`: 完了として認める作業種別。調査報告だけを改善完了扱いしたくないJobで設定する
-- 前回実行情報（lastStartedAt / lastFinishedAt / lastResultSummary等）
+1. Observe: Project / Queue / analytics / backlog /対象状態を観測
+2. Reconcile: 既存Work Itemの重複、優先度、blocked、古い項目を整理
+3. Decide: 今必要な仕事と、今は作らない仕事を判断
+4. Delegate: `manager_run_create_work_item` で0〜N件生成、または `manager_run_reconcile_work_item` で既存項目を更新
+5. `manager_run_finish` で観測・判断・生成/整理結果を保存
 
-実行時は `recurring_job_start` が通常のWork Itemを1件生成する。rotationTargetsがある場合、未対応や長く触れていない対象を割り当てる。直近でブロックされた対象を毎回選び直さない。Work Itemには `sourceType=recurring_job`, `sourceId=<jobId>`, 割当対象、Methodのactive version ID / version numberを固定する。したがってMethodを後日改善しても、過去の実行がどのversionを使ったか追跡できる。
+新しい仕事が必要ない場合、**0 Work Itemsで正常終了してよい**。
 
-外部ChatGPT等の基本フロー:
+#### Manager Run
 
-1. 外部スケジューラが任意の時刻に `recurring_job_start({ id, invocationId? })`
-2. My PortalがReady Work Itemを生成。前回のready / in_progress / runningがある場合はそのWork Itemを返し、再開する
-3. `work_item_claim`
-4. `recurring_job_get_context({ id })` でJob / Project / Space / Method / 最近の履歴を取得
-5. 実行
-6. `work_item_finish`。requireExecutionReceiptが有効なJobでは、archived / reviewにする際に実際の対象、作業種別、成果物、確認結果を`executionReceipt`で保存する
+外部スケジューラが `manager_job_start` を呼ぶと、worker Work ItemではなくManager Runが作られる。
 
-`invocationId` を外部側のイベントIDとして渡すと同じトリガーの再送を冪等化できる。既定の `skip_if_open` は実行中・再開可能な前回Work Itemを返す。`blocked`、`review`、意図的に延期した`backlog`は次回の起動を妨げない。結果待ちや人によるレビューが、別対象への作業を永久に止めないためである。
+```
+External Scheduler
+  ↓
+Manager Job
+  ↓ manager_job_start
+Manager Run
+  ↓ claim
+Observe → Reconcile → Decide → Delegate
+  ├─ Work Item
+  ├─ Work Item
+  └─ 0件でも可
+```
 
-成果記録の`deliveryStatus`は`local_ready` / `committed` / `live_verified`を区別する。準備完了と公開済みを混同しない。対象ごとの最終実作業は成果記録から更新し、単なる調査報告やブロックでは更新しない。割当先に安全な作業がない場合は別対象を試し、実際に作業した対象を成果記録に残す。全対象が進められない場合は具体的な`blockedReason`で終える。
+Manager Runは `ready | running | completed | failed` を持ち、`manager_run_claim` / `manager_run_heartbeat` で所有権を管理する。作成・更新・archiveしたWork Item ID、observations、decisions、summaryを履歴に残す。
 
-Agent HQ UIではRecurring Jobsを独立セクションとして表示し、Jobの作成・詳細編集・pause/resume・手動実行・履歴・外部ChatGPT用の起動指示コピーを行う。Methodはカード上で展開せず、Recurring Jobの詳細/編集画面にactive versionの本文・Protocol・Quality Gatesを最初から並べて表示する。同じ画面でMethod本体の概要とactive version内容も編集でき、version内容を変更した場合は旧versionを上書きせず新しいMethodVersionを作成してactive化する。通常のJob作成UIはProject + Methodを基本とし、Spaceは表示しない。
+Managerが生成したWork Itemは:
+
+- `sourceType = manager_job`
+- `sourceId = <managerJobId>`
+- `metadata.managerJob.managerRunId`
+- 任意の `dedupeKey`
+- 生成理由 `reason`
+
+を持つ。これにより「なぜこのタスクが生まれたか」を追跡できる。
+
+#### Method
+
+Manager Jobに紐づくMethodは、workerの作業手順ではなく、**Managerが何を観測し、どうQueueを整理し、どの条件でWork Itemを作るかを定義する管理方法論**として扱う。
+
+Methodのactive versionはManager Run開始時に固定される。Methodを後から改善しても、過去のManager Runがどのversionで判断したか追跡できる。
+
+Agent HQの詳細/編集画面では、Method名・概要・Purpose・instructions・Protocol・Quality Gates・version履歴を表示・編集する。version内容を変更した場合は旧versionを上書きせず、新MethodVersionを作成してactive化する。
+
+#### 既存rotation / receipt機能
+
+既存の以下の情報はManager化後も維持する。
+
+- `rotationTargets[]`: 「順番に実行する対象」ではなくManagerが優先的に観測する管理対象
+- `targetProgress`: 対象ごとの最終実作業・block・公開確認等。Manager判断の材料
+- `requireExecutionReceipt`: Managerが生成したworker Work Itemに実作業証跡を要求するポリシー
+- `allowedActionTypes[]`: worker成果として認める作業種別
+
+Manager自身の完了にexecutionReceiptは要求しない。証跡は生成されたworker Work Item側で保存する。
+
+#### 互換性
+
+Firestore上の既存 `memos/agent-control/recurringJobs` collectionは破壊的migrationを避けるため当面そのまま保存層として使う。新しい正規名称・API・MCPは `manager_job_*` / `manager_run_*`。
+
+旧 `recurring_job_*` toolsは既存スケジュールや古いクライアント向けの互換経路として残すが、新規運用ではManager Jobを使う。
+
 
 ### Human Tasks
 
