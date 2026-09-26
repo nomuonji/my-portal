@@ -9,6 +9,7 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { auth, db } from '../firebase';
+import RecurringJobsPanel from './RecurringJobsPanel';
 import {
   Alert,
   Box,
@@ -497,6 +498,8 @@ function Dashboard() {
           </Paper>
         ))}
       </Box>
+
+      <RecurringJobsPanel projects={projects} spaces={spaces} />
 
       <Paper
         elevation={0}

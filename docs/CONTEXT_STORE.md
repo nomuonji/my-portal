@@ -336,6 +336,39 @@ Work Itemは `spaceId`, `projectId`, `sourceType`, `sourceId`, `priority`, `depe
 `control_plane_overview` はWork Itemだけでなく、active Runs、Spaces、Projects、未キュー化のSpace next actions、従来メモの `next_action` / `inbox` / `project` も横断して返す。
 
 Dashboard UIも同じControl Planeの人間向けビューとし、Ready / Working / Running / Blocked / Reviewを区別する。Workingは継続中、Runningはリアルタイム実行中を表す。
+### Recurring Jobs
+
+Recurring Jobは、**外部スケジューラから繰り返し起動される仕事の定義**をAgent HQに保存するEntity。
+
+My Portalはスケジューラではないため、Recurring Jobにcron・実行時刻・timezone・nextRunAtは保存しない。ChatGPT Scheduled Tasks等の外部実行系が「いつ」を担当し、My Portalは「何を・どうやるか」と履歴を担当する。
+
+主なフィールド:
+
+- `title`
+- `objective`
+- `instructions`: そのJob固有の手順・制約
+- `projectId` / `spaceId`
+- `methodId`: 任意。繰り返し改善する方法論がある場合だけ紐付ける
+- `priority`
+- `status = active | paused | archived`
+- `concurrencyPolicy = skip_if_open | allow_overlap`
+- 前回実行情報（lastStartedAt / lastFinishedAt / lastResultSummary等）
+
+実行時は `recurring_job_start` が通常のWork Itemを1件生成する。Work Itemには `sourceType=recurring_job`, `sourceId=<jobId>` を保存し、Methodを紐付けている場合は、その時点のactive Method version ID / version numberもmetadataへ固定する。したがってMethodを後日改善しても、過去の実行がどのversionを使ったか追跡できる。
+
+外部ChatGPT等の基本フロー:
+
+1. 外部スケジューラが任意の時刻に `recurring_job_start({ id, invocationId? })`
+2. My PortalがReady Work Itemを生成
+3. `work_item_claim`
+4. `recurring_job_get_context({ id })` でJob / Project / Space / Method / 最近の履歴を取得
+5. 実行
+6. `work_item_finish`
+
+`invocationId` を外部側のイベントIDとして渡すと同じトリガーの再送を冪等化できる。既定の `skip_if_open` では同じJob由来の未完了Work Itemがある間、新しい実行を作らない。
+
+Agent HQ UIではRecurring Jobsを独立セクションとして表示し、Jobの作成・編集・pause/resume・手動実行・履歴・外部ChatGPT用の起動指示コピーを行う。
+
 ### Human Tasks
 
 人間の操作・判断が必要な仕事はAgent Queueに残さない。

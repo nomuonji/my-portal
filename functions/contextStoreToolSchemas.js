@@ -72,6 +72,20 @@ const workItemFields = {
   metadata: jsonObject('Structured execution metadata.'),
 };
 
+const recurringJobFields = {
+  title: string('Repeatable job title. Scheduling is intentionally external to My Portal.', 500),
+  objective: string('Stable outcome this recurring job should pursue on each execution.', 12000),
+  instructions: string('Job-specific execution notes and constraints. Reusable evolving procedures may be linked through methodId.', 20000),
+  status: { type: 'string', enum: store.RECURRING_JOB_STATUSES },
+  priority: { type: 'string', enum: store.WORK_ITEM_PRIORITIES },
+  spaceId: string('Optional linked Space ID.', 160),
+  projectId: string('Optional linked Portal Project ID.', 160),
+  methodId: string('Optional reusable Method ID. Its active version is resolved when each execution is materialized.', 160),
+  concurrencyPolicy: { type: 'string', enum: store.RECURRING_JOB_CONCURRENCY_POLICIES, description: 'skip_if_open prevents another execution while a prior Work Item remains open.' },
+  tags: stringArray('Loose tags.', 50),
+  metadata: jsonObject('Structured job metadata. Do not store cron, timezone, or schedule state here.'),
+};
+
 const methodFields = {
   title: string('Reusable method/protocol title.', 300),
   summary: string('Compact description of the method.', 5000),
@@ -156,6 +170,89 @@ const TOOLS = [
       includeLinear: { type: 'boolean', default: true, description: 'Include open Linear issues as external work candidates when the Linear integration is configured.' },
     }),
     annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'recurring_job_create',
+    description: 'Create a repeatable Agent HQ job definition. My Portal intentionally stores no cron, time, timezone, or next-run state; external schedulers trigger executions by job ID.',
+    inputSchema: objectSchema({
+      id: string('Optional stable job ID. Useful when an external scheduler should call a memorable identifier.', 160),
+      ...recurringJobFields,
+    }, ['title']),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  {
+    name: 'recurring_job_get',
+    description: 'Read one Recurring Job definition by ID.',
+    inputSchema: objectSchema({ id: string('Recurring Job ID.', 160) }, ['id']),
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'recurring_job_search',
+    description: 'Find repeatable jobs by text, status, Project, Space, or Method. Scheduling information is not part of this entity.',
+    inputSchema: objectSchema({
+      query: string('Substring query over title, objective, instructions, and tags.', 400),
+      status: { type: 'string', enum: store.RECURRING_JOB_STATUSES },
+      projectId: string('Exact Project ID.', 160),
+      spaceId: string('Exact Space ID.', 160),
+      methodId: string('Exact Method ID.', 160),
+      limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+      scanLimit: { type: 'integer', minimum: 1, maximum: 1000 },
+    }),
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'recurring_job_update',
+    description: 'Update a repeatable job definition, including its instructions, Method linkage, pause/archive state, and concurrency policy.',
+    inputSchema: objectSchema({
+      id: string('Recurring Job ID.', 160),
+      expectedRevision: { type: 'integer', minimum: 1 },
+      patch: objectSchema({
+        title: recurringJobFields.title,
+        objective: recurringJobFields.objective,
+        instructions: recurringJobFields.instructions,
+        status: recurringJobFields.status,
+        priority: recurringJobFields.priority,
+        spaceId: recurringJobFields.spaceId,
+        projectId: recurringJobFields.projectId,
+        methodId: recurringJobFields.methodId,
+        concurrencyPolicy: recurringJobFields.concurrencyPolicy,
+        tags: recurringJobFields.tags,
+        metadata: recurringJobFields.metadata,
+        metadataPatch: jsonObject('Shallow-merge job metadata.'),
+      }),
+    }, ['id', 'patch']),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  {
+    name: 'recurring_job_get_context',
+    description: 'Load the complete execution context for a repeatable job: job instructions, linked Project/Space, active Method execution contract, and recent Work Item history.',
+    inputSchema: objectSchema({
+      id: string('Recurring Job ID.', 160),
+      historyLimit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+      versionLimit: { type: 'integer', minimum: 1, maximum: 50, default: 10 },
+      runLimit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+    }, ['id']),
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'recurring_job_history',
+    description: 'List Work Items previously materialized from one Recurring Job.',
+    inputSchema: objectSchema({
+      id: string('Recurring Job ID.', 160),
+      limit: { type: 'integer', minimum: 1, maximum: 200, default: 30 },
+      scanLimit: { type: 'integer', minimum: 1, maximum: 1000, default: 500 },
+    }, ['id']),
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'recurring_job_start',
+    description: 'Materialize one execution of an active Recurring Job as a normal ready Work Item. External schedulers should call this tool at their chosen time, then claim the returned Work Item. invocationId makes repeated delivery idempotent.',
+    inputSchema: objectSchema({
+      id: string('Recurring Job ID.', 160),
+      invocationId: string('Optional external invocation/event ID used to prevent duplicate Work Items for the same trigger.', 300),
+      requestedBy: string('External scheduler or caller label.', 120),
+    }, ['id']),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   },
   {
     name: 'linear_status',

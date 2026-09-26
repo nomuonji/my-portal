@@ -12,6 +12,7 @@ const COLLECTIONS = Object.freeze({
   methods: 'methods',
   methodVersions: 'methodVersions',
   workItems: 'memos/agent-control/workItems',
+  recurringJobs: 'memos/agent-control/recurringJobs',
 });
 
 const THINKING_COLLECTIONS = Object.freeze({
@@ -38,6 +39,8 @@ const METHOD_VERSION_STATUSES = ['draft', 'active', 'superseded', 'archived'];
 const WORK_ITEM_STATUSES = ['backlog', 'ready', 'in_progress', 'running', 'blocked', 'review', 'archived'];
 const WORK_ITEM_PRIORITIES = ['critical', 'high', 'medium', 'low'];
 const WORK_ITEM_EXECUTION_MODES = ['agent', 'human'];
+const RECURRING_JOB_STATUSES = ['active', 'paused', 'archived'];
+const RECURRING_JOB_CONCURRENCY_POLICIES = ['skip_if_open', 'allow_overlap'];
 const LINEAR_SETUP_WORK_ITEM_ID = 'system-linear-integration-setup';
 
 function db() {
@@ -1785,6 +1788,286 @@ async function ensureLinearSetupTask() {
   return documentToObject(await ref.get());
 }
 
+
+function recurringJobPayload(input) {
+  return {
+    title: assertString(input.title, 'title', { max: 500 }),
+    objective: clampString(input.objective, 12000) || '',
+    instructions: clampString(input.instructions, 20000) || '',
+    status: assertEnum(input.status, RECURRING_JOB_STATUSES, 'status', 'active'),
+    priority: assertEnum(input.priority, WORK_ITEM_PRIORITIES, 'priority', 'medium'),
+    spaceId: clampString(input.spaceId, 160) || null,
+    projectId: clampString(input.projectId, 160) || null,
+    methodId: clampString(input.methodId, 160) || null,
+    concurrencyPolicy: assertEnum(
+      input.concurrencyPolicy,
+      RECURRING_JOB_CONCURRENCY_POLICIES,
+      'concurrencyPolicy',
+      'skip_if_open'
+    ),
+    tags: stringArray(input.tags, 50, 100),
+    metadata: jsonSafe(input.metadata || {}),
+    revision: 1,
+  };
+}
+
+async function recurringJobCreate(input, actor = {}) {
+  const payload = recurringJobPayload(input);
+  if (payload.spaceId) await spaceGet({ id: payload.spaceId });
+  if (payload.methodId) await methodGet({ id: payload.methodId });
+
+  const requestedId = clampString(input.id, 160);
+  const ref = requestedId
+    ? db().collection(COLLECTIONS.recurringJobs).doc(requestedId)
+    : db().collection(COLLECTIONS.recurringJobs).doc();
+
+  if (requestedId) {
+    const existing = await ref.get();
+    if (existing.exists) throw new Error('Recurring job already exists: ' + requestedId);
+  }
+
+  const now = FieldValue.serverTimestamp();
+  await ref.set({
+    ...payload,
+    startCount: 0,
+    finishCount: 0,
+    lastStartedAt: null,
+    lastFinishedAt: null,
+    lastWorkItemId: null,
+    lastExecutionStatus: null,
+    lastResultSummary: '',
+    createdBy: createdBy(input.createdBy, actor),
+    createdAt: now,
+    updatedAt: now,
+  });
+  return documentToObject(await ref.get());
+}
+
+async function recurringJobGet(input) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const snapshot = await db().collection(COLLECTIONS.recurringJobs).doc(id).get();
+  if (!snapshot.exists) throw new Error('Recurring job not found: ' + id);
+  return documentToObject(snapshot);
+}
+
+async function recurringJobSearch(input = {}) {
+  const limit = Math.min(Math.max(Number(input.limit) || 50, 1), 200);
+  const scanLimit = Math.min(Math.max(Number(input.scanLimit) || Math.max(limit * 5, 100), limit), 1000);
+  const snapshot = await db().collection(COLLECTIONS.recurringJobs).limit(scanLimit).get();
+  const q = clampString(input.query, 400)?.toLowerCase();
+  const status = clampString(input.status, 40);
+  const projectId = clampString(input.projectId, 160);
+  const spaceId = clampString(input.spaceId, 160);
+  const methodId = clampString(input.methodId, 160);
+
+  const items = sortRecent(snapshot.docs.map(documentToObject))
+    .filter((item) => {
+      if (status && item.status !== status) return false;
+      if (projectId && item.projectId !== projectId) return false;
+      if (spaceId && item.spaceId !== spaceId) return false;
+      if (methodId && item.methodId !== methodId) return false;
+      if (q) {
+        const haystack = [
+          item.title,
+          item.objective,
+          item.instructions,
+          ...(item.tags || []),
+        ].filter(Boolean).join('\n').toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    })
+    .slice(0, limit);
+
+  return { items, count: items.length, scanned: snapshot.size, databaseId: DATABASE_ID };
+}
+
+async function recurringJobUpdate(input) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const patch = input.patch && typeof input.patch === 'object' ? input.patch : {};
+  const nextSpaceId = patch.spaceId !== undefined ? (clampString(patch.spaceId, 160) || null) : undefined;
+  const nextMethodId = patch.methodId !== undefined ? (clampString(patch.methodId, 160) || null) : undefined;
+  if (nextSpaceId) await spaceGet({ id: nextSpaceId });
+  if (nextMethodId) await methodGet({ id: nextMethodId });
+
+  const ref = db().collection(COLLECTIONS.recurringJobs).doc(id);
+  await db().runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    if (!snapshot.exists) throw new Error('Recurring job not found: ' + id);
+    const current = snapshot.data();
+    if (input.expectedRevision !== undefined && Number(input.expectedRevision) !== Number(current.revision || 1)) {
+      throw new Error('Revision conflict: expected ' + input.expectedRevision + ', actual ' + (current.revision || 1));
+    }
+
+    const update = {
+      revision: Number(current.revision || 1) + 1,
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    if (patch.title !== undefined) update.title = assertString(patch.title, 'patch.title', { max: 500 });
+    if (patch.objective !== undefined) update.objective = clampString(patch.objective, 12000) || '';
+    if (patch.instructions !== undefined) update.instructions = clampString(patch.instructions, 20000) || '';
+    if (patch.status !== undefined) update.status = assertEnum(patch.status, RECURRING_JOB_STATUSES, 'patch.status', current.status || 'active');
+    if (patch.priority !== undefined) update.priority = assertEnum(patch.priority, WORK_ITEM_PRIORITIES, 'patch.priority', current.priority || 'medium');
+    if (patch.spaceId !== undefined) update.spaceId = nextSpaceId;
+    if (patch.projectId !== undefined) update.projectId = clampString(patch.projectId, 160) || null;
+    if (patch.methodId !== undefined) update.methodId = nextMethodId;
+    if (patch.concurrencyPolicy !== undefined) {
+      update.concurrencyPolicy = assertEnum(
+        patch.concurrencyPolicy,
+        RECURRING_JOB_CONCURRENCY_POLICIES,
+        'patch.concurrencyPolicy',
+        current.concurrencyPolicy || 'skip_if_open'
+      );
+    }
+    if (patch.tags !== undefined) update.tags = stringArray(patch.tags, 50, 100);
+    if (patch.metadata !== undefined) update.metadata = jsonSafe(patch.metadata || {});
+    if (patch.metadataPatch !== undefined) {
+      update.metadata = { ...(current.metadata || {}), ...jsonSafe(patch.metadataPatch || {}) };
+    }
+    tx.update(ref, update);
+  });
+  return recurringJobGet({ id });
+}
+
+async function recurringJobHistory(input) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  await recurringJobGet({ id });
+  const limit = Math.min(Math.max(Number(input.limit) || 30, 1), 200);
+  const scanLimit = Math.min(Math.max(Number(input.scanLimit) || 500, limit), 1000);
+  const snapshot = await db().collection(COLLECTIONS.workItems).limit(scanLimit).get();
+  const items = sortRecent(snapshot.docs.map(documentToObject))
+    .filter((item) => item.sourceType === 'recurring_job' && item.sourceId === id)
+    .slice(0, limit);
+  return { id, items, count: items.length, scanned: snapshot.size };
+}
+
+async function recurringJobGetContext(input) {
+  const job = await recurringJobGet({ id: input.id });
+  const [methodContext, history, space, projectSnapshot] = await Promise.all([
+    job.methodId
+      ? methodGetContext({
+        id: job.methodId,
+        versionLimit: Math.min(Math.max(Number(input.versionLimit) || 10, 1), 50),
+        runLimit: Math.min(Math.max(Number(input.runLimit) || 20, 1), 100),
+      })
+      : Promise.resolve(null),
+    recurringJobHistory({ id: job.id, limit: Math.min(Math.max(Number(input.historyLimit) || 20, 1), 100) }),
+    job.spaceId ? spaceGet({ id: job.spaceId }).catch(() => null) : Promise.resolve(null),
+    job.projectId ? db().collection('projects').doc(job.projectId).get() : Promise.resolve(null),
+  ]);
+
+  return {
+    job,
+    executionContract: {
+      recurringJobId: job.id,
+      objective: job.objective,
+      instructions: job.instructions,
+      projectId: job.projectId,
+      spaceId: job.spaceId,
+      priority: job.priority,
+      concurrencyPolicy: job.concurrencyPolicy || 'skip_if_open',
+      method: methodContext?.executionContract || null,
+    },
+    method: methodContext,
+    space,
+    project: projectSnapshot && projectSnapshot.exists ? documentToObject(projectSnapshot) : null,
+    recentExecutions: history.items,
+  };
+}
+
+async function recurringJobStart(input, actor = {}) {
+  const job = await recurringJobGet({ id: input.id });
+  if (job.status !== 'active') throw new Error('Recurring job is not active: ' + job.status);
+
+  const invocationId = clampString(input.invocationId, 300) || null;
+  const requestedBy = clampString(input.requestedBy || actor.agent, 120) || 'external-trigger';
+  const snapshot = await db().collection(COLLECTIONS.workItems).limit(1000).get();
+  const existingItems = sortRecent(snapshot.docs.map(documentToObject));
+
+  if (invocationId) {
+    const duplicate = existingItems.find((item) =>
+      item.sourceType === 'recurring_job' &&
+      item.sourceId === job.id &&
+      item.metadata?.recurringJob?.invocationId === invocationId
+    );
+    if (duplicate) {
+      return {
+        created: false,
+        duplicate: true,
+        skipped: false,
+        reason: 'invocation_already_materialized',
+        job,
+        workItem: duplicate,
+      };
+    }
+  }
+
+  if ((job.concurrencyPolicy || 'skip_if_open') === 'skip_if_open') {
+    const open = existingItems.find((item) =>
+      item.sourceType === 'recurring_job' &&
+      item.sourceId === job.id &&
+      !['archived', 'done', 'cancelled'].includes(item.status)
+    );
+    if (open) {
+      return {
+        created: false,
+        duplicate: false,
+        skipped: true,
+        reason: 'open_execution_exists',
+        job,
+        workItem: open,
+      };
+    }
+  }
+
+  const methodContext = job.methodId
+    ? await methodGetContext({ id: job.methodId, versionLimit: 5, runLimit: 5 })
+    : null;
+  const methodExecution = methodContext?.executionContract || null;
+
+  const item = await workItemCreate({
+    title: job.title,
+    objective: job.objective,
+    instructions: job.instructions,
+    status: 'ready',
+    priority: job.priority || 'medium',
+    executionMode: 'agent',
+    spaceId: job.spaceId || null,
+    projectId: job.projectId || null,
+    sourceType: 'recurring_job',
+    sourceId: job.id,
+    tags: [...(job.tags || []), 'recurring-job'],
+    metadata: {
+      recurringJob: {
+        id: job.id,
+        invocationId,
+        requestedBy,
+        methodId: methodExecution?.methodId || job.methodId || null,
+        methodVersionId: methodExecution?.methodVersionId || null,
+        methodVersionNumber: methodExecution?.methodVersionNumber || null,
+      },
+    },
+  }, actor);
+
+  const ref = db().collection(COLLECTIONS.recurringJobs).doc(job.id);
+  await ref.update({
+    lastStartedAt: FieldValue.serverTimestamp(),
+    lastWorkItemId: item.id,
+    lastExecutionStatus: item.status,
+    startCount: FieldValue.increment(1),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+
+  return {
+    created: true,
+    duplicate: false,
+    skipped: false,
+    job: await recurringJobGet({ id: job.id }),
+    workItem: item,
+    method: methodExecution,
+  };
+}
+
 function workItemPayload(input) {
   return {
     title: assertString(input.title, 'title', { max: 500 }),
@@ -2010,7 +2293,22 @@ async function workItemFinish(input) {
       updatedAt: FieldValue.serverTimestamp(),
     });
   });
-  return workItemGet({ id });
+  const finished = await workItemGet({ id });
+  if (finished.sourceType === 'recurring_job' && finished.sourceId) {
+    const jobRef = db().collection(COLLECTIONS.recurringJobs).doc(finished.sourceId);
+    const jobSnapshot = await jobRef.get();
+    if (jobSnapshot.exists) {
+      await jobRef.update({
+        lastFinishedAt: FieldValue.serverTimestamp(),
+        lastWorkItemId: finished.id,
+        lastExecutionStatus: finished.status,
+        lastResultSummary: finished.resultSummary || '',
+        finishCount: FieldValue.increment(1),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+  }
+  return finished;
 }
 
 
@@ -2257,8 +2555,9 @@ async function controlPlaneOverview(input = {}) {
   await migrateLegacyWorkItemStatuses();
   await ensureLinearSetupTask();
   const database = db();
-  const [workSnapshot, spaceSnapshot, runSnapshot, projectSnapshot, memoSnapshot] = await Promise.all([
+  const [workSnapshot, recurringSnapshot, spaceSnapshot, runSnapshot, projectSnapshot, memoSnapshot] = await Promise.all([
     database.collection(COLLECTIONS.workItems).limit(Math.max(limit, 100)).get(),
+    database.collection(COLLECTIONS.recurringJobs).limit(100).get(),
     database.collection(COLLECTIONS.spaces).limit(100).get(),
     database.collection(THINKING_COLLECTIONS.runs).limit(100).get(),
     database.collection('projects').limit(100).get(),
@@ -2267,6 +2566,7 @@ async function controlPlaneOverview(input = {}) {
 
   const rawWork = workSnapshot.docs.map((snapshot) => ({ id: snapshot.id, ...snapshot.data() }));
   const workItems = sortRecent(rawWork.map((item) => serialize(item)));
+  const recurringJobs = sortRecent(recurringSnapshot.docs.map(documentToObject)).filter((item) => item.status === 'active');
   const spaces = sortRecent(spaceSnapshot.docs.map(documentToObject)).filter((item) => item.status === 'active');
   const runs = sortRecent(runSnapshot.docs.map(documentToObject)).filter((item) => item.status === 'active');
   const projects = sortRecent(projectSnapshot.docs.map(documentToObject)).filter((item) => {
@@ -2356,6 +2656,7 @@ async function controlPlaneOverview(input = {}) {
       humanTasks: humanTasks.length,
       activeSpaces: spaces.length,
       activeProjects: projects.length,
+      activeRecurringJobs: recurringJobs.length,
       activeRuns: runs.length,
       staleLeases: staleLeases.length,
       unqueuedNextActions: unqueuedNextActions.length,
@@ -2370,6 +2671,7 @@ async function controlPlaneOverview(input = {}) {
     review: agentWork.filter((item) => item.status === 'review'),
     humanTasks,
     staleLeases,
+    activeRecurringJobs: recurringJobs.slice(0, 50),
     activeRuns: runs.slice(0, 30),
     activeSpaces: spaces.slice(0, 50),
     activeProjects: projects.slice(0, 50),
@@ -2384,6 +2686,7 @@ async function controlPlaneOverview(input = {}) {
       'Call control_plane_overview before starting autonomous work.',
       'Prefer a resumable in_progress item or a ready work item; create one for an unqueued Space next action when appropriate. Backlog means deliberately deferred from near-term execution, so do not move active or ongoing work there merely to stop working on it. Never start a running item owned by another active lease. Linear issues are external candidates: import relevant unlinked issues with linear_issue_import_to_work_item before autonomous execution.',
       'Claim exactly one agent work item before execution. Claiming moves it to running; in_progress means the task is ongoing but no agent is actively executing it right now.',
+      'Recurring Jobs define repeatable work but do not store schedules. External schedulers should call recurring_job_start with the job ID; that materializes a normal ready Work Item, then the usual claim/lease flow applies. For recurring Work Items, load recurring_job_get_context before execution.',
       'If an item requires a human-only action, explicit user judgment, account approval, physical action, or unavailable credential, call work_item_delegate_to_human instead of leaving it buried in chat or blocking the agent queue.',
       'Load the linked Space with space_get_context and start a Run when the task requires durable research or production context.',
       'Heartbeat long-running work before the lease expires.',
@@ -2396,10 +2699,11 @@ async function controlPlaneOverview(input = {}) {
 
 async function healthCheck() {
   const started = Date.now();
-  const [spaceSample, profileSample, methodSample] = await Promise.all([
+  const [spaceSample, profileSample, methodSample, recurringJobSample] = await Promise.all([
     db().collection(COLLECTIONS.spaces).limit(1).get(),
     db().collection(COLLECTIONS.profileFacts).limit(1).get(),
     db().collection(COLLECTIONS.methods).limit(1).get(),
+    db().collection(COLLECTIONS.recurringJobs).limit(1).get(),
   ]);
   return {
     ok: true,
@@ -2408,6 +2712,7 @@ async function healthCheck() {
     sampleSpaceCount: spaceSample.size,
     sampleProfileFactCount: profileSample.size,
     sampleMethodCount: methodSample.size,
+    sampleRecurringJobCount: recurringJobSample.size,
     latencyMs: Date.now() - started,
   };
 }
@@ -2428,6 +2733,8 @@ module.exports = {
   WORK_ITEM_STATUSES,
   WORK_ITEM_PRIORITIES,
   WORK_ITEM_EXECUTION_MODES,
+  RECURRING_JOB_STATUSES,
+  RECURRING_JOB_CONCURRENCY_POLICIES,
   LINEAR_SETUP_WORK_ITEM_ID,
   healthCheck,
   linearStatus,
@@ -2436,6 +2743,13 @@ module.exports = {
   linearIssueImportToWorkItem,
   workItemPushToLinear,
   controlPlaneOverview,
+  recurringJobCreate,
+  recurringJobGet,
+  recurringJobSearch,
+  recurringJobUpdate,
+  recurringJobHistory,
+  recurringJobGetContext,
+  recurringJobStart,
   workItemCreate,
   workItemGet,
   workItemSearch,

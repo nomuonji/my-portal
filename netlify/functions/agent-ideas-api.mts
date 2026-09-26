@@ -139,6 +139,24 @@ export default async (request: Request) => {
       if (resource === "profile") {
         return json(await contextStore.profileGetContext({ includeInferred: true, limit: 200 }));
       }
+      if (resource === "recurring_jobs") {
+        return json(await contextStore.recurringJobSearch({ limit: 100, scanLimit: 500 }));
+      }
+      if (resource === "methods") {
+        return json(await contextStore.methodSearch({ limit: 100, scanLimit: 300 }));
+      }
+      if (resource === "recurring_job_context") {
+        return json(await contextStore.recurringJobGetContext({
+          id: url.searchParams.get("id") || "",
+          historyLimit: Math.min(Math.max(Number(url.searchParams.get("historyLimit")) || 20, 1), 100),
+        }));
+      }
+      if (resource === "recurring_job_history") {
+        return json(await contextStore.recurringJobHistory({
+          id: url.searchParams.get("id") || "",
+          limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 30, 1), 200),
+        }));
+      }
       if (resource === "control_plane") {
         return json(await contextStore.controlPlaneOverview({
           limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 80, 10), 200),
@@ -217,6 +235,36 @@ export default async (request: Request) => {
           id: body.id,
           patch: body.patch || {},
         }));
+      }
+      if (action === "recurring_job_create") {
+        return json(await contextStore.recurringJobCreate({
+          id: body.id,
+          title: body.title,
+          objective: body.objective,
+          instructions: body.instructions,
+          status: body.status || "active",
+          priority: body.priority || "medium",
+          spaceId: body.spaceId,
+          projectId: body.projectId,
+          methodId: body.methodId,
+          concurrencyPolicy: body.concurrencyPolicy || "skip_if_open",
+          tags: body.tags || [],
+          metadata: body.metadata || {},
+        }, { agent: "portal-ui", model: "my-portal-ui" }));
+      }
+      if (action === "recurring_job_update") {
+        return json(await contextStore.recurringJobUpdate({
+          id: body.id,
+          expectedRevision: body.expectedRevision,
+          patch: body.patch || {},
+        }));
+      }
+      if (action === "recurring_job_start") {
+        return json(await contextStore.recurringJobStart({
+          id: body.id,
+          invocationId: body.invocationId,
+          requestedBy: body.requestedBy || "portal-ui",
+        }, { agent: "portal-ui", model: "my-portal-ui" }));
       }
       if (action === "linear_issue_import") {
         return json(await contextStore.linearIssueImportToWorkItem({
