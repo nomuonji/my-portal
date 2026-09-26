@@ -9,7 +9,7 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { auth, db } from '../firebase';
-import RecurringJobsPanel from './RecurringJobsPanel';
+import ManagerJobsPanel from './ManagerJobsPanel';
 import {
   Alert,
   Box,
@@ -497,7 +497,7 @@ function Dashboard() {
         ))}
       </Box>
 
-      <RecurringJobsPanel projects={projects} />
+      <ManagerJobsPanel projects={projects} />
 
       <Paper
         elevation={0}
