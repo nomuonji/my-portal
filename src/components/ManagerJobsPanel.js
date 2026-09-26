@@ -39,6 +39,7 @@ const emptyDraft = {
   priority: 'medium',
   projectId: '',
   methodId: '',
+  defaultWorkerMethodId: '',
   concurrencyPolicy: 'skip_if_open',
   rotationTargetsText: '',
   requireExecutionReceipt: false,
@@ -255,6 +256,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
       priority: job.priority || 'medium',
       projectId: job.projectId || '',
       methodId: job.methodId || '',
+      defaultWorkerMethodId: job.defaultWorkerMethodId || '',
       concurrencyPolicy: job.concurrencyPolicy || 'skip_if_open',
       rotationTargetsText: jobTargets(job).join('\n'),
       requireExecutionReceipt: jobNeedsReceipt(job),
@@ -359,6 +361,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
               priority: draft.priority,
               projectId: draft.projectId || null,
               methodId: draft.methodId || null,
+              defaultWorkerMethodId: draft.defaultWorkerMethodId || null,
               concurrencyPolicy: draft.concurrencyPolicy,
               rotationTargets: draft.rotationTargetsText.split('\n').map(clean).filter(Boolean),
               requireExecutionReceipt: draft.requireExecutionReceipt,
@@ -382,6 +385,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
             priority: draft.priority,
             projectId: draft.projectId || null,
             methodId: draft.methodId || null,
+            defaultWorkerMethodId: draft.defaultWorkerMethodId || null,
             concurrencyPolicy: draft.concurrencyPolicy,
             rotationTargets: draft.rotationTargetsText.split('\n').map(clean).filter(Boolean),
             requireExecutionReceipt: draft.requireExecutionReceipt,
@@ -498,6 +502,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
           {visibleJobs.map((job) => {
             const project = projectById.get(job.projectId);
             const method = methodById.get(job.methodId);
+            const workerMethod = methodById.get(job.defaultWorkerMethodId);
             return (
               <Card key={job.id} elevation={0} sx={{ border: '1px solid ' + border }}>
                 <CardContent sx={{ p: '13px !important' }}>
@@ -575,7 +580,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
                     {method ? (
                       <Chip
                         size="small"
-                        label={'Method · ' + method.title + (method.currentVersionNumber ? ' · v' + method.currentVersionNumber : '')}
+                        label={'Manager Method · ' + method.title + (method.currentVersionNumber ? ' · v' + method.currentVersionNumber : '')}
                         color="primary"
                         variant="outlined"
                         sx={{ height: 20, fontSize: '0.56rem', fontWeight: 800 }}
@@ -583,7 +588,24 @@ export default function ManagerJobsPanel({ projects = [] }) {
                     ) : (
                       <Chip
                         size="small"
-                        label="Method未設定"
+                        label="Manager Method未設定"
+                        color="warning"
+                        variant="outlined"
+                        sx={{ height: 20, fontSize: '0.56rem', fontWeight: 800 }}
+                      />
+                    )}
+                    {workerMethod ? (
+                      <Chip
+                        size="small"
+                        label={'Worker Method · ' + workerMethod.title + (workerMethod.currentVersionNumber ? ' · v' + workerMethod.currentVersionNumber : '')}
+                        color="secondary"
+                        variant="outlined"
+                        sx={{ height: 20, fontSize: '0.56rem', fontWeight: 800 }}
+                      />
+                    ) : (
+                      <Chip
+                        size="small"
+                        label="Worker Method未設定"
                         color="warning"
                         variant="outlined"
                         sx={{ height: 20, fontSize: '0.56rem', fontWeight: 800 }}
@@ -797,11 +819,26 @@ export default function ManagerJobsPanel({ projects = [] }) {
                     </Select>
                   </FormControl>
                   <FormControl fullWidth>
-                    <InputLabel>Method</InputLabel>
+                    <InputLabel>Manager Method</InputLabel>
                     <Select
-                      label="Method"
+                      label="Manager Method"
                       value={draft.methodId}
                       onChange={(event) => changeMethod(event.target.value)}
+                    >
+                      <MenuItem value="">なし</MenuItem>
+                      {methods.filter((method) => method.status === 'active').map((method) => (
+                        <MenuItem key={method.id} value={method.id}>
+                          {method.title}{method.currentVersionNumber ? ' · v' + method.currentVersionNumber : ''}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <FormControl fullWidth>
+                    <InputLabel>標準Worker Method</InputLabel>
+                    <Select
+                      label="標準Worker Method"
+                      value={draft.defaultWorkerMethodId}
+                      onChange={(event) => setDraft((prev) => ({ ...prev, defaultWorkerMethodId: event.target.value }))}
                     >
                       <MenuItem value="">なし</MenuItem>
                       {methods.filter((method) => method.status === 'active').map((method) => (
@@ -943,7 +980,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
             >
               <Box sx={{ display: 'flex', gap: 0.7, alignItems: 'center', flexWrap: 'wrap', mb: 1 }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 950, flex: 1 }}>
-                  管理方法（Method）
+                  管理方法（Manager Method）
                 </Typography>
                 {methodContext?.currentVersion && (
                   <Chip
@@ -957,7 +994,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
 
               {!draft.methodId && (
                 <Alert severity="info">
-                  管理方法を選ぶと、何を見て・どう判断し・どんな仕事を作るかのルールをここで確認できます。
+                  Manager Methodを選ぶと、何を見て・どう判断し・どんな仕事を作るかのルールをここで確認できます。Workerの実行マニュアルはJobの「標準Worker Method」から各Work Itemへ参照で付与されます。
                 </Alert>
               )}
 
