@@ -315,7 +315,17 @@ Dashboardは人間向けのメモ一覧ではなく、エージェントが作�
 
 Spaceの `nextActions` はテーマの再開地点として残すが、複数エージェントが実際に作業する対象はWork Itemへ昇格させる。
 
-主な状態: `backlog` / `ready` / `in_progress` / `running` / `blocked` / `review` / `archived`。`backlog` は近い将来の実行対象から明示的に外して後回しにした仕事、`ready` はすぐ取得可能、`in_progress` は継続中だが現在Agentが触っていない状態、`running` は現在作業中の状態で、Agentがclaimした場合は `claimedBy` とleaseも付く。`archived` は完了・取り下げをまとめた終端状態。単に作業を中断しただけの継続タスクをbacklogへ落とさない。
+主な状態: `backlog` / `ready` / `in_progress` / `running` / `blocked` / `review` / `archived`。
+
+- `backlog`: 近い将来の実行対象から明示的に外して後回しにした仕事
+- `ready`: 未claimかつ、意図した現在のWorkerが最後まで実行可能な仕事
+- `in_progress`: 未完了だが、既知の互換実行経路があり再開可能
+- `running`: 現在作業中。Agentがclaimした場合は `claimedBy` + lease が所有権の正本
+- `blocked`: 未完了で、capability / safety / permission / external dependency等により現在は完遂不能
+- `review`: 実装とvalidationは完了しており、Manager/Humanの判断だけが残る
+- `archived`: 完了・取り下げ・統合・Incident解決を含む終端履歴
+
+未完了のcapability/write failureを `review` に送らない。単に作業セッションを中断しただけの継続タスクを `backlog` へ落とさない。
 
 さらに `executionMode = agent | human` を持つ。`human` は専用の **Human Tasks** 箱へ表示し、Agent Queueから除外する。
 
@@ -418,6 +428,51 @@ Manager Jobは単なるQueue生成器ではなく、担当領域に対する**Mi
 自己改善は実データに根拠がある場合のみ行う。bundling、dedupe、観測順、validation、handoff等の低リスクな手順改善は1レビュー最大1件まで新MethodVersionとして自律適用してよい。一方、Mission、責任範囲、品質基準、安全境界、対象範囲などの方針変更は人間へ提案し、承認なしに変更しない。改善後は次回レビューで効果を検証する。
 
 Outcome Reviewの起動時刻はManager Jobには保存せず、通常Runと同様に外部schedulerが所有する。Scheduled Task側はレビュー手順を再定義せず、Manager JobのMission Contractとactive Methodを正本として呼び出すだけにする。
+
+#### Worker escalation / System Incident
+
+Workerは実行上の問題を発見したとき、原則としてIncidentを直接起票せず、`work_item_report_problem` でまずManagerへ報告する。
+
+Worker問題報告は以下を構造化して保存する。
+
+- symptom
+- category: capability / safety / external_dependency / state / validation / tool_error / unknown
+- attempted
+- evidence
+- affectedWork
+- requiredCapability
+- nextPossibleStep
+
+状態は、既知の再開経路があれば `in_progress`、現在完遂不能なら `blocked` とする。
+
+Managerは新規仕事を作る前にWorker escalationをtriageする。
+
+- 個別Work Itemのscope / validation / routing変更だけで解決 → Work Itemを修正。Incident不要
+- 別の正規capabilityで解決 → reroute。Incident不要
+- 再発性・横断性がある、Manager通常権限では直らない、Operating Model / Method / code / schema / connector / schedulerの変更が必要 → `system_incident`
+- Mission / policy / safety境界 / credentials / permissions / major architecture判断が必要 → Humanへ
+
+System Incidentは新しい大規模Entityを増やさず、既存Work Itemを `sourceType=system_incident` として再利用する。ただし通常Worker Queueからは除外し、Agent HQ UIで別表示する。
+
+Incidentの解決はエラーが消えただけではなく、
+
+```
+Detect → Diagnose → Repair → Regression check → Prevention
+```
+
+までを要求する。rootCause / fix / prevention / evidence / operatingModelChanged を履歴として残す。
+
+週次Manager Outcome ReviewではIncident件数だけでなく、Workerから上がった問題、Managerが局所解決した内容、Incident化した構造問題、未解決Incident、再発防止、過去Incidentの再発有無を人間へ報告する。
+
+#### Agent HQ governance artifacts
+
+Agent HQ自体の不具合を将来修復しやすくするため、役割を3層に分ける。
+
+- **Operating Model**: 現在どうあるべきか。正本は `docs/AGENT_HQ_OPERATING_MODEL.md`
+- **Decision Log**: なぜ重要な設計判断を変更したか。正本は `docs/AGENT_HQ_DECISION_LOG.md`
+- **System Incident**: 実際に起きた失敗、root cause、fix、prevention。My Portalの `sourceType=system_incident` Work Item
+
+`control_plane_overview` はcurrent Operating Model、未解決Incident、Worker→Manager escalationを返す。Agent HQの挙動がおかしいと指摘された場合は、まずExpected（Operating Model）とActual（現在のQueue/Run/Incident）を比較してから修正する。
 
 #### 既存rotation / receipt機能
 
