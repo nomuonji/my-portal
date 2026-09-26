@@ -47,7 +47,6 @@ import TaskAltOutlinedIcon from '@mui/icons-material/TaskAltOutlined';
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
-import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 
 const queueColumns = [
@@ -57,7 +56,6 @@ const queueColumns = [
   { id: 'running', label: 'Running', hint: 'いま作業中', icon: SmartToyOutlinedIcon },
   { id: 'blocked', label: 'Blocked', hint: '判断・外部条件待ち', icon: WarningAmberOutlinedIcon },
   { id: 'review', label: 'Review', hint: '確認・引継ぎ待ち', icon: TaskAltOutlinedIcon },
-  { id: 'archived', label: 'Archived', hint: '完了・取り下げ済み', icon: ArchiveOutlinedIcon },
 ];
 
 const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
@@ -324,6 +322,20 @@ function Dashboard() {
     [allAgentWork],
   );
 
+  const completedWork = useMemo(
+    () => workItems
+      .filter((item) => ['archived', 'done', 'cancelled'].includes(item.status))
+      .sort((a, b) => toMillis(b.finishedAt || b.updatedAt || b.createdAt) - toMillis(a.finishedAt || a.updatedAt || a.createdAt)),
+    [workItems],
+  );
+
+  const recentCompletedWork = useMemo(() => {
+    const cutoff = Date.now() - (7 * 24 * 60 * 60 * 1000);
+    return completedWork
+      .filter((item) => toMillis(item.finishedAt || item.updatedAt || item.createdAt) >= cutoff)
+      .slice(0, 8);
+  }, [completedWork]);
+
   const activeSpaces = useMemo(
     () => spaces
       .filter((item) => item.status === 'active')
@@ -490,9 +502,8 @@ function Dashboard() {
     moveWorkItem(item, destination.droppableId);
   };
 
-  const queueFor = (status) => (status === 'archived'
-    ? allAgentWork.filter((item) => ['archived', 'done', 'cancelled'].includes(item.status))
-    : agentWork.filter((item) => item.status === status))
+  const queueFor = (status) => agentWork
+    .filter((item) => item.status === status)
     .sort((a, b) => {
       const priorityDiff = (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2);
       if (priorityDiff !== 0) return priorityDiff;
@@ -897,7 +908,7 @@ function Dashboard() {
             <HubOutlinedIcon color="primary" />
             <Box>
               <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
-                Execution Queue
+                Workerの仕事
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 Workerへ渡す仕事の流れです。ドラッグで状態を動かせます。
@@ -1135,6 +1146,87 @@ function Dashboard() {
             })}
             </Box>
           </DragDropContext>
+        </Paper>
+
+        <Paper
+          elevation={0}
+          sx={{ p: 1.25, border: '1px solid ' + border, background: glass }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.7, mb: 0.9, flexWrap: 'wrap' }}>
+            <TaskAltOutlinedIcon color="primary" />
+            <Box sx={{ flex: 1, minWidth: 180 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
+                最近の完了
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                作業ボードからは外れた完了履歴です。直近7日だけ表示し、古い履歴は運用データとして残します。
+              </Typography>
+            </Box>
+            <Chip size="small" label={'7日間 ' + recentCompletedWork.length} sx={{ height: 21 }} />
+            {completedWork.length > recentCompletedWork.length && (
+              <Chip
+                size="small"
+                variant="outlined"
+                label={'全履歴 ' + completedWork.length}
+                sx={{ height: 21 }}
+              />
+            )}
+          </Box>
+
+          <Stack spacing={0.65}>
+            {recentCompletedWork.map((item) => (
+              <Box
+                key={item.id}
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', md: 'minmax(0,1fr) auto' },
+                  gap: 0.6,
+                  alignItems: 'center',
+                  p: 0.8,
+                  borderRadius: 1.3,
+                  bgcolor: alpha(theme.palette.text.primary, isDark ? 0.04 : 0.025),
+                }}
+              >
+                <Box sx={{ minWidth: 0 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                    <Typography variant="body2" sx={{ fontWeight: 850 }}>
+                      {item.title || 'Untitled'}
+                    </Typography>
+                    {item.sourceType === 'manager_job' && (
+                      <Chip size="small" label="Manager配下" variant="outlined" sx={{ height: 18, fontSize: '0.52rem' }} />
+                    )}
+                    {item.completedBy && (
+                      <Chip size="small" label={item.completedBy} sx={{ height: 18, fontSize: '0.52rem' }} />
+                    )}
+                  </Box>
+                  {item.resultSummary && (
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                        mt: 0.25,
+                        lineHeight: 1.35,
+                      }}
+                    >
+                      {item.resultSummary}
+                    </Typography>
+                  )}
+                </Box>
+                <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+                  {formatDate(item.finishedAt || item.updatedAt || item.createdAt)}
+                </Typography>
+              </Box>
+            ))}
+            {recentCompletedWork.length === 0 && (
+              <Typography variant="body2" color="text.secondary">
+                直近7日に完了した仕事はありません。
+              </Typography>
+            )}
+          </Stack>
         </Paper>
 
       </Box>
