@@ -8,6 +8,7 @@
 
 [functions]
   directory = "netlify/functions"
+  included_files = ["docs/AGENT_HQ_OPERATING_MODEL.md", "docs/AGENT_HQ_DECISION_LOG.md"]
 
 # React Router is client-side. Keep the explicit Agent Ideas rewrite for clarity,
 # then fall back every other non-function route to the SPA entry point.
