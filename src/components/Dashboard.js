@@ -84,6 +84,115 @@ const formatDate = (value) => {
 
 const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
 
+function PixelPerson({ kind = 'worker', size = 44 }) {
+  const palette = {
+    owner: { shirt: '#9c6ade', accent: '#f5c2e7' },
+    manager: { shirt: '#4f8cff', accent: '#9ec5ff' },
+    worker: { shirt: '#45b77a', accent: '#9be5bc' },
+    human: { shirt: '#e59b42', accent: '#ffd59a' },
+  };
+  const colors = palette[kind] || palette.worker;
+  const scale = size / 11;
+
+  return (
+    <Box
+      aria-hidden
+      sx={{
+        width: size,
+        height: size,
+        position: 'relative',
+        flexShrink: 0,
+        imageRendering: 'pixelated',
+      }}
+    >
+      <Box
+        sx={{
+          position: 'absolute',
+          left: 4 * scale,
+          top: 1 * scale,
+          width: 3 * scale,
+          height: 3 * scale,
+          bgcolor: '#f2c7a5',
+          boxShadow: `
+            -${1 * scale}px ${1 * scale}px 0 #f2c7a5,
+            ${1 * scale}px ${1 * scale}px 0 #f2c7a5
+          `,
+        }}
+      />
+      <Box
+        sx={{
+          position: 'absolute',
+          left: 3 * scale,
+          top: 0,
+          width: 5 * scale,
+          height: 1 * scale,
+          bgcolor: '#3d342f',
+          boxShadow: `
+            0 ${1 * scale}px 0 #3d342f,
+            -${1 * scale}px ${1 * scale}px 0 #3d342f
+          `,
+        }}
+      />
+      <Box
+        sx={{
+          position: 'absolute',
+          left: 3 * scale,
+          top: 5 * scale,
+          width: 5 * scale,
+          height: 3 * scale,
+          bgcolor: colors.shirt,
+          boxShadow: `
+            -${1 * scale}px ${1 * scale}px 0 ${colors.shirt},
+            ${5 * scale}px ${1 * scale}px 0 ${colors.shirt}
+          `,
+        }}
+      />
+      <Box
+        sx={{
+          position: 'absolute',
+          left: 3 * scale,
+          top: 8 * scale,
+          width: 2 * scale,
+          height: 2 * scale,
+          bgcolor: colors.accent,
+          boxShadow: `${3 * scale}px 0 0 ${colors.accent}`,
+        }}
+      />
+    </Box>
+  );
+}
+
+function OfficeRole({ kind, title, subtitle, count }) {
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 0.9,
+        minWidth: 0,
+        px: 1,
+        py: 0.8,
+        borderRadius: 1.5,
+      }}
+    >
+      <PixelPerson kind={kind} size={40} />
+      <Box sx={{ minWidth: 0 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Typography variant="caption" sx={{ fontWeight: 950 }}>
+            {title}
+          </Typography>
+          {count !== undefined && (
+            <Chip size="small" label={count} sx={{ height: 18, fontSize: '0.55rem' }} />
+          )}
+        </Box>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.25 }}>
+          {subtitle}
+        </Typography>
+      </Box>
+    </Box>
+  );
+}
+
 function Dashboard() {
   const [workItems, setWorkItems] = useState([]);
   const [spaces, setSpaces] = useState([]);
@@ -391,18 +500,10 @@ function Dashboard() {
     });
 
   const kpis = [
-    { label: 'Backlog', value: queueFor('backlog').length, sub: '明示的に後回し' },
-    { label: 'Ready', value: queueFor('ready').length, sub: '着手可能' },
-    { label: 'Working', value: queueFor('in_progress').length, sub: '進行中・待機' },
-    { label: 'Running', value: queueFor('running').length, sub: 'いま作業中' },
-    { label: 'Blocked', value: queueFor('blocked').length, sub: '要判断 / 外部待ち' },
-    { label: 'Archived', value: queueFor('archived').length, sub: '完了・取り下げ' },
-    { label: 'Human', value: humanTasks.length, sub: '人間の操作・判断待ち' },
-    {
-      label: 'Projects',
-      value: activeProjects.length,
-      sub: 'implementation workspaces',
-    },
+    { label: '仕事待ち', value: queueFor('ready').length, sub: 'Workerが取れる仕事' },
+    { label: '作業中', value: queueFor('running').length + queueFor('in_progress').length, sub: 'Agentが進めている仕事' },
+    { label: '要確認', value: queueFor('blocked').length + queueFor('review').length, sub: '詰まり・確認待ち' },
+    { label: 'あなた待ち', value: humanTasks.length, sub: '本人の操作・判断' },
   ];
 
   return (
@@ -430,7 +531,7 @@ function Dashboard() {
               variant="overline"
               sx={{ fontWeight: 900, letterSpacing: '0.14em', color: 'text.secondary' }}
             >
-              AGENT CONTROL PLANE
+              AGENT OFFICE
             </Typography>
             <Typography variant="h4" sx={{ fontWeight: 900, letterSpacing: '-0.035em' }}>
               Agent HQ
@@ -438,10 +539,10 @@ function Dashboard() {
             <Typography
               variant="body2"
               color="text.secondary"
-              sx={{ mt: 0.7, maxWidth: 850, lineHeight: 1.7 }}
+              sx={{ mt: 0.7, maxWidth: 760, lineHeight: 1.7 }}
             >
-              ここをエージェントの作業管制塔として使います。Work Itemを取得して実行し、
-              長期テーマ（Space） / Project / Run の文脈を引き継ぎながら、複数エージェントが競合せず並列に進められる状態を可視化します。
+              小さな会社のように、あなたが方針を決め、マネージャーが仕事を見つけ、Workerが実行します。
+              My Portalはその「会社の状態」を見る場所です。
             </Typography>
           </Box>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -470,10 +571,39 @@ function Dashboard() {
         </Box>
       </Paper>
 
+      <Paper
+        elevation={0}
+        sx={{
+          p: 0.8,
+          mb: 1.2,
+          border: '1px solid ' + border,
+          background: glass,
+          overflowX: 'auto',
+        }}
+      >
+        <Box
+          sx={{
+            minWidth: { xs: 620, md: 0 },
+            display: 'grid',
+            gridTemplateColumns: '1fr auto 1fr auto 1fr auto 1fr',
+            alignItems: 'center',
+            gap: 0.25,
+          }}
+        >
+          <OfficeRole kind="owner" title="あなた" subtitle="方針・承認" count={humanTasks.length} />
+          <Typography color="text.disabled" sx={{ fontWeight: 900 }}>→</Typography>
+          <OfficeRole kind="manager" title="マネージャー" subtitle="仕事を見つける" />
+          <Typography color="text.disabled" sx={{ fontWeight: 900 }}>→</Typography>
+          <OfficeRole kind="worker" title="Worker" subtitle="実際に作業する" count={queueFor('running').length} />
+          <Typography color="text.disabled" sx={{ fontWeight: 900 }}>→</Typography>
+          <OfficeRole kind="human" title="確認デスク" subtitle="詰まり・レビュー" count={queueFor('blocked').length + queueFor('review').length} />
+        </Box>
+      </Paper>
+
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: { xs: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)', xl: 'repeat(8, 1fr)' },
+          gridTemplateColumns: { xs: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' },
           gap: 1,
           mb: 1.5,
         }}
@@ -487,7 +617,7 @@ function Dashboard() {
             <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>
               {item.label}
             </Typography>
-            <Typography variant="h4" sx={{ mt: 0.2, fontWeight: 900 }}>
+            <Typography variant="h5" sx={{ mt: 0.2, fontWeight: 900 }}>
               {item.value}
             </Typography>
             <Typography variant="caption" color="text.secondary">
@@ -515,7 +645,7 @@ function Dashboard() {
               Linear Inbox
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Linearの未完了Issue。Agentが実行するものだけWork Item化して、claim / lease管理へ移します。
+              外部から入ってきた仕事。必要なものだけ社内の仕事（Work Item）として取り込みます。
             </Typography>
           </Box>
           <Chip
@@ -653,7 +783,7 @@ function Dashboard() {
               Human Tasks
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              本人の操作・判断・承認など、人間が担当する必要がある仕事。Agent Queueには流れません。
+              ログイン・承認・本人判断など、あなたにしかできない仕事です。
             </Typography>
           </Box>
           <Chip size="small" label={humanTasks.length} sx={{ height: 21 }} />
@@ -770,7 +900,7 @@ function Dashboard() {
                 Execution Queue
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                カード左上のハンドルをドラッグして状態を移動します。Runningにも手動で移動でき、完了・取り下げはArchivedへまとめます。
+                Workerへ渡す仕事の流れです。ドラッグで状態を動かせます。
               </Typography>
             </Box>
           </Box>
@@ -1024,7 +1154,7 @@ function Dashboard() {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.7, mb: 1 }}>
             <FolderOutlinedIcon color="primary" />
             <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
-              Projects · 実装ワークスペース
+              Projects · 作業部屋
             </Typography>
             <Chip size="small" label={activeProjects.length} sx={{ ml: 'auto', height: 21 }} />
           </Box>
