@@ -400,6 +400,25 @@ Agent HQの人間向けUIは小さな会社をアナロジーとして使う。`
 
 Work Itemの完了ライフサイクルは、active queueとcompleted historyを分けて扱う。HQの作業ボードには `backlog / ready / in_progress / running / blocked / review` だけを表示し、`archived` は直近7日の「最近の完了」として別表示する。古い完了データは通常UIから外して履歴として保持し、保存期間や物理削除はManagerではなくsystem housekeepingの責務とする。Managerは全完了タスクを逐一承認せず、Workerが完了可否を確定できない場合だけ `review` を確認する。`deliveryStatus=live_verified` かつacceptance criteriaを満たす通常完了はWorkerが直接archivedへ完了してよい。
 
+#### Mission / Outcome Review
+
+Manager Jobは単なるQueue生成器ではなく、担当領域に対する**Missionと結果責任**を持つ。Mission ContractはManager Job metadataに保存し、少なくとも以下を含める。
+
+- mission: 最終的に何を良くする責任を持つか
+- responsibilities / nonResponsibilities
+- reviewPolicy: 人間向け成果レビューの期間
+- outcomeMetrics: 活動量ではなく成果を測る指標
+- failureSignals: 失敗・停滞とみなす兆候
+- selfImprovementPolicy: Methodをどう自己改善するか
+
+通常Runは日々のObserve → Reconcile → Decide → Delegateを担い、定期Outcome Reviewは一定期間の結果責任を評価する。Outcome ReviewではWork Item数を成果とみなさず、live_verified delivery、cycle time、ready/in_progress/review/blocked滞留、重複・手戻り、変更URLの7/28/90日成果、portfolio検索指標、計測欠損を確認する。
+
+人間向け報告は Mission status / 成果 / 問題・失敗 / 原因仮説 / 次の課題 / 自己改善 を基本形とする。問題の原因はManager / Method / Worker / 外部制約 / 計測へ分解する。
+
+自己改善は実データに根拠がある場合のみ行う。bundling、dedupe、観測順、validation、handoff等の低リスクな手順改善は1レビュー最大1件まで新MethodVersionとして自律適用してよい。一方、Mission、責任範囲、品質基準、安全境界、対象範囲などの方針変更は人間へ提案し、承認なしに変更しない。改善後は次回レビューで効果を検証する。
+
+Outcome Reviewの起動時刻はManager Jobには保存せず、通常Runと同様に外部schedulerが所有する。Scheduled Task側はレビュー手順を再定義せず、Manager JobのMission Contractとactive Methodを正本として呼び出すだけにする。
+
 #### 既存rotation / receipt機能
 
 既存の以下の情報はManager化後も維持する。
