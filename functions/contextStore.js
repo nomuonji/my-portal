@@ -2055,7 +2055,9 @@ async function managerJobGetContext(input) {
     db().collection(COLLECTIONS.workItems).limit(1000).get(),
   ]);
 
-  const queue = sortRecent(workSnapshot.docs.map(documentToObject))
+  const allWork = sortRecent(workSnapshot.docs.map(documentToObject));
+  const queue = allWork
+    .filter((item) => item.sourceType !== 'system_incident')
     .filter((item) => !['archived', 'done', 'cancelled'].includes(item.status))
     .filter((item) => !job.projectId || item.projectId === job.projectId)
     .slice(0, 120)
@@ -2071,10 +2073,34 @@ async function managerJobGetContext(input) {
       claimedBy: item.claimedBy || null,
       blockedReason: clampString(item.blockedReason, 500) || '',
       resultSummary: clampString(item.resultSummary, 800) || '',
+      escalation: item.metadata?.escalation || null,
       managerRunId: item.metadata?.managerJob?.managerRunId || null,
       managerReason: clampString(item.metadata?.managerJob?.reason, 1000) || '',
       updatedAt: item.updatedAt,
     }));
+
+  const workerEscalations = allWork
+    .filter((item) => item.metadata?.escalation?.status === 'reported')
+    .filter((item) => item.sourceType === 'manager_job' && item.sourceId === job.id)
+    .slice(0, 50)
+    .map((item) => ({
+      id: item.id,
+      title: item.title,
+      status: item.status,
+      priority: item.priority,
+      escalation: item.metadata?.escalation,
+      blockedReason: clampString(item.blockedReason, 1000) || '',
+      updatedAt: item.updatedAt,
+    }));
+
+  const relatedIncidents = allWork
+    .filter((item) => item.sourceType === 'system_incident')
+    .filter((item) =>
+      item.sourceId === job.id
+      || (item.metadata?.incident?.affectedManagerJobIds || []).includes(job.id)
+    );
+  const activeIncidents = relatedIncidents.filter((item) => !['archived', 'done', 'cancelled'].includes(item.status)).slice(0, 50);
+  const recentResolvedIncidents = relatedIncidents.filter((item) => ['archived', 'done', 'cancelled'].includes(item.status)).slice(0, 20);
 
   return {
     job,
@@ -2090,6 +2116,14 @@ async function managerJobGetContext(input) {
       generatedWorkPolicy: {
         requireExecutionReceipt: jobRequiresReceipt(job),
         allowedActionTypes: job.allowedActionTypes || job.metadata?.allowedActionTypes || [],
+        readyRequiresCapabilityMatch: job.metadata?.readyRequiresCapabilityMatch === true,
+        workerCapabilityProfile: job.metadata?.workerCapabilityProfile || null,
+      },
+      operatingModel: AGENT_HQ_OPERATING_MODEL,
+      escalationPolicy: {
+        workerReportsToManagerFirst: true,
+        incidentSourceType: 'system_incident',
+        incidentThreshold: AGENT_HQ_OPERATING_MODEL.escalation.incidentThreshold,
       },
       method: methodContext?.executionContract || null,
       loop: ['observe', 'reconcile', 'decide', 'delegate'],
@@ -2099,6 +2133,12 @@ async function managerJobGetContext(input) {
     space,
     project: projectSnapshot && projectSnapshot.exists ? documentToObject(projectSnapshot) : null,
     currentQueue: queue,
+    workerEscalations,
+    systemIncidents: {
+      active: activeIncidents,
+      recentResolved: recentResolvedIncidents,
+    },
+    operatingModel: AGENT_HQ_OPERATING_MODEL,
     recentManagerRuns: managerHistory.items,
   };
 }
