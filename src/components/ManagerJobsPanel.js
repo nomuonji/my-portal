@@ -26,9 +26,7 @@ import { alpha } from '@mui/material/styles';
 import AddTaskOutlinedIcon from '@mui/icons-material/AddTaskOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
-import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
 import RepeatRoundedIcon from '@mui/icons-material/RepeatRounded';
-import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import { auth } from '../firebase';
 
 const emptyDraft = {
@@ -128,7 +126,6 @@ export default function ManagerJobsPanel({ projects = [] }) {
   const [methods, setMethods] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [runningId, setRunningId] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [editOpen, setEditOpen] = useState(false);
@@ -231,7 +228,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
       setManagerContext(result);
     } catch (err) {
       setManagerContext(null);
-      setError('Managed Workの読み込みに失敗しました: ' + err.message);
+      setError('配下の仕事の読み込みに失敗しました: ' + err.message);
     } finally {
       setManagerContextLoading(false);
     }
@@ -423,34 +420,6 @@ export default function ManagerJobsPanel({ projects = [] }) {
     }
   };
 
-  const runNow = async (job) => {
-    setRunningId(job.id);
-    setError('');
-    try {
-      const result = await api('', {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'manager_job_start',
-          id: job.id,
-          invocationId: 'portal-ui:' + job.id + ':' + Date.now(),
-          requestedBy: 'portal-ui',
-        }),
-      });
-      if (result.skipped) {
-        setNotice('既存の未完了Manager Runがあります: ' + result.managerRun?.id);
-      } else if (result.duplicate) {
-        setNotice('同じ起動IDのManager Runがすでにあります。');
-      } else {
-        setNotice('Manager Runを作成しました。外部AgentはこのRunをclaimして、Queueの観測・整理・Work Item生成を行います。');
-      }
-      await refresh();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setRunningId('');
-    }
-  };
-
   const openHistory = async (job) => {
     setHistoryJob(job);
     setHistory([]);
@@ -480,7 +449,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
     ].join('\n');
     try {
       await navigator.clipboard.writeText(prompt);
-      setNotice('外部ChatGPT用のManager起動指示をコピーしました。');
+      setNotice('外部ChatGPT用の起動文をコピーしました。');
     } catch (err) {
       setError('コピーに失敗しました: ' + err.message);
     }
@@ -503,10 +472,10 @@ export default function ManagerJobsPanel({ projects = [] }) {
           <RepeatRoundedIcon color="primary" />
           <Box sx={{ flex: 1, minWidth: 220 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
-              Manager Jobs
+              マネージャー
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              対象領域を観測し、Queueを整理して必要なWork Itemを0〜N件生み出すマネージャー。実行時刻・cron・timezoneは外部スケジューラが担当します。
+              担当領域を見回し、必要な仕事を見つけてWorkerへ配る管理役です。実行は外部ChatGPT / Scheduled Taskが担当します。
             </Typography>
           </Box>
           <Chip size="small" label={visibleJobs.length} sx={{ height: 21 }} />
@@ -531,7 +500,44 @@ export default function ManagerJobsPanel({ projects = [] }) {
             return (
               <Card key={job.id} elevation={0} sx={{ border: '1px solid ' + border }}>
                 <CardContent sx={{ p: '13px !important' }}>
-                  <Box sx={{ display: 'flex', gap: 0.7, alignItems: 'flex-start' }}>
+                  <Box sx={{ display: 'flex', gap: 0.8, alignItems: 'flex-start' }}>
+                    <Box
+                      aria-hidden
+                      sx={{
+                        width: 30,
+                        height: 30,
+                        flexShrink: 0,
+                        position: 'relative',
+                        bgcolor: alpha(theme.palette.primary.main, 0.08),
+                        border: '1px solid ' + border,
+                        borderRadius: 1,
+                        '&::before': {
+                          content: '""',
+                          position: 'absolute',
+                          width: 4,
+                          height: 4,
+                          left: 13,
+                          top: 5,
+                          bgcolor: 'currentColor',
+                          color: theme.palette.text.primary,
+                          boxShadow: [
+                            '-4px 4px 0 currentColor',
+                            '0 4px 0 currentColor',
+                            '4px 4px 0 currentColor',
+                            '-4px 8px 0 currentColor',
+                            '0 8px 0 currentColor',
+                            '4px 8px 0 currentColor',
+                            '-8px 12px 0 currentColor',
+                            '-4px 12px 0 currentColor',
+                            '0 12px 0 currentColor',
+                            '4px 12px 0 currentColor',
+                            '8px 12px 0 currentColor',
+                            '-4px 16px 0 currentColor',
+                            '4px 16px 0 currentColor',
+                          ].join(','),
+                        },
+                      }}
+                    />
                     <Box sx={{ flex: 1, minWidth: 0 }}>
                       <Typography variant="body2" sx={{ fontWeight: 950 }}>
                         {job.title}
@@ -621,23 +627,11 @@ export default function ManagerJobsPanel({ projects = [] }) {
                   </Box>
 
                   <Stack direction="row" spacing={0.55} useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
-                    <Button
-                      size="small"
-                      variant="contained"
-                      startIcon={<PlayArrowRoundedIcon />}
-                      onClick={() => runNow(job)}
-                      disabled={job.status !== 'active' || runningId === job.id}
-                    >
-                      {runningId === job.id ? '起動中…' : 'Manager起動'}
-                    </Button>
                     <Button size="small" startIcon={<HistoryOutlinedIcon />} onClick={() => openHistory(job)}>
                       履歴
                     </Button>
                     <Button size="small" onClick={() => openEdit(job)}>
                       詳細・編集
-                    </Button>
-                    <Button size="small" startIcon={<ContentCopyOutlinedIcon />} onClick={() => copyTriggerPrompt(job)}>
-                      起動指示
                     </Button>
                     {job.status === 'active' ? (
                       <Button
@@ -676,7 +670,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
       </Paper>
 
       <Dialog open={editOpen} onClose={() => !saving && setEditOpen(false)} fullWidth maxWidth="lg">
-        <DialogTitle>{editing ? 'Manager Job 詳細・編集' : 'Manager Jobを追加'}</DialogTitle>
+        <DialogTitle>{editing ? 'マネージャー設定' : 'マネージャーを追加'}</DialogTitle>
         <DialogContent>
           <Stack spacing={1.6} sx={{ mt: 0.8 }}>
             <Paper variant="outlined" sx={{ p: 1.4 }}>
@@ -709,12 +703,12 @@ export default function ManagerJobsPanel({ projects = [] }) {
                   fullWidth
                 />
                 <TextField
-                  label="このJob固有の手順・制約"
+                  label="このマネージャー固有のルール"
                   value={draft.instructions}
                   onChange={(event) => setDraft((prev) => ({ ...prev, instructions: event.target.value }))}
                   multiline
                   minRows={4}
-                  helperText="共通して育てる実行方法は下のMethodに置き、この欄にはこのJobだけの条件を残します。"
+                  helperText="この担当だけの条件をここに残します。共通の管理方法は下のMethodで育てます。"
                   fullWidth
                 />
                 <TextField
@@ -822,22 +816,22 @@ export default function ManagerJobsPanel({ projects = [] }) {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, flexWrap: 'wrap', mb: 0.9 }}>
                   <Box sx={{ flex: 1, minWidth: 180 }}>
                     <Typography variant="subtitle2" sx={{ fontWeight: 950 }}>
-                      Managed Work
+                      配下の仕事
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      このManagerが生み出し、まだ管轄している未完了タスクだけ表示します。
+                      このマネージャーが生み出し、まだ見守っている未完了の仕事です。
                     </Typography>
                   </Box>
                   {!managerContextLoading && <Chip size="small" label={managedWork.length + ' open'} sx={{ height: 20 }} />}
                 </Box>
 
                 {managerContextLoading && (
-                  <Typography variant="body2" color="text.secondary">Managed Workを読み込み中…</Typography>
+                  <Typography variant="body2" color="text.secondary">配下の仕事を読み込み中…</Typography>
                 )}
 
                 {!managerContextLoading && managedWork.length === 0 && (
                   <Typography variant="caption" color="text.secondary">
-                    現在、このManager由来の未完了Work Itemはありません。
+                    現在、配下に未完了の仕事はありません。
                   </Typography>
                 )}
 
@@ -909,7 +903,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
             >
               <Box sx={{ display: 'flex', gap: 0.7, alignItems: 'center', flexWrap: 'wrap', mb: 1 }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 950, flex: 1 }}>
-                  Method · 管理方法
+                  管理方法（Method）
                 </Typography>
                 {methodContext?.currentVersion && (
                   <Chip
@@ -1028,8 +1022,16 @@ export default function ManagerJobsPanel({ projects = [] }) {
             </Paper>
 
             <Alert severity="info">
-              実行時刻・頻度・timezoneはMy Portalでは管理しません。外部ChatGPT等には、このManager Job IDだけを定期的に起動させます。Manager Jobは実作業ではなく、Queueを管理して仕事を生み出します。
+              実行はMy Portalの外から行います。Scheduled Taskや別Chatからこのマネージャーを呼び出し、My Portalは設定・配下の仕事・活動記録だけを管理します。
             </Alert>
+
+            {editing && (
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <Button size="small" variant="text" onClick={() => copyTriggerPrompt(editing)}>
+                  外部ChatGPT用の起動文をコピー
+                </Button>
+              </Box>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -1039,27 +1041,27 @@ export default function ManagerJobsPanel({ projects = [] }) {
             onClick={save}
             disabled={saving || methodContextLoading}
           >
-            {saving ? '保存中…' : 'Job / Methodを保存'}
+            {saving ? '保存中…' : '設定を保存'}
           </Button>
         </DialogActions>
       </Dialog>
 
       <Dialog open={historyOpen} onClose={() => setHistoryOpen(false)} fullWidth maxWidth="md">
-        <DialogTitle>{historyJob?.title || 'Manager Job'} · Manager Run履歴</DialogTitle>
+        <DialogTitle>{historyJob?.title || 'Manager Job'} · 活動履歴</DialogTitle>
         <DialogContent>
           {historyLoading && <Typography variant="body2">読み込み中…</Typography>}
           {!historyLoading && history.length === 0 && (
-            <Typography variant="body2" color="text.secondary">まだManager Run履歴はありません。</Typography>
+            <Typography variant="body2" color="text.secondary">まだ活動履歴はありません。</Typography>
           )}
           <Stack spacing={0.8} sx={{ mt: 0.5 }}>
             {history.map((item) => (
               <Paper key={item.id} variant="outlined" sx={{ p: 1.1 }}>
                 <Box sx={{ display: 'flex', gap: 0.7, alignItems: 'center', flexWrap: 'wrap' }}>
                   <Typography variant="body2" sx={{ fontWeight: 900, flex: 1 }}>
-                    Manager Run · {item.id}
+                    {formatDate(item.finishedAt || item.updatedAt || item.createdAt)} の管理活動
                   </Typography>
                   <Chip size="small" label={item.status} sx={{ height: 20, fontSize: '0.58rem' }} />
-                  <Typography variant="caption" color="text.secondary">{formatDate(item.finishedAt || item.updatedAt || item.createdAt)}</Typography>
+                  
                 </Box>
                 <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap" sx={{ mt: 0.55 }}>
                   <Chip size="small" variant="outlined" label={'作成 ' + (item.createdWorkItemIds || []).length} sx={{ height: 19, fontSize: '0.55rem' }} />
