@@ -396,6 +396,8 @@ Agent HQの詳細/編集画面では、Method名・概要・Purpose・instructio
 
 UIでは認知負荷を抑えるため、Manager JobカードにはManaged Workのopen件数とRunning / Blocked / Reviewの注意状態だけを表示する。詳細/編集画面では `Job → Managed Work → Method` の順にまとめ、Managed WorkはそのManager由来の未完了Work Itemだけを最大8件まで簡潔に表示する。
 
+Agent HQの人間向けUIは小さな会社をアナロジーとして使う。`あなた（方針・承認） → マネージャー（仕事を発見） → Worker（実行） → 確認デスク（blocked/review）` を軽いドット絵で可視化するが、保存Entity名はManager Job / Work Item / Project等のまま維持する。Portal内からManagerを実行するボタンは置かず、外部ChatGPT/Scheduled Task用の起動文コピーだけをマネージャー設定の補助操作として残す。
+
 #### 既存rotation / receipt機能
 
 既存の以下の情報はManager化後も維持する。
