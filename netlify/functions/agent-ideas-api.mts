@@ -275,6 +275,7 @@ export default async (request: Request) => {
           spaceId: body.spaceId,
           projectId: body.projectId,
           methodId: body.methodId,
+          defaultWorkerMethodId: body.defaultWorkerMethodId,
           concurrencyPolicy: body.concurrencyPolicy || "skip_if_open",
           rotationTargets: body.rotationTargets || [],
           requireExecutionReceipt: body.requireExecutionReceipt === true,
@@ -302,6 +303,9 @@ export default async (request: Request) => {
           id: body.id,
           agent: body.agent || "portal-ui",
           model: body.model || "my-portal-ui",
+          runnerId: body.runnerId || "my-portal-ui",
+          availableCapabilities: body.availableCapabilities || [],
+          availableTools: body.availableTools || [],
           leaseMinutes: body.leaseMinutes,
         }));
       }
