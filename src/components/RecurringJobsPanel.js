@@ -37,7 +37,6 @@ const emptyDraft = {
   status: 'active',
   priority: 'medium',
   projectId: '',
-  spaceId: '',
   methodId: '',
   concurrencyPolicy: 'skip_if_open',
 };
@@ -73,7 +72,7 @@ async function api(path = '', options = {}) {
   return payload;
 }
 
-export default function RecurringJobsPanel({ projects = [], spaces = [] }) {
+export default function RecurringJobsPanel({ projects = [] }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const border = isDark
@@ -97,6 +96,9 @@ export default function RecurringJobsPanel({ projects = [], spaces = [] }) {
   const [historyJob, setHistoryJob] = useState(null);
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [expandedMethodId, setExpandedMethodId] = useState('');
+  const [methodContextByJob, setMethodContextByJob] = useState({});
+  const [methodLoadingId, setMethodLoadingId] = useState('');
 
   const projectById = useMemo(
     () => new Map(projects.map((item) => [item.id, item])),
@@ -144,7 +146,6 @@ export default function RecurringJobsPanel({ projects = [], spaces = [] }) {
       status: job.status || 'active',
       priority: job.priority || 'medium',
       projectId: job.projectId || '',
-      spaceId: job.spaceId || '',
       methodId: job.methodId || '',
       concurrencyPolicy: job.concurrencyPolicy || 'skip_if_open',
     });
@@ -173,7 +174,6 @@ export default function RecurringJobsPanel({ projects = [], spaces = [] }) {
               status: draft.status,
               priority: draft.priority,
               projectId: draft.projectId || null,
-              spaceId: draft.spaceId || null,
               methodId: draft.methodId || null,
               concurrencyPolicy: draft.concurrencyPolicy,
             },
@@ -192,7 +192,6 @@ export default function RecurringJobsPanel({ projects = [], spaces = [] }) {
             status: draft.status,
             priority: draft.priority,
             projectId: draft.projectId || null,
-            spaceId: draft.spaceId || null,
             methodId: draft.methodId || null,
             concurrencyPolicy: draft.concurrencyPolicy,
           }),
@@ -270,11 +269,35 @@ export default function RecurringJobsPanel({ projects = [], spaces = [] }) {
     }
   };
 
+  const toggleMethodDetails = async (job) => {
+    if (!job.methodId) return;
+    if (expandedMethodId === job.id) {
+      setExpandedMethodId('');
+      return;
+    }
+    setExpandedMethodId(job.id);
+    if (methodContextByJob[job.id]) return;
+
+    setMethodLoadingId(job.id);
+    setError('');
+    try {
+      const result = await api(
+        '?resource=recurring_job_context&id=' + encodeURIComponent(job.id) + '&historyLimit=5',
+      );
+      setMethodContextByJob((prev) => ({ ...prev, [job.id]: result }));
+    } catch (err) {
+      setExpandedMethodId('');
+      setError(err.message);
+    } finally {
+      setMethodLoadingId('');
+    }
+  };
+
   const copyTriggerPrompt = async (job) => {
     const prompt = [
       'My PortalのRecurring Job「' + job.id + '」を実行してください。',
       'recurring_job_start({ id: "' + job.id + '" }) で今回分のWork Itemを作成し、返されたWork Itemをwork_item_claimしてください。',
-      '実行前に recurring_job_get_context({ id: "' + job.id + '" }) を読み、Job固有のinstructions、Project / Space、紐付いたMethodのactive versionに従ってください。',
+      '実行前に recurring_job_get_context({ id: "' + job.id + '" }) を読み、Job固有のinstructions、Project、紐付いたMethodのactive versionに従ってください。',
       '完了後は通常のwork_item_finishで結果とnextActionsを残してください。',
     ].join('\n');
     try {
@@ -367,9 +390,161 @@ export default function RecurringJobsPanel({ projects = [], spaces = [] }) {
 
                   <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap" sx={{ mt: 0.8 }}>
                     {project && <Chip size="small" label={'Project · ' + project.name} variant="outlined" sx={{ height: 20, fontSize: '0.56rem' }} />}
-                    {method && <Chip size="small" label={'Method · ' + method.title + (method.currentVersionNumber ? ' · v' + method.currentVersionNumber : '')} variant="outlined" sx={{ height: 20, fontSize: '0.56rem' }} />}
+                    {method ? (
+                      <Chip
+                        size="small"
+                        label={'Method · ' + method.title + (method.currentVersionNumber ? ' · v' + method.currentVersionNumber : '')}
+                        color="primary"
+                        variant="outlined"
+                        sx={{ height: 20, fontSize: '0.56rem', fontWeight: 800 }}
+                      />
+                    ) : (
+                      <Chip
+                        size="small"
+                        label="Method未設定"
+                        color="warning"
+                        variant="outlined"
+                        sx={{ height: 20, fontSize: '0.56rem', fontWeight: 800 }}
+                      />
+                    )}
                     <Chip size="small" label={job.concurrencyPolicy === 'allow_overlap' ? '重複実行可' : '重複実行防止'} variant="outlined" sx={{ height: 20, fontSize: '0.56rem' }} />
                   </Stack>
+
+                  {method && (
+                    <Box sx={{ mt: 0.7 }}>
+                      <Button
+                        size="small"
+                        variant={expandedMethodId === job.id ? 'contained' : 'outlined'}
+                        onClick={() => toggleMethodDetails(job)}
+                        disabled={methodLoadingId === job.id}
+                        sx={{ textTransform: 'none', fontWeight: 800 }}
+                      >
+                        {methodLoadingId === job.id
+                          ? 'Method読込中…'
+                          : expandedMethodId === job.id
+                            ? 'Methodを閉じる'
+                            : 'Methodの中身を見る'}
+                      </Button>
+
+                      {expandedMethodId === job.id && methodContextByJob[job.id] && (() => {
+                        const methodContext = methodContextByJob[job.id].method;
+                        const methodEntity = methodContext?.method;
+                        const version = methodContext?.currentVersion;
+                        const stages = Array.isArray(version?.protocol?.stages) ? version.protocol.stages : [];
+                        const gates = Array.isArray(version?.qualityGates) ? version.qualityGates : [];
+                        return (
+                          <Paper
+                            variant="outlined"
+                            sx={{
+                              mt: 0.7,
+                              p: 1.1,
+                              bgcolor: alpha(theme.palette.primary.main, isDark ? 0.08 : 0.025),
+                            }}
+                          >
+                            <Box sx={{ display: 'flex', gap: 0.6, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <Typography variant="body2" sx={{ fontWeight: 950, flex: 1 }}>
+                                {methodEntity?.title || method.title}
+                              </Typography>
+                              <Chip
+                                size="small"
+                                label={version?.label || (version?.versionNumber ? 'v' + version.versionNumber : 'active')}
+                                color="primary"
+                                sx={{ height: 20, fontSize: '0.58rem' }}
+                              />
+                            </Box>
+
+                            {(methodEntity?.summary || methodEntity?.purpose) && (
+                              <Box sx={{ mt: 0.8 }}>
+                                {methodEntity?.summary && (
+                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 800 }}>
+                                    {methodEntity.summary}
+                                  </Typography>
+                                )}
+                                {methodEntity?.purpose && (
+                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.35, lineHeight: 1.55 }}>
+                                    {methodEntity.purpose}
+                                  </Typography>
+                                )}
+                              </Box>
+                            )}
+
+                            {version?.changeSummary && (
+                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+                                このversion: {version.changeSummary}
+                              </Typography>
+                            )}
+
+                            {version?.instructions && (
+                              <Box sx={{ mt: 1 }}>
+                                <Typography variant="caption" sx={{ fontWeight: 950 }}>
+                                  実行手順
+                                </Typography>
+                                <Box
+                                  component="pre"
+                                  sx={{
+                                    m: 0,
+                                    mt: 0.45,
+                                    p: 0.9,
+                                    borderRadius: 1.2,
+                                    bgcolor: alpha(theme.palette.background.default, isDark ? 0.45 : 0.7),
+                                    fontFamily: 'inherit',
+                                    fontSize: '0.72rem',
+                                    lineHeight: 1.6,
+                                    whiteSpace: 'pre-wrap',
+                                    wordBreak: 'break-word',
+                                    maxHeight: 320,
+                                    overflow: 'auto',
+                                  }}
+                                >
+                                  {version.instructions}
+                                </Box>
+                              </Box>
+                            )}
+
+                            {stages.length > 0 && (
+                              <Box sx={{ mt: 1 }}>
+                                <Typography variant="caption" sx={{ fontWeight: 950 }}>
+                                  Protocol
+                                </Typography>
+                                <Stack spacing={0.45} sx={{ mt: 0.45 }}>
+                                  {stages.map((stage, index) => (
+                                    <Box key={stage.id || index} sx={{ display: 'flex', gap: 0.6, alignItems: 'flex-start' }}>
+                                      <Chip
+                                        size="small"
+                                        label={index + 1}
+                                        sx={{ height: 19, minWidth: 28, fontSize: '0.55rem' }}
+                                      />
+                                      <Typography variant="caption" sx={{ lineHeight: 1.5 }}>
+                                        <Box component="span" sx={{ fontWeight: 850 }}>
+                                          {stage.id || stage.output || 'step'}
+                                        </Box>
+                                        {stage.goal ? ' — ' + stage.goal : ''}
+                                      </Typography>
+                                    </Box>
+                                  ))}
+                                </Stack>
+                              </Box>
+                            )}
+
+                            {gates.length > 0 && (
+                              <Box sx={{ mt: 1 }}>
+                                <Typography variant="caption" sx={{ fontWeight: 950 }}>
+                                  Quality Gates
+                                </Typography>
+                                <Stack spacing={0.35} sx={{ mt: 0.45 }}>
+                                  {gates.map((gate, index) => (
+                                    <Typography key={index} variant="caption" color="text.secondary" sx={{ lineHeight: 1.5 }}>
+                                      ✓ {gate}
+                                    </Typography>
+                                  ))}
+                                </Stack>
+                              </Box>
+                            )}
+                          </Paper>
+                        );
+                      })()}
+                    </Box>
+                  )}
 
                   <Box sx={{ mt: 0.9, p: 0.8, borderRadius: 1.4, bgcolor: alpha(theme.palette.primary.main, isDark ? 0.08 : 0.04) }}>
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
@@ -498,17 +673,6 @@ export default function RecurringJobsPanel({ projects = [], spaces = [] }) {
                 </Select>
               </FormControl>
               <FormControl fullWidth>
-                <InputLabel>Space</InputLabel>
-                <Select
-                  label="Space"
-                  value={draft.spaceId}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, spaceId: event.target.value }))}
-                >
-                  <MenuItem value="">なし</MenuItem>
-                  {spaces.map((space) => <MenuItem key={space.id} value={space.id}>{space.title || space.id}</MenuItem>)}
-                </Select>
-              </FormControl>
-              <FormControl fullWidth>
                 <InputLabel>Method</InputLabel>
                 <Select
                   label="Method"
@@ -561,7 +725,7 @@ export default function RecurringJobsPanel({ projects = [], spaces = [] }) {
               </FormControl>
             </Box>
             <Alert severity="info">
-              実行時刻・頻度・timezoneはMy Portalでは管理しません。外部ChatGPT等には、このJob IDだけを定期的に起動させます。
+              MethodをRecurring Jobの中心的な実行契約として使います。実行時刻・頻度・timezoneはMy Portalでは管理せず、外部ChatGPT等にはこのJob IDだけを定期的に起動させます。
             </Alert>
           </Stack>
         </DialogContent>

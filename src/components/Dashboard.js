@@ -499,7 +499,7 @@ function Dashboard() {
         ))}
       </Box>
 
-      <RecurringJobsPanel projects={projects} spaces={spaces} />
+      <RecurringJobsPanel projects={projects} />
 
       <Paper
         elevation={0}

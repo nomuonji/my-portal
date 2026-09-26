@@ -347,8 +347,9 @@ My Portalはスケジューラではないため、Recurring Jobにcron・実行
 - `title`
 - `objective`
 - `instructions`: そのJob固有の手順・制約
-- `projectId` / `spaceId`
-- `methodId`: 任意。繰り返し改善する方法論がある場合だけ紐付ける
+- `projectId`
+- `methodId`: Recurring Jobの主要な実行契約。active versionのinstructions / protocol / quality gatesをAgent HQ上で確認できる
+- `spaceId`: 高度な用途向けの互換フィールド。通常UIでは設定しない。長期思考テーマのcurrentBrief / sources / ideasを毎回引き継ぐJobでのみ利用する
 - `priority`
 - `status = active | paused | archived`
 - `concurrencyPolicy = skip_if_open | allow_overlap`
@@ -367,7 +368,7 @@ My Portalはスケジューラではないため、Recurring Jobにcron・実行
 
 `invocationId` を外部側のイベントIDとして渡すと同じトリガーの再送を冪等化できる。既定の `skip_if_open` では同じJob由来の未完了Work Itemがある間、新しい実行を作らない。
 
-Agent HQ UIではRecurring Jobsを独立セクションとして表示し、Jobの作成・編集・pause/resume・手動実行・履歴・外部ChatGPT用の起動指示コピーを行う。
+Agent HQ UIではRecurring Jobsを独立セクションとして表示し、Jobの作成・編集・pause/resume・手動実行・履歴・外部ChatGPT用の起動指示コピーを行う。Methodは名前だけでなくactive versionの本文・protocol stages・quality gatesをカード内で展開確認できる。通常のJob作成UIはProject + Methodを基本とし、Spaceは表示しない。
 
 ### Human Tasks
 
