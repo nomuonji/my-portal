@@ -5,12 +5,14 @@ import {
   Button,
   Card,
   CardContent,
+  Checkbox,
   Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   FormControl,
+  FormControlLabel,
   InputLabel,
   MenuItem,
   Paper,
@@ -39,6 +41,9 @@ const emptyDraft = {
   projectId: '',
   methodId: '',
   concurrencyPolicy: 'skip_if_open',
+  rotationTargetsText: '',
+  requireExecutionReceipt: false,
+  allowedActionTypesText: '',
 };
 
 const emptyMethodDraft = {
@@ -52,6 +57,10 @@ const emptyMethodDraft = {
 };
 
 const clean = (value) => String(value || '').trim();
+const jobTargets = (job) => Array.isArray(job.rotationTargets) ? job.rotationTargets : (job.metadata?.rotationTargets || []);
+const jobNeedsReceipt = (job) => job.requireExecutionReceipt === undefined
+  ? job.metadata?.requireExecutionReceipt === true
+  : job.requireExecutionReceipt === true;
 
 const formatDate = (value) => {
   if (!value) return '—';
@@ -217,6 +226,9 @@ export default function RecurringJobsPanel({ projects = [] }) {
       projectId: job.projectId || '',
       methodId: job.methodId || '',
       concurrencyPolicy: job.concurrencyPolicy || 'skip_if_open',
+      rotationTargetsText: jobTargets(job).join('\n'),
+      requireExecutionReceipt: jobNeedsReceipt(job),
+      allowedActionTypesText: (job.allowedActionTypes || job.metadata?.allowedActionTypes || []).join('\n'),
     });
     resetMethodEditor();
     setEditOpen(true);
@@ -316,6 +328,9 @@ export default function RecurringJobsPanel({ projects = [] }) {
               projectId: draft.projectId || null,
               methodId: draft.methodId || null,
               concurrencyPolicy: draft.concurrencyPolicy,
+              rotationTargets: draft.rotationTargetsText.split('\n').map(clean).filter(Boolean),
+              requireExecutionReceipt: draft.requireExecutionReceipt,
+              allowedActionTypes: draft.allowedActionTypesText.split('\n').map(clean).filter(Boolean),
             },
           }),
         });
@@ -336,6 +351,9 @@ export default function RecurringJobsPanel({ projects = [] }) {
             projectId: draft.projectId || null,
             methodId: draft.methodId || null,
             concurrencyPolicy: draft.concurrencyPolicy,
+            rotationTargets: draft.rotationTargetsText.split('\n').map(clean).filter(Boolean),
+            requireExecutionReceipt: draft.requireExecutionReceipt,
+            allowedActionTypes: draft.allowedActionTypesText.split('\n').map(clean).filter(Boolean),
           }),
         });
         setNotice(methodWasUpdated
@@ -385,7 +403,7 @@ export default function RecurringJobsPanel({ projects = [] }) {
         }),
       });
       if (result.skipped) {
-        setNotice('既存の未完了Work Itemがあるため、新しい実行は作成しませんでした。');
+        setNotice('既存の未完了Work Itemを再開してください: ' + result.workItem?.id);
       } else if (result.duplicate) {
         setNotice('同じ実行IDのWork Itemがすでにあります。');
       } else {
@@ -418,9 +436,12 @@ export default function RecurringJobsPanel({ projects = [] }) {
   const copyTriggerPrompt = async (job) => {
     const prompt = [
       'My PortalのRecurring Job「' + job.id + '」を実行してください。',
-      'recurring_job_start({ id: "' + job.id + '" }) で今回分のWork Itemを作成し、返されたWork Itemをwork_item_claimしてください。',
+      'recurring_job_start({ id: "' + job.id + '" }) を呼びます。スケジューラが再送時にも同じイベントIDを渡せる場合だけinvocationIdを追加してください。既存Work Itemが返った場合はそれを再開し、work_item_claimしてください。',
       '実行前に recurring_job_get_context({ id: "' + job.id + '" }) を読み、Job固有のinstructions、Project、紐付いたMethodのactive versionに従ってください。',
-      '完了後は通常のwork_item_finishで結果とnextActionsを残してください。',
+      '対象が割り当てられていればその対象で具体的な作業を進め、安全な作業がなければ別対象を選んで試した対象も記録してください。測定待ちの実験は別対象の作業を止めません。',
+      jobNeedsReceipt(job)
+        ? '完了時はwork_item_finishのexecutionReceiptに実際の対象、変更種別、成果物、確認結果を記録してください。作業ができなければblockedReasonを具体的に残してください。'
+        : '完了後はwork_item_finishで結果とnextActionsを残してください。',
     ].join('\n');
     try {
       await navigator.clipboard.writeText(prompt);
@@ -530,6 +551,7 @@ export default function RecurringJobsPanel({ projects = [] }) {
                       />
                     )}
                     <Chip size="small" label={job.concurrencyPolicy === 'allow_overlap' ? '重複実行可' : '重複実行防止'} variant="outlined" sx={{ height: 20, fontSize: '0.56rem' }} />
+                    {!!jobTargets(job).length && <Chip size="small" label={'対象 ' + jobTargets(job).length + '件を順番に実行'} variant="outlined" sx={{ height: 20, fontSize: '0.56rem' }} />}
                   </Stack>
 
                   <Box sx={{ mt: 0.9, p: 0.8, borderRadius: 1.4, bgcolor: alpha(theme.palette.primary.main, isDark ? 0.08 : 0.04) }}>
@@ -651,6 +673,39 @@ export default function RecurringJobsPanel({ projects = [] }) {
                   helperText="共通して育てる実行方法は下のMethodに置き、この欄にはこのJobだけの条件を残します。"
                   fullWidth
                 />
+                <TextField
+                  label="順番に作業する対象（1行に1件）"
+                  value={draft.rotationTargetsText}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, rotationTargetsText: event.target.value }))}
+                  multiline
+                  minRows={3}
+                  helperText="サイト運用ならhostを記入します。最後に実作業をした対象が古い順に、次回の対象を割り当てます。"
+                  fullWidth
+                />
+                <FormControlLabel
+                  control={<Checkbox checked={draft.requireExecutionReceipt} onChange={(event) => setDraft((prev) => ({ ...prev, requireExecutionReceipt: event.target.checked }))} />}
+                  label="完了時に成果物と確認結果の記録を必須にする"
+                />
+                <TextField
+                  label="完了として認める作業種別（1行に1件、任意）"
+                  value={draft.allowedActionTypesText}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, allowedActionTypesText: event.target.value }))}
+                  multiline
+                  minRows={2}
+                  helperText="例: content_revision、internal_link、new_article、technical_fix。調査報告だけを完了扱いしたくないJobで設定します。"
+                  fullWidth
+                />
+                {!!editing && jobTargets(editing).length > 0 && (
+                  <Box sx={{ maxHeight: 170, overflowY: 'auto', border: '1px solid ' + border, borderRadius: 1, p: 1 }}>
+                    <Typography variant="caption" sx={{ fontWeight: 800 }}>対象ごとの最終作業</Typography>
+                    {jobTargets(editing).map((target) => (
+                      <Typography key={target} variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                        {target} · {formatDate(editing.targetProgress?.[target]?.lastActionAt)}
+                        {editing.targetProgress?.[target]?.lastDeliveryStatus ? ' · ' + editing.targetProgress[target].lastDeliveryStatus : ''}
+                      </Typography>
+                    ))}
+                  </Box>
+                )}
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 1.2 }}>
                   <FormControl fullWidth>
                     <InputLabel>Project</InputLabel>
@@ -882,6 +937,24 @@ export default function RecurringJobsPanel({ projects = [] }) {
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.35 }}>
                     Method version: v{item.metadata.recurringJob.methodVersionNumber}
                   </Typography>
+                )}
+                {item.metadata?.recurringJob?.targetId && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                    割当対象: {item.metadata.recurringJob.targetId}
+                  </Typography>
+                )}
+                {item.executionReceipt && (
+                  <Box sx={{ mt: 0.4 }}>
+                    <Typography variant="caption" color="success.main" sx={{ display: 'block' }}>
+                      実作業: {item.executionReceipt.targetId} · {item.executionReceipt.actionType} · {item.executionReceipt.deliveryStatus}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', wordBreak: 'break-all' }}>
+                      成果物: {(item.executionReceipt.artifacts || []).join(' · ')}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                      確認: {item.executionReceipt.validation}
+                    </Typography>
+                  </Box>
                 )}
                 {item.resultSummary && (
                   <Typography variant="caption" sx={{ display: 'block', mt: 0.45, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>

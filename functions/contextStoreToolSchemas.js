@@ -82,6 +82,9 @@ const recurringJobFields = {
   projectId: string('Optional linked Portal Project ID.', 160),
   methodId: string('Optional reusable Method ID. Its active version is resolved when each execution is materialized.', 160),
   concurrencyPolicy: { type: 'string', enum: store.RECURRING_JOB_CONCURRENCY_POLICIES, description: 'skip_if_open prevents another execution while a prior Work Item remains open.' },
+  rotationTargets: stringArray('Targets to rotate through. The least recently worked target is assigned to each new execution.', 100),
+  requireExecutionReceipt: { type: 'boolean', description: 'Require a concrete action receipt before a recurring Work Item can finish as archived or review.' },
+  allowedActionTypes: stringArray('Optional allowed action types for execution receipts.', 30),
   tags: stringArray('Loose tags.', 50),
   metadata: jsonObject('Structured job metadata. Do not store cron, timezone, or schedule state here.'),
 };
@@ -228,9 +231,9 @@ const TOOLS = [
     description: 'Load the complete execution context for a repeatable job: job instructions, linked Project/Space, active Method execution contract, and recent Work Item history.',
     inputSchema: objectSchema({
       id: string('Recurring Job ID.', 160),
-      historyLimit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
-      versionLimit: { type: 'integer', minimum: 1, maximum: 50, default: 10 },
-      runLimit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+      historyLimit: { type: 'integer', minimum: 1, maximum: 100, default: 5 },
+      versionLimit: { type: 'integer', minimum: 1, maximum: 50, default: 1 },
+      runLimit: { type: 'integer', minimum: 1, maximum: 100, default: 3 },
     }, ['id']),
     annotations: { readOnlyHint: true },
   },
@@ -246,7 +249,7 @@ const TOOLS = [
   },
   {
     name: 'recurring_job_start',
-    description: 'Materialize one execution of an active Recurring Job as a normal ready Work Item. External schedulers should call this tool at their chosen time, then claim the returned Work Item. invocationId makes repeated delivery idempotent.',
+    description: 'Materialize one execution of an active Recurring Job as a ready Work Item. When rotationTargets are configured, the least recently worked target is assigned. If an unfinished execution exists, return that Work Item for resumption. invocationId makes repeated delivery idempotent.',
     inputSchema: objectSchema({
       id: string('Recurring Job ID.', 160),
       invocationId: string('Optional external invocation/event ID used to prevent duplicate Work Items for the same trigger.', 300),
@@ -390,7 +393,7 @@ const TOOLS = [
   },
   {
     name: 'work_item_finish',
-    description: 'Finish or hand off claimed work as archived, review, or blocked. Archived is the single closed state for completed or withdrawn work. Always persist a result summary and useful next actions when available.',
+    description: 'Finish or hand off claimed work as archived, review, or blocked. Recurring jobs may require an executionReceipt proving a concrete action; blocked runs need a specific reason. Always persist a result summary and useful next actions.',
     inputSchema: objectSchema({
       id: string('Work item ID.', 160),
       agent: string('Agent completing the work.', 120),
@@ -399,6 +402,15 @@ const TOOLS = [
       blockedReason: string('Required in practice when status=blocked.', 6000),
       nextActions: stringArray('Concrete follow-up actions.', 100),
       metadataPatch: jsonObject('Shallow-merge execution metadata.'),
+      executionReceipt: objectSchema({
+        targetId: string('Actual target worked on. Must match a configured rotation target when present.', 160),
+        actionType: string('Concrete action type such as content_revision, internal_link, new_article, or technical_fix.', 80),
+        deliveryStatus: { type: 'string', enum: ['local_ready', 'committed', 'live_verified'] },
+        artifacts: stringArray('Verifiable file paths, commit references, or URLs.', 30),
+        validation: string('What was checked and its result.', 3000),
+        measurementDueAt: string('Optional later impact measurement date.', 120),
+        attemptedTargets: stringArray('Other targets considered before this action.', 100),
+      }, ['targetId', 'actionType', 'deliveryStatus', 'artifacts', 'validation']),
     }, ['id', 'agent']),
     annotations: { readOnlyHint: false, destructiveHint: false },
   },

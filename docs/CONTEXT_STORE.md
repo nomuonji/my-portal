@@ -358,20 +358,26 @@ My Portalはスケジューラではないため、Recurring Jobにcron・実行
 - `priority`
 - `status = active | paused | archived`
 - `concurrencyPolicy = skip_if_open | allow_overlap`
+- `rotationTargets[]`: 繰り返し作業の対象。未対応の対象を優先し、作業・検討・ブロックの経過時間から次回対象を選ぶ
+- `targetProgress`: 対象ごとの最終割当・最終実作業・最終公開確認・ブロックを実行結果から自動更新する
+- `requireExecutionReceipt`: 完了時に実作業の証拠を要求する
+- `allowedActionTypes[]`: 完了として認める作業種別。調査報告だけを改善完了扱いしたくないJobで設定する
 - 前回実行情報（lastStartedAt / lastFinishedAt / lastResultSummary等）
 
-実行時は `recurring_job_start` が通常のWork Itemを1件生成する。Work Itemには `sourceType=recurring_job`, `sourceId=<jobId>` を保存し、Methodを紐付けている場合は、その時点のactive Method version ID / version numberもmetadataへ固定する。したがってMethodを後日改善しても、過去の実行がどのversionを使ったか追跡できる。
+実行時は `recurring_job_start` が通常のWork Itemを1件生成する。rotationTargetsがある場合、未対応や長く触れていない対象を割り当てる。直近でブロックされた対象を毎回選び直さない。Work Itemには `sourceType=recurring_job`, `sourceId=<jobId>`, 割当対象、Methodのactive version ID / version numberを固定する。したがってMethodを後日改善しても、過去の実行がどのversionを使ったか追跡できる。
 
 外部ChatGPT等の基本フロー:
 
 1. 外部スケジューラが任意の時刻に `recurring_job_start({ id, invocationId? })`
-2. My PortalがReady Work Itemを生成
+2. My PortalがReady Work Itemを生成。前回のready / in_progress / runningがある場合はそのWork Itemを返し、再開する
 3. `work_item_claim`
 4. `recurring_job_get_context({ id })` でJob / Project / Space / Method / 最近の履歴を取得
 5. 実行
-6. `work_item_finish`
+6. `work_item_finish`。requireExecutionReceiptが有効なJobでは、archived / reviewにする際に実際の対象、作業種別、成果物、確認結果を`executionReceipt`で保存する
 
-`invocationId` を外部側のイベントIDとして渡すと同じトリガーの再送を冪等化できる。既定の `skip_if_open` では同じJob由来の未完了Work Itemがある間、新しい実行を作らない。
+`invocationId` を外部側のイベントIDとして渡すと同じトリガーの再送を冪等化できる。既定の `skip_if_open` は実行中・再開可能な前回Work Itemを返す。`blocked`、`review`、意図的に延期した`backlog`は次回の起動を妨げない。結果待ちや人によるレビューが、別対象への作業を永久に止めないためである。
+
+成果記録の`deliveryStatus`は`local_ready` / `committed` / `live_verified`を区別する。準備完了と公開済みを混同しない。対象ごとの最終実作業は成果記録から更新し、単なる調査報告やブロックでは更新しない。割当先に安全な作業がない場合は別対象を試し、実際に作業した対象を成果記録に残す。全対象が進められない場合は具体的な`blockedReason`で終える。
 
 Agent HQ UIではRecurring Jobsを独立セクションとして表示し、Jobの作成・詳細編集・pause/resume・手動実行・履歴・外部ChatGPT用の起動指示コピーを行う。Methodはカード上で展開せず、Recurring Jobの詳細/編集画面にactive versionの本文・Protocol・Quality Gatesを最初から並べて表示する。同じ画面でMethod本体の概要とactive version内容も編集でき、version内容を変更した場合は旧versionを上書きせず新しいMethodVersionを作成してactive化する。通常のJob作成UIはProject + Methodを基本とし、Spaceは表示しない。
 

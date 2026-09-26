@@ -41,6 +41,7 @@ const WORK_ITEM_PRIORITIES = ['critical', 'high', 'medium', 'low'];
 const WORK_ITEM_EXECUTION_MODES = ['agent', 'human'];
 const RECURRING_JOB_STATUSES = ['active', 'paused', 'archived'];
 const RECURRING_JOB_CONCURRENCY_POLICIES = ['skip_if_open', 'allow_overlap'];
+const RECURRING_DELIVERY_STATUSES = ['local_ready', 'committed', 'live_verified'];
 const LINEAR_SETUP_WORK_ITEM_ID = 'system-linear-integration-setup';
 
 function db() {
@@ -566,12 +567,14 @@ async function methodVersionActivate(input) {
 async function methodGetContext(input) {
   const method = await methodGet({ id: input.id });
   const database = db();
+  const versionLimit = Math.min(Math.max(Number(input.versionLimit) || 20, 1), 50);
   const versionSnapshot = await database.collection(COLLECTIONS.methodVersions)
     .where('methodId', '==', method.id)
-    .limit(Math.min(Math.max(Number(input.versionLimit) || 20, 1), 50))
+    .limit(50)
     .get();
   const versions = [...versionSnapshot.docs.map(documentToObject)]
-    .sort((a, b) => Number(b.versionNumber || 0) - Number(a.versionNumber || 0));
+    .sort((a, b) => Number(b.versionNumber || 0) - Number(a.versionNumber || 0))
+    .slice(0, versionLimit);
   const currentVersion = method.currentVersionId
     ? versions.find((item) => item.id === method.currentVersionId) || await methodVersionGet({ id: method.currentVersionId })
     : null;
@@ -1805,6 +1808,10 @@ function recurringJobPayload(input) {
       'concurrencyPolicy',
       'skip_if_open'
     ),
+    rotationTargets: stringArray(input.rotationTargets, 100, 160),
+    requireExecutionReceipt: input.requireExecutionReceipt === true,
+    allowedActionTypes: stringArray(input.allowedActionTypes, 30, 80),
+    targetProgress: {},
     tags: stringArray(input.tags, 50, 100),
     metadata: jsonSafe(input.metadata || {}),
     revision: 1,
@@ -1920,6 +1927,9 @@ async function recurringJobUpdate(input) {
       );
     }
     if (patch.tags !== undefined) update.tags = stringArray(patch.tags, 50, 100);
+    if (patch.rotationTargets !== undefined) update.rotationTargets = stringArray(patch.rotationTargets, 100, 160);
+    if (patch.requireExecutionReceipt !== undefined) update.requireExecutionReceipt = patch.requireExecutionReceipt === true;
+    if (patch.allowedActionTypes !== undefined) update.allowedActionTypes = stringArray(patch.allowedActionTypes, 30, 80);
     if (patch.metadata !== undefined) update.metadata = jsonSafe(patch.metadata || {});
     if (patch.metadataPatch !== undefined) {
       update.metadata = { ...(current.metadata || {}), ...jsonSafe(patch.metadataPatch || {}) };
@@ -1947,11 +1957,11 @@ async function recurringJobGetContext(input) {
     job.methodId
       ? methodGetContext({
         id: job.methodId,
-        versionLimit: Math.min(Math.max(Number(input.versionLimit) || 10, 1), 50),
-        runLimit: Math.min(Math.max(Number(input.runLimit) || 20, 1), 100),
+        versionLimit: Math.min(Math.max(Number(input.versionLimit) || 1, 1), 50),
+        runLimit: Math.min(Math.max(Number(input.runLimit) || 3, 1), 100),
       })
       : Promise.resolve(null),
-    recurringJobHistory({ id: job.id, limit: Math.min(Math.max(Number(input.historyLimit) || 20, 1), 100) }),
+    recurringJobHistory({ id: job.id, limit: Math.min(Math.max(Number(input.historyLimit) || 5, 1), 100) }),
     job.spaceId ? spaceGet({ id: job.spaceId }).catch(() => null) : Promise.resolve(null),
     job.projectId ? db().collection('projects').doc(job.projectId).get() : Promise.resolve(null),
   ]);
@@ -1966,106 +1976,156 @@ async function recurringJobGetContext(input) {
       spaceId: job.spaceId,
       priority: job.priority,
       concurrencyPolicy: job.concurrencyPolicy || 'skip_if_open',
+      rotationTargets: jobRotationTargets(job),
+      targetProgress: job.targetProgress || {},
+      requireExecutionReceipt: jobRequiresReceipt(job),
+      allowedActionTypes: job.allowedActionTypes || job.metadata?.allowedActionTypes || [],
       method: methodContext?.executionContract || null,
     },
     method: methodContext,
     space,
     project: projectSnapshot && projectSnapshot.exists ? documentToObject(projectSnapshot) : null,
-    recentExecutions: history.items,
+    recentExecutions: history.items.map((item) => ({
+      id: item.id,
+      status: item.status,
+      targetId: item.metadata?.recurringJob?.targetId || null,
+      executionReceipt: item.executionReceipt || item.metadata?.executionReceipt || null,
+      resultSummary: clampString(item.resultSummary, 800) || '',
+      blockedReason: clampString(item.blockedReason, 500) || '',
+      updatedAt: item.updatedAt,
+      finishedAt: item.finishedAt,
+    })),
   };
 }
 
-async function recurringJobStart(input, actor = {}) {
-  const job = await recurringJobGet({ id: input.id });
-  if (job.status !== 'active') throw new Error('Recurring job is not active: ' + job.status);
+function selectRotationTarget(job) {
+  const targets = jobRotationTargets(job);
+  if (!targets.length) return null;
+  const progress = job.targetProgress || {};
+  return [...targets].sort((left, right) => {
+    const a = progress[left] || {};
+    const b = progress[right] || {};
+    const aLatest = Math.max(Date.parse(a.lastActionAt || '') || 0, Date.parse(a.lastBlockedAt || '') || 0, Date.parse(a.lastConsideredAt || '') || 0);
+    const bLatest = Math.max(Date.parse(b.lastActionAt || '') || 0, Date.parse(b.lastBlockedAt || '') || 0, Date.parse(b.lastConsideredAt || '') || 0);
+    const actionGap = aLatest - bLatest;
+    if (actionGap) return actionGap;
+    const assignmentGap = (Date.parse(a.lastAssignedAt || '') || 0) - (Date.parse(b.lastAssignedAt || '') || 0);
+    if (assignmentGap) return assignmentGap;
+    return targets.indexOf(left) - targets.indexOf(right);
+  })[0];
+}
 
+function jobRotationTargets(job) {
+  return stringArray(Array.isArray(job.rotationTargets) ? job.rotationTargets : job.metadata?.rotationTargets, 100, 160);
+}
+
+function jobRequiresReceipt(job) {
+  return job.requireExecutionReceipt === undefined
+    ? job.metadata?.requireExecutionReceipt === true
+    : job.requireExecutionReceipt === true;
+}
+
+async function recurringJobStart(input, actor = {}) {
+  const jobId = assertString(input.id, 'id', { max: 160 });
+  const initialJob = await recurringJobGet({ id: jobId });
+  if (initialJob.status !== 'active') throw new Error('Recurring job is not active: ' + initialJob.status);
   const invocationId = clampString(input.invocationId, 300) || null;
   const requestedBy = clampString(input.requestedBy || actor.agent, 120) || 'external-trigger';
-  const snapshot = await db().collection(COLLECTIONS.workItems).limit(1000).get();
-  const existingItems = sortRecent(snapshot.docs.map(documentToObject));
+  if (initialJob.spaceId) await spaceGet({ id: initialJob.spaceId });
+  const methodContext = initialJob.methodId
+    ? await methodGetContext({ id: initialJob.methodId, versionLimit: 5, runLimit: 5 })
+    : null;
+  const methodExecution = methodContext?.executionContract || null;
+  const jobRef = db().collection(COLLECTIONS.recurringJobs).doc(jobId);
+  const workItems = db().collection(COLLECTIONS.workItems);
+  const itemRef = workItems.doc();
+  let outcome;
 
-  if (invocationId) {
-    const duplicate = existingItems.find((item) =>
-      item.sourceType === 'recurring_job' &&
-      item.sourceId === job.id &&
+  await db().runTransaction(async (tx) => {
+    const jobSnapshot = await tx.get(jobRef);
+    if (!jobSnapshot.exists) throw new Error('Recurring job not found: ' + jobId);
+    const job = documentToObject(jobSnapshot);
+    if (job.status !== 'active') throw new Error('Recurring job is not active: ' + job.status);
+    if (job.methodId !== initialJob.methodId) throw new Error('Recurring job Method changed during start; retry');
+    const existingSnapshot = await tx.get(workItems.where('sourceId', '==', jobId).limit(1000));
+    const existingItems = sortRecent(existingSnapshot.docs.map(documentToObject))
+      .filter((item) => item.sourceType === 'recurring_job');
+    const duplicate = invocationId && existingItems.find((item) =>
       item.metadata?.recurringJob?.invocationId === invocationId
     );
     if (duplicate) {
-      return {
-        created: false,
-        duplicate: true,
-        skipped: false,
-        reason: 'invocation_already_materialized',
-        job,
-        workItem: duplicate,
-      };
+      outcome = { created: false, duplicate: true, skipped: false, reason: 'invocation_already_materialized', workItem: duplicate };
+      return;
     }
-  }
-
-  if ((job.concurrencyPolicy || 'skip_if_open') === 'skip_if_open') {
-    const open = existingItems.find((item) =>
-      item.sourceType === 'recurring_job' &&
-      item.sourceId === job.id &&
-      !['archived', 'done', 'cancelled'].includes(item.status)
+    const open = (job.concurrencyPolicy || 'skip_if_open') === 'skip_if_open' && existingItems.find((item) =>
+      ['ready', 'in_progress', 'running'].includes(item.status)
     );
     if (open) {
-      return {
-        created: false,
-        duplicate: false,
-        skipped: true,
-        reason: 'open_execution_exists',
-        job,
-        workItem: open,
+      outcome = { created: false, duplicate: false, skipped: true, resumable: true, reason: 'open_execution_exists', workItem: open };
+      return;
+    }
+
+    const targetId = selectRotationTarget(job);
+    const payload = workItemPayload({
+      title: targetId ? `${job.title} · ${targetId}` : job.title,
+      objective: job.objective,
+      instructions: job.instructions,
+      status: 'ready',
+      priority: job.priority || 'medium',
+      executionMode: 'agent',
+      spaceId: job.spaceId || null,
+      projectId: job.projectId || null,
+      sourceType: 'recurring_job',
+      sourceId: jobId,
+      tags: [...(job.tags || []), 'recurring-job'],
+      metadata: {
+        recurringJob: {
+          id: jobId,
+          invocationId,
+          requestedBy,
+          targetId,
+          methodId: methodExecution?.methodId || job.methodId || null,
+          methodVersionId: methodExecution?.methodVersionId || null,
+          methodVersionNumber: methodExecution?.methodVersionNumber || null,
+        },
+      },
+    });
+    const now = FieldValue.serverTimestamp();
+    tx.set(itemRef, {
+      ...payload,
+      claimedBy: null,
+      claimedModel: null,
+      runId: null,
+      leaseExpiresAt: null,
+      lastHeartbeatAt: null,
+      blockedReason: '',
+      resultSummary: '',
+      nextActions: [],
+      createdBy: createdBy({}, actor),
+      createdAt: now,
+      updatedAt: now,
+    });
+    const targetProgress = { ...(job.targetProgress || {}) };
+    if (targetId) {
+      targetProgress[targetId] = {
+        ...(targetProgress[targetId] || {}),
+        lastAssignedAt: new Date().toISOString(),
       };
     }
-  }
-
-  const methodContext = job.methodId
-    ? await methodGetContext({ id: job.methodId, versionLimit: 5, runLimit: 5 })
-    : null;
-  const methodExecution = methodContext?.executionContract || null;
-
-  const item = await workItemCreate({
-    title: job.title,
-    objective: job.objective,
-    instructions: job.instructions,
-    status: 'ready',
-    priority: job.priority || 'medium',
-    executionMode: 'agent',
-    spaceId: job.spaceId || null,
-    projectId: job.projectId || null,
-    sourceType: 'recurring_job',
-    sourceId: job.id,
-    tags: [...(job.tags || []), 'recurring-job'],
-    metadata: {
-      recurringJob: {
-        id: job.id,
-        invocationId,
-        requestedBy,
-        methodId: methodExecution?.methodId || job.methodId || null,
-        methodVersionId: methodExecution?.methodVersionId || null,
-        methodVersionNumber: methodExecution?.methodVersionNumber || null,
-      },
-    },
-  }, actor);
-
-  const ref = db().collection(COLLECTIONS.recurringJobs).doc(job.id);
-  await ref.update({
-    lastStartedAt: FieldValue.serverTimestamp(),
-    lastWorkItemId: item.id,
-    lastExecutionStatus: item.status,
-    startCount: FieldValue.increment(1),
-    updatedAt: FieldValue.serverTimestamp(),
+    tx.update(jobRef, {
+      lastStartedAt: now,
+      lastWorkItemId: itemRef.id,
+      lastExecutionStatus: 'ready',
+      startCount: FieldValue.increment(1),
+      targetProgress,
+      updatedAt: now,
+    });
+    outcome = { created: true, duplicate: false, skipped: false, targetId };
   });
 
-  return {
-    created: true,
-    duplicate: false,
-    skipped: false,
-    job: await recurringJobGet({ id: job.id }),
-    workItem: item,
-    method: methodExecution,
-  };
+  const job = await recurringJobGet({ id: jobId });
+  if (!outcome.created) return { ...outcome, job };
+  return { ...outcome, job, workItem: await workItemGet({ id: itemRef.id }), method: methodExecution };
 }
 
 function workItemPayload(input) {
@@ -2261,6 +2321,39 @@ async function workItemHeartbeat(input) {
   return workItemGet({ id });
 }
 
+function normalizeExecutionReceipt(value, job) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const targetId = assertString(value.targetId, 'executionReceipt.targetId', { max: 160 });
+  const rotationTargets = job ? jobRotationTargets(job) : [];
+  if (rotationTargets.length && !rotationTargets.includes(targetId)) {
+    throw new Error('executionReceipt.targetId must be a configured rotation target');
+  }
+  const artifacts = stringArray(value.artifacts, 30, 1000);
+  if (!artifacts.length) throw new Error('executionReceipt.artifacts must include a verifiable file, commit, or URL');
+  const actionType = assertString(value.actionType, 'executionReceipt.actionType', { max: 80 });
+  const allowedActionTypes = stringArray(
+    Array.isArray(job?.allowedActionTypes) ? job.allowedActionTypes : job?.metadata?.allowedActionTypes,
+    30,
+    80
+  );
+  if (allowedActionTypes.length && !allowedActionTypes.includes(actionType)) {
+    throw new Error('executionReceipt.actionType must be one of: ' + allowedActionTypes.join(', '));
+  }
+  return {
+    targetId,
+    actionType,
+    deliveryStatus: assertEnum(
+      assertString(value.deliveryStatus, 'executionReceipt.deliveryStatus', { max: 40 }),
+      RECURRING_DELIVERY_STATUSES,
+      'executionReceipt.deliveryStatus'
+    ),
+    artifacts,
+    validation: assertString(value.validation, 'executionReceipt.validation', { max: 3000 }),
+    measurementDueAt: clampString(value.measurementDueAt, 120) || null,
+    attemptedTargets: stringArray(value.attemptedTargets, 100, 160),
+  };
+}
+
 async function workItemFinish(input) {
   const id = assertString(input.id, 'id', { max: 160 });
   const agent = assertString(input.agent, 'agent', { max: 120 });
@@ -2272,7 +2365,23 @@ async function workItemFinish(input) {
     const snapshot = await tx.get(ref);
     if (!snapshot.exists) throw new Error('Work item not found: ' + id);
     const current = snapshot.data();
+    if (['archived', 'done', 'cancelled'].includes(current.status)) throw new Error('Work item is already closed: ' + current.status);
     if (current.claimedBy && current.claimedBy !== agent) throw new Error('Work item is claimed by ' + current.claimedBy);
+    const jobRef = current.sourceType === 'recurring_job' && current.sourceId
+      ? db().collection(COLLECTIONS.recurringJobs).doc(current.sourceId)
+      : null;
+    const jobSnapshot = jobRef ? await tx.get(jobRef) : null;
+    const job = jobSnapshot?.exists ? jobSnapshot.data() : null;
+    const receipt = normalizeExecutionReceipt(input.executionReceipt || input.metadataPatch?.executionReceipt, job)
+      || current.executionReceipt
+      || null;
+    if (job && jobRequiresReceipt(job) && ['archived', 'review'].includes(outcomeStatus) && !receipt) {
+      throw new Error('This recurring job requires an executionReceipt with an action and validation');
+    }
+    if (job && jobRequiresReceipt(job) && outcomeStatus === 'blocked' && !clampString(input.blockedReason || current.blockedReason, 6000)) {
+      throw new Error('A blocked recurring execution requires a concrete blockedReason');
+    }
+    const now = FieldValue.serverTimestamp();
     tx.update(ref, {
       status: outcomeStatus,
       completedBy: agent,
@@ -2284,31 +2393,64 @@ async function workItemFinish(input) {
         ? stringArray(input.nextActions, 100, 3000)
         : (current.nextActions || []),
       metadata: { ...(current.metadata || {}), ...jsonSafe(input.metadataPatch || {}) },
+      executionReceipt: receipt || current.executionReceipt || null,
+      finishRecorded: true,
       claimedBy: null,
       claimedModel: null,
       leaseExpiresAt: null,
-      lastHeartbeatAt: FieldValue.serverTimestamp(),
-      finishedAt: outcomeStatus === 'archived' ? FieldValue.serverTimestamp() : null,
+      lastHeartbeatAt: now,
+      finishedAt: outcomeStatus === 'archived' ? now : null,
       revision: Number(current.revision || 1) + 1,
-      updatedAt: FieldValue.serverTimestamp(),
+      updatedAt: now,
     });
-  });
-  const finished = await workItemGet({ id });
-  if (finished.sourceType === 'recurring_job' && finished.sourceId) {
-    const jobRef = db().collection(COLLECTIONS.recurringJobs).doc(finished.sourceId);
-    const jobSnapshot = await jobRef.get();
-    if (jobSnapshot.exists) {
-      await jobRef.update({
-        lastFinishedAt: FieldValue.serverTimestamp(),
-        lastWorkItemId: finished.id,
-        lastExecutionStatus: finished.status,
-        lastResultSummary: finished.resultSummary || '',
-        finishCount: FieldValue.increment(1),
-        updatedAt: FieldValue.serverTimestamp(),
+    if (jobRef && job) {
+      const targetProgress = { ...(job.targetProgress || {}) };
+      const assignedTarget = current.metadata?.recurringJob?.targetId;
+      if (outcomeStatus === 'blocked') {
+        for (const attemptedTarget of stringArray(input.metadataPatch?.attemptedTargets, 100, 160)) {
+          if (attemptedTarget === assignedTarget || !jobRotationTargets(job).includes(attemptedTarget)) continue;
+          targetProgress[attemptedTarget] = {
+            ...(targetProgress[attemptedTarget] || {}),
+            lastConsideredAt: new Date().toISOString(),
+          };
+        }
+      }
+      if (outcomeStatus === 'blocked' && assignedTarget && jobRotationTargets(job).includes(assignedTarget)) {
+        targetProgress[assignedTarget] = {
+          ...(targetProgress[assignedTarget] || {}),
+          lastBlockedAt: new Date().toISOString(),
+          lastBlockedReason: clampString(input.blockedReason || current.blockedReason, 500) || '',
+        };
+      }
+      if (receipt && !current.executionReceipt && ['archived', 'review'].includes(outcomeStatus)) {
+        for (const attemptedTarget of receipt.attemptedTargets) {
+          if (attemptedTarget === receipt.targetId || !jobRotationTargets(job).includes(attemptedTarget)) continue;
+          targetProgress[attemptedTarget] = {
+            ...(targetProgress[attemptedTarget] || {}),
+            lastConsideredAt: new Date().toISOString(),
+          };
+        }
+        const previous = targetProgress[receipt.targetId] || {};
+        targetProgress[receipt.targetId] = {
+          ...previous,
+          lastActionAt: new Date().toISOString(),
+          lastDeliveryStatus: receipt.deliveryStatus,
+          actionCount: Number(previous.actionCount || 0) + (current.executionReceipt ? 0 : 1),
+          ...(receipt.deliveryStatus === 'live_verified' ? { lastLiveAt: new Date().toISOString() } : {}),
+        };
+      }
+      tx.update(jobRef, {
+        lastFinishedAt: now,
+        lastWorkItemId: id,
+        lastExecutionStatus: outcomeStatus,
+        lastResultSummary: clampString(input.resultSummary, 12000) || current.resultSummary || '',
+        finishCount: FieldValue.increment(current.finishRecorded ? 0 : 1),
+        targetProgress,
+        updatedAt: now,
       });
     }
-  }
-  return finished;
+  });
+  return workItemGet({ id });
 }
 
 
