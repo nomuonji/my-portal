@@ -107,6 +107,52 @@ function stringArray(value, maxItems = 50, maxLen = 240) {
   return [...new Set(value.map((item) => clampString(item, maxLen)).filter(Boolean))].slice(0, maxItems);
 }
 
+function normalizeRuntimeRequirements(value = {}) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  return {
+    requiredCapabilities: stringArray(source.requiredCapabilities, 100, 160),
+    requiredTools: stringArray(source.requiredTools, 100, 160),
+    optionalCapabilities: stringArray(source.optionalCapabilities, 100, 160),
+    optionalTools: stringArray(source.optionalTools, 100, 160),
+  };
+}
+
+function mergeRuntimeRequirements(...values) {
+  const merged = values.map(normalizeRuntimeRequirements);
+  return {
+    requiredCapabilities: [...new Set(merged.flatMap((item) => item.requiredCapabilities))],
+    requiredTools: [...new Set(merged.flatMap((item) => item.requiredTools))],
+    optionalCapabilities: [...new Set(merged.flatMap((item) => item.optionalCapabilities))],
+    optionalTools: [...new Set(merged.flatMap((item) => item.optionalTools))],
+  };
+}
+
+function runtimeRequirementsFromMethodExecution(executionContract) {
+  return normalizeRuntimeRequirements(executionContract?.protocol?.runtimeRequirements || {});
+}
+
+function runtimeAvailability(input = {}) {
+  return {
+    runnerId: clampString(input.runnerId, 160) || null,
+    capabilities: stringArray(input.availableCapabilities, 200, 160),
+    tools: stringArray(input.availableTools, 200, 160),
+  };
+}
+
+function compareRuntimeRequirements(requirements, availability) {
+  const required = normalizeRuntimeRequirements(requirements);
+  const available = availability || { capabilities: [], tools: [] };
+  const capabilitySet = new Set(available.capabilities || []);
+  const toolSet = new Set(available.tools || []);
+  const missingCapabilities = required.requiredCapabilities.filter((item) => !capabilitySet.has(item));
+  const missingTools = required.requiredTools.filter((item) => !toolSet.has(item));
+  return {
+    ok: missingCapabilities.length === 0 && missingTools.length === 0,
+    missingCapabilities,
+    missingTools,
+  };
+}
+
 function jsonSafe(value, depth = 0) {
   if (depth > 6) return '[max-depth]';
   if (value === null || ['boolean', 'number'].includes(typeof value)) return value;
@@ -1851,6 +1897,7 @@ function managerJobPayload(input) {
     spaceId: clampString(input.spaceId, 160) || null,
     projectId: clampString(input.projectId, 160) || null,
     methodId: clampString(input.methodId, 160) || null,
+    defaultWorkerMethodId: clampString(input.defaultWorkerMethodId, 160) || null,
     concurrencyPolicy: assertEnum(
       input.concurrencyPolicy,
       MANAGER_JOB_CONCURRENCY_POLICIES,
@@ -1871,6 +1918,7 @@ async function managerJobCreate(input, actor = {}) {
   const payload = managerJobPayload(input);
   if (payload.spaceId) await spaceGet({ id: payload.spaceId });
   if (payload.methodId) await methodGet({ id: payload.methodId });
+  if (payload.defaultWorkerMethodId) await methodGet({ id: payload.defaultWorkerMethodId });
 
   const requestedId = clampString(input.id, 160);
   const ref = requestedId
@@ -1965,8 +2013,12 @@ async function managerJobUpdate(input) {
   const patch = input.patch && typeof input.patch === 'object' ? input.patch : {};
   const nextSpaceId = patch.spaceId !== undefined ? (clampString(patch.spaceId, 160) || null) : undefined;
   const nextMethodId = patch.methodId !== undefined ? (clampString(patch.methodId, 160) || null) : undefined;
+  const nextDefaultWorkerMethodId = patch.defaultWorkerMethodId !== undefined
+    ? (clampString(patch.defaultWorkerMethodId, 160) || null)
+    : undefined;
   if (nextSpaceId) await spaceGet({ id: nextSpaceId });
   if (nextMethodId) await methodGet({ id: nextMethodId });
+  if (nextDefaultWorkerMethodId) await methodGet({ id: nextDefaultWorkerMethodId });
 
   const ref = db().collection(COLLECTIONS.managerJobs).doc(id);
   await db().runTransaction(async (tx) => {
@@ -1989,6 +2041,7 @@ async function managerJobUpdate(input) {
     if (patch.spaceId !== undefined) update.spaceId = nextSpaceId;
     if (patch.projectId !== undefined) update.projectId = clampString(patch.projectId, 160) || null;
     if (patch.methodId !== undefined) update.methodId = nextMethodId;
+    if (patch.defaultWorkerMethodId !== undefined) update.defaultWorkerMethodId = nextDefaultWorkerMethodId;
     if (patch.concurrencyPolicy !== undefined) {
       update.concurrencyPolicy = assertEnum(
         patch.concurrencyPolicy,
@@ -2041,10 +2094,17 @@ async function managerJobHistory(input) {
 
 async function managerJobGetContext(input) {
   const job = await managerJobGet({ id: input.id });
-  const [methodContext, managerHistory, space, projectSnapshot, workSnapshot] = await Promise.all([
+  const [methodContext, workerMethodContext, managerHistory, space, projectSnapshot, workSnapshot] = await Promise.all([
     job.methodId
       ? methodGetContext({
         id: job.methodId,
+        versionLimit: Math.min(Math.max(Number(input.versionLimit) || 3, 1), 50),
+        runLimit: Math.min(Math.max(Number(input.runLimit) || 5, 1), 100),
+      })
+      : Promise.resolve(null),
+    job.defaultWorkerMethodId
+      ? methodGetContext({
+        id: job.defaultWorkerMethodId,
         versionLimit: Math.min(Math.max(Number(input.versionLimit) || 3, 1), 50),
         runLimit: Math.min(Math.max(Number(input.runLimit) || 5, 1), 100),
       })
@@ -2118,7 +2178,10 @@ async function managerJobGetContext(input) {
         allowedActionTypes: job.allowedActionTypes || job.metadata?.allowedActionTypes || [],
         readyRequiresCapabilityMatch: job.metadata?.readyRequiresCapabilityMatch === true,
         workerCapabilityProfile: job.metadata?.workerCapabilityProfile || null,
+        defaultWorkerMethodId: job.defaultWorkerMethodId || null,
+        defaultWorkerMethod: workerMethodContext?.executionContract || null,
       },
+      managerRuntimeRequirements: runtimeRequirementsFromMethodExecution(methodContext?.executionContract),
       operatingModel: AGENT_HQ_OPERATING_MODEL,
       escalationPolicy: {
         workerReportsToManagerFirst: true,
@@ -2130,6 +2193,7 @@ async function managerJobGetContext(input) {
       principle: 'A Manager Run may create zero, one, or many Work Items. The Manager should manage the queue rather than perform the underlying worker task itself.',
     },
     method: methodContext,
+    workerMethod: workerMethodContext,
     space,
     project: projectSnapshot && projectSnapshot.exists ? documentToObject(projectSnapshot) : null,
     currentQueue: queue,
@@ -2192,6 +2256,9 @@ async function managerJobStart(input, actor = {}) {
       methodId: methodExecution?.methodId || job.methodId || null,
       methodVersionId: methodExecution?.methodVersionId || null,
       methodVersionNumber: methodExecution?.methodVersionNumber || null,
+      runtimeRequirements: runtimeRequirementsFromMethodExecution(methodExecution),
+      runtimeAvailability: null,
+      runtimeGap: null,
       observationTargets: jobRotationTargets(job),
       invocationId,
       requestedBy,
@@ -2231,6 +2298,7 @@ async function managerRunClaim(input, actor = {}) {
   const agent = assertString(input.agent || actor.agent, 'agent', { max: 120 });
   const model = clampString(input.model || actor.model, 120) || null;
   const leaseMinutes = Math.min(Math.max(Number(input.leaseMinutes) || 60, 10), 1440);
+  const availability = runtimeAvailability(input);
   const ref = db().collection(COLLECTIONS.managerRuns).doc(id);
   const nowMs = Date.now();
 
@@ -2243,10 +2311,23 @@ async function managerRunClaim(input, actor = {}) {
     if (current.claimedBy && current.claimedBy !== agent && leaseMs > nowMs) {
       throw new Error('Manager run is claimed by ' + current.claimedBy);
     }
+    const runtimeGap = compareRuntimeRequirements(current.runtimeRequirements || {}, availability);
+    if (!runtimeGap.ok) {
+      throw new Error('MANAGER_RUNTIME_REQUIREMENTS_UNMET ' + JSON.stringify({
+        managerJobId: current.managerJobId,
+        methodId: current.methodId || null,
+        methodVersionId: current.methodVersionId || null,
+        runtimeRequirements: normalizeRuntimeRequirements(current.runtimeRequirements || {}),
+        runtimeAvailability: availability,
+        runtimeGap,
+      }));
+    }
     tx.update(ref, {
       status: 'running',
       claimedBy: agent,
       claimedModel: model,
+      runtimeAvailability: availability,
+      runtimeGap,
       leaseExpiresAt: new Date(nowMs + leaseMinutes * 60 * 1000),
       lastHeartbeatAt: FieldValue.serverTimestamp(),
       startedAt: current.startedAt || FieldValue.serverTimestamp(),
@@ -2309,6 +2390,12 @@ async function managerRunCreateWorkItem(input, actor = {}) {
       if (existing) return;
     }
 
+    const workerMethodId = clampString(input.workerMethodId, 160) || job.defaultWorkerMethodId || null;
+    if (workerMethodId) {
+      const workerMethodSnapshot = await tx.get(db().collection(COLLECTIONS.methods).doc(workerMethodId));
+      if (!workerMethodSnapshot.exists) throw new Error('Worker Method not found: ' + workerMethodId);
+    }
+
     const targetId = clampString(input.targetId, 160) || null;
     const configuredTargets = jobRotationTargets(job);
     if (targetId && configuredTargets.length && !configuredTargets.includes(targetId)) {
@@ -2327,6 +2414,7 @@ async function managerRunCreateWorkItem(input, actor = {}) {
       projectId: input.projectId !== undefined ? input.projectId : (job.projectId || null),
       sourceType: 'manager_job',
       sourceId: run.managerJobId,
+      workerMethodId,
       dependencies: input.dependencies || [],
       tags: [...(input.tags || []), 'manager-job'],
       dueAt: input.dueAt,
@@ -2497,6 +2585,12 @@ function workItemPayload(input) {
     projectId: clampString(input.projectId, 160) || null,
     sourceType: clampString(input.sourceType, 80) || 'manual',
     sourceId: clampString(input.sourceId, 500) || null,
+    workerMethodId: clampString(input.workerMethodId, 160) || null,
+    workerMethodVersionId: null,
+    workerMethodVersionNumber: null,
+    runtimeRequirements: null,
+    runtimeAvailability: null,
+    runtimeGap: null,
     dependencies: stringArray(input.dependencies, 50, 160),
     tags: stringArray(input.tags, 50, 100),
     dueAt: clampString(input.dueAt, 120) || null,
@@ -2509,6 +2603,7 @@ async function workItemCreate(input, actor = {}) {
   const payload = workItemPayload(input);
   if (payload.status === 'running') throw new Error('running is claim-only; create as ready or in_progress, then call work_item_claim');
   if (payload.spaceId) await spaceGet({ id: payload.spaceId });
+  if (payload.workerMethodId) await methodGet({ id: payload.workerMethodId });
   const ref = db().collection(COLLECTIONS.workItems).doc();
   const now = FieldValue.serverTimestamp();
   await ref.set({
@@ -2580,7 +2675,9 @@ async function workItemUpdate(input) {
   const id = assertString(input.id, 'id', { max: 160 });
   const patch = input.patch && typeof input.patch === 'object' ? input.patch : {};
   const nextSpaceId = patch.spaceId !== undefined ? (clampString(patch.spaceId, 160) || null) : undefined;
+  const nextWorkerMethodId = patch.workerMethodId !== undefined ? (clampString(patch.workerMethodId, 160) || null) : undefined;
   if (nextSpaceId) await spaceGet({ id: nextSpaceId });
+  if (nextWorkerMethodId) await methodGet({ id: nextWorkerMethodId });
   const ref = db().collection(COLLECTIONS.workItems).doc(id);
 
   await db().runTransaction(async (tx) => {
@@ -2612,6 +2709,15 @@ async function workItemUpdate(input) {
     if (patch.projectId !== undefined) update.projectId = clampString(patch.projectId, 160) || null;
     if (patch.sourceType !== undefined) update.sourceType = clampString(patch.sourceType, 80) || 'manual';
     if (patch.sourceId !== undefined) update.sourceId = clampString(patch.sourceId, 500) || null;
+    if (patch.workerMethodId !== undefined) {
+      if (current.status === 'running') throw new Error('Cannot change Worker Method while Work Item is running');
+      update.workerMethodId = nextWorkerMethodId;
+      update.workerMethodVersionId = null;
+      update.workerMethodVersionNumber = null;
+      update.runtimeRequirements = null;
+      update.runtimeAvailability = null;
+      update.runtimeGap = null;
+    }
     if (patch.dependencies !== undefined) update.dependencies = stringArray(patch.dependencies, 50, 160);
     if (patch.tags !== undefined) update.tags = stringArray(patch.tags, 50, 100);
     if (patch.dueAt !== undefined) update.dueAt = clampString(patch.dueAt, 120) || null;
@@ -2625,11 +2731,72 @@ async function workItemUpdate(input) {
   return workItemGet({ id });
 }
 
+async function resolveWorkerMethodExecution(item) {
+  if (!item?.workerMethodId) return null;
+  if (item.workerMethodVersionId) {
+    const version = await methodVersionGet({ id: item.workerMethodVersionId });
+    if (version.methodId !== item.workerMethodId) throw new Error('Pinned Worker Method version does not belong to Worker Method');
+    return {
+      methodId: item.workerMethodId,
+      methodVersionId: version.id,
+      methodVersionNumber: version.versionNumber,
+      instructions: version.instructions || '',
+      protocol: version.protocol || {},
+      qualityGates: version.qualityGates || [],
+    };
+  }
+  const context = await methodGetContext({ id: item.workerMethodId, versionLimit: 3, runLimit: 3 });
+  if (!context.executionContract) throw new Error('Worker Method has no active version: ' + item.workerMethodId);
+  return context.executionContract;
+}
+
+async function workItemGetExecutionContext(input) {
+  const item = await workItemGet({ id: input.id });
+  const workerMethod = await resolveWorkerMethodExecution(item);
+  const taskRequirements = {
+    requiredCapabilities: item.metadata?.execution?.requiredCapabilities || [],
+    requiredTools: item.metadata?.execution?.requiredTools || [],
+  };
+  const runtimeRequirements = mergeRuntimeRequirements(
+    runtimeRequirementsFromMethodExecution(workerMethod),
+    taskRequirements
+  );
+  return {
+    workItem: item,
+    workerMethod,
+    runtimeRequirements,
+    operatingModel: AGENT_HQ_OPERATING_MODEL,
+  };
+}
+
 async function workItemClaim(input, actor = {}) {
   const id = assertString(input.id, 'id', { max: 160 });
   const agent = assertString(input.agent || actor.agent, 'agent', { max: 120 });
   const model = clampString(input.model || actor.model, 120) || null;
   const leaseMinutes = Math.min(Math.max(Number(input.leaseMinutes) || 60, 10), 1440);
+  const initialItem = await workItemGet({ id });
+  const workerMethod = await resolveWorkerMethodExecution(initialItem);
+  const taskRequirements = {
+    requiredCapabilities: initialItem.metadata?.execution?.requiredCapabilities || [],
+    requiredTools: initialItem.metadata?.execution?.requiredTools || [],
+  };
+  const runtimeRequirements = mergeRuntimeRequirements(
+    runtimeRequirementsFromMethodExecution(workerMethod),
+    taskRequirements
+  );
+  const availability = runtimeAvailability(input);
+  const runtimeGap = compareRuntimeRequirements(runtimeRequirements, availability);
+  if (!runtimeGap.ok) {
+    throw new Error('WORKER_RUNTIME_REQUIREMENTS_UNMET ' + JSON.stringify({
+      workItemId: id,
+      workerMethodId: workerMethod?.methodId || initialItem.workerMethodId || null,
+      workerMethodVersionId: workerMethod?.methodVersionId || initialItem.workerMethodVersionId || null,
+      runtimeRequirements,
+      runtimeAvailability: availability,
+      runtimeGap,
+    }));
+  }
+
   const ref = db().collection(COLLECTIONS.workItems).doc(id);
   const nowMs = Date.now();
 
@@ -2637,6 +2804,9 @@ async function workItemClaim(input, actor = {}) {
     const snapshot = await tx.get(ref);
     if (!snapshot.exists) throw new Error('Work item not found: ' + id);
     const current = snapshot.data();
+    if (current.workerMethodId !== initialItem.workerMethodId || current.workerMethodVersionId !== initialItem.workerMethodVersionId) {
+      throw new Error('Worker Method changed during claim; retry');
+    }
     if (['archived', 'done', 'cancelled'].includes(current.status)) throw new Error('Work item is already closed: ' + current.status);
     if ((current.executionMode || 'agent') === 'human') throw new Error('Human task cannot be claimed by an agent; complete it in Human Tasks or delegate it back to agent mode');
     const currentLeaseMs = timestampMillis(current.leaseExpiresAt);
@@ -2648,6 +2818,11 @@ async function workItemClaim(input, actor = {}) {
       status: 'running',
       claimedBy: agent,
       claimedModel: model,
+      workerMethodVersionId: workerMethod?.methodVersionId || current.workerMethodVersionId || null,
+      workerMethodVersionNumber: workerMethod?.methodVersionNumber || current.workerMethodVersionNumber || null,
+      runtimeRequirements,
+      runtimeAvailability: availability,
+      runtimeGap,
       runId: clampString(input.runId, 160) || current.runId || null,
       leaseExpiresAt: new Date(nowMs + leaseMinutes * 60 * 1000),
       lastHeartbeatAt: FieldValue.serverTimestamp(),
@@ -2887,10 +3062,11 @@ async function workItemReportProblem(input) {
     const snapshot = await tx.get(ref);
     if (!snapshot.exists) throw new Error('Work item not found: ' + id);
     const current = snapshot.data();
-    if (current.status !== 'running') {
-      throw new Error('Worker problem reports require a currently running Work Item');
+    if (current.status === 'running') {
+      if (current.claimedBy !== agent) throw new Error('Work item is not claimed by ' + agent);
+    } else if (!['ready', 'in_progress'].includes(current.status) || current.claimedBy) {
+      throw new Error('Worker problem report requires an owned running item or an unclaimed ready/in_progress item');
     }
-    if (current.claimedBy !== agent) throw new Error('Work item is not claimed by ' + agent);
     const escalation = {
       status: 'reported',
       reportedTo: 'manager',
@@ -3436,6 +3612,7 @@ module.exports = {
   managerRunFinish,
   workItemCreate,
   workItemGet,
+  workItemGetExecutionContext,
   workItemSearch,
   workItemUpdate,
   workItemClaim,
