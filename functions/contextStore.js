@@ -12,7 +12,8 @@ const COLLECTIONS = Object.freeze({
   methods: 'methods',
   methodVersions: 'methodVersions',
   workItems: 'memos/agent-control/workItems',
-  recurringJobs: 'memos/agent-control/recurringJobs',
+  managerJobs: 'memos/agent-control/managerJobs',
+  recurringJobs: 'memos/agent-control/recurringJobs', // temporary migration source only
   managerRuns: 'memos/agent-control/managerRuns',
 });
 
@@ -1794,6 +1795,36 @@ async function ensureLinearSetupTask() {
 }
 
 
+async function migrateLegacyRecurringJobsToManagerJobs() {
+  const database = db();
+  const legacyCollection = database.collection(COLLECTIONS.recurringJobs);
+  const managerCollection = database.collection(COLLECTIONS.managerJobs);
+  const [legacySnapshot, managerSnapshot] = await Promise.all([
+    legacyCollection.limit(500).get(),
+    managerCollection.limit(500).get(),
+  ]);
+  if (!legacySnapshot.size) return { migrated: 0, legacyRemaining: 0, managerJobs: managerSnapshot.size };
+
+  const existing = new Map(managerSnapshot.docs.map((docSnapshot) => [docSnapshot.id, docSnapshot.data() || {}]));
+  const batch = database.batch();
+  let migrated = 0;
+  for (const legacyDoc of legacySnapshot.docs) {
+    const legacy = legacyDoc.data() || {};
+    const current = existing.get(legacyDoc.id);
+    if (!current || Number(legacy.revision || 0) >= Number(current.revision || 0)) {
+      batch.set(managerCollection.doc(legacyDoc.id), legacy, { merge: true });
+      migrated += 1;
+    }
+    batch.delete(legacyDoc.ref);
+  }
+  await batch.commit();
+  const [legacyAfter, managerAfter] = await Promise.all([
+    legacyCollection.limit(1).get(),
+    managerCollection.limit(500).get(),
+  ]);
+  return { migrated, legacyRemaining: legacyAfter.size, managerJobs: managerAfter.size };
+}
+
 function recurringJobPayload(input) {
   return {
     title: assertString(input.title, 'title', { max: 500 }),
@@ -1821,14 +1852,15 @@ function recurringJobPayload(input) {
 }
 
 async function recurringJobCreate(input, actor = {}) {
+  await migrateLegacyRecurringJobsToManagerJobs();
   const payload = recurringJobPayload(input);
   if (payload.spaceId) await spaceGet({ id: payload.spaceId });
   if (payload.methodId) await methodGet({ id: payload.methodId });
 
   const requestedId = clampString(input.id, 160);
   const ref = requestedId
-    ? db().collection(COLLECTIONS.recurringJobs).doc(requestedId)
-    : db().collection(COLLECTIONS.recurringJobs).doc();
+    ? db().collection(COLLECTIONS.managerJobs).doc(requestedId)
+    : db().collection(COLLECTIONS.managerJobs).doc();
 
   if (requestedId) {
     const existing = await ref.get();
@@ -1853,16 +1885,18 @@ async function recurringJobCreate(input, actor = {}) {
 }
 
 async function recurringJobGet(input) {
+  await migrateLegacyRecurringJobsToManagerJobs();
   const id = assertString(input.id, 'id', { max: 160 });
-  const snapshot = await db().collection(COLLECTIONS.recurringJobs).doc(id).get();
+  const snapshot = await db().collection(COLLECTIONS.managerJobs).doc(id).get();
   if (!snapshot.exists) throw new Error('Recurring job not found: ' + id);
   return documentToObject(snapshot);
 }
 
 async function recurringJobSearch(input = {}) {
+  await migrateLegacyRecurringJobsToManagerJobs();
   const limit = Math.min(Math.max(Number(input.limit) || 50, 1), 200);
   const scanLimit = Math.min(Math.max(Number(input.scanLimit) || Math.max(limit * 5, 100), limit), 1000);
-  const snapshot = await db().collection(COLLECTIONS.recurringJobs).limit(scanLimit).get();
+  const snapshot = await db().collection(COLLECTIONS.managerJobs).limit(scanLimit).get();
   const q = clampString(input.query, 400)?.toLowerCase();
   const status = clampString(input.status, 40);
   const projectId = clampString(input.projectId, 160);
@@ -1892,6 +1926,7 @@ async function recurringJobSearch(input = {}) {
 }
 
 async function recurringJobUpdate(input) {
+  await migrateLegacyRecurringJobsToManagerJobs();
   const id = assertString(input.id, 'id', { max: 160 });
   const patch = input.patch && typeof input.patch === 'object' ? input.patch : {};
   const nextSpaceId = patch.spaceId !== undefined ? (clampString(patch.spaceId, 160) || null) : undefined;
@@ -1899,7 +1934,7 @@ async function recurringJobUpdate(input) {
   if (nextSpaceId) await spaceGet({ id: nextSpaceId });
   if (nextMethodId) await methodGet({ id: nextMethodId });
 
-  const ref = db().collection(COLLECTIONS.recurringJobs).doc(id);
+  const ref = db().collection(COLLECTIONS.managerJobs).doc(id);
   await db().runTransaction(async (tx) => {
     const snapshot = await tx.get(ref);
     if (!snapshot.exists) throw new Error('Recurring job not found: ' + id);
@@ -2038,7 +2073,7 @@ async function recurringJobStart(input, actor = {}) {
     ? await methodGetContext({ id: initialJob.methodId, versionLimit: 5, runLimit: 5 })
     : null;
   const methodExecution = methodContext?.executionContract || null;
-  const jobRef = db().collection(COLLECTIONS.recurringJobs).doc(jobId);
+  const jobRef = db().collection(COLLECTIONS.managerJobs).doc(jobId);
   const workItems = db().collection(COLLECTIONS.workItems);
   const itemRef = workItems.doc();
   let outcome;
@@ -2241,7 +2276,7 @@ async function managerJobStart(input, actor = {}) {
     : null;
   const methodExecution = methodContext?.executionContract || null;
 
-  const jobRef = db().collection(COLLECTIONS.recurringJobs).doc(jobId);
+  const jobRef = db().collection(COLLECTIONS.managerJobs).doc(jobId);
   const runs = db().collection(COLLECTIONS.managerRuns);
   const runRef = runs.doc();
   let outcome;
@@ -2378,7 +2413,7 @@ async function managerRunCreateWorkItem(input, actor = {}) {
     if (!runSnapshot.exists) throw new Error('Manager run not found: ' + runId);
     const run = runSnapshot.data();
     if (run.status !== 'running' || run.claimedBy !== agent) throw new Error('Manager run is not claimed by ' + agent);
-    const jobRef = db().collection(COLLECTIONS.recurringJobs).doc(run.managerJobId);
+    const jobRef = db().collection(COLLECTIONS.managerJobs).doc(run.managerJobId);
     const jobSnapshot = await tx.get(jobRef);
     if (!jobSnapshot.exists) throw new Error('Manager job not found: ' + run.managerJobId);
     const job = jobSnapshot.data();
@@ -2514,7 +2549,7 @@ async function managerRunFinish(input) {
     const current = snapshot.data();
     if (['completed', 'failed'].includes(current.status)) throw new Error('Manager run is already closed: ' + current.status);
     if (current.claimedBy && current.claimedBy !== agent) throw new Error('Manager run is claimed by ' + current.claimedBy);
-    const jobRef = db().collection(COLLECTIONS.recurringJobs).doc(current.managerJobId);
+    const jobRef = db().collection(COLLECTIONS.managerJobs).doc(current.managerJobId);
     const jobSnapshot = await tx.get(jobRef);
     if (!jobSnapshot.exists) throw new Error('Manager job not found: ' + current.managerJobId);
     const now = FieldValue.serverTimestamp();
@@ -2784,7 +2819,7 @@ async function workItemFinish(input) {
     if (['archived', 'done', 'cancelled'].includes(current.status)) throw new Error('Work item is already closed: ' + current.status);
     if (current.claimedBy && current.claimedBy !== agent) throw new Error('Work item is claimed by ' + current.claimedBy);
     const jobRef = ['recurring_job', 'manager_job'].includes(current.sourceType) && current.sourceId
-      ? db().collection(COLLECTIONS.recurringJobs).doc(current.sourceId)
+      ? db().collection(COLLECTIONS.managerJobs).doc(current.sourceId)
       : null;
     const jobSnapshot = jobRef ? await tx.get(jobRef) : null;
     const job = jobSnapshot?.exists ? jobSnapshot.data() : null;
@@ -3120,11 +3155,12 @@ async function migrateLegacyWorkItemStatuses() {
 async function controlPlaneOverview(input = {}) {
   const limit = Math.min(Math.max(Number(input.limit) || 80, 10), 200);
   await migrateLegacyWorkItemStatuses();
+  const managerJobMigration = await migrateLegacyRecurringJobsToManagerJobs();
   await ensureLinearSetupTask();
   const database = db();
-  const [workSnapshot, recurringSnapshot, managerRunSnapshot, spaceSnapshot, runSnapshot, projectSnapshot, memoSnapshot] = await Promise.all([
+  const [workSnapshot, managerJobSnapshot, managerRunSnapshot, spaceSnapshot, runSnapshot, projectSnapshot, memoSnapshot] = await Promise.all([
     database.collection(COLLECTIONS.workItems).limit(Math.max(limit, 100)).get(),
-    database.collection(COLLECTIONS.recurringJobs).limit(100).get(),
+    database.collection(COLLECTIONS.managerJobs).limit(100).get(),
     database.collection(COLLECTIONS.managerRuns).limit(100).get(),
     database.collection(COLLECTIONS.spaces).limit(100).get(),
     database.collection(THINKING_COLLECTIONS.runs).limit(100).get(),
@@ -3134,7 +3170,7 @@ async function controlPlaneOverview(input = {}) {
 
   const rawWork = workSnapshot.docs.map((snapshot) => ({ id: snapshot.id, ...snapshot.data() }));
   const workItems = sortRecent(rawWork.map((item) => serialize(item)));
-  const recurringJobs = sortRecent(recurringSnapshot.docs.map(documentToObject)).filter((item) => item.status === 'active');
+  const managerJobs = sortRecent(managerJobSnapshot.docs.map(documentToObject)).filter((item) => item.status === 'active');
   const managerRuns = sortRecent(managerRunSnapshot.docs.map(documentToObject)).filter((item) => ['ready', 'running'].includes(item.status));
   const spaces = sortRecent(spaceSnapshot.docs.map(documentToObject)).filter((item) => item.status === 'active');
   const runs = sortRecent(runSnapshot.docs.map(documentToObject)).filter((item) => item.status === 'active');
@@ -3225,8 +3261,8 @@ async function controlPlaneOverview(input = {}) {
       humanTasks: humanTasks.length,
       activeSpaces: spaces.length,
       activeProjects: projects.length,
-      activeManagerJobs: recurringJobs.length,
-      activeRecurringJobs: recurringJobs.length,
+      activeManagerJobs: managerJobs.length,
+      activeRecurringJobs: managerJobs.length,
       readyManagerRuns: managerRuns.filter((item) => item.status === 'ready').length,
       runningManagerRuns: managerRuns.filter((item) => item.status === 'running').length,
       activeRuns: runs.length,
@@ -3243,8 +3279,8 @@ async function controlPlaneOverview(input = {}) {
     review: agentWork.filter((item) => item.status === 'review'),
     humanTasks,
     staleLeases,
-    activeManagerJobs: recurringJobs.slice(0, 50),
-    activeRecurringJobs: recurringJobs.slice(0, 50),
+    activeManagerJobs: managerJobs.slice(0, 50),
+    activeRecurringJobs: managerJobs.slice(0, 50),
     managerRuns: managerRuns.slice(0, 50),
     activeRuns: runs.slice(0, 30),
     activeSpaces: spaces.slice(0, 50),
@@ -3256,6 +3292,7 @@ async function controlPlaneOverview(input = {}) {
       issues: linearIssues.slice(0, 100),
       unlinkedIssues: unlinkedLinearIssues.slice(0, 100),
     },
+    managerJobMigration,
     operatingProtocol: [
       'Call control_plane_overview before starting autonomous work.',
       'Prefer a resumable in_progress item or a ready work item; create one for an unqueued Space next action when appropriate. Backlog means deliberately deferred from near-term execution, so do not move active or ongoing work there merely to stop working on it. Never start a running item owned by another active lease. Linear issues are external candidates: import relevant unlinked issues with linear_issue_import_to_work_item before autonomous execution.',
@@ -3273,10 +3310,12 @@ async function controlPlaneOverview(input = {}) {
 
 async function healthCheck() {
   const started = Date.now();
-  const [spaceSample, profileSample, methodSample, recurringJobSample, managerRunSample] = await Promise.all([
+  const managerJobMigration = await migrateLegacyRecurringJobsToManagerJobs();
+  const [spaceSample, profileSample, methodSample, managerJobSample, legacyRecurringJobSample, managerRunSample] = await Promise.all([
     db().collection(COLLECTIONS.spaces).limit(1).get(),
     db().collection(COLLECTIONS.profileFacts).limit(1).get(),
     db().collection(COLLECTIONS.methods).limit(1).get(),
+    db().collection(COLLECTIONS.managerJobs).limit(1).get(),
     db().collection(COLLECTIONS.recurringJobs).limit(1).get(),
     db().collection(COLLECTIONS.managerRuns).limit(1).get(),
   ]);
@@ -3287,8 +3326,9 @@ async function healthCheck() {
     sampleSpaceCount: spaceSample.size,
     sampleProfileFactCount: profileSample.size,
     sampleMethodCount: methodSample.size,
-    sampleManagerJobCount: recurringJobSample.size,
-    sampleRecurringJobCount: recurringJobSample.size,
+    sampleManagerJobCount: managerJobSample.size,
+    legacyRecurringJobCount: legacyRecurringJobSample.size,
+    managerJobMigration,
     sampleManagerRunCount: managerRunSample.size,
     latencyMs: Date.now() - started,
   };
@@ -3321,6 +3361,7 @@ module.exports = {
   linearIssueImportToWorkItem,
   workItemPushToLinear,
   controlPlaneOverview,
+  migrateLegacyRecurringJobsToManagerJobs,
   managerJobCreate,
   managerJobGet,
   managerJobSearch,
