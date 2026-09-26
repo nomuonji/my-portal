@@ -394,6 +394,8 @@ Methodのactive versionはManager Run開始時に固定される。Methodを後�
 
 Agent HQの詳細/編集画面では、Method名・概要・Purpose・instructions・Protocol・Quality Gates・version履歴を表示・編集する。version内容を変更した場合は旧versionを上書きせず、新MethodVersionを作成してactive化する。
 
+UIでは認知負荷を抑えるため、Manager JobカードにはManaged Workのopen件数とRunning / Blocked / Reviewの注意状態だけを表示する。詳細/編集画面では `Job → Managed Work → Method` の順にまとめ、Managed WorkはそのManager由来の未完了Work Itemだけを最大8件まで簡潔に表示する。
+
 #### 既存rotation / receipt機能
 
 既存の以下の情報はManager化後も維持する。
