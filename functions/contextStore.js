@@ -2102,9 +2102,9 @@ async function managerJobGetContext(input) {
         runLimit: Math.min(Math.max(Number(input.runLimit) || 5, 1), 100),
       })
       : Promise.resolve(null),
-    job.defaultWorkerMethodId
+    (job.defaultWorkerMethodId || job.metadata?.defaultWorkerMethodId)
       ? methodGetContext({
-        id: job.defaultWorkerMethodId,
+        id: job.defaultWorkerMethodId || job.metadata?.defaultWorkerMethodId,
         versionLimit: Math.min(Math.max(Number(input.versionLimit) || 3, 1), 50),
         runLimit: Math.min(Math.max(Number(input.runLimit) || 5, 1), 100),
       })
@@ -2178,7 +2178,7 @@ async function managerJobGetContext(input) {
         allowedActionTypes: job.allowedActionTypes || job.metadata?.allowedActionTypes || [],
         readyRequiresCapabilityMatch: job.metadata?.readyRequiresCapabilityMatch === true,
         workerCapabilityProfile: job.metadata?.workerCapabilityProfile || null,
-        defaultWorkerMethodId: job.defaultWorkerMethodId || null,
+        defaultWorkerMethodId: job.defaultWorkerMethodId || job.metadata?.defaultWorkerMethodId || null,
         defaultWorkerMethod: workerMethodContext?.executionContract || null,
       },
       managerRuntimeRequirements: runtimeRequirementsFromMethodExecution(methodContext?.executionContract),
