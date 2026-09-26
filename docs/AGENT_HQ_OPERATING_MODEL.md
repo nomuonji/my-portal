@@ -135,7 +135,7 @@ They should not duplicate:
 
 The bootstrap exception is My Portal itself: if My Portal is unavailable, the runner cannot load its Method or persist an Incident, so it must stop rather than improvise and report the bootstrap failure directly to the Human.
 
-## 5. Capability-aware dispatch
+## 6. Capability-aware dispatch
 
 Manager-created ready work should record, where material:
 
@@ -144,13 +144,14 @@ Manager-created ready work should record, where material:
   "metadata": {
     "execution": {
       "requiredCapabilities": [],
+      "requiredTools": [],
       "validationStrategy": {}
     }
   }
 }
 ```
 
-The Manager must compare required capabilities with the configured Worker capability profile before counting the item as ready inventory.
+The Manager must merge the Worker Method runtime requirements with Work Item-specific required capabilities/tools, then compare the result with the configured Worker capability/tool profile before counting the item as ready inventory.
 
 If a capability gap is discovered:
 1. Redesign the validation/execution route using an available legitimate capability, or
@@ -159,7 +160,7 @@ If a capability gap is discovered:
 
 Do not blindly retry the same Worker with the same capability gap.
 
-## 6. Worker → Manager escalation
+## 7. Worker → Manager escalation
 
 A Worker problem report contains:
 - symptom,
@@ -185,7 +186,7 @@ The Work Item should move to:
 
 The Worker should use the canonical `work_item_report_problem` operation rather than pretending unfinished work is complete.
 
-## 7. Manager triage
+## 8. Manager triage
 
 Manager examines escalations before creating more inventory.
 
@@ -206,7 +207,7 @@ Create an Incident when one or more are true:
 ### Human escalation
 Mission, policy, important architecture, quality/safety boundaries, credentials/permissions, or genuinely human-only decisions go to the Human.
 
-## 8. System Incidents
+## 9. System Incidents
 
 System Incidents reuse Work Items with:
 
@@ -244,7 +245,7 @@ Detect → Diagnose → Repair → Regression check → Prevention
 
 not merely "the error disappeared."
 
-## 9. Manager mission and outcome review
+## 10. Manager mission and outcome review
 
 A Manager owns a measurable mission. Activity volume is not the outcome.
 
@@ -263,7 +264,7 @@ Periodic human reports include:
 - self-improvement,
 - whether prior Incidents recurred.
 
-## 10. Durable governance artifacts
+## 11. Durable governance artifacts
 
 Three layers are kept distinct:
 
@@ -277,7 +278,7 @@ When a System Incident reveals a new invariant:
 3. update the Decision Log,
 4. update this Operating Model if the current expected behavior changed.
 
-## 11. Repair workflow when the Human says "My Portal seems wrong"
+## 12. Repair workflow when the Human says "My Portal seems wrong"
 
 1. Load `control_plane_overview`.
 2. Read `agent_hq_operating_model`.
