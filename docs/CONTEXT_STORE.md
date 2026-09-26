@@ -405,11 +405,11 @@ Agent HQの詳細/編集画面では、Method名・概要・Purpose・instructio
 
 Manager自身の完了にexecutionReceiptは要求しない。証跡は生成されたworker Work Item側で保存する。
 
-#### 互換性
+#### 保存先と正規API
 
-Firestore上の既存 `memos/agent-control/recurringJobs` collectionは破壊的migrationを避けるため当面そのまま保存層として使う。新しい正規名称・API・MCPは `manager_job_*` / `manager_run_*`。
+Manager Jobの正本はFirestore `memos/agent-control/managerJobs`。Manager Runは `memos/agent-control/managerRuns` に保存する。
 
-旧 `recurring_job_*` toolsは既存スケジュールや古いクライアント向けの互換経路として残すが、新規運用ではManager Jobを使う。
+外部スケジューラ・UI・MCP・APIはすべて `manager_job_*` / `manager_run_*` を使う。旧互換Entityは持たない。
 
 
 ### Human Tasks
