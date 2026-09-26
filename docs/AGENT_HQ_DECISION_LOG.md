@@ -95,3 +95,15 @@ It is intentionally not a duplicate of git history.
 **Decision:** Periodic Manager outcome reports include Worker escalations, Manager fixes, Incidents created/resolved, unresolved structural issues, prevention, and recurrence checks.
 
 **Why:** The Human should see not just mission outcomes but whether the operating system itself is learning from failures.
+
+
+## Implementation anchors
+
+These are not the full git history; they are recovery anchors for the current operating model.
+
+- `bb3d258371925192aff4fedb42825be41346e224` — Operating Model constant, Worker→Manager problem reporting, System Incident storage/helpers, Control Plane Incident exposure.
+- `beefd2c1500f7d00ee4860a8700ffba5f06cde25` — MCP schemas for Operating Model, escalation and Incident operations.
+- `a2a8243d2f3051e8b7087053ef23511a325f50fe` — production MCP routes and server version 1.8.0.
+- `1ac1a029dd7419ba5a7c1d0f200624aa93c4d398` — Agent HQ UI separates System Incidents from the normal Worker queue/history.
+- `da9a8fbd603fb94c1622f5c0383cd381a0b7557c` — Context Store governance documentation aligned with the Operating Model.
+- `1fb372b54129c9aa77aa30e30f5d4bea7b24b6b8` — Manager Job Context includes Worker escalations, related Incidents, capability policy, and Operating Model.
