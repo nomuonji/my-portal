@@ -52,10 +52,10 @@ import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 const queueColumns = [
   { id: 'backlog', label: 'Backlog', hint: '明示的に後回し', icon: Inventory2OutlinedIcon },
   { id: 'ready', label: 'Ready', hint: '取得可能', icon: BoltIcon },
-  { id: 'in_progress', label: 'Working', hint: '進行中・再開可能', icon: PendingActionsOutlinedIcon },
+  { id: 'in_progress', label: 'Working', hint: '未完了・再開可能', icon: PendingActionsOutlinedIcon },
   { id: 'running', label: 'Running', hint: 'いま作業中', icon: SmartToyOutlinedIcon },
-  { id: 'blocked', label: 'Blocked', hint: '判断・外部条件待ち', icon: WarningAmberOutlinedIcon },
-  { id: 'review', label: 'Review', hint: '確認・引継ぎ待ち', icon: TaskAltOutlinedIcon },
+  { id: 'blocked', label: 'Blocked', hint: '現在は完遂できない', icon: WarningAmberOutlinedIcon },
+  { id: 'review', label: 'Review', hint: '実装・検証済み／判断待ち', icon: TaskAltOutlinedIcon },
 ];
 
 const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
@@ -296,6 +296,26 @@ function Dashboard() {
     }
   };
 
+  const systemIncidents = useMemo(
+    () => workItems
+      .filter((item) => item.sourceType === 'system_incident')
+      .sort((a, b) => toMillis(b.updatedAt || b.createdAt) - toMillis(a.updatedAt || a.createdAt)),
+    [workItems],
+  );
+
+  const activeSystemIncidents = useMemo(
+    () => systemIncidents.filter((item) => !['archived', 'done', 'cancelled'].includes(item.status)),
+    [systemIncidents],
+  );
+
+  const recentResolvedIncidents = useMemo(() => {
+    const cutoff = Date.now() - (30 * 24 * 60 * 60 * 1000);
+    return systemIncidents
+      .filter((item) => ['archived', 'done', 'cancelled'].includes(item.status))
+      .filter((item) => toMillis(item.finishedAt || item.updatedAt || item.createdAt) >= cutoff)
+      .slice(0, 5);
+  }, [systemIncidents]);
+
   const openWork = useMemo(
     () => workItems.filter((item) => !['archived', 'done', 'cancelled'].includes(item.status)),
     [workItems],
@@ -303,7 +323,7 @@ function Dashboard() {
 
   const humanTasks = useMemo(
     () => openWork
-      .filter((item) => item.executionMode === 'human')
+      .filter((item) => item.executionMode === 'human' && item.sourceType !== 'system_incident')
       .sort((a, b) => {
         const priorityDiff = (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2);
         if (priorityDiff !== 0) return priorityDiff;
@@ -313,7 +333,7 @@ function Dashboard() {
   );
 
   const allAgentWork = useMemo(
-    () => workItems.filter((item) => (item.executionMode || 'agent') === 'agent'),
+    () => workItems.filter((item) => (item.executionMode || 'agent') === 'agent' && item.sourceType !== 'system_incident'),
     [workItems],
   );
 
@@ -324,6 +344,7 @@ function Dashboard() {
 
   const completedWork = useMemo(
     () => workItems
+      .filter((item) => item.sourceType !== 'system_incident')
       .filter((item) => ['archived', 'done', 'cancelled'].includes(item.status))
       .sort((a, b) => toMillis(b.finishedAt || b.updatedAt || b.createdAt) - toMillis(a.finishedAt || a.updatedAt || a.createdAt)),
     [workItems],
@@ -639,6 +660,100 @@ function Dashboard() {
       </Box>
 
       <ManagerJobsPanel projects={projects} />
+
+      <Paper
+        elevation={0}
+        sx={{
+          p: 1.25,
+          mb: 1.5,
+          border: '1px solid ' + border,
+          background: glass,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.7, mb: 0.9, flexWrap: 'wrap' }}>
+          <WarningAmberOutlinedIcon color={activeSystemIncidents.length ? 'warning' : 'disabled'} />
+          <Box sx={{ flex: 1, minWidth: 180 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
+              System Incidents
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Workerの個別失敗ではなく、再発し得るAgent HQ・Method・schema・connector等の構造問題です。
+            </Typography>
+          </Box>
+          <Chip
+            size="small"
+            color={activeSystemIncidents.length ? 'warning' : 'default'}
+            label={'未解決 ' + activeSystemIncidents.length}
+            sx={{ height: 21 }}
+          />
+          <Chip
+            size="small"
+            variant="outlined"
+            label={'30日解決 ' + recentResolvedIncidents.length}
+            sx={{ height: 21 }}
+          />
+        </Box>
+
+        <Stack spacing={0.7}>
+          {activeSystemIncidents.slice(0, 6).map((item) => {
+            const incident = item.metadata?.incident || {};
+            return (
+              <Box
+                key={item.id}
+                sx={{
+                  p: 0.9,
+                  borderRadius: 1.5,
+                  border: '1px solid ' + alpha(theme.palette.warning.main, 0.35),
+                  bgcolor: alpha(theme.palette.warning.main, isDark ? 0.06 : 0.035),
+                }}
+              >
+                <Box sx={{ display: 'flex', gap: 0.6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <Typography variant="body2" sx={{ fontWeight: 900 }}>
+                    {item.title || 'System Incident'}
+                  </Typography>
+                  <Chip size="small" label={incident.severity || item.priority || 'medium'} color="warning" variant="outlined" sx={{ height: 18, fontSize: '0.52rem' }} />
+                  {item.sourceId && (
+                    <Chip size="small" label={'Manager · ' + item.sourceId} variant="outlined" sx={{ height: 18, fontSize: '0.52rem' }} />
+                  )}
+                  <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
+                    {formatDate(item.updatedAt || item.createdAt)}
+                  </Typography>
+                </Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.35, lineHeight: 1.45 }}>
+                  {incident.symptom || item.objective || '症状の記録なし'}
+                </Typography>
+              </Box>
+            );
+          })}
+
+          {activeSystemIncidents.length === 0 && (
+            <Typography variant="body2" color="text.secondary">
+              未解決のSystem Incidentはありません。
+            </Typography>
+          )}
+
+          {recentResolvedIncidents.length > 0 && (
+            <Box sx={{ pt: 0.35 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850 }}>
+                最近解決
+              </Typography>
+              <Stack spacing={0.45} sx={{ mt: 0.45 }}>
+                {recentResolvedIncidents.map((item) => (
+                  <Box key={item.id} sx={{ display: 'flex', gap: 0.6, alignItems: 'center', minWidth: 0 }}>
+                    <TaskAltOutlinedIcon sx={{ fontSize: 15, color: 'success.main', flexShrink: 0 }} />
+                    <Typography variant="caption" sx={{ fontWeight: 750, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {item.title || 'Resolved Incident'}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto', whiteSpace: 'nowrap' }}>
+                      {formatDate(item.finishedAt || item.updatedAt)}
+                    </Typography>
+                  </Box>
+                ))}
+              </Stack>
+            </Box>
+          )}
+        </Stack>
+      </Paper>
 
       <Paper
         elevation={0}
