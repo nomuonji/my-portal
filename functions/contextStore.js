@@ -61,6 +61,18 @@ const AGENT_HQ_OPERATING_MODEL = Object.freeze({
     manager: 'Owns mission outcomes, reconciles queue state, delegates executable bundles, receives Worker escalations, and creates structural Incidents.',
     worker: 'Claims executable work, delivers and validates it, and reports execution problems to its Manager before any Incident escalation.',
   },
+  methods: {
+    managerMethod: 'How a Manager observes, reconciles, decides, delegates, reviews outcomes, and handles incidents.',
+    workerMethod: 'How a Worker executes, validates, delivers, and reports problems.',
+    runtimeRequirements: 'Method protocol.runtimeRequirements declares required/optional capabilities and tool families.',
+    managerVersionPin: 'Manager Method version is pinned when manager_job_start materializes a Manager Run.',
+    workerVersionPin: 'Worker Method version is pinned on the first successful Work Item claim.',
+  },
+  schedulerBoundary: {
+    owns: ['when', 'runner_bootstrap'],
+    doesNotOwn: ['manager_manual', 'worker_manual', 'tool_list', 'validation_policy', 'state_semantics', 'incident_policy'],
+    bootstrapFailure: 'If My Portal itself is unavailable, stop instead of improvising and report directly to the Human.',
+  },
   stateSemantics: {
     backlog: 'Deliberately deferred from near-term execution.',
     ready: 'Unclaimed and executable by the intended current Worker.',
@@ -3129,6 +3141,19 @@ async function systemIncidentCreate(input, actor = {}) {
   const symptom = assertString(input.symptom, 'symptom', { max: 6000 });
   const affectedManagerJobIds = stringArray(input.affectedManagerJobIds, 50, 160);
   const sourceManagerJobId = clampString(input.managerJobId, 160) || affectedManagerJobIds[0] || null;
+  const dedupeKey = clampString(input.dedupeKey, 300) || null;
+
+  if (dedupeKey) {
+    const snapshot = await db().collection(COLLECTIONS.workItems).limit(1000).get();
+    const existing = sortRecent(snapshot.docs.map(documentToObject)).find((item) =>
+      item.sourceType === 'system_incident'
+      && !['archived', 'done', 'cancelled'].includes(item.status)
+      && item.metadata?.incident?.dedupeKey === dedupeKey
+      && (!sourceManagerJobId || item.sourceId === sourceManagerJobId)
+    );
+    if (existing) return existing;
+  }
+
   return workItemCreate({
     title: input.title,
     objective: clampString(input.objective, 12000) || 'Diagnose, repair, regression-check, and prevent recurrence of this Agent HQ system incident.',
@@ -3154,6 +3179,7 @@ async function systemIncidentCreate(input, actor = {}) {
         prevention: clampString(input.prevention, 12000) || '',
         operatingModelChanged: input.operatingModelChanged === true,
         evidence: stringArray(input.evidence, 100, 3000),
+        dedupeKey,
         openedAt: new Date().toISOString(),
       },
     },
