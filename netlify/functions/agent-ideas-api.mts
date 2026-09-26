@@ -273,6 +273,9 @@ export default async (request: Request) => {
           projectId: body.projectId,
           methodId: body.methodId,
           concurrencyPolicy: body.concurrencyPolicy || "skip_if_open",
+          rotationTargets: body.rotationTargets || [],
+          requireExecutionReceipt: body.requireExecutionReceipt === true,
+          allowedActionTypes: body.allowedActionTypes || [],
           tags: body.tags || [],
           metadata: body.metadata || {},
         }, { agent: "portal-ui", model: "my-portal-ui" }));
