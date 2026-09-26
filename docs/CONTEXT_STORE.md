@@ -398,7 +398,23 @@ Managerが生成したWork Itemは:
 
 #### Method
 
-Manager Jobに紐づくMethodは、workerの作業手順ではなく、**Managerが何を観測し、どうQueueを整理し、どの条件でWork Itemを作るかを定義する管理方法論**として扱う。
+Manager / Worker双方の実行マニュアルはScheduled TaskではなくMy PortalのMethodを正本にする。
+
+- Manager Jobの `methodId` → Manager Method
+- Manager Jobの `defaultWorkerMethodId` → 生成Work Itemへ標準で付与するWorker Method
+- Work Itemの `workerMethodId` → その仕事固有のWorker Method（標準をoverride可）
+
+Manager Jobに紐づくManager Methodは、**Managerが何を観測し、どうQueueを整理し、どの条件でWork Itemを作るかを定義する管理方法論**として扱う。Worker Methodは、**渡されたWork Itemをどう実装・検証・delivery・problem reportするか**を定義する。
+
+Method versionの `protocol.runtimeRequirements` は、そのMethodを実行するために必要な `requiredCapabilities / requiredTools / optionalCapabilities / optionalTools` を宣言する。
+
+Manager Runは `manager_job_start` 時にactive Manager Method versionを固定する。Manager Run claim時、外部runnerはその実行で実際に利用可能な `availableCapabilities / availableTools` を渡し、requirementsを満たさない場合はclaimできない。
+
+Work ItemはWorker Method IDを保持し、最初の成功した `work_item_claim` 時にactive Worker Method versionを固定する。claim前には `work_item_get_execution_context` でWorker Method・runtimeRequirements・Operating Modelを解決できる。runtime gapがある場合、Workerはclaimせず `work_item_report_problem` でManagerへ報告する。
+
+Scheduled Taskは「いつ」「どのManager/Workerを起動するか」というbootstrapだけを持つ。詳細な手順・MCP/tool一覧・validation・state semantics・Incident policyをScheduler promptへ複製しない。My Portal自体が利用不能な場合のみ、MethodもIncident保存先も取得できないため外部runnerから人間へ直接報告する。
+
+
 
 Methodのactive versionはManager Run開始時に固定される。Methodを後から改善しても、過去のManager Runがどのversionで判断したか追跡できる。
 
