@@ -142,9 +142,6 @@ export default async (request: Request) => {
       if (resource === "manager_jobs") {
         return json(await contextStore.managerJobSearch({ limit: 100, scanLimit: 500 }));
       }
-      if (resource === "recurring_jobs") {
-        return json(await contextStore.recurringJobSearch({ limit: 100, scanLimit: 500 }));
-      }
       if (resource === "methods") {
         return json(await contextStore.methodSearch({ limit: 100, scanLimit: 300 }));
       }
@@ -169,18 +166,6 @@ export default async (request: Request) => {
       }
       if (resource === "manager_run") {
         return json(await contextStore.managerRunGet({ id: url.searchParams.get("id") || "" }));
-      }
-      if (resource === "recurring_job_context") {
-        return json(await contextStore.recurringJobGetContext({
-          id: url.searchParams.get("id") || "",
-          historyLimit: Math.min(Math.max(Number(url.searchParams.get("historyLimit")) || 20, 1), 100),
-        }));
-      }
-      if (resource === "recurring_job_history") {
-        return json(await contextStore.recurringJobHistory({
-          id: url.searchParams.get("id") || "",
-          limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 30, 1), 200),
-        }));
       }
       if (resource === "control_plane") {
         return json(await contextStore.controlPlaneOverview({
@@ -329,39 +314,6 @@ export default async (request: Request) => {
           observations: body.observations || [],
           decisions: body.decisions || [],
         }));
-      }
-      if (action === "recurring_job_create") {
-        return json(await contextStore.recurringJobCreate({
-          id: body.id,
-          title: body.title,
-          objective: body.objective,
-          instructions: body.instructions,
-          status: body.status || "active",
-          priority: body.priority || "medium",
-          spaceId: body.spaceId,
-          projectId: body.projectId,
-          methodId: body.methodId,
-          concurrencyPolicy: body.concurrencyPolicy || "skip_if_open",
-          rotationTargets: body.rotationTargets || [],
-          requireExecutionReceipt: body.requireExecutionReceipt === true,
-          allowedActionTypes: body.allowedActionTypes || [],
-          tags: body.tags || [],
-          metadata: body.metadata || {},
-        }, { agent: "portal-ui", model: "my-portal-ui" }));
-      }
-      if (action === "recurring_job_update") {
-        return json(await contextStore.recurringJobUpdate({
-          id: body.id,
-          expectedRevision: body.expectedRevision,
-          patch: body.patch || {},
-        }));
-      }
-      if (action === "recurring_job_start") {
-        return json(await contextStore.recurringJobStart({
-          id: body.id,
-          invocationId: body.invocationId,
-          requestedBy: body.requestedBy || "portal-ui",
-        }, { agent: "portal-ui", model: "my-portal-ui" }));
       }
       if (action === "linear_issue_import") {
         return json(await contextStore.linearIssueImportToWorkItem({
