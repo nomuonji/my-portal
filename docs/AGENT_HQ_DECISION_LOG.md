@@ -135,3 +135,8 @@ These are not the full git history; they are recovery anchors for the current op
 **Why:** When the Human notices that My Portal behavior feels wrong, the expected operating model and the reasons behind major design changes should be inspectable without leaving the control plane.
 
 **Implementation rule:** The UI reads the repository-owned Markdown through the authenticated My Portal backend. It does not maintain a second hand-written copy of the documents in React state.
+
+**Implementation anchors:**
+- `55b38292dee25f2b422bd9fb441aafa825d44c15` — bundles both governance Markdown files with Netlify Functions.
+- `ad918a44acffcc258cb0b3721cab22b4a94fddcc` — authenticated backend resource serves the exact repository Markdown.
+- `45192b1e8dac7868b89a7eb5533db64e0fb52cd1` — Agent HQ header button + Operating Model / Decision Log viewer UI.
