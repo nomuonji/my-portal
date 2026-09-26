@@ -26,6 +26,7 @@ import { alpha } from '@mui/material/styles';
 import AddTaskOutlinedIcon from '@mui/icons-material/AddTaskOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
+import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
 import RepeatRoundedIcon from '@mui/icons-material/RepeatRounded';
 import { auth } from '../firebase';
 
