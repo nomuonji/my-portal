@@ -398,6 +398,8 @@ UIでは認知負荷を抑えるため、Manager JobカードにはManaged Work�
 
 Agent HQの人間向けUIは小さな会社をアナロジーとして使う。`あなた（方針・承認） → マネージャー（仕事を発見） → Worker（実行） → 確認デスク（blocked/review）` を軽いドット絵で可視化するが、保存Entity名はManager Job / Work Item / Project等のまま維持する。Portal内からManagerを実行するボタンは置かず、外部ChatGPT/Scheduled Task用の起動文コピーだけをマネージャー設定の補助操作として残す。
 
+Work Itemの完了ライフサイクルは、active queueとcompleted historyを分けて扱う。HQの作業ボードには `backlog / ready / in_progress / running / blocked / review` だけを表示し、`archived` は直近7日の「最近の完了」として別表示する。古い完了データは通常UIから外して履歴として保持し、保存期間や物理削除はManagerではなくsystem housekeepingの責務とする。Managerは全完了タスクを逐一承認せず、Workerが完了可否を確定できない場合だけ `review` を確認する。`deliveryStatus=live_verified` かつacceptance criteriaを満たす通常完了はWorkerが直接archivedへ完了してよい。
+
 #### 既存rotation / receipt機能
 
 既存の以下の情報はManager化後も維持する。
