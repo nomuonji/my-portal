@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { marked } from 'marked';
 import {
   addDoc,
   collection,
@@ -28,6 +29,8 @@ import {
   Paper,
   Select,
   Stack,
+  Tab,
+  Tabs,
   TextField,
   Typography,
   useTheme,
@@ -48,6 +51,7 @@ import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
 
 const queueColumns = [
   { id: 'backlog', label: 'Backlog', hint: '明示的に後回し', icon: Inventory2OutlinedIcon },
@@ -203,6 +207,11 @@ function Dashboard() {
   const [linearLoading, setLinearLoading] = useState(false);
   const [linearError, setLinearError] = useState('');
   const [linearImporting, setLinearImporting] = useState('');
+  const [governanceOpen, setGovernanceOpen] = useState(false);
+  const [governanceTab, setGovernanceTab] = useState('operatingModel');
+  const [governanceDocs, setGovernanceDocs] = useState(null);
+  const [governanceLoading, setGovernanceLoading] = useState(false);
+  const [governanceError, setGovernanceError] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState('');
   const [draft, setDraft] = useState({
@@ -265,6 +274,32 @@ function Dashboard() {
     // Agent HQ mounts only for an authenticated user; auth.currentUser is read at request time.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const loadGovernanceDocs = async () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    try {
+      setGovernanceLoading(true);
+      setGovernanceError('');
+      const token = await currentUser.getIdToken();
+      const response = await fetch('/api/agent-ideas?resource=agent_hq_governance', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Agent HQドキュメントの取得に失敗しました。');
+      setGovernanceDocs(payload.docs || null);
+    } catch (error) {
+      console.error('Failed to load Agent HQ governance docs:', error);
+      setGovernanceError(error.message || 'Agent HQドキュメントの取得に失敗しました。');
+    } finally {
+      setGovernanceLoading(false);
+    }
+  };
+
+  const openGovernanceDocs = async () => {
+    setGovernanceOpen(true);
+    if (!governanceDocs && !governanceLoading) await loadGovernanceDocs();
+  };
 
   const importLinearIssue = async (issue) => {
     const currentUser = auth.currentUser;
@@ -578,6 +613,13 @@ function Dashboard() {
             </Typography>
           </Box>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Button
+              variant="outlined"
+              startIcon={<MenuBookOutlinedIcon />}
+              onClick={openGovernanceDocs}
+            >
+              運用モデル
+            </Button>
             <Button
               variant="outlined"
               startIcon={<PsychologyAltOutlinedIcon />}
@@ -1423,6 +1465,97 @@ function Dashboard() {
           </Stack>
         </Paper>
       </Box>
+
+      <Dialog
+        open={governanceOpen}
+        onClose={() => setGovernanceOpen(false)}
+        fullWidth
+        maxWidth="lg"
+      >
+        <DialogTitle sx={{ pb: 0 }}>
+          Agent HQ Governance
+        </DialogTitle>
+        <DialogContent sx={{ pt: 1.2 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            現在の「あるべき姿」と、重要な設計判断の履歴です。表示内容はrepositoryのMarkdown正本をMy Portal backend経由で読み込んでいます。
+          </Typography>
+          <Tabs
+            value={governanceTab}
+            onChange={(_, value) => setGovernanceTab(value)}
+            sx={{ mb: 1.2, borderBottom: '1px solid ' + border }}
+          >
+            <Tab value="operatingModel" label="Operating Model" />
+            <Tab value="decisionLog" label="Decision Log" />
+          </Tabs>
+
+          {governanceLoading && (
+            <Typography variant="body2" color="text.secondary">読み込み中…</Typography>
+          )}
+          {governanceError && (
+            <Alert
+              severity="error"
+              action={<Button size="small" onClick={loadGovernanceDocs}>再試行</Button>}
+              sx={{ mb: 1 }}
+            >
+              {governanceError}
+            </Alert>
+          )}
+          {!governanceLoading && !governanceError && governanceDocs?.[governanceTab] && (
+            <>
+              <Box sx={{ display: 'flex', gap: 0.7, alignItems: 'center', mb: 1, flexWrap: 'wrap' }}>
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  label={governanceDocs[governanceTab].path}
+                />
+              </Box>
+              <Box
+                dangerouslySetInnerHTML={{
+                  __html: marked.parse(governanceDocs[governanceTab].markdown || ''),
+                }}
+                sx={{
+                  maxHeight: '68vh',
+                  overflowY: 'auto',
+                  pr: 1,
+                  lineHeight: 1.7,
+                  fontSize: '0.9rem',
+                  '& h1': { fontSize: '1.6rem', mt: 0, mb: 1.2 },
+                  '& h2': { fontSize: '1.2rem', mt: 2.4, mb: 0.8 },
+                  '& h3': { fontSize: '1rem', mt: 1.8, mb: 0.6 },
+                  '& p': { my: 0.7 },
+                  '& ul, & ol': { pl: 3 },
+                  '& li': { mb: 0.35 },
+                  '& table': { borderCollapse: 'collapse', width: '100%', my: 1 },
+                  '& th, & td': { border: '1px solid ' + border, px: 1, py: 0.65, textAlign: 'left', verticalAlign: 'top' },
+                  '& code': {
+                    px: 0.45,
+                    py: 0.1,
+                    borderRadius: 0.6,
+                    bgcolor: alpha(theme.palette.text.primary, isDark ? 0.12 : 0.06),
+                    fontSize: '0.84em',
+                  },
+                  '& pre': {
+                    p: 1.2,
+                    overflowX: 'auto',
+                    borderRadius: 1.2,
+                    bgcolor: alpha(theme.palette.text.primary, isDark ? 0.1 : 0.05),
+                  },
+                  '& pre code': { p: 0, bgcolor: 'transparent' },
+                  '& blockquote': {
+                    ml: 0,
+                    pl: 1.2,
+                    borderLeft: '3px solid ' + alpha(theme.palette.primary.main, 0.5),
+                    color: 'text.secondary',
+                  },
+                }}
+              />
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setGovernanceOpen(false)}>閉じる</Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={createOpen}
