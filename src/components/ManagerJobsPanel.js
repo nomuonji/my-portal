@@ -671,6 +671,48 @@ export default function ManagerJobsPanel({ projects = [] }) {
         <DialogTitle>{editing ? 'マネージャー設定' : 'マネージャーを追加'}</DialogTitle>
         <DialogContent>
           <Stack spacing={1.6} sx={{ mt: 0.8 }}>
+            {editing?.metadata?.missionContract?.mission && (
+              <Paper
+                variant="outlined"
+                sx={{
+                  p: 1.4,
+                  bgcolor: alpha(theme.palette.success.main, isDark ? 0.07 : 0.035),
+                  borderColor: alpha(theme.palette.success.main, 0.28),
+                }}
+              >
+                <Box sx={{ display: 'flex', gap: 0.7, alignItems: 'center', flexWrap: 'wrap', mb: 0.8 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 950, flex: 1 }}>
+                    ミッション / 責任
+                  </Typography>
+                  {editing.metadata.missionContract.reviewPolicy?.periodDays && (
+                    <Chip
+                      size="small"
+                      color="success"
+                      variant="outlined"
+                      label={editing.metadata.missionContract.reviewPolicy.periodDays + '日ごとに成果レビュー'}
+                    />
+                  )}
+                </Box>
+                <Typography variant="body2" sx={{ fontWeight: 850, lineHeight: 1.55 }}>
+                  {editing.metadata.missionContract.mission}
+                </Typography>
+                {(editing.metadata.missionContract.responsibilities || []).length > 0 && (
+                  <Box sx={{ mt: 0.9 }}>
+                    {(editing.metadata.missionContract.responsibilities || []).slice(0, 6).map((item) => (
+                      <Typography key={item} variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.55 }}>
+                        • {item}
+                      </Typography>
+                    ))}
+                  </Box>
+                )}
+                {(editing.metadata.missionContract.nonResponsibilities || []).length > 0 && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.8 }}>
+                    責任外: {(editing.metadata.missionContract.nonResponsibilities || []).join(' / ')}
+                  </Typography>
+                )}
+              </Paper>
+            )}
+
             <Paper variant="outlined" sx={{ p: 1.4 }}>
               <Typography variant="subtitle2" sx={{ fontWeight: 950, mb: 1 }}>
                 Job
