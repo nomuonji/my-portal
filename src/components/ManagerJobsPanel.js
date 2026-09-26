@@ -256,7 +256,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
       priority: job.priority || 'medium',
       projectId: job.projectId || '',
       methodId: job.methodId || '',
-      defaultWorkerMethodId: job.defaultWorkerMethodId || '',
+      defaultWorkerMethodId: job.defaultWorkerMethodId || job.metadata?.defaultWorkerMethodId || '',
       concurrencyPolicy: job.concurrencyPolicy || 'skip_if_open',
       rotationTargetsText: jobTargets(job).join('\n'),
       requireExecutionReceipt: jobNeedsReceipt(job),
@@ -502,7 +502,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
           {visibleJobs.map((job) => {
             const project = projectById.get(job.projectId);
             const method = methodById.get(job.methodId);
-            const workerMethod = methodById.get(job.defaultWorkerMethodId);
+            const workerMethod = methodById.get(job.defaultWorkerMethodId || job.metadata?.defaultWorkerMethodId);
             return (
               <Card key={job.id} elevation={0} sx={{ border: '1px solid ' + border }}>
                 <CardContent sx={{ p: '13px !important' }}>
