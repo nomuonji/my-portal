@@ -124,3 +124,14 @@ These are not the full git history; they are recovery anchors for the current op
 **Runtime requirements:** Method versions declare required/optional capabilities and tool families. The runner reports only what is actually available in the current invocation; My Portal checks the match before claim.
 
 **Failure behavior:** Worker runtime gaps go to the Manager through the normal Worker escalation path. Manager runtime gaps that make the management function structurally unusable become System Incidents. If My Portal itself is unavailable, no internal Incident can be persisted, so the external runner reports directly to the Human.
+
+
+---
+
+## 2026-09-27 — Governance docs are visible in Agent HQ
+
+**Decision:** `AGENT_HQ_OPERATING_MODEL.md` and `AGENT_HQ_DECISION_LOG.md` remain durable repository documentation and are also readable from the authenticated Agent HQ UI.
+
+**Why:** When the Human notices that My Portal behavior feels wrong, the expected operating model and the reasons behind major design changes should be inspectable without leaving the control plane.
+
+**Implementation rule:** The UI reads the repository-owned Markdown through the authenticated My Portal backend. It does not maintain a second hand-written copy of the documents in React state.
