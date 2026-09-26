@@ -822,7 +822,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
                       onChange={(event) => changeMethod(event.target.value)}
                     >
                       <MenuItem value="">なし</MenuItem>
-                      {methods.filter((method) => method.status === 'active').map((method) => (
+                      {methods.filter((method) => method.status === 'active' && !(method.tags || []).includes('worker-method')).map((method) => (
                         <MenuItem key={method.id} value={method.id}>
                           {method.title}{method.currentVersionNumber ? ' · v' + method.currentVersionNumber : ''}
                         </MenuItem>
@@ -837,7 +837,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
                       onChange={(event) => setDraft((prev) => ({ ...prev, defaultWorkerMethodId: event.target.value }))}
                     >
                       <MenuItem value="">なし</MenuItem>
-                      {methods.filter((method) => method.status === 'active').map((method) => (
+                      {methods.filter((method) => method.status === 'active' && (method.tags || []).includes('worker-method')).map((method) => (
                         <MenuItem key={method.id} value={method.id}>
                           {method.title}{method.currentVersionNumber ? ' · v' + method.currentVersionNumber : ''}
                         </MenuItem>
