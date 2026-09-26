@@ -600,6 +600,7 @@ const TOOLS = [
       severity: { type: 'string', enum: store.INCIDENT_SEVERITIES, default: 'medium' },
       detectedBy: { type: 'string', enum: ['worker', 'manager', 'human'], default: 'manager' },
       managerJobId: string('Primary affected Manager Job ID.', 160),
+      dedupeKey: string('Stable key for the same structural incident, used to avoid duplicate open incidents across repeated runs.', 300),
       affectedManagerJobIds: stringArray('Affected Manager Job IDs.', 50),
       relatedWorkItemIds: stringArray('Related Work Item IDs.', 100),
       objective: string('Optional repair objective.', 12000),
