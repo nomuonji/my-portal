@@ -88,6 +88,53 @@ Split when:
 - risk differs materially,
 - validation or measurement windows are independent.
 
+## 5. Methods and runtime requirements
+
+Execution manuals live in My Portal Methods, not in external scheduler prompts.
+
+- **Manager Method** — how a Manager observes, reconciles, decides, delegates, reviews outcomes, and handles incidents.
+- **Worker Method** — how a Worker executes, validates, delivers, and reports problems.
+- **Manager Job** — owns a Manager Method and may define a default Worker Method for generated Work Items.
+- **Work Item** — owns the concrete WHAT and may override the default Worker Method for exceptional work.
+
+Each active Method version may declare:
+
+```json
+{
+  "protocol": {
+    "runtimeRequirements": {
+      "requiredCapabilities": [],
+      "requiredTools": [],
+      "optionalCapabilities": [],
+      "optionalTools": []
+    }
+  }
+}
+```
+
+External runners must report only tools/capabilities that are **actually available in that invocation**. My Portal compares those declarations with the pinned Method requirements before execution.
+
+### Version pinning
+
+- A Manager Run pins the active Manager Method version when `manager_job_start` materializes the run.
+- A Work Item keeps a Worker Method reference; the active Worker Method version is resolved and pinned on the first successful Worker claim.
+- Historical work therefore remains traceable to the exact manual used even after Method improvements.
+
+### Scheduler boundary
+
+External Scheduled Tasks own:
+- when to wake up,
+- which My Portal Manager Job or Worker runner to bootstrap.
+
+They should not duplicate:
+- detailed Manager/Worker procedures,
+- tool lists,
+- validation policy,
+- state semantics,
+- incident policy.
+
+The bootstrap exception is My Portal itself: if My Portal is unavailable, the runner cannot load its Method or persist an Incident, so it must stop rather than improvise and report the bootstrap failure directly to the Human.
+
 ## 5. Capability-aware dispatch
 
 Manager-created ready work should record, where material:
