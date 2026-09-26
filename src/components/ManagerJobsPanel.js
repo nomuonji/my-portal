@@ -543,9 +543,6 @@ export default function ManagerJobsPanel({ projects = [] }) {
                       <Typography variant="body2" sx={{ fontWeight: 950 }}>
                         {job.title}
                       </Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.15 }}>
-                        ID: {job.id}
-                      </Typography>
                     </Box>
                     <Chip
                       size="small"
@@ -681,10 +678,10 @@ export default function ManagerJobsPanel({ projects = [] }) {
               <Stack spacing={1.3}>
                 {!editing && (
                   <TextField
-                    label="Job ID（任意）"
+                    label="外部連携ID（任意）"
                     value={draft.id}
                     onChange={(event) => setDraft((prev) => ({ ...prev, id: event.target.value }))}
-                    helperText="外部スケジュールから呼びやすい固定IDを付けられます。空欄なら自動生成。"
+                    helperText="Scheduled Taskや別Chatから呼ぶためのIDです。空欄なら自動生成します。"
                     fullWidth
                   />
                 )}
@@ -773,20 +770,20 @@ export default function ManagerJobsPanel({ projects = [] }) {
                     </Select>
                   </FormControl>
                   <FormControl fullWidth>
-                    <InputLabel>重複実行</InputLabel>
+                    <InputLabel>同時起動</InputLabel>
                     <Select
-                      label="重複実行"
+                      label="同時起動"
                       value={draft.concurrencyPolicy}
                       onChange={(event) => setDraft((prev) => ({ ...prev, concurrencyPolicy: event.target.value }))}
                     >
-                      <MenuItem value="skip_if_open">未完了Manager Runがあれば新規Runを作らない</MenuItem>
-                      <MenuItem value="allow_overlap">Manager Runの重複を許可</MenuItem>
+                      <MenuItem value="skip_if_open">前の管理活動が終わるまで新しく始めない</MenuItem>
+                      <MenuItem value="allow_overlap">同時に複数の管理活動を許可</MenuItem>
                     </Select>
                   </FormControl>
                   <FormControl fullWidth>
-                    <InputLabel>Priority</InputLabel>
+                    <InputLabel>優先度</InputLabel>
                     <Select
-                      label="Priority"
+                      label="優先度"
                       value={draft.priority}
                       onChange={(event) => setDraft((prev) => ({ ...prev, priority: event.target.value }))}
                     >
@@ -797,9 +794,9 @@ export default function ManagerJobsPanel({ projects = [] }) {
                     </Select>
                   </FormControl>
                   <FormControl fullWidth>
-                    <InputLabel>Status</InputLabel>
+                    <InputLabel>状態</InputLabel>
                     <Select
-                      label="Status"
+                      label="状態"
                       value={draft.status}
                       onChange={(event) => setDraft((prev) => ({ ...prev, status: event.target.value }))}
                     >
@@ -918,7 +915,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
 
               {!draft.methodId && (
                 <Alert severity="info">
-                  Methodを選ぶと、観測・整理・判断・Work Item化の手順、Protocol、Quality Gatesをここに常時表示します。Manager JobではMethodを管理契約の中心として扱います。
+                  管理方法を選ぶと、何を見て・どう判断し・どんな仕事を作るかのルールをここで確認できます。
                 </Alert>
               )}
 
@@ -929,7 +926,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
               {draft.methodId && !methodContextLoading && methodContext && (
                 <Stack spacing={1.2}>
                   <Alert severity="info">
-                    ここで実行手順を変更して保存すると、現在のversionを直接上書きせず、新しいMethod versionを作ってactive化します。過去の実行履歴は旧versionのまま残ります。
+                    ここで管理手順を変更して保存すると、現在のversionを直接上書きせず、新しいMethod versionを作ってactive化します。過去の実行履歴は旧versionのまま残ります。
                   </Alert>
 
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.2 }}>
@@ -969,7 +966,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
                     multiline
                     minRows={14}
                     fullWidth
-                    helperText="外部AgentがManager Jobを実行するときに読む中心的な手順です。"
+                    helperText="マネージャーが担当領域をどう見回し、どう仕事を作るかの中心ルールです。"
                   />
 
                   <TextField
