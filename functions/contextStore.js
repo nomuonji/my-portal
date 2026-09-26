@@ -1862,12 +1862,17 @@ async function managerJobGet(input) {
 async function managerJobSearch(input = {}) {
   const limit = Math.min(Math.max(Number(input.limit) || 50, 1), 200);
   const scanLimit = Math.min(Math.max(Number(input.scanLimit) || Math.max(limit * 5, 100), limit), 1000);
-  const snapshot = await db().collection(COLLECTIONS.managerJobs).limit(scanLimit).get();
+  const [snapshot, workSnapshot] = await Promise.all([
+    db().collection(COLLECTIONS.managerJobs).limit(scanLimit).get(),
+    db().collection(COLLECTIONS.workItems).limit(1000).get(),
+  ]);
   const q = clampString(input.query, 400)?.toLowerCase();
   const status = clampString(input.status, 40);
   const projectId = clampString(input.projectId, 160);
   const spaceId = clampString(input.spaceId, 160);
   const methodId = clampString(input.methodId, 160);
+  const managedWork = workSnapshot.docs.map(documentToObject)
+    .filter((item) => item.sourceType === 'manager_job' && item.sourceId);
 
   const items = sortRecent(snapshot.docs.map(documentToObject))
     .filter((item) => {
@@ -1886,7 +1891,24 @@ async function managerJobSearch(input = {}) {
       }
       return true;
     })
-    .slice(0, limit);
+    .slice(0, limit)
+    .map((item) => {
+      const workerItems = managedWork.filter((work) => work.sourceId === item.id);
+      const open = workerItems.filter((work) => !['archived', 'done', 'cancelled'].includes(work.status));
+      const count = (targetStatus) => open.filter((work) => work.status === targetStatus).length;
+      return {
+        ...item,
+        managedWorkSummary: {
+          open: open.length,
+          running: count('running'),
+          blocked: count('blocked'),
+          review: count('review'),
+          ready: count('ready'),
+          inProgress: count('in_progress'),
+          backlog: count('backlog'),
+        },
+      };
+    });
 
   return { items, count: items.length, scanned: snapshot.size, databaseId: DATABASE_ID };
 }
@@ -2002,6 +2024,8 @@ async function managerJobGetContext(input) {
       claimedBy: item.claimedBy || null,
       blockedReason: clampString(item.blockedReason, 500) || '',
       resultSummary: clampString(item.resultSummary, 800) || '',
+      managerRunId: item.metadata?.managerJob?.managerRunId || null,
+      managerReason: clampString(item.metadata?.managerJob?.reason, 1000) || '',
       updatedAt: item.updatedAt,
     }));
 
