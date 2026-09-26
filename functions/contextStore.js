@@ -54,6 +54,8 @@ const AGENT_HQ_OPERATING_MODEL = Object.freeze({
   docs: {
     operatingModel: 'docs/AGENT_HQ_OPERATING_MODEL.md',
     decisionLog: 'docs/AGENT_HQ_DECISION_LOG.md',
+    uiViewer: 'Agent HQ > 運用モデル',
+    sourcePolicy: 'The authenticated UI reads the repository-owned Markdown through the My Portal backend; it does not keep a second hand-written copy.',
   },
   organization: ['human', 'manager', 'work_bundle', 'worker', 'manager'],
   roles: {
