@@ -41,6 +41,16 @@ const emptyDraft = {
   concurrencyPolicy: 'skip_if_open',
 };
 
+const emptyMethodDraft = {
+  title: '',
+  summary: '',
+  purpose: '',
+  instructions: '',
+  protocolText: '{}',
+  qualityGatesText: '',
+  versionNote: '',
+};
+
 const clean = (value) => String(value || '').trim();
 
 const formatDate = (value) => {
@@ -54,6 +64,29 @@ const formatDate = (value) => {
     minute: '2-digit',
   }).format(date);
 };
+
+const methodDraftFromContext = (context) => ({
+  title: context?.method?.title || '',
+  summary: context?.method?.summary || '',
+  purpose: context?.method?.purpose || '',
+  instructions: context?.currentVersion?.instructions || '',
+  protocolText: JSON.stringify(context?.currentVersion?.protocol || {}, null, 2),
+  qualityGatesText: (context?.currentVersion?.qualityGates || []).join('\n'),
+  versionNote: '',
+});
+
+const comparableMethodDraft = (draft) => ({
+  title: clean(draft.title),
+  summary: clean(draft.summary),
+  purpose: clean(draft.purpose),
+  instructions: String(draft.instructions || ''),
+  protocolText: String(draft.protocolText || '').trim() || '{}',
+  qualityGatesText: String(draft.qualityGatesText || '')
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .join('\n'),
+});
 
 async function api(path = '', options = {}) {
   const user = auth.currentUser;
@@ -96,9 +129,10 @@ export default function RecurringJobsPanel({ projects = [] }) {
   const [historyJob, setHistoryJob] = useState(null);
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [expandedMethodId, setExpandedMethodId] = useState('');
-  const [methodContextByJob, setMethodContextByJob] = useState({});
-  const [methodLoadingId, setMethodLoadingId] = useState('');
+  const [methodContext, setMethodContext] = useState(null);
+  const [methodDraft, setMethodDraft] = useState(emptyMethodDraft);
+  const [methodBaseline, setMethodBaseline] = useState(emptyMethodDraft);
+  const [methodContextLoading, setMethodContextLoading] = useState(false);
 
   const projectById = useMemo(
     () => new Map(projects.map((item) => [item.id, item])),
@@ -107,6 +141,12 @@ export default function RecurringJobsPanel({ projects = [] }) {
   const methodById = useMemo(
     () => new Map(methods.map((item) => [item.id, item])),
     [methods],
+  );
+
+  const methodChanged = useMemo(
+    () => JSON.stringify(comparableMethodDraft(methodDraft))
+      !== JSON.stringify(comparableMethodDraft(methodBaseline)),
+    [methodDraft, methodBaseline],
   );
 
   const refresh = useCallback(async () => {
@@ -130,9 +170,38 @@ export default function RecurringJobsPanel({ projects = [] }) {
     refresh();
   }, [refresh]);
 
+  const resetMethodEditor = () => {
+    setMethodContext(null);
+    setMethodDraft(emptyMethodDraft);
+    setMethodBaseline(emptyMethodDraft);
+    setMethodContextLoading(false);
+  };
+
+  const loadMethodContext = async (methodId) => {
+    if (!methodId) {
+      resetMethodEditor();
+      return;
+    }
+    setMethodContextLoading(true);
+    setError('');
+    try {
+      const result = await api('?resource=method_context&id=' + encodeURIComponent(methodId));
+      const nextDraft = methodDraftFromContext(result);
+      setMethodContext(result);
+      setMethodDraft(nextDraft);
+      setMethodBaseline(nextDraft);
+    } catch (err) {
+      resetMethodEditor();
+      setError('Methodの読み込みに失敗しました: ' + err.message);
+    } finally {
+      setMethodContextLoading(false);
+    }
+  };
+
   const openCreate = () => {
     setEditing(null);
     setDraft(emptyDraft);
+    resetMethodEditor();
     setEditOpen(true);
   };
 
@@ -149,7 +218,71 @@ export default function RecurringJobsPanel({ projects = [] }) {
       methodId: job.methodId || '',
       concurrencyPolicy: job.concurrencyPolicy || 'skip_if_open',
     });
+    resetMethodEditor();
     setEditOpen(true);
+    if (job.methodId) loadMethodContext(job.methodId);
+  };
+
+  const changeMethod = (methodId) => {
+    setDraft((prev) => ({ ...prev, methodId }));
+    loadMethodContext(methodId);
+  };
+
+  const saveMethodIfChanged = async () => {
+    if (!draft.methodId || !methodContext || !methodChanged) return false;
+
+    const baseline = comparableMethodDraft(methodBaseline);
+    const next = comparableMethodDraft(methodDraft);
+    const metadataChanged = baseline.title !== next.title
+      || baseline.summary !== next.summary
+      || baseline.purpose !== next.purpose;
+    const versionChanged = baseline.instructions !== next.instructions
+      || baseline.protocolText !== next.protocolText
+      || baseline.qualityGatesText !== next.qualityGatesText;
+
+    if (metadataChanged) {
+      await api('', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'method_update',
+          id: draft.methodId,
+          expectedRevision: methodContext.method?.revision,
+          patch: {
+            title: next.title,
+            summary: next.summary,
+            purpose: next.purpose,
+          },
+        }),
+      });
+    }
+
+    if (versionChanged) {
+      let protocol;
+      try {
+        protocol = JSON.parse(next.protocolText || '{}');
+      } catch {
+        throw new Error('MethodのProtocol JSONが不正です。JSONとして保存できる形に直してください。');
+      }
+
+      await api('', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'method_version_create',
+          methodId: draft.methodId,
+          changeSummary: clean(methodDraft.versionNote)
+            || ('Recurring Job「' + (editing?.title || draft.title || draft.id) + '」の編集画面から更新'),
+          instructions: next.instructions,
+          protocol,
+          qualityGates: next.qualityGatesText
+            .split('\n')
+            .map((item) => item.trim())
+            .filter(Boolean),
+          activate: true,
+        }),
+      });
+    }
+
+    return metadataChanged || versionChanged;
   };
 
   const save = async () => {
@@ -157,9 +290,16 @@ export default function RecurringJobsPanel({ projects = [] }) {
       setError('Recurring Jobのタイトルは必須です。');
       return;
     }
+    if (draft.methodId && !methodContext && !methodContextLoading) {
+      setError('紐付いたMethodを読み込めていません。Methodを選び直してください。');
+      return;
+    }
+
     setSaving(true);
     setError('');
     try {
+      const methodWasUpdated = await saveMethodIfChanged();
+
       if (editing) {
         await api('', {
           method: 'POST',
@@ -179,7 +319,9 @@ export default function RecurringJobsPanel({ projects = [] }) {
             },
           }),
         });
-        setNotice('Recurring Jobを更新しました。');
+        setNotice(methodWasUpdated
+          ? 'Recurring Jobを更新し、Methodの新versionを反映しました。'
+          : 'Recurring Jobを更新しました。');
       } else {
         await api('', {
           method: 'POST',
@@ -196,9 +338,13 @@ export default function RecurringJobsPanel({ projects = [] }) {
             concurrencyPolicy: draft.concurrencyPolicy,
           }),
         });
-        setNotice('Recurring Jobを作成しました。外部スケジュールは別途ChatGPT等で設定してください。');
+        setNotice(methodWasUpdated
+          ? 'Recurring Jobを作成し、Methodの新versionを反映しました。'
+          : 'Recurring Jobを作成しました。外部スケジュールは別途ChatGPT等で設定してください。');
       }
+
       setEditOpen(false);
+      resetMethodEditor();
       await refresh();
     } catch (err) {
       setError(err.message);
@@ -266,30 +412,6 @@ export default function RecurringJobsPanel({ projects = [] }) {
       setError(err.message);
     } finally {
       setHistoryLoading(false);
-    }
-  };
-
-  const toggleMethodDetails = async (job) => {
-    if (!job.methodId) return;
-    if (expandedMethodId === job.id) {
-      setExpandedMethodId('');
-      return;
-    }
-    setExpandedMethodId(job.id);
-    if (methodContextByJob[job.id]) return;
-
-    setMethodLoadingId(job.id);
-    setError('');
-    try {
-      const result = await api(
-        '?resource=recurring_job_context&id=' + encodeURIComponent(job.id) + '&historyLimit=5',
-      );
-      setMethodContextByJob((prev) => ({ ...prev, [job.id]: result }));
-    } catch (err) {
-      setExpandedMethodId('');
-      setError(err.message);
-    } finally {
-      setMethodLoadingId('');
     }
   };
 
@@ -410,142 +532,6 @@ export default function RecurringJobsPanel({ projects = [] }) {
                     <Chip size="small" label={job.concurrencyPolicy === 'allow_overlap' ? '重複実行可' : '重複実行防止'} variant="outlined" sx={{ height: 20, fontSize: '0.56rem' }} />
                   </Stack>
 
-                  {method && (
-                    <Box sx={{ mt: 0.7 }}>
-                      <Button
-                        size="small"
-                        variant={expandedMethodId === job.id ? 'contained' : 'outlined'}
-                        onClick={() => toggleMethodDetails(job)}
-                        disabled={methodLoadingId === job.id}
-                        sx={{ textTransform: 'none', fontWeight: 800 }}
-                      >
-                        {methodLoadingId === job.id
-                          ? 'Method読込中…'
-                          : expandedMethodId === job.id
-                            ? 'Methodを閉じる'
-                            : 'Methodの中身を見る'}
-                      </Button>
-
-                      {expandedMethodId === job.id && methodContextByJob[job.id] && (() => {
-                        const methodContext = methodContextByJob[job.id].method;
-                        const methodEntity = methodContext?.method;
-                        const version = methodContext?.currentVersion;
-                        const stages = Array.isArray(version?.protocol?.stages) ? version.protocol.stages : [];
-                        const gates = Array.isArray(version?.qualityGates) ? version.qualityGates : [];
-                        return (
-                          <Paper
-                            variant="outlined"
-                            sx={{
-                              mt: 0.7,
-                              p: 1.1,
-                              bgcolor: alpha(theme.palette.primary.main, isDark ? 0.08 : 0.025),
-                            }}
-                          >
-                            <Box sx={{ display: 'flex', gap: 0.6, alignItems: 'center', flexWrap: 'wrap' }}>
-                              <Typography variant="body2" sx={{ fontWeight: 950, flex: 1 }}>
-                                {methodEntity?.title || method.title}
-                              </Typography>
-                              <Chip
-                                size="small"
-                                label={version?.label || (version?.versionNumber ? 'v' + version.versionNumber : 'active')}
-                                color="primary"
-                                sx={{ height: 20, fontSize: '0.58rem' }}
-                              />
-                            </Box>
-
-                            {(methodEntity?.summary || methodEntity?.purpose) && (
-                              <Box sx={{ mt: 0.8 }}>
-                                {methodEntity?.summary && (
-                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 800 }}>
-                                    {methodEntity.summary}
-                                  </Typography>
-                                )}
-                                {methodEntity?.purpose && (
-                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.35, lineHeight: 1.55 }}>
-                                    {methodEntity.purpose}
-                                  </Typography>
-                                )}
-                              </Box>
-                            )}
-
-                            {version?.changeSummary && (
-                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
-                                このversion: {version.changeSummary}
-                              </Typography>
-                            )}
-
-                            {version?.instructions && (
-                              <Box sx={{ mt: 1 }}>
-                                <Typography variant="caption" sx={{ fontWeight: 950 }}>
-                                  実行手順
-                                </Typography>
-                                <Box
-                                  component="pre"
-                                  sx={{
-                                    m: 0,
-                                    mt: 0.45,
-                                    p: 0.9,
-                                    borderRadius: 1.2,
-                                    bgcolor: alpha(theme.palette.background.default, isDark ? 0.45 : 0.7),
-                                    fontFamily: 'inherit',
-                                    fontSize: '0.72rem',
-                                    lineHeight: 1.6,
-                                    whiteSpace: 'pre-wrap',
-                                    wordBreak: 'break-word',
-                                    maxHeight: 320,
-                                    overflow: 'auto',
-                                  }}
-                                >
-                                  {version.instructions}
-                                </Box>
-                              </Box>
-                            )}
-
-                            {stages.length > 0 && (
-                              <Box sx={{ mt: 1 }}>
-                                <Typography variant="caption" sx={{ fontWeight: 950 }}>
-                                  Protocol
-                                </Typography>
-                                <Stack spacing={0.45} sx={{ mt: 0.45 }}>
-                                  {stages.map((stage, index) => (
-                                    <Box key={stage.id || index} sx={{ display: 'flex', gap: 0.6, alignItems: 'flex-start' }}>
-                                      <Chip
-                                        size="small"
-                                        label={index + 1}
-                                        sx={{ height: 19, minWidth: 28, fontSize: '0.55rem' }}
-                                      />
-                                      <Typography variant="caption" sx={{ lineHeight: 1.5 }}>
-                                        <Box component="span" sx={{ fontWeight: 850 }}>
-                                          {stage.id || stage.output || 'step'}
-                                        </Box>
-                                        {stage.goal ? ' — ' + stage.goal : ''}
-                                      </Typography>
-                                    </Box>
-                                  ))}
-                                </Stack>
-                              </Box>
-                            )}
-
-                            {gates.length > 0 && (
-                              <Box sx={{ mt: 1 }}>
-                                <Typography variant="caption" sx={{ fontWeight: 950 }}>
-                                  Quality Gates
-                                </Typography>
-                                <Stack spacing={0.35} sx={{ mt: 0.45 }}>
-                                  {gates.map((gate, index) => (
-                                    <Typography key={index} variant="caption" color="text.secondary" sx={{ lineHeight: 1.5 }}>
-                                      ✓ {gate}
-                                    </Typography>
-                                  ))}
-                                </Stack>
-                              </Box>
-                            )}
-                          </Paper>
-                        );
-                      })()}
-                    </Box>
-                  )}
-
                   <Box sx={{ mt: 0.9, p: 0.8, borderRadius: 1.4, bgcolor: alpha(theme.palette.primary.main, isDark ? 0.08 : 0.04) }}>
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                       前回: {formatDate(job.lastFinishedAt || job.lastStartedAt)}
@@ -582,7 +568,7 @@ export default function RecurringJobsPanel({ projects = [] }) {
                       履歴
                     </Button>
                     <Button size="small" onClick={() => openEdit(job)}>
-                      編集
+                      詳細・編集
                     </Button>
                     <Button size="small" startIcon={<ContentCopyOutlinedIcon />} onClick={() => copyTriggerPrompt(job)}>
                       起動指示
@@ -623,116 +609,256 @@ export default function RecurringJobsPanel({ projects = [] }) {
         </Box>
       </Paper>
 
-      <Dialog open={editOpen} onClose={() => !saving && setEditOpen(false)} fullWidth maxWidth="md">
-        <DialogTitle>{editing ? 'Recurring Jobを編集' : 'Recurring Jobを追加'}</DialogTitle>
+      <Dialog open={editOpen} onClose={() => !saving && setEditOpen(false)} fullWidth maxWidth="lg">
+        <DialogTitle>{editing ? 'Recurring Job 詳細・編集' : 'Recurring Jobを追加'}</DialogTitle>
         <DialogContent>
-          <Stack spacing={1.4} sx={{ mt: 0.8 }}>
-            {!editing && (
-              <TextField
-                label="Job ID（任意）"
-                value={draft.id}
-                onChange={(event) => setDraft((prev) => ({ ...prev, id: event.target.value }))}
-                helperText="外部スケジュールから呼びやすい固定IDを付けられます。空欄なら自動生成。"
-                fullWidth
-              />
-            )}
-            <TextField
-              label="タイトル"
-              value={draft.title}
-              onChange={(event) => setDraft((prev) => ({ ...prev, title: event.target.value }))}
-              fullWidth
-              required
-            />
-            <TextField
-              label="目的"
-              value={draft.objective}
-              onChange={(event) => setDraft((prev) => ({ ...prev, objective: event.target.value }))}
-              multiline
-              minRows={2}
-              fullWidth
-            />
-            <TextField
-              label="このJob固有の手順・制約"
-              value={draft.instructions}
-              onChange={(event) => setDraft((prev) => ({ ...prev, instructions: event.target.value }))}
-              multiline
-              minRows={5}
-              helperText="繰り返し改善したい方法論はMethodへ分離し、この欄にはJob固有の条件を残します。"
-              fullWidth
-            />
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 1.2 }}>
-              <FormControl fullWidth>
-                <InputLabel>Project</InputLabel>
-                <Select
-                  label="Project"
-                  value={draft.projectId}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, projectId: event.target.value }))}
-                >
-                  <MenuItem value="">なし</MenuItem>
-                  {projects.map((project) => <MenuItem key={project.id} value={project.id}>{project.name || project.id}</MenuItem>)}
-                </Select>
-              </FormControl>
-              <FormControl fullWidth>
-                <InputLabel>Method</InputLabel>
-                <Select
-                  label="Method"
-                  value={draft.methodId}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, methodId: event.target.value }))}
-                >
-                  <MenuItem value="">なし</MenuItem>
-                  {methods.filter((method) => method.status === 'active').map((method) => (
-                    <MenuItem key={method.id} value={method.id}>
-                      {method.title}{method.currentVersionNumber ? ' · v' + method.currentVersionNumber : ''}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <FormControl fullWidth>
-                <InputLabel>重複実行</InputLabel>
-                <Select
-                  label="重複実行"
-                  value={draft.concurrencyPolicy}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, concurrencyPolicy: event.target.value }))}
-                >
-                  <MenuItem value="skip_if_open">未完了があれば新規作成しない</MenuItem>
-                  <MenuItem value="allow_overlap">重複実行を許可</MenuItem>
-                </Select>
-              </FormControl>
-              <FormControl fullWidth>
-                <InputLabel>Priority</InputLabel>
-                <Select
-                  label="Priority"
-                  value={draft.priority}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, priority: event.target.value }))}
-                >
-                  <MenuItem value="critical">Critical</MenuItem>
-                  <MenuItem value="high">High</MenuItem>
-                  <MenuItem value="medium">Medium</MenuItem>
-                  <MenuItem value="low">Low</MenuItem>
-                </Select>
-              </FormControl>
-              <FormControl fullWidth>
-                <InputLabel>Status</InputLabel>
-                <Select
-                  label="Status"
-                  value={draft.status}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, status: event.target.value }))}
-                >
-                  <MenuItem value="active">Active</MenuItem>
-                  <MenuItem value="paused">Paused</MenuItem>
-                  <MenuItem value="archived">Archived</MenuItem>
-                </Select>
-              </FormControl>
-            </Box>
+          <Stack spacing={1.6} sx={{ mt: 0.8 }}>
+            <Paper variant="outlined" sx={{ p: 1.4 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 950, mb: 1 }}>
+                Job
+              </Typography>
+              <Stack spacing={1.3}>
+                {!editing && (
+                  <TextField
+                    label="Job ID（任意）"
+                    value={draft.id}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, id: event.target.value }))}
+                    helperText="外部スケジュールから呼びやすい固定IDを付けられます。空欄なら自動生成。"
+                    fullWidth
+                  />
+                )}
+                <TextField
+                  label="タイトル"
+                  value={draft.title}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, title: event.target.value }))}
+                  fullWidth
+                  required
+                />
+                <TextField
+                  label="目的"
+                  value={draft.objective}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, objective: event.target.value }))}
+                  multiline
+                  minRows={2}
+                  fullWidth
+                />
+                <TextField
+                  label="このJob固有の手順・制約"
+                  value={draft.instructions}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, instructions: event.target.value }))}
+                  multiline
+                  minRows={4}
+                  helperText="共通して育てる実行方法は下のMethodに置き、この欄にはこのJobだけの条件を残します。"
+                  fullWidth
+                />
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 1.2 }}>
+                  <FormControl fullWidth>
+                    <InputLabel>Project</InputLabel>
+                    <Select
+                      label="Project"
+                      value={draft.projectId}
+                      onChange={(event) => setDraft((prev) => ({ ...prev, projectId: event.target.value }))}
+                    >
+                      <MenuItem value="">なし</MenuItem>
+                      {projects.map((project) => <MenuItem key={project.id} value={project.id}>{project.name || project.id}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                  <FormControl fullWidth>
+                    <InputLabel>Method</InputLabel>
+                    <Select
+                      label="Method"
+                      value={draft.methodId}
+                      onChange={(event) => changeMethod(event.target.value)}
+                    >
+                      <MenuItem value="">なし</MenuItem>
+                      {methods.filter((method) => method.status === 'active').map((method) => (
+                        <MenuItem key={method.id} value={method.id}>
+                          {method.title}{method.currentVersionNumber ? ' · v' + method.currentVersionNumber : ''}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <FormControl fullWidth>
+                    <InputLabel>重複実行</InputLabel>
+                    <Select
+                      label="重複実行"
+                      value={draft.concurrencyPolicy}
+                      onChange={(event) => setDraft((prev) => ({ ...prev, concurrencyPolicy: event.target.value }))}
+                    >
+                      <MenuItem value="skip_if_open">未完了があれば新規作成しない</MenuItem>
+                      <MenuItem value="allow_overlap">重複実行を許可</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <FormControl fullWidth>
+                    <InputLabel>Priority</InputLabel>
+                    <Select
+                      label="Priority"
+                      value={draft.priority}
+                      onChange={(event) => setDraft((prev) => ({ ...prev, priority: event.target.value }))}
+                    >
+                      <MenuItem value="critical">Critical</MenuItem>
+                      <MenuItem value="high">High</MenuItem>
+                      <MenuItem value="medium">Medium</MenuItem>
+                      <MenuItem value="low">Low</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <FormControl fullWidth>
+                    <InputLabel>Status</InputLabel>
+                    <Select
+                      label="Status"
+                      value={draft.status}
+                      onChange={(event) => setDraft((prev) => ({ ...prev, status: event.target.value }))}
+                    >
+                      <MenuItem value="active">Active</MenuItem>
+                      <MenuItem value="paused">Paused</MenuItem>
+                      <MenuItem value="archived">Archived</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Box>
+              </Stack>
+            </Paper>
+
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 1.4,
+                bgcolor: alpha(theme.palette.primary.main, isDark ? 0.07 : 0.025),
+                borderColor: draft.methodId ? alpha(theme.palette.primary.main, 0.35) : border,
+              }}
+            >
+              <Box sx={{ display: 'flex', gap: 0.7, alignItems: 'center', flexWrap: 'wrap', mb: 1 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 950, flex: 1 }}>
+                  Method · 実行方法
+                </Typography>
+                {methodContext?.currentVersion && (
+                  <Chip
+                    size="small"
+                    color="primary"
+                    label={(methodContext.currentVersion.label || ('v' + methodContext.currentVersion.versionNumber)) + ' · active'}
+                  />
+                )}
+                {methodChanged && <Chip size="small" color="warning" label="未保存の変更" />}
+              </Box>
+
+              {!draft.methodId && (
+                <Alert severity="info">
+                  Methodを選ぶと、実行手順・Protocol・Quality Gatesをここに常時表示します。Recurring JobではMethodを実行契約の中心として扱います。
+                </Alert>
+              )}
+
+              {draft.methodId && methodContextLoading && (
+                <Typography variant="body2" color="text.secondary">Methodを読み込み中…</Typography>
+              )}
+
+              {draft.methodId && !methodContextLoading && methodContext && (
+                <Stack spacing={1.2}>
+                  <Alert severity="info">
+                    ここで実行手順を変更して保存すると、現在のversionを直接上書きせず、新しいMethod versionを作ってactive化します。過去の実行履歴は旧versionのまま残ります。
+                  </Alert>
+
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.2 }}>
+                    <TextField
+                      label="Method名"
+                      value={methodDraft.title}
+                      onChange={(event) => setMethodDraft((prev) => ({ ...prev, title: event.target.value }))}
+                      fullWidth
+                    />
+                    <TextField
+                      label="概要"
+                      value={methodDraft.summary}
+                      onChange={(event) => setMethodDraft((prev) => ({ ...prev, summary: event.target.value }))}
+                      fullWidth
+                    />
+                  </Box>
+
+                  <TextField
+                    label="Purpose"
+                    value={methodDraft.purpose}
+                    onChange={(event) => setMethodDraft((prev) => ({ ...prev, purpose: event.target.value }))}
+                    multiline
+                    minRows={2}
+                    fullWidth
+                  />
+
+                  {methodContext.currentVersion?.changeSummary && (
+                    <Typography variant="caption" color="text.secondary">
+                      現active versionの変更概要: {methodContext.currentVersion.changeSummary}
+                    </Typography>
+                  )}
+
+                  <TextField
+                    label="実行手順"
+                    value={methodDraft.instructions}
+                    onChange={(event) => setMethodDraft((prev) => ({ ...prev, instructions: event.target.value }))}
+                    multiline
+                    minRows={14}
+                    fullWidth
+                    helperText="外部AgentがRecurring Jobを実行するときに読む中心的な手順です。"
+                  />
+
+                  <TextField
+                    label="Protocol（JSON）"
+                    value={methodDraft.protocolText}
+                    onChange={(event) => setMethodDraft((prev) => ({ ...prev, protocolText: event.target.value }))}
+                    multiline
+                    minRows={8}
+                    fullWidth
+                    inputProps={{ spellCheck: false }}
+                    helperText="stages / decisionPrinciples / persistentArtifacts など、Method固有の構造化ルール。"
+                  />
+
+                  <TextField
+                    label="Quality Gates（1行1項目）"
+                    value={methodDraft.qualityGatesText}
+                    onChange={(event) => setMethodDraft((prev) => ({ ...prev, qualityGatesText: event.target.value }))}
+                    multiline
+                    minRows={6}
+                    fullWidth
+                  />
+
+                  <TextField
+                    label="今回のMethod変更メモ（任意）"
+                    value={methodDraft.versionNote}
+                    onChange={(event) => setMethodDraft((prev) => ({ ...prev, versionNote: event.target.value }))}
+                    fullWidth
+                    helperText="手順・Protocol・Quality Gatesを変更した場合、新versionのchange summaryとして保存します。"
+                  />
+
+                  {(methodContext.versions || []).length > 0 && (
+                    <Box>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850 }}>
+                        Version history
+                      </Typography>
+                      <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap" sx={{ mt: 0.5 }}>
+                        {methodContext.versions.slice(0, 8).map((version) => (
+                          <Chip
+                            key={version.id}
+                            size="small"
+                            variant={version.id === methodContext.method?.currentVersionId ? 'filled' : 'outlined'}
+                            color={version.id === methodContext.method?.currentVersionId ? 'primary' : 'default'}
+                            label={(version.label || ('v' + version.versionNumber)) + ' · ' + (version.status || 'draft')}
+                          />
+                        ))}
+                      </Stack>
+                    </Box>
+                  )}
+                </Stack>
+              )}
+            </Paper>
+
             <Alert severity="info">
-              MethodをRecurring Jobの中心的な実行契約として使います。実行時刻・頻度・timezoneはMy Portalでは管理せず、外部ChatGPT等にはこのJob IDだけを定期的に起動させます。
+              実行時刻・頻度・timezoneはMy Portalでは管理しません。外部ChatGPT等には、このJob IDだけを定期的に起動させます。
             </Alert>
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditOpen(false)} disabled={saving}>キャンセル</Button>
-          <Button variant="contained" onClick={save} disabled={saving}>
-            {saving ? '保存中…' : '保存'}
+          <Button
+            variant="contained"
+            onClick={save}
+            disabled={saving || methodContextLoading}
+          >
+            {saving ? '保存中…' : 'Job / Methodを保存'}
           </Button>
         </DialogActions>
       </Dialog>

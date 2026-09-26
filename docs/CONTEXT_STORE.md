@@ -373,7 +373,7 @@ My Portalはスケジューラではないため、Recurring Jobにcron・実行
 
 `invocationId` を外部側のイベントIDとして渡すと同じトリガーの再送を冪等化できる。既定の `skip_if_open` では同じJob由来の未完了Work Itemがある間、新しい実行を作らない。
 
-Agent HQ UIではRecurring Jobsを独立セクションとして表示し、Jobの作成・編集・pause/resume・手動実行・履歴・外部ChatGPT用の起動指示コピーを行う。Methodは名前だけでなくactive versionの本文・protocol stages・quality gatesをカード内で展開確認できる。通常のJob作成UIはProject + Methodを基本とし、Spaceは表示しない。
+Agent HQ UIではRecurring Jobsを独立セクションとして表示し、Jobの作成・詳細編集・pause/resume・手動実行・履歴・外部ChatGPT用の起動指示コピーを行う。Methodはカード上で展開せず、Recurring Jobの詳細/編集画面にactive versionの本文・Protocol・Quality Gatesを最初から並べて表示する。同じ画面でMethod本体の概要とactive version内容も編集でき、version内容を変更した場合は旧versionを上書きせず新しいMethodVersionを作成してactive化する。通常のJob作成UIはProject + Methodを基本とし、Spaceは表示しない。
 
 ### Human Tasks
 

@@ -145,6 +145,13 @@ export default async (request: Request) => {
       if (resource === "methods") {
         return json(await contextStore.methodSearch({ limit: 100, scanLimit: 300 }));
       }
+      if (resource === "method_context") {
+        return json(await contextStore.methodGetContext({
+          id: url.searchParams.get("id") || "",
+          versionLimit: 20,
+          runLimit: 20,
+        }));
+      }
       if (resource === "recurring_job_context") {
         return json(await contextStore.recurringJobGetContext({
           id: url.searchParams.get("id") || "",
@@ -235,6 +242,24 @@ export default async (request: Request) => {
           id: body.id,
           patch: body.patch || {},
         }));
+      }
+      if (action === "method_update") {
+        return json(await contextStore.methodUpdate({
+          id: body.id,
+          expectedRevision: body.expectedRevision,
+          patch: body.patch || {},
+        }));
+      }
+      if (action === "method_version_create") {
+        return json(await contextStore.methodVersionCreate({
+          methodId: body.methodId,
+          label: body.label,
+          changeSummary: body.changeSummary,
+          instructions: body.instructions,
+          protocol: body.protocol || {},
+          qualityGates: body.qualityGates || [],
+          activate: body.activate === true,
+        }, { agent: "portal-ui", model: "my-portal-ui" }));
       }
       if (action === "recurring_job_create") {
         return json(await contextStore.recurringJobCreate({
