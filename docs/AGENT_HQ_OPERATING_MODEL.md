@@ -272,6 +272,8 @@ Three layers are kept distinct:
 - **Decision Log** — why important architecture/operating decisions changed.
 - **System Incidents** — concrete failures, root causes, fixes and prevention stored in My Portal.
 
+The authenticated Agent HQ UI exposes the repository-owned Operating Model and Decision Log through its Governance viewer. The UI must read these Markdown files through the My Portal backend rather than maintaining a second hand-written copy.
+
 When a System Incident reveals a new invariant:
 1. record the Incident,
 2. fix the system,
