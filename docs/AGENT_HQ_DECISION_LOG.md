@@ -107,3 +107,20 @@ These are not the full git history; they are recovery anchors for the current op
 - `1ac1a029dd7419ba5a7c1d0f200624aa93c4d398` — Agent HQ UI separates System Incidents from the normal Worker queue/history.
 - `da9a8fbd603fb94c1622f5c0383cd381a0b7557c` — Context Store governance documentation aligned with the Operating Model.
 - `1fb372b54129c9aa77aa30e30f5d4bea7b24b6b8` — Manager Job Context includes Worker escalations, related Incidents, capability policy, and Operating Model.
+
+
+---
+
+## 2026-09-27 — Manager and Worker manuals live in My Portal Methods
+
+**Decision:** Scheduled Task prompts are bootstrap triggers, not the canonical manuals.
+
+**Manager:** Manager Job → Manager Method. The Manager Method active version is pinned when a Manager Run starts.
+
+**Worker:** Manager Job supplies a default Worker Method to generated Work Items. A Work Item may override it. The Worker Method active version is pinned on the Work Item's first successful claim.
+
+**Why:** Keeping GitHub/Web/deploy/state-transition instructions in ChatGPT scheduler prompts duplicates project state and requires scheduler edits whenever operating procedures change.
+
+**Runtime requirements:** Method versions declare required/optional capabilities and tool families. The runner reports only what is actually available in the current invocation; My Portal checks the match before claim.
+
+**Failure behavior:** Worker runtime gaps go to the Manager through the normal Worker escalation path. Manager runtime gaps that make the management function structurally unusable become System Incidents. If My Portal itself is unavailable, no internal Incident can be persisted, so the external runner reports directly to the Human.
