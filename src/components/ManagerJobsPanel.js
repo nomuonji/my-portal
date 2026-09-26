@@ -443,14 +443,10 @@ export default function ManagerJobsPanel({ projects = [] }) {
 
   const copyTriggerPrompt = async (job) => {
     const prompt = [
-      'My PortalのManager Job「' + job.id + '」を実行してください。',
-      'manager_job_start({ id: "' + job.id + '" }) を呼び、返されたManager Runを manager_run_claim してください。スケジューラの再送IDがある場合だけinvocationIdを渡してください。',
-      'manager_job_get_context({ id: "' + job.id + '" }) を読み、現在のQueue、Project、管理対象、紐付いたMethodのactive versionを確認してください。',
-      'Manager自身が本作業を抱え込まず、Observe → Reconcile → Decide → Delegate の順で管理してください。必要な作業は manager_run_create_work_item で0〜N件生成し、既存Work Itemの優先度変更・整理・archive等は manager_run_reconcile_work_item を使ってください。',
-      jobNeedsReceipt(job)
-        ? 'このManager Jobから生成する実作業には、完了時にexecutionReceiptで対象・作業種別・成果物・確認結果を残させてください。'
-        : '生成するWork Itemには、実行Agentが迷わないobjective / instructions / acceptance criteriaを含めてください。',
-      '新しく作るべき仕事が0件でも正常です。最後に manager_run_finish で観測・判断・生成/整理結果を保存してください。',
+      '接続済みのMy Portalを使ってManager Job「' + job.id + '」を1回実行してください。',
+      'My Portalのcontrol_plane_overview、Manager Job context、Agent HQ Operating Model、今回固定されたManager Methodを正本として扱ってください。',
+      'Manager MethodのruntimeRequirementsを読み、この実行で実際に利用可能なtool/capabilityだけを申告してManager Runをclaimしてください。必須要件が欠ける場合は推測で続行せず、My Portalが使えるならSystem Incidentとして記録し、My Portal自体が使えない場合だけ人間へ報告してください。',
+      'それ以外の管理手順・Workerへの委譲・validation・Incident判断はScheduled Task側で再定義せず、My Portal側の最新MethodとWork Itemに従って最後まで実行してください。',
     ].join('\n');
     try {
       await navigator.clipboard.writeText(prompt);
