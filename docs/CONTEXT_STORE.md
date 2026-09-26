@@ -12,6 +12,11 @@ My Portalは、単なるメモ・Idea DBではなく、**ユーザーの思考�
 
 長期間「考え続けるテーマ」。
 
+**UI上の「長期テーマ」と内部Entityの `Space` は同じ概念・同じデータであり、別Entityではない。** 保存先は `spaces` collectionを唯一の正本とする。「長期テーマ」は人間向け表示名、`Space` はコード/MCP上の名称として使い分けるだけ。
+
+Thinking WorkspaceとAgent HQは、Space一覧をContext Store API / `control_plane_overview` 経由で取得する。画面ごとにFirestoreを別経路で直接読む実装は避け、同じ正本・同じ取得レイヤーを使う。
+
+
 例:
 
 - お金を稼ぐ方法を探す

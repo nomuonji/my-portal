@@ -115,9 +115,6 @@ function Dashboard() {
       onSnapshot(collection(db, 'memos', 'agent-control', 'workItems'), (snapshot) => {
         setWorkItems(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
       }),
-      onSnapshot(collection(db, 'spaces'), (snapshot) => {
-        setSpaces(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
-      }),
       onSnapshot(collection(db, 'projects'), (snapshot) => {
         setProjects(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
       }),
@@ -138,6 +135,7 @@ function Dashboard() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Control Planeの取得に失敗しました。');
+      setSpaces(payload.activeSpaces || []);
       setLinearOverview({
         configured: payload.linear?.configured === true,
         issues: payload.linear?.issues || [],
@@ -443,7 +441,7 @@ function Dashboard() {
               sx={{ mt: 0.7, maxWidth: 850, lineHeight: 1.7 }}
             >
               ここをエージェントの作業管制塔として使います。Work Itemを取得して実行し、
-              Space / Project / Run の文脈を引き継ぎながら、複数エージェントが競合せず並列に進められる状態を可視化します。
+              長期テーマ（Space） / Project / Run の文脈を引き継ぎながら、複数エージェントが競合せず並列に進められる状態を可視化します。
             </Typography>
           </Box>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -1149,9 +1147,9 @@ function Dashboard() {
               </Select>
             </FormControl>
             <FormControl>
-              <InputLabel>長期テーマ</InputLabel>
+              <InputLabel>長期テーマ（Space）</InputLabel>
               <Select
-                label="長期テーマ"
+                label="長期テーマ（Space）"
                 value={draft.spaceId}
                 onChange={(event) => setDraft((current) => ({
                   ...current,
