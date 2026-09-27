@@ -1,31 +1,12 @@
 import { cert, getApp, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore, initializeFirestore } from "firebase-admin/firestore";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import * as storeImport from "../../functions/agentIdeasStoreAgentDb.js";
 import * as contextStoreImport from "../../functions/contextStore.js";
 
 const store: any = (storeImport as any).default ?? storeImport;
 const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
 const AGENT_DATABASE_ID = "(default)";
-
-function readAgentHqGovernanceDocs() {
-  const docs = [
-    { key: "operatingModel", title: "Agent HQ Operating Model", path: "docs/AGENT_HQ_OPERATING_MODEL.md" },
-    { key: "decisionLog", title: "Agent HQ Decision Log", path: "docs/AGENT_HQ_DECISION_LOG.md" },
-  ];
-  const result: Record<string, any> = {};
-  for (const doc of docs) {
-    const absolutePath = resolve(process.cwd(), doc.path);
-    result[doc.key] = {
-      title: doc.title,
-      path: doc.path,
-      markdown: readFileSync(absolutePath, "utf8"),
-    };
-  }
-  return result;
-}
 
 function env(name: string): string | undefined {
   try {
@@ -193,10 +174,7 @@ export default async (request: Request) => {
         }));
       }
       if (resource === "agent_hq_governance") {
-        return json({
-          docs: readAgentHqGovernanceDocs(),
-          operatingModel: await contextStore.agentHqOperatingModel(),
-        });
+        return json(await contextStore.agentHqGovernanceView());
       }
       if (resource === "context") {
         const id = url.searchParams.get("id") || "";

@@ -14,6 +14,9 @@ const COLLECTIONS = Object.freeze({
   workItems: 'memos/agent-control/workItems',
   managerJobs: 'memos/agent-control/managerJobs',
   managerRuns: 'memos/agent-control/managerRuns',
+  operatingModels: 'memos/agent-control/operatingModels',
+  operatingModelVersions: 'memos/agent-control/operatingModelVersions',
+  systemChangeSets: 'memos/agent-control/systemChangeSets',
 });
 
 const THINKING_COLLECTIONS = Object.freeze({
@@ -47,6 +50,13 @@ const MANAGER_RUN_STATUSES = ['ready', 'running', 'completed', 'failed'];
 const LINEAR_SETUP_WORK_ITEM_ID = 'system-linear-integration-setup';
 const INCIDENT_SEVERITIES = ['low', 'medium', 'high', 'critical'];
 const ESCALATION_CATEGORIES = ['capability', 'safety', 'external_dependency', 'state', 'validation', 'tool_error', 'unknown'];
+const OPERATING_MODEL_VERSION_STATUSES = ['draft', 'active', 'superseded', 'archived'];
+const SYSTEM_CHANGE_STATUSES = ['planned', 'applied', 'failed', 'rolled_back', 'superseded'];
+const SYSTEM_CHANGE_TRIGGER_TYPES = ['human_decision', 'incident', 'health_audit', 'manual', 'system', 'migration'];
+const AGENT_HQ_OPERATING_MODEL_ID = 'agent-hq';
+const AGENT_HQ_GOVERNANCE_CHANGESET_ID = 'agent-hq-governance-structured-data-2026-09-27';
+const AGENT_HQ_LEGACY_VERSION_ID = 'agent-hq-v1-legacy';
+const AGENT_HQ_STRUCTURED_VERSION_ID = 'agent-hq-v2-structured-governance';
 
 const AGENT_HQ_OPERATING_MODEL = Object.freeze({
   version: 1,
@@ -229,6 +239,483 @@ function sortRecent(items) {
     const right = Date.parse(b.updatedAt || b.createdAt || b.startedAt || '') || 0;
     return right - left;
   });
+}
+
+
+function structuredAgentHqOperatingModel() {
+  return {
+    ...AGENT_HQ_OPERATING_MODEL,
+    version: 2,
+    updatedAt: '2026-09-27',
+    docs: {
+      operatingModel: 'docs/AGENT_HQ_OPERATING_MODEL.md',
+      decisionLog: 'docs/AGENT_HQ_DECISION_LOG.md',
+      uiViewer: 'Agent HQ > 運用モデル',
+      sourcePolicy: 'Versioned Firestore Operating Model data is canonical. Agent HQ renders human-readable Markdown from the active structured version; repository Markdown remains fallback/history.',
+      canonicalStore: 'memos/agent-control/operatingModels + operatingModelVersions',
+      changeHistoryStore: 'memos/agent-control/systemChangeSets',
+    },
+    runtimeRequirementPolicy: {
+      methodBaseline: 'A Method baseline contains only capabilities/tools required for every Work Item using that Method.',
+      workItemRequirementsAreAdditive: true,
+      optionalDoesNotBecomeRequired: true,
+      rule: 'Task-specific mutation, deployment, verification, approval, or provider requirements belong on the Work Item and are merged additively at preflight.',
+    },
+    governance: {
+      canonicalEntity: 'OperatingModelVersion',
+      versioning: 'immutable versions + active pointer',
+      changeTracking: 'SystemChangeSet',
+      incidentTracking: 'System Incident Work Items',
+      layerOwnership: {
+        operatingModel: 'stable cross-system principles and governance',
+        method: 'role/domain execution procedure',
+        managerJob: 'job/domain configuration and mission scope',
+        workItem: 'concrete executable work and task-specific runtime requirements',
+        incident: 'failure evidence, diagnosis, fix, prevention, recurrence',
+        systemChangeSet: 'why a system repair/change happened across entities and how to rollback it',
+      },
+      autonomousRepair: {
+        allowed: true,
+        scope: 'low-risk repairs inside existing mission, quality, permission, and safety boundaries',
+        requiresVersionHistory: true,
+        requiresChangeSet: true,
+        requiresRegressionCheck: true,
+        requiresRollbackTarget: true,
+        humanApprovalRequiredFor: [
+          'mission change',
+          'major architecture change',
+          'quality boundary change',
+          'safety boundary change',
+          'credential or permission change',
+          'genuinely human-only policy decision',
+        ],
+      },
+    },
+    healthAudit: {
+      purpose: 'Detect when Agent HQ is running but not producing valid work, or when contracts and runtime behavior diverge.',
+      checks: [
+        'scheduled Manager/Worker executions occurred as expected',
+        'Manager -> executable ready inventory -> Worker claim -> finish flow is progressing',
+        'ready starvation is not persisting while canonical backlog contains executable work',
+        'failed, blocked, stale lease, and repeated incident fingerprints are not accumulating',
+        'Method/runtime requirements match the actual runner and Work Item-specific needs',
+        'Manager and Worker schedules do not create avoidable races',
+        'recent Method or Operating Model changes improved rather than degraded the target behavior',
+      ],
+      repairPolicy: 'Use the governance.autonomousRepair rules. Diagnose the owning layer first; do not rewrite unrelated layers.',
+    },
+  };
+}
+
+async function ensureAgentHqGovernanceBootstrap() {
+  const database = db();
+  const modelRef = database.collection(COLLECTIONS.operatingModels).doc(AGENT_HQ_OPERATING_MODEL_ID);
+  const existing = await modelRef.get();
+  if (existing.exists) return false;
+
+  const legacyVersionRef = database.collection(COLLECTIONS.operatingModelVersions).doc(AGENT_HQ_LEGACY_VERSION_ID);
+  const structuredVersionRef = database.collection(COLLECTIONS.operatingModelVersions).doc(AGENT_HQ_STRUCTURED_VERSION_ID);
+  const changeRef = database.collection(COLLECTIONS.systemChangeSets).doc(AGENT_HQ_GOVERNANCE_CHANGESET_ID);
+  const currentModel = structuredAgentHqOperatingModel();
+
+  await database.runTransaction(async (tx) => {
+    const modelSnapshot = await tx.get(modelRef);
+    if (modelSnapshot.exists) return;
+    const now = FieldValue.serverTimestamp();
+
+    tx.set(legacyVersionRef, {
+      operatingModelId: AGENT_HQ_OPERATING_MODEL_ID,
+      versionNumber: 1,
+      label: 'v1 repository/code canonical',
+      changeSummary: 'Historical pre-migration Agent HQ Operating Model. Repository Markdown and code constant were treated as canonical.',
+      model: jsonSafe(AGENT_HQ_OPERATING_MODEL),
+      status: 'superseded',
+      changeSetId: AGENT_HQ_GOVERNANCE_CHANGESET_ID,
+      createdBy: { type: 'system', agent: 'governance-migration', model: null },
+      createdAt: now,
+      updatedAt: now,
+    });
+    tx.set(structuredVersionRef, {
+      operatingModelId: AGENT_HQ_OPERATING_MODEL_ID,
+      versionNumber: 2,
+      label: 'v2 versioned structured governance',
+      changeSummary: 'Moves the live Operating Model to versioned structured Firestore data, adds System ChangeSet history and explicit autonomous-repair governance.',
+      model: jsonSafe(currentModel),
+      status: 'active',
+      changeSetId: AGENT_HQ_GOVERNANCE_CHANGESET_ID,
+      createdBy: { type: 'system', agent: 'governance-migration', model: null },
+      createdAt: now,
+      updatedAt: now,
+    });
+    tx.set(changeRef, {
+      title: 'Operating Modelをversioned structured dataへ移行',
+      summary: 'Agent HQの現行運用モデルをDB正本へ移し、旧モデルをv1として保存したうえでv2をactive化。System ChangeSetで今後の横断修正を追跡可能にした。',
+      reason: 'Health Auditorや自律修復が、会話やMarkdownの解釈ではなく、機械可読なcurrent version・変更理由・rollback先を参照できるようにするため。',
+      status: 'applied',
+      triggerType: 'human_decision',
+      triggerIds: ['human-request-2026-09-27-governance-db'],
+      changes: [
+        {
+          entityType: 'operating_model',
+          entityId: AGENT_HQ_OPERATING_MODEL_ID,
+          beforeVersionId: AGENT_HQ_LEGACY_VERSION_ID,
+          afterVersionId: AGENT_HQ_STRUCTURED_VERSION_ID,
+          summary: 'Repository/code canonicalからversioned Firestore canonicalへ移行。',
+          metadata: {},
+        },
+        {
+          entityType: 'governance_ui',
+          entityId: 'agent-hq-governance',
+          beforeVersionId: 'repository-markdown',
+          afterVersionId: 'db-generated-markdown',
+          summary: 'UIをDB正本から生成する人間向けMarkdown投影へ変更。',
+          metadata: {},
+        },
+      ],
+      evidence: ['Migration bootstrapped by My Portal runtime after deployment.'],
+      regressionCheck: 'agent_hq_operating_model must report canonicalSource=firestore and versionNumber=2; v1 must remain queryable for rollback.',
+      rollback: {
+        type: 'activate_operating_model_version',
+        operatingModelId: AGENT_HQ_OPERATING_MODEL_ID,
+        versionId: AGENT_HQ_LEGACY_VERSION_ID,
+        codeRollbackRequired: false,
+      },
+      metadata: { migration: true },
+      createdBy: { type: 'system', agent: 'governance-migration', model: null },
+      appliedAt: now,
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+    tx.set(modelRef, {
+      title: 'Agent HQ Operating Model',
+      status: 'active',
+      latestVersionNumber: 2,
+      currentVersionId: AGENT_HQ_STRUCTURED_VERSION_ID,
+      currentVersionNumber: 2,
+      docs: currentModel.docs,
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+  return true;
+}
+
+function normalizeSystemChangeEntry(value = {}) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  return {
+    entityType: clampString(source.entityType, 80) || 'unknown',
+    entityId: clampString(source.entityId, 240) || null,
+    beforeVersionId: clampString(source.beforeVersionId, 240) || null,
+    afterVersionId: clampString(source.afterVersionId, 240) || null,
+    summary: clampString(source.summary, 4000) || '',
+    metadata: jsonSafe(source.metadata || {}),
+  };
+}
+
+async function operatingModelVersionGet(input) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const snapshot = await db().collection(COLLECTIONS.operatingModelVersions).doc(id).get();
+  if (!snapshot.exists) throw new Error('Operating Model version not found: ' + id);
+  return documentToObject(snapshot);
+}
+
+async function operatingModelGetContext(input = {}) {
+  const id = clampString(input.id, 160) || AGENT_HQ_OPERATING_MODEL_ID;
+  if (id === AGENT_HQ_OPERATING_MODEL_ID) await ensureAgentHqGovernanceBootstrap();
+
+  const database = db();
+  const modelSnapshot = await database.collection(COLLECTIONS.operatingModels).doc(id).get();
+  if (!modelSnapshot.exists) throw new Error('Operating Model not found: ' + id);
+  const operatingModel = documentToObject(modelSnapshot);
+  const limit = Math.min(Math.max(Number(input.versionLimit) || 20, 1), 100);
+  const versionSnapshot = await database.collection(COLLECTIONS.operatingModelVersions)
+    .where('operatingModelId', '==', id)
+    .limit(100)
+    .get();
+  const versions = versionSnapshot.docs.map(documentToObject)
+    .sort((a, b) => Number(b.versionNumber || 0) - Number(a.versionNumber || 0))
+    .slice(0, limit);
+  const currentVersion = operatingModel.currentVersionId
+    ? versions.find((item) => item.id === operatingModel.currentVersionId)
+      || await operatingModelVersionGet({ id: operatingModel.currentVersionId })
+    : null;
+  return { operatingModel, currentVersion, versions, source: 'firestore', databaseId: DATABASE_ID };
+}
+
+async function operatingModelVersionCreate(input, actor = {}) {
+  const operatingModelId = clampString(input.operatingModelId, 160) || AGENT_HQ_OPERATING_MODEL_ID;
+  if (operatingModelId === AGENT_HQ_OPERATING_MODEL_ID) await ensureAgentHqGovernanceBootstrap();
+  const database = db();
+  const modelRef = database.collection(COLLECTIONS.operatingModels).doc(operatingModelId);
+  const versionRef = database.collection(COLLECTIONS.operatingModelVersions).doc();
+  const activate = input.activate === true;
+  const rawModel = input.model && typeof input.model === 'object' && !Array.isArray(input.model) ? input.model : null;
+  if (!rawModel) throw new Error('model must be a structured object');
+
+  await database.runTransaction(async (tx) => {
+    const modelSnapshot = await tx.get(modelRef);
+    if (!modelSnapshot.exists) throw new Error('Operating Model not found: ' + operatingModelId);
+    const current = modelSnapshot.data();
+    const previousRef = activate && current.currentVersionId
+      ? database.collection(COLLECTIONS.operatingModelVersions).doc(current.currentVersionId)
+      : null;
+    const previousSnapshot = previousRef ? await tx.get(previousRef) : null;
+    const versionNumber = Number(current.latestVersionNumber || 0) + 1;
+    const now = FieldValue.serverTimestamp();
+    const safeModel = jsonSafe(rawModel);
+    const model = { ...safeModel, version: versionNumber, updatedAt: new Date().toISOString() };
+
+    tx.set(versionRef, {
+      operatingModelId,
+      versionNumber,
+      label: clampString(input.label, 120) || ('v' + versionNumber),
+      changeSummary: clampString(input.changeSummary, 5000) || '',
+      model,
+      status: activate ? 'active' : 'draft',
+      changeSetId: clampString(input.changeSetId, 160) || null,
+      createdBy: createdBy(input.createdBy, actor),
+      createdAt: now,
+      updatedAt: now,
+    });
+    if (activate && previousSnapshot?.exists && previousSnapshot.id !== versionRef.id) {
+      tx.update(previousSnapshot.ref, { status: 'superseded', updatedAt: now });
+    }
+    tx.update(modelRef, {
+      latestVersionNumber: versionNumber,
+      ...(activate ? { currentVersionId: versionRef.id, currentVersionNumber: versionNumber } : {}),
+      revision: Number(current.revision || 1) + 1,
+      updatedAt: now,
+    });
+  });
+  return operatingModelGetContext({ id: operatingModelId, versionLimit: 100 });
+}
+
+async function operatingModelVersionActivate(input) {
+  const operatingModelId = clampString(input.operatingModelId, 160) || AGENT_HQ_OPERATING_MODEL_ID;
+  if (operatingModelId === AGENT_HQ_OPERATING_MODEL_ID) await ensureAgentHqGovernanceBootstrap();
+  const versionId = assertString(input.versionId, 'versionId', { max: 160 });
+  const database = db();
+  const modelRef = database.collection(COLLECTIONS.operatingModels).doc(operatingModelId);
+  const versionRef = database.collection(COLLECTIONS.operatingModelVersions).doc(versionId);
+
+  await database.runTransaction(async (tx) => {
+    const modelSnapshot = await tx.get(modelRef);
+    const versionSnapshot = await tx.get(versionRef);
+    if (!modelSnapshot.exists) throw new Error('Operating Model not found: ' + operatingModelId);
+    if (!versionSnapshot.exists) throw new Error('Operating Model version not found: ' + versionId);
+    const current = modelSnapshot.data();
+    const version = versionSnapshot.data();
+    if (version.operatingModelId !== operatingModelId) throw new Error('Operating Model version does not belong to: ' + operatingModelId);
+    const previousRef = current.currentVersionId && current.currentVersionId !== versionId
+      ? database.collection(COLLECTIONS.operatingModelVersions).doc(current.currentVersionId)
+      : null;
+    const previousSnapshot = previousRef ? await tx.get(previousRef) : null;
+    const now = FieldValue.serverTimestamp();
+    if (previousSnapshot?.exists) tx.update(previousSnapshot.ref, { status: 'superseded', updatedAt: now });
+    tx.update(versionRef, { status: 'active', updatedAt: now });
+    tx.update(modelRef, {
+      currentVersionId: versionId,
+      currentVersionNumber: Number(version.versionNumber || 0) || null,
+      revision: Number(current.revision || 1) + 1,
+      updatedAt: now,
+    });
+  });
+  return operatingModelGetContext({ id: operatingModelId, versionLimit: 100 });
+}
+
+async function systemChangeCreate(input, actor = {}) {
+  const ref = db().collection(COLLECTIONS.systemChangeSets).doc();
+  const now = FieldValue.serverTimestamp();
+  const changes = (Array.isArray(input.changes) ? input.changes : []).slice(0, 100).map(normalizeSystemChangeEntry);
+  await ref.set({
+    title: assertString(input.title, 'title', { max: 500 }),
+    summary: clampString(input.summary, 12000) || '',
+    reason: assertString(input.reason, 'reason', { max: 12000 }),
+    status: assertEnum(input.status, SYSTEM_CHANGE_STATUSES, 'status', 'applied'),
+    triggerType: assertEnum(input.triggerType, SYSTEM_CHANGE_TRIGGER_TYPES, 'triggerType', 'manual'),
+    triggerIds: stringArray(input.triggerIds, 100, 240),
+    changes,
+    evidence: stringArray(input.evidence, 100, 3000),
+    regressionCheck: clampString(input.regressionCheck, 6000) || '',
+    rollback: jsonSafe(input.rollback || {}),
+    metadata: jsonSafe(input.metadata || {}),
+    createdBy: createdBy(input.createdBy, actor),
+    appliedAt: (input.status || 'applied') === 'applied' ? now : null,
+    revision: 1,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return documentToObject(await ref.get());
+}
+
+async function systemChangeGet(input) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const snapshot = await db().collection(COLLECTIONS.systemChangeSets).doc(id).get();
+  if (!snapshot.exists) throw new Error('System ChangeSet not found: ' + id);
+  return documentToObject(snapshot);
+}
+
+async function systemChangeSearch(input = {}) {
+  const limit = Math.min(Math.max(Number(input.limit) || 50, 1), 200);
+  const scanLimit = Math.min(Math.max(Number(input.scanLimit) || Math.max(limit * 4, 100), limit), 1000);
+  const snapshot = await db().collection(COLLECTIONS.systemChangeSets).limit(scanLimit).get();
+  const q = clampString(input.query, 400)?.toLowerCase();
+  const status = clampString(input.status, 40);
+  const triggerType = clampString(input.triggerType, 40);
+  const items = sortRecent(snapshot.docs.map(documentToObject))
+    .filter((item) => !status || item.status === status)
+    .filter((item) => !triggerType || item.triggerType === triggerType)
+    .filter((item) => !q || [item.title, item.summary, item.reason, ...(item.triggerIds || [])].join('\n').toLowerCase().includes(q))
+    .slice(0, limit);
+  return { items, count: items.length, scanned: snapshot.size, databaseId: DATABASE_ID };
+}
+
+async function systemChangeUpdate(input) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const patch = input.patch && typeof input.patch === 'object' ? input.patch : {};
+  const ref = db().collection(COLLECTIONS.systemChangeSets).doc(id);
+  await db().runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    if (!snapshot.exists) throw new Error('System ChangeSet not found: ' + id);
+    const current = snapshot.data();
+    if (input.expectedRevision !== undefined && Number(input.expectedRevision) !== Number(current.revision || 1)) {
+      throw new Error('Revision conflict: expected ' + input.expectedRevision + ', actual ' + (current.revision || 1));
+    }
+    const update = { revision: Number(current.revision || 1) + 1, updatedAt: FieldValue.serverTimestamp() };
+    if (patch.title !== undefined) update.title = assertString(patch.title, 'patch.title', { max: 500 });
+    if (patch.summary !== undefined) update.summary = clampString(patch.summary, 12000) || '';
+    if (patch.reason !== undefined) update.reason = assertString(patch.reason, 'patch.reason', { max: 12000 });
+    if (patch.status !== undefined) update.status = assertEnum(patch.status, SYSTEM_CHANGE_STATUSES, 'patch.status', current.status || 'applied');
+    if (patch.triggerType !== undefined) update.triggerType = assertEnum(patch.triggerType, SYSTEM_CHANGE_TRIGGER_TYPES, 'patch.triggerType', current.triggerType || 'manual');
+    if (patch.triggerIds !== undefined) update.triggerIds = stringArray(patch.triggerIds, 100, 240);
+    if (patch.changes !== undefined) update.changes = (Array.isArray(patch.changes) ? patch.changes : []).slice(0, 100).map(normalizeSystemChangeEntry);
+    if (patch.evidence !== undefined) update.evidence = stringArray(patch.evidence, 100, 3000);
+    if (patch.regressionCheck !== undefined) update.regressionCheck = clampString(patch.regressionCheck, 6000) || '';
+    if (patch.rollback !== undefined) update.rollback = jsonSafe(patch.rollback || {});
+    if (patch.metadata !== undefined) update.metadata = jsonSafe(patch.metadata || {});
+    if (patch.metadataPatch !== undefined) update.metadata = { ...(current.metadata || {}), ...jsonSafe(patch.metadataPatch || {}) };
+    if (patch.status === 'applied' && !current.appliedAt) update.appliedAt = FieldValue.serverTimestamp();
+    if (patch.status === 'rolled_back') update.rolledBackAt = FieldValue.serverTimestamp();
+    tx.update(ref, update);
+  });
+  return systemChangeGet({ id });
+}
+
+function markdownLabel(key) {
+  return String(key || '').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').replace(/^./, (value) => value.toUpperCase());
+}
+function markdownScalar(value) {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  return String(value);
+}
+function renderStructuredObject(value, headingLevel = 2) {
+  const lines = [];
+  Object.entries(value || {}).forEach(([key, item]) => {
+    const heading = '#'.repeat(Math.min(Math.max(headingLevel, 2), 5));
+    lines.push('', heading + ' ' + markdownLabel(key));
+    if (Array.isArray(item)) {
+      if (!item.length) lines.push('- none');
+      else if (item.every((entry) => entry === null || ['string', 'number', 'boolean'].includes(typeof entry))) {
+        item.forEach((entry) => lines.push('- ' + markdownScalar(entry)));
+      } else {
+        lines.push('~~~json', JSON.stringify(item, null, 2), '~~~');
+      }
+    } else if (item && typeof item === 'object') {
+      const entries = Object.entries(item);
+      if (entries.every(([, nested]) => nested === null || ['string', 'number', 'boolean'].includes(typeof nested))) {
+        entries.forEach(([nestedKey, nested]) => lines.push('- **' + markdownLabel(nestedKey) + ':** ' + markdownScalar(nested)));
+      } else {
+        lines.push('~~~json', JSON.stringify(item, null, 2), '~~~');
+      }
+    } else {
+      lines.push('', markdownScalar(item));
+    }
+  });
+  return lines.join('\n');
+}
+
+function renderOperatingModelMarkdown(model) {
+  const meta = model?._meta || {};
+  const cleanModel = { ...(model || {}) };
+  delete cleanModel._meta;
+  const lines = [
+    '# Agent HQ Operating Model', '',
+    '> Generated from the active versioned structured Operating Model in My Portal.',
+    '> Repository Markdown remains fallback/history, not the live canonical state.', '',
+    '- **Current version:** v' + markdownScalar(meta.versionNumber || cleanModel.version),
+    '- **Version ID:** ' + markdownScalar(meta.versionId),
+    '- **Canonical source:** ' + markdownScalar(meta.canonicalSource),
+    '- **Updated:** ' + markdownScalar(cleanModel.updatedAt),
+  ];
+  const body = { ...cleanModel };
+  delete body.version;
+  delete body.updatedAt;
+  lines.push(renderStructuredObject(body, 2));
+  return lines.join('\n');
+}
+
+function renderSystemChangeLogMarkdown(items = []) {
+  const lines = [
+    '# Agent HQ System Change Log', '',
+    '> Generated from My Portal System ChangeSets. Each record captures what changed, why, regression evidence, and rollback.', '',
+  ];
+  if (!items.length) return lines.concat(['No structured ChangeSets have been recorded yet.']).join('\n');
+  items.forEach((item) => {
+    lines.push('## ' + (item.createdAt ? String(item.createdAt).slice(0, 10) + ' — ' : '') + item.title, '');
+    lines.push('- **Status:** ' + markdownScalar(item.status));
+    lines.push('- **Trigger:** ' + markdownScalar(item.triggerType) + (item.triggerIds?.length ? ' · ' + item.triggerIds.join(', ') : ''));
+    if (item.summary) lines.push('', item.summary);
+    if (item.reason) lines.push('', '**Reason**', '', item.reason);
+    if (item.changes?.length) {
+      lines.push('', '**Changes**');
+      item.changes.forEach((change) => {
+        const versions = [change.beforeVersionId, change.afterVersionId].filter(Boolean).join(' → ');
+        lines.push('- ' + markdownScalar(change.entityType) + (change.entityId ? ' [' + change.entityId + ']' : '') + (versions ? ' · ' + versions : '') + (change.summary ? ' — ' + change.summary : ''));
+      });
+    }
+    if (item.regressionCheck) lines.push('', '**Regression check**', '', item.regressionCheck);
+    if (item.evidence?.length) {
+      lines.push('', '**Evidence**');
+      item.evidence.forEach((entry) => lines.push('- ' + entry));
+    }
+    if (item.rollback && Object.keys(item.rollback).length) lines.push('', '**Rollback**', '', '~~~json', JSON.stringify(item.rollback, null, 2), '~~~');
+    lines.push('');
+  });
+  return lines.join('\n');
+}
+
+async function agentHqGovernanceView() {
+  const [operatingContext, changes] = await Promise.all([
+    operatingModelGetContext({ id: AGENT_HQ_OPERATING_MODEL_ID, versionLimit: 50 }),
+    systemChangeSearch({ limit: 100, scanLimit: 500 }),
+  ]);
+  const operatingModel = await agentHqOperatingModel();
+  return {
+    operatingModel,
+    operatingModelContext: operatingContext,
+    systemChanges: changes.items,
+    docs: {
+      operatingModel: {
+        title: 'Agent HQ Operating Model',
+        path: 'db://operatingModels/' + AGENT_HQ_OPERATING_MODEL_ID,
+        source: operatingContext.source,
+        versionNumber: operatingContext.currentVersion?.versionNumber || null,
+        versionId: operatingContext.currentVersion?.id || null,
+        legacyPath: 'docs/AGENT_HQ_OPERATING_MODEL.md',
+        markdown: renderOperatingModelMarkdown(operatingModel),
+      },
+      decisionLog: {
+        title: 'Agent HQ System Change Log',
+        path: 'db://systemChangeSets',
+        source: 'firestore',
+        legacyPath: 'docs/AGENT_HQ_DECISION_LOG.md',
+        markdown: renderSystemChangeLogMarkdown(changes.items),
+      },
+    },
+  };
 }
 
 function spacePayload(input) {
@@ -612,6 +1099,7 @@ async function methodVersionCreate(input, actor = {}) {
       instructions: clampString(input.instructions, 30000) || '',
       protocol: jsonSafe(input.protocol || {}),
       qualityGates: stringArray(input.qualityGates, 100, 1000),
+      changeSetId: clampString(input.changeSetId, 160) || null,
       status: activate ? 'active' : 'draft',
       createdBy: createdBy(input.createdBy, actor),
       createdAt: now,
@@ -2108,7 +2596,7 @@ async function managerJobHistory(input) {
 
 async function managerJobGetContext(input) {
   const job = await managerJobGet({ id: input.id });
-  const [methodContext, workerMethodContext, managerHistory, space, projectSnapshot, workSnapshot] = await Promise.all([
+  const [methodContext, workerMethodContext, managerHistory, space, projectSnapshot, workSnapshot, operatingModel] = await Promise.all([
     job.methodId
       ? methodGetContext({
         id: job.methodId,
@@ -2127,6 +2615,7 @@ async function managerJobGetContext(input) {
     job.spaceId ? spaceGet({ id: job.spaceId }).catch(() => null) : Promise.resolve(null),
     job.projectId ? db().collection('projects').doc(job.projectId).get() : Promise.resolve(null),
     db().collection(COLLECTIONS.workItems).limit(1000).get(),
+    agentHqOperatingModel(),
   ]);
 
   const allWork = sortRecent(workSnapshot.docs.map(documentToObject));
@@ -2196,11 +2685,11 @@ async function managerJobGetContext(input) {
         defaultWorkerMethod: workerMethodContext?.executionContract || null,
       },
       managerRuntimeRequirements: runtimeRequirementsFromMethodExecution(methodContext?.executionContract),
-      operatingModel: AGENT_HQ_OPERATING_MODEL,
+      operatingModel,
       escalationPolicy: {
         workerReportsToManagerFirst: true,
         incidentSourceType: 'system_incident',
-        incidentThreshold: AGENT_HQ_OPERATING_MODEL.escalation.incidentThreshold,
+        incidentThreshold: operatingModel.escalation.incidentThreshold,
       },
       method: methodContext?.executionContract || null,
       loop: ['observe', 'reconcile', 'decide', 'delegate'],
@@ -2216,7 +2705,7 @@ async function managerJobGetContext(input) {
       active: activeIncidents,
       recentResolved: recentResolvedIncidents,
     },
-    operatingModel: AGENT_HQ_OPERATING_MODEL,
+    operatingModel,
     recentManagerRuns: managerHistory.items,
   };
 }
@@ -3080,8 +3569,20 @@ async function workItemRelease(input) {
   return workItemGet({ id });
 }
 
-function agentHqOperatingModel() {
-  return AGENT_HQ_OPERATING_MODEL;
+async function agentHqOperatingModel() {
+  const context = await operatingModelGetContext({ id: AGENT_HQ_OPERATING_MODEL_ID, versionLimit: 20 });
+  const version = context.currentVersion;
+  const model = version?.model || AGENT_HQ_OPERATING_MODEL;
+  return {
+    ...model,
+    _meta: {
+      canonicalSource: context.source,
+      operatingModelId: AGENT_HQ_OPERATING_MODEL_ID,
+      versionId: version?.id || null,
+      versionNumber: version?.versionNumber || Number(model.version || 1),
+      changeSetId: version?.changeSetId || null,
+    },
+  };
 }
 
 async function workItemReportProblem(input) {
@@ -3439,6 +3940,10 @@ async function controlPlaneOverview(input = {}) {
     database.collection('memos').limit(150).get(),
   ]);
 
+  const operatingModel = await agentHqOperatingModel();
+  const systemChangeSnapshot = await database.collection(COLLECTIONS.systemChangeSets).limit(100).get();
+  const recentSystemChanges = sortRecent(systemChangeSnapshot.docs.map(documentToObject)).slice(0, 20);
+
   const rawWork = workSnapshot.docs.map((snapshot) => ({ id: snapshot.id, ...snapshot.data() }));
   const workItems = sortRecent(rawWork.map((item) => serialize(item)));
   const managerJobs = sortRecent(managerJobSnapshot.docs.map(documentToObject)).filter((item) => item.status === 'active');
@@ -3551,6 +4056,7 @@ async function controlPlaneOverview(input = {}) {
       linearUnlinked: unlinkedLinearIssues.length,
       activeSystemIncidents: activeSystemIncidents.length,
       managerEscalations: managerEscalations.length,
+      recentSystemChanges: recentSystemChanges.length,
     },
     recommendedNext,
     inProgress: agentWork.filter((item) => item.status === 'in_progress'),
@@ -3563,7 +4069,8 @@ async function controlPlaneOverview(input = {}) {
       active: activeSystemIncidents.slice(0, 50),
       recentResolved: recentResolvedSystemIncidents,
     },
-    operatingModel: AGENT_HQ_OPERATING_MODEL,
+    recentSystemChanges,
+    operatingModel,
     staleLeases,
     activeManagerJobs: managerJobs.slice(0, 50),
     managerRuns: managerRuns.slice(0, 50),
@@ -3595,12 +4102,14 @@ async function controlPlaneOverview(input = {}) {
 
 async function healthCheck() {
   const started = Date.now();
-  const [spaceSample, profileSample, methodSample, managerJobSample, managerRunSample] = await Promise.all([
+  const [spaceSample, profileSample, methodSample, managerJobSample, managerRunSample, operatingModelSample, systemChangeSample] = await Promise.all([
     db().collection(COLLECTIONS.spaces).limit(1).get(),
     db().collection(COLLECTIONS.profileFacts).limit(1).get(),
     db().collection(COLLECTIONS.methods).limit(1).get(),
     db().collection(COLLECTIONS.managerJobs).limit(1).get(),
     db().collection(COLLECTIONS.managerRuns).limit(1).get(),
+    db().collection(COLLECTIONS.operatingModels).limit(1).get(),
+    db().collection(COLLECTIONS.systemChangeSets).limit(1).get(),
   ]);
   return {
     ok: true,
@@ -3611,6 +4120,8 @@ async function healthCheck() {
     sampleMethodCount: methodSample.size,
     sampleManagerJobCount: managerJobSample.size,
     sampleManagerRunCount: managerRunSample.size,
+    sampleOperatingModelCount: operatingModelSample.size,
+    sampleSystemChangeCount: systemChangeSample.size,
     latencyMs: Date.now() - started,
   };
 }
@@ -3637,6 +4148,10 @@ module.exports = {
   LINEAR_SETUP_WORK_ITEM_ID,
   INCIDENT_SEVERITIES,
   ESCALATION_CATEGORIES,
+  OPERATING_MODEL_VERSION_STATUSES,
+  SYSTEM_CHANGE_STATUSES,
+  SYSTEM_CHANGE_TRIGGER_TYPES,
+  AGENT_HQ_OPERATING_MODEL_ID,
   AGENT_HQ_OPERATING_MODEL,
   healthCheck,
   linearStatus,
@@ -3670,6 +4185,15 @@ module.exports = {
   workItemRelease,
   workItemReportProblem,
   agentHqOperatingModel,
+  agentHqGovernanceView,
+  operatingModelGetContext,
+  operatingModelVersionGet,
+  operatingModelVersionCreate,
+  operatingModelVersionActivate,
+  systemChangeCreate,
+  systemChangeGet,
+  systemChangeSearch,
+  systemChangeUpdate,
   systemIncidentCreate,
   systemIncidentSearch,
   systemIncidentResolve,

@@ -266,20 +266,23 @@ Periodic human reports include:
 
 ## 11. Durable governance artifacts
 
-Three layers are kept distinct:
+The live governance source is **versioned structured data in My Portal**.
 
-- **Operating Model** — how Agent HQ should behave now. This file.
-- **Decision Log** — why important architecture/operating decisions changed.
-- **System Incidents** — concrete failures, root causes, fixes and prevention stored in My Portal.
+- **Operating Model** — `operatingModels` + immutable `operatingModelVersions`. The active version is the canonical description of how Agent HQ should behave now.
+- **Method / MethodVersion** — role/domain-specific execution manuals.
+- **System ChangeSet** — cross-entity change history: what changed, why, before/after versions, evidence, regression check, and rollback.
+- **System Incident** — observed structural failure, root cause, repair, prevention, and recurrence evidence.
+- **Repository Markdown** — durable fallback/history and implementation documentation. Agent HQ UI renders the canonical DB state into Markdown instead of using a hand-written Markdown copy as live state.
 
-The authenticated Agent HQ UI exposes the repository-owned Operating Model and Decision Log through its Governance viewer. The UI must read these Markdown files through the My Portal backend rather than maintaining a second hand-written copy.
+Ownership rule:
 
-When a System Incident reveals a new invariant:
-1. record the Incident,
-2. fix the system,
-3. update the Decision Log,
-4. update this Operating Model if the current expected behavior changed.
+1. stable cross-system principle → Operating Model version,
+2. execution procedure → Method version,
+3. job/domain configuration → Manager Job / Work Item,
+4. failure evidence → Incident,
+5. meaningful system repair/change spanning entities → System ChangeSet.
 
+Low-risk autonomous repair is allowed only inside the existing mission, quality, permission, and safety boundaries. It must preserve version history, record a ChangeSet, run a regression check, and retain a rollback target. Mission changes, major architecture changes, quality/safety boundary changes, credential/permission changes, and genuinely human-only policy decisions still require the Human.
 ## 12. Repair workflow when the Human says "My Portal seems wrong"
 
 1. Load `control_plane_overview`.

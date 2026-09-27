@@ -107,6 +107,7 @@ const methodVersionFields = {
   instructions: string('Executable agent-facing instructions for this version.', 30000),
   protocol: jsonObject('Structured stages, lenses, outputs, and other execution metadata.'),
   qualityGates: stringArray('Acceptance checks for outputs created with this version.', 100),
+  changeSetId: string('Optional System ChangeSet that explains this Method version change.', 160),
 };
 
 const TOOLS = [
@@ -182,6 +183,104 @@ const TOOLS = [
     inputSchema: objectSchema({}),
     annotations: { readOnlyHint: true },
   },
+
+  {
+    name: 'operating_model_get_context',
+    description: 'Read the versioned Agent HQ Operating Model current version and history. Firestore is canonical.',
+    inputSchema: objectSchema({
+      id: string('Operating Model ID. Defaults to agent-hq.', 160),
+      versionLimit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+    }),
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'operating_model_version_get',
+    description: 'Read one immutable Operating Model version.',
+    inputSchema: objectSchema({ id: string('Operating Model version ID.', 160) }, ['id']),
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'operating_model_version_create',
+    description: 'Create an immutable structured Operating Model version; activate=true makes it canonical while preserving rollback history.',
+    inputSchema: objectSchema({
+      operatingModelId: string('Operating Model ID. Defaults to agent-hq.', 160),
+      label: string('Human-readable version label.', 120),
+      changeSummary: string('What changed and why.', 5000),
+      model: jsonObject('Complete structured Operating Model.'),
+      changeSetId: string('Optional System ChangeSet explaining the change.', 160),
+      activate: { type: 'boolean', default: false },
+    }, ['model']),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  {
+    name: 'operating_model_version_activate',
+    description: 'Activate an existing Operating Model version for rollback or reviewed promotion.',
+    inputSchema: objectSchema({
+      operatingModelId: string('Operating Model ID. Defaults to agent-hq.', 160),
+      versionId: string('Operating Model version ID.', 160),
+    }, ['versionId']),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  {
+    name: 'system_change_create',
+    description: 'Record a cross-entity Agent HQ ChangeSet: what changed, why, evidence, regression check, and rollback.',
+    inputSchema: objectSchema({
+      title: string('Short system change title.', 500),
+      summary: string('Compact outcome summary.', 12000),
+      reason: string('Why the system change was necessary.', 12000),
+      status: { type: 'string', enum: store.SYSTEM_CHANGE_STATUSES },
+      triggerType: { type: 'string', enum: store.SYSTEM_CHANGE_TRIGGER_TYPES },
+      triggerIds: stringArray('Incident, Work Item, Manager Run, or other trigger IDs.', 100),
+      changes: { type: 'array', maxItems: 100, items: jsonObject('Changed entity/version pair.') },
+      evidence: stringArray('Commits, errors, checks, or other evidence.', 100),
+      regressionCheck: string('How the repaired behavior was verified.', 6000),
+      rollback: jsonObject('Rollback plan and target versions.'),
+      metadata: jsonObject('Additional structured change metadata.'),
+    }, ['title', 'reason']),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  {
+    name: 'system_change_get',
+    description: 'Read one Agent HQ System ChangeSet.',
+    inputSchema: objectSchema({ id: string('System ChangeSet ID.', 160) }, ['id']),
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'system_change_search',
+    description: 'Search Agent HQ System ChangeSets by text, status, or trigger type.',
+    inputSchema: objectSchema({
+      query: string('Substring over title, summary, reason, and trigger IDs.', 400),
+      status: { type: 'string', enum: store.SYSTEM_CHANGE_STATUSES },
+      triggerType: { type: 'string', enum: store.SYSTEM_CHANGE_TRIGGER_TYPES },
+      limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+      scanLimit: { type: 'integer', minimum: 1, maximum: 1000 },
+    }),
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'system_change_update',
+    description: 'Update mutable ChangeSet status, regression evidence, or rollback metadata without rewriting versioned entities.',
+    inputSchema: objectSchema({
+      id: string('System ChangeSet ID.', 160),
+      expectedRevision: { type: 'integer', minimum: 1 },
+      patch: objectSchema({
+        title: string('Short system change title.', 500),
+        summary: string('Compact outcome summary.', 12000),
+        reason: string('Why the system change was necessary.', 12000),
+        status: { type: 'string', enum: store.SYSTEM_CHANGE_STATUSES },
+        triggerType: { type: 'string', enum: store.SYSTEM_CHANGE_TRIGGER_TYPES },
+        triggerIds: stringArray('Trigger IDs.', 100),
+        changes: { type: 'array', maxItems: 100, items: jsonObject('Changed entity/version pair.') },
+        evidence: stringArray('Evidence.', 100),
+        regressionCheck: string('Regression check.', 6000),
+        rollback: jsonObject('Rollback plan and target versions.'),
+        metadata: jsonObject('Replacement metadata.'),
+        metadataPatch: jsonObject('Shallow metadata merge.'),
+      }),
+    }, ['id', 'patch']),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+
   {
     name: 'system_incident_search',
     description: 'Search durable Agent HQ System Incident records. Incidents reuse Work Item storage with sourceType=system_incident and are excluded from ordinary Worker queue inventory.',

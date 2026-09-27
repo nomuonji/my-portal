@@ -25,7 +25,7 @@ const migration: any = (migrationImport as any).default ?? migrationImport;
 const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...portalToolsModule.TOOLS, ...socialToolsModule.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "1.9.0-netlify";
+const SERVER_VERSION = "1.10.0-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -347,6 +347,14 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
     }
     case "control_plane_overview": return structured(await contextStore.controlPlaneOverview(args));
     case "agent_hq_operating_model": return structured(await contextStore.agentHqOperatingModel(args));
+    case "operating_model_get_context": return structured(await contextStore.operatingModelGetContext(args));
+    case "operating_model_version_get": return structured(await contextStore.operatingModelVersionGet(args));
+    case "operating_model_version_create": return structured(await contextStore.operatingModelVersionCreate(args));
+    case "operating_model_version_activate": return structured(await contextStore.operatingModelVersionActivate(args));
+    case "system_change_create": return structured(await contextStore.systemChangeCreate(args));
+    case "system_change_get": return structured(await contextStore.systemChangeGet(args));
+    case "system_change_search": return structured(await contextStore.systemChangeSearch(args));
+    case "system_change_update": return structured(await contextStore.systemChangeUpdate(args));
     case "system_incident_search": return structured(await contextStore.systemIncidentSearch(args));
     case "manager_job_create": return structured(await contextStore.managerJobCreate(args));
     case "manager_job_get": return structured(await contextStore.managerJobGet(args));

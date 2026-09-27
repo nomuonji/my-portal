@@ -484,8 +484,9 @@ Detect → Diagnose → Repair → Regression check → Prevention
 
 Agent HQ自体の不具合を将来修復しやすくするため、役割を3層に分ける。
 
-- **Operating Model**: 現在どうあるべきか。正本は `docs/AGENT_HQ_OPERATING_MODEL.md`
-- **Decision Log**: なぜ重要な設計判断を変更したか。正本は `docs/AGENT_HQ_DECISION_LOG.md`
+- **Operating Model**: 現在どうあるべきか。正本はMy Portal DBの `operatingModels` + immutable `operatingModelVersions`
+- **System ChangeSet**: 何を・なぜ変更したか、before/after version、evidence、regression check、rollbackをDBに構造化保存
+- **Repository governance docs**: DB正本を人間が理解・復旧するためのfallback/history。UIではDBデータからMarkdownを自動生成
 - **System Incident**: 実際に起きた失敗、root cause、fix、prevention。My Portalの `sourceType=system_incident` Work Item
 
 `control_plane_overview` はcurrent Operating Model、未解決Incident、Worker→Manager escalationを返す。Agent HQの挙動がおかしいと指摘された場合は、まずExpected（Operating Model）とActual（現在のQueue/Run/Incident）を比較してから修正する。

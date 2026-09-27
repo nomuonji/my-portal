@@ -1477,7 +1477,7 @@ function Dashboard() {
         </DialogTitle>
         <DialogContent sx={{ pt: 1.2 }}>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            現在の「あるべき姿」と、重要な設計判断の履歴です。表示内容はrepositoryのMarkdown正本をMy Portal backend経由で読み込んでいます。
+            現在の「あるべき姿」と、システム変更履歴です。正本はMy Portalのversioned structured dataで、ここでは人間向けMarkdownへ自動投影して表示します。
           </Typography>
           <Tabs
             value={governanceTab}
@@ -1485,7 +1485,7 @@ function Dashboard() {
             sx={{ mb: 1.2, borderBottom: '1px solid ' + border }}
           >
             <Tab value="operatingModel" label="Operating Model" />
-            <Tab value="decisionLog" label="Decision Log" />
+            <Tab value="decisionLog" label="System Changes" />
           </Tabs>
 
           {governanceLoading && (
@@ -1508,6 +1508,15 @@ function Dashboard() {
                   variant="outlined"
                   label={governanceDocs[governanceTab].path}
                 />
+                {governanceDocs[governanceTab].source && (
+                  <Chip size="small" label={'source · ' + governanceDocs[governanceTab].source} />
+                )}
+                {governanceDocs[governanceTab].versionNumber && (
+                  <Chip size="small" label={'v' + governanceDocs[governanceTab].versionNumber} />
+                )}
+                {governanceDocs[governanceTab].legacyPath && (
+                  <Chip size="small" variant="outlined" label={'legacy · ' + governanceDocs[governanceTab].legacyPath} />
+                )}
               </Box>
               <Box
                 dangerouslySetInnerHTML={{

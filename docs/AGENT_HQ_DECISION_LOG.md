@@ -140,3 +140,17 @@ These are not the full git history; they are recovery anchors for the current op
 - `55b38292dee25f2b422bd9fb441aafa825d44c15` — bundles both governance Markdown files with Netlify Functions.
 - `ad918a44acffcc258cb0b3721cab22b4a94fddcc` — authenticated backend resource serves the exact repository Markdown.
 - `45192b1e8dac7868b89a7eb5533db64e0fb52cd1` — Agent HQ header button + Operating Model / Decision Log viewer UI.
+
+---
+
+## 2026-09-27 — Operating Model becomes versioned structured data
+
+**Decision:** The live Agent HQ Operating Model moves from a code/Markdown canonical copy to versioned Firestore entities: `operatingModels` and immutable `operatingModelVersions`.
+
+**Why:** Autonomous health checking and repair need machine-readable current state, exact version history, contradiction detection, and rollback without reconstructing policy from prose or chat history.
+
+**Human view:** Agent HQ renders the active structured model into Markdown. Repository Markdown remains durable fallback/history and implementation documentation, not the live canonical state.
+
+**Change history:** Cross-entity repairs are recorded as `System ChangeSet` records with trigger, before/after version IDs, reason, evidence, regression check, and rollback metadata.
+
+**Autonomous repair guardrail:** Agents may apply low-risk repairs only within existing mission, quality, permission, and safety boundaries, while preserving version history and a rollback path. Major policy/architecture/safety changes still require Human approval.
