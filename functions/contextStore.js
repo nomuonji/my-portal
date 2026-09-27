@@ -3580,16 +3580,49 @@ async function workItemRelease(input) {
     if (!snapshot.exists) throw new Error('Work item not found: ' + id);
     const current = snapshot.data();
     if (current.claimedBy && current.claimedBy !== agent) throw new Error('Work item is claimed by ' + current.claimedBy);
+    const jobRef = current.sourceType === 'manager_job' && current.sourceId
+      ? db().collection(COLLECTIONS.managerJobs).doc(current.sourceId)
+      : null;
+    const jobSnapshot = jobRef ? await tx.get(jobRef) : null;
+    const job = jobSnapshot?.exists ? jobSnapshot.data() : null;
+    const receipt = input.executionReceipt
+      ? normalizeExecutionReceipt(input.executionReceipt, job)
+      : null;
+    if (receipt) {
+      if (current.status !== 'running' || current.claimedBy !== agent || targetStatus !== 'in_progress') {
+        throw new Error('A commit handoff requires an owned running item released to in_progress');
+      }
+      if (receipt.deliveryStatus !== 'committed' || !isMaterialReceipt({ ...current, executionReceipt: receipt })) {
+        throw new Error('Commit handoff requires a material action receipt with commit evidence');
+      }
+    }
+    const now = FieldValue.serverTimestamp();
     tx.update(ref, {
       status: targetStatus,
       claimedBy: null,
       claimedModel: null,
       runId: null,
       leaseExpiresAt: null,
-      lastHeartbeatAt: FieldValue.serverTimestamp(),
+      lastHeartbeatAt: now,
+      blockedReason: receipt ? '' : (current.blockedReason || ''),
+      resultSummary: clampString(input.resultSummary, 12000) || current.resultSummary || '',
+      nextActions: input.nextActions !== undefined
+        ? stringArray(input.nextActions, 100, 3000)
+        : (current.nextActions || []),
+      metadata: { ...(current.metadata || {}), ...jsonSafe(input.metadataPatch || {}) },
+      executionReceipt: receipt || current.executionReceipt || null,
       revision: Number(current.revision || 1) + 1,
-      updatedAt: FieldValue.serverTimestamp(),
+      updatedAt: now,
     });
+    if (jobRef && job && receipt) {
+      tx.update(jobRef, {
+        lastWorkerActionAt: now,
+        lastWorkerWorkItemId: id,
+        lastWorkerStatus: targetStatus,
+        lastWorkerResultSummary: clampString(input.resultSummary, 12000) || current.resultSummary || '',
+        updatedAt: now,
+      });
+    }
   });
   return workItemGet({ id });
 }
