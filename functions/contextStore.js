@@ -2,6 +2,9 @@ const { createHash } = require('node:crypto');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const agentStore = require('./agentIdeasStore');
 const linearBridge = require('./linearMcpBridge');
+const {
+  isMaterialReceipt, hasLiveEvidence, hasCommitEvidence, MATERIAL_ACTION_TYPES, trustedTargetProgress,
+} = require('./managerOutcome');
 
 const DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTIONS = Object.freeze({
@@ -2495,6 +2498,7 @@ async function managerJobSearch(input = {}) {
       const count = (targetStatus) => open.filter((work) => work.status === targetStatus).length;
       return {
         ...item,
+        targetProgress: trustedTargetProgress(item, workerItems),
         managedWorkSummary: {
           open: open.length,
           running: count('running'),
@@ -2596,7 +2600,7 @@ async function managerJobHistory(input) {
 
 async function managerJobGetContext(input) {
   const job = await managerJobGet({ id: input.id });
-  const [methodContext, workerMethodContext, managerHistory, space, projectSnapshot, workSnapshot, operatingModel] = await Promise.all([
+  const [methodContext, workerMethodContext, managerHistory, space, projectSnapshot, workSnapshot, jobWorkSnapshot, operatingModel] = await Promise.all([
     job.methodId
       ? methodGetContext({
         id: job.methodId,
@@ -2615,10 +2619,12 @@ async function managerJobGetContext(input) {
     job.spaceId ? spaceGet({ id: job.spaceId }).catch(() => null) : Promise.resolve(null),
     job.projectId ? db().collection('projects').doc(job.projectId).get() : Promise.resolve(null),
     db().collection(COLLECTIONS.workItems).limit(1000).get(),
+    db().collection(COLLECTIONS.workItems).where('sourceId', '==', job.id).limit(1000).get(),
     agentHqOperatingModel(),
   ]);
 
   const allWork = sortRecent(workSnapshot.docs.map(documentToObject));
+  const outcomeProgress = trustedTargetProgress(job, jobWorkSnapshot.docs.map(documentToObject));
   const queue = allWork
     .filter((item) => item.sourceType !== 'system_incident')
     .filter((item) => !['archived', 'done', 'cancelled'].includes(item.status))
@@ -2666,7 +2672,7 @@ async function managerJobGetContext(input) {
   const recentResolvedIncidents = relatedIncidents.filter((item) => ['archived', 'done', 'cancelled'].includes(item.status)).slice(0, 20);
 
   return {
-    job,
+    job: { ...job, targetProgress: outcomeProgress },
     managementContract: {
       managerJobId: job.id,
       objective: job.objective,
@@ -2675,7 +2681,7 @@ async function managerJobGetContext(input) {
       priority: job.priority,
       concurrencyPolicy: job.concurrencyPolicy || 'skip_if_open',
       observationTargets: jobRotationTargets(job),
-      targetProgress: job.targetProgress || {},
+      targetProgress: outcomeProgress,
       generatedWorkPolicy: {
         requireExecutionReceipt: jobRequiresReceipt(job),
         allowedActionTypes: job.allowedActionTypes || job.metadata?.allowedActionTypes || [],
@@ -2964,7 +2970,8 @@ async function managerRunCreateWorkItem(input, actor = {}) {
       if (!workerMethodId) {
         throw new Error('Ready Work Items for this Manager Job require a Worker Method');
       }
-      if (!execution.validationStrategy || typeof execution.validationStrategy !== 'object' || Array.isArray(execution.validationStrategy)) {
+      if (!execution.validationStrategy || (typeof execution.validationStrategy !== 'string'
+        && (typeof execution.validationStrategy !== 'object' || Array.isArray(execution.validationStrategy)))) {
         throw new Error('Ready Work Items for this Manager Job require metadata.execution.validationStrategy');
       }
       const expectedGap = compareRuntimeRequirements(combinedRequirements, expectedAvailability);
@@ -3433,6 +3440,23 @@ async function workItemFinish(input) {
     const receipt = normalizeExecutionReceipt(input.executionReceipt || input.metadataPatch?.executionReceipt, job)
       || current.executionReceipt
       || null;
+    if (job?.metadata?.stabilization?.mode === 'action-first' && receipt
+      && ['archived', 'review'].includes(outcomeStatus) && MATERIAL_ACTION_TYPES.has(receipt.actionType)) {
+      if (current.metadata?.execution?.mutationAllowed === false) {
+        throw new Error('Read-only work cannot be completed as a material action');
+      }
+      if (receipt.deliveryStatus === 'local_ready' || !hasCommitEvidence(receipt)) {
+        throw new Error('Material action completion requires a commit receipt');
+      }
+      if (receipt.deliveryStatus === 'live_verified' && !hasLiveEvidence(receipt)) {
+        throw new Error('live_verified material action requires a production URL artifact');
+      }
+    }
+    const materialReceipt = isMaterialReceipt({
+      ...current,
+      metadata: { ...(current.metadata || {}), ...(input.metadataPatch || {}) },
+      executionReceipt: receipt,
+    });
     if (job && jobRequiresReceipt(job) && ['archived', 'review'].includes(outcomeStatus) && !receipt) {
       throw new Error('This Manager Job requires an executionReceipt with an action and validation for generated worker work');
     }
@@ -3452,6 +3476,7 @@ async function workItemFinish(input) {
         : (current.nextActions || []),
       metadata: { ...(current.metadata || {}), ...jsonSafe(input.metadataPatch || {}) },
       executionReceipt: receipt || current.executionReceipt || null,
+      materialOutcomeCounted: Boolean(current.materialOutcomeCounted || (materialReceipt && ['archived', 'review'].includes(outcomeStatus))),
       finishRecorded: true,
       claimedBy: null,
       claimedModel: null,
@@ -3480,7 +3505,7 @@ async function workItemFinish(input) {
           lastBlockedReason: clampString(input.blockedReason || current.blockedReason, 500) || '',
         };
       }
-      if (receipt && !current.executionReceipt && ['archived', 'review'].includes(outcomeStatus)) {
+      if (materialReceipt && ['archived', 'review'].includes(outcomeStatus)) {
         for (const attemptedTarget of receipt.attemptedTargets) {
           if (attemptedTarget === receipt.targetId || !jobRotationTargets(job).includes(attemptedTarget)) continue;
           targetProgress[attemptedTarget] = {
@@ -3492,9 +3517,9 @@ async function workItemFinish(input) {
         targetProgress[receipt.targetId] = {
           ...previous,
           lastActionAt: new Date().toISOString(),
-          lastDeliveryStatus: receipt.deliveryStatus,
-          actionCount: Number(previous.actionCount || 0) + (current.executionReceipt ? 0 : 1),
-          ...(receipt.deliveryStatus === 'live_verified' ? { lastLiveAt: new Date().toISOString() } : {}),
+          lastDeliveryStatus: hasLiveEvidence(receipt) ? 'live_verified' : 'committed',
+          actionCount: Number(previous.actionCount || 0) + (current.materialOutcomeCounted ? 0 : 1),
+          ...(hasLiveEvidence(receipt) ? { lastLiveAt: new Date().toISOString() } : {}),
         };
       }
       tx.update(jobRef, {
