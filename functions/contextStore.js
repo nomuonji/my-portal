@@ -3285,7 +3285,7 @@ async function workItemGetExecutionContext(input) {
     workItem: item,
     workerMethod,
     runtimeRequirements,
-    operatingModel: AGENT_HQ_OPERATING_MODEL,
+    operatingModel: await agentHqOperatingModel(),
   };
 }
 
