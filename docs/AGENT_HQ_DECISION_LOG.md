@@ -154,3 +154,19 @@ These are not the full git history; they are recovery anchors for the current op
 **Change history:** Cross-entity repairs are recorded as `System ChangeSet` records with trigger, before/after version IDs, reason, evidence, regression check, and rollback metadata.
 
 **Autonomous repair guardrail:** Agents may apply low-risk repairs only within existing mission, quality, permission, and safety boundaries, while preserving version history and a rollback path. Major policy/architecture/safety changes still require Human approval.
+
+---
+
+## 2026-09-28 — SEO progress requires a delivered change
+
+**Decision:** The Site SEO Manager counts a material Worker outcome only when a real commit is recorded. `live_verified` also needs a production URL. Read-only audits and local drafts remain useful Manager evidence but are not site changes.
+
+**Why:** Historical read-only Work Items had been counted as content revisions, masking a lack of shipped SEO improvements.
+
+**Worker handoff:** The Worker may release a committed Work Item to `in_progress` with an execution receipt. The Manager then verifies production and records the live result. This preserves a single accountable path from decision to commit to public URL to later traffic measurement.
+
+**Runner validation:** A Codex Luna Worker runs every 30 minutes against the same atomic My Portal queue, using the remote GitHub MCP for repository writes. The existing ChatGPT Worker remains active while this route is validated. A single successful Luna subagent update and production publish prove the connector route can work, but recurring Worker delivery and organic traffic improvement still require observation.
+
+**Evidence:** `nomuonji/shikaku-wiki#7` published the E資格 update; `nomuonji/my-portal#18` corrected outcome accounting; `nomuonji/my-portal#19` added committed receipt handoff. Incident `BN5iIQ1PJRzwj9XMsYef` tracks the unresolved ChatGPT scheduled runner write rejection.
+
+**Rollback:** Pause the Luna cron if it creates duplicate or unsafe behavior. Revert the My Portal commits behind PRs #18 and #19 if receipt handling regresses; preserve existing Work Item and Incident history for diagnosis.
