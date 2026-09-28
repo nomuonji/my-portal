@@ -10,7 +10,7 @@ import {
   query,
   serverTimestamp,
   updateDoc,
-} from 'firebase/firestore';
+} from '../documentDbClient';
 import {
   Box,
   Button,
