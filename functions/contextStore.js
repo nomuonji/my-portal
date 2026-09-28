@@ -3696,10 +3696,39 @@ async function workItemReportProblem(input) {
   return workItemGet({ id });
 }
 
+const INCIDENT_DIAGNOSIS_CONFIDENCE = ['unknown', 'low', 'medium', 'high', 'confirmed'];
+
+function normalizeIncidentDiagnosis(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('diagnosis is required');
+  }
+
+  const observedFacts = stringArray(input.observedFacts, 50, 3000);
+  if (!observedFacts.length) throw new Error('diagnosis.observedFacts must contain at least one item');
+
+  return {
+    failureLayer: assertString(input.failureLayer, 'diagnosis.failureLayer', { max: 160 }),
+    errorClass: assertString(input.errorClass, 'diagnosis.errorClass', { max: 160 }),
+    currentHypothesis: assertString(input.currentHypothesis, 'diagnosis.currentHypothesis', { max: 12000 }),
+    confidence: assertEnum(input.confidence, INCIDENT_DIAGNOSIS_CONFIDENCE, 'diagnosis.confidence'),
+    observedFacts,
+    exactOperation: clampString(input.exactOperation, 1000) || '',
+    runnerProfile: clampString(input.runnerProfile, 300) || '',
+    toolFamily: clampString(input.toolFamily, 300) || '',
+    fingerprint: clampString(input.fingerprint, 1000) || '',
+    competingHypotheses: stringArray(input.competingHypotheses, 30, 3000),
+    ruledOut: stringArray(input.ruledOut, 30, 3000),
+    unknowns: stringArray(input.unknowns, 30, 3000),
+    isolationEvidence: stringArray(input.isolationEvidence, 30, 3000),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 async function systemIncidentCreate(input, actor = {}) {
   const severity = assertEnum(input.severity, INCIDENT_SEVERITIES, 'severity', 'medium');
   const detectedBy = assertEnum(input.detectedBy, ['worker', 'manager', 'human'], 'detectedBy', 'manager');
   const symptom = assertString(input.symptom, 'symptom', { max: 6000 });
+  const diagnosis = normalizeIncidentDiagnosis(input.diagnosis);
   const affectedManagerJobIds = stringArray(input.affectedManagerJobIds, 50, 160);
   const sourceManagerJobId = clampString(input.managerJobId, 160) || affectedManagerJobIds[0] || null;
   const dedupeKey = clampString(input.dedupeKey, 300) || null;
@@ -3733,6 +3762,7 @@ async function systemIncidentCreate(input, actor = {}) {
         severity,
         detectedBy,
         symptom,
+        diagnosis,
         rootCause: clampString(input.rootCause, 12000) || '',
         affectedManagerJobIds,
         relatedWorkItemIds: stringArray(input.relatedWorkItemIds, 100, 160),
@@ -3769,13 +3799,49 @@ async function systemIncidentSearch(input = {}) {
   };
 }
 
+async function systemIncidentUpdate(input) {
+  const id = assertString(input.id, 'id', { max: 160 });
+  const incident = await workItemGet({ id });
+  if (incident.sourceType !== 'system_incident') throw new Error('Work item is not a system incident: ' + id);
+
+  const currentIncident = incident.metadata?.incident || {};
+  const diagnosis = normalizeIncidentDiagnosis(input.diagnosis);
+  const nextStatus = assertEnum(input.incidentStatus, ['open', 'investigating'], 'incidentStatus', currentIncident.status || 'investigating');
+
+  const nextIncident = {
+    ...currentIncident,
+    status: nextStatus,
+    diagnosis,
+    rootCause: input.rootCause === undefined ? (currentIncident.rootCause || '') : clampString(input.rootCause, 12000),
+    fix: input.fix === undefined ? (currentIncident.fix || '') : clampString(input.fix, 12000),
+    prevention: input.prevention === undefined ? (currentIncident.prevention || '') : clampString(input.prevention, 12000),
+    operatingModelChanged: input.operatingModelChanged === true || currentIncident.operatingModelChanged === true,
+    evidence: [
+      ...stringArray(currentIncident.evidence, 100, 3000),
+      ...stringArray(input.evidence, 100, 3000),
+    ].slice(-100),
+  };
+
+  return workItemUpdate({
+    id,
+    expectedRevision: input.expectedRevision,
+    patch: {
+      resultSummary: input.summary === undefined ? incident.resultSummary : clampString(input.summary, 12000),
+      nextActions: input.nextActions === undefined ? (incident.nextActions || []) : stringArray(input.nextActions, 100, 3000),
+      metadataPatch: { incident: nextIncident },
+    },
+  });
+}
+
 async function systemIncidentResolve(input) {
   const id = assertString(input.id, 'id', { max: 160 });
   const incident = await workItemGet({ id });
   if (incident.sourceType !== 'system_incident') throw new Error('Work item is not a system incident: ' + id);
+  const diagnosis = normalizeIncidentDiagnosis(input.diagnosis);
   const rootCause = assertString(input.rootCause, 'rootCause', { max: 12000 });
   const fix = assertString(input.fix, 'fix', { max: 12000 });
   const prevention = assertString(input.prevention, 'prevention', { max: 12000 });
+  const regressionCheck = assertString(input.regressionCheck, 'regressionCheck', { max: 6000 });
   const currentIncident = incident.metadata?.incident || {};
   return workItemFinish({
     id,
@@ -3787,6 +3853,7 @@ async function systemIncidentResolve(input) {
       incident: {
         ...currentIncident,
         status: 'resolved',
+        diagnosis,
         rootCause,
         fix,
         prevention,
@@ -3795,7 +3862,7 @@ async function systemIncidentResolve(input) {
           ...stringArray(currentIncident.evidence, 100, 3000),
           ...stringArray(input.evidence, 100, 3000),
         ].slice(0, 100),
-        regressionCheck: clampString(input.regressionCheck, 6000) || '',
+        regressionCheck,
         resolvedAt: new Date().toISOString(),
         resolvedBy: assertString(input.agent, 'agent', { max: 120 }),
       },
@@ -4254,6 +4321,7 @@ module.exports = {
   systemChangeUpdate,
   systemIncidentCreate,
   systemIncidentSearch,
+  systemIncidentUpdate,
   systemIncidentResolve,
   spaceCreate,
   spaceGet,
