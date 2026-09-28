@@ -64,7 +64,9 @@ function makeCollection(path) {
 }
 
 function randomId() {
-  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID().replaceAll('-', '').slice(0, 20);
+  if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+    return window.crypto.randomUUID().replaceAll('-', '').slice(0, 20);
+  }
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 

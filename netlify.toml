@@ -1,5 +1,5 @@
 [build]
-  command = "bash scripts/netlify-build-diagnostic.sh"
+  command = "npm run build"
   publish = "build"
 
 [build.environment]
