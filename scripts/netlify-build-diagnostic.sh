@@ -7,7 +7,8 @@ if [ "$status" -ne 0 ]; then
   cp /tmp/my-portal-build.log build/build-error.txt
   clean_log="/tmp/my-portal-build-clean.log"
 sed -r 's/\\x1B\\[[0-9;]*[mK]//g' /tmp/my-portal-build.log > "$clean_log"
-summary="$(grep -E 'ERROR in|Module not found|Attempted import error|not exported|SyntaxError|Cannot find module|Failed to compile' "$clean_log" | tail -n 1)"
+summary="$(grep 'ERROR in' "$clean_log" | tail -n 1)"
+if [ -z "$summary" ]; then summary="$(grep -E 'Module not found|Attempted import error|not exported|SyntaxError|Cannot find module' "$clean_log" | tail -n 1)"; fi
 if [ -z "$summary" ]; then summary="$(awk 'NF{line=$0} END{print line}' "$clean_log")"; fi
   slug="$(printf '%s' "$summary" | sed 's/[^A-Za-z0-9._-]/_/g' | cut -c1-160)"
   if [ -z "$slug" ]; then slug="unknown_build_error"; fi
