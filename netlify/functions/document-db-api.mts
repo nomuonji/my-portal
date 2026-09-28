@@ -110,7 +110,9 @@ function queryFrom(body: any) {
     ref = ref.orderBy(field, direction);
   }
   if (Array.isArray(body.cursor) && body.cursor.length) ref = ref.startAfter(...body.cursor.map(decodeValue));
-  ref = ref.limit(Math.min(Math.max(Number(body.limit) || 500, 1), 1000));
+  if (body.limit !== undefined && body.limit !== null && body.limit !== "") {
+    ref = ref.limit(Math.min(Math.max(Number(body.limit) || 1, 1), 5000));
+  }
   return ref;
 }
 
