@@ -8,3 +8,7 @@ build
 
 # Firebase deployment cache
 .firebase/
+
+# Local resumable Firestore -> Turso migration state
+.turso-migration-checkpoint.json
+.turso-migration-checkpoint.json.tmp
