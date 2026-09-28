@@ -170,3 +170,16 @@ These are not the full git history; they are recovery anchors for the current op
 **Evidence:** `nomuonji/shikaku-wiki#7` published the E資格 update; `nomuonji/my-portal#18` corrected outcome accounting; `nomuonji/my-portal#19` added committed receipt handoff. Incident `BN5iIQ1PJRzwj9XMsYef` tracks the unresolved ChatGPT scheduled runner write rejection.
 
 **Rollback:** Pause the Luna cron if it creates duplicate or unsafe behavior. Revert the My Portal commits behind PRs #18 and #19 if receipt handling regresses; preserve existing Work Item and Incident history for diagnosis.
+---
+
+## 2026-09-28 — SEO measurement preserves page-level evidence and reports projection failures
+
+**Decision:** Project exact page-level GSC rows even when the same complete import has no query rows. Large Blog snapshots may use lazy sync for existing registered article identities; full registry backfill remains bounded and fails closed above 500 sources. A failed site projection is a failed measurement batch, and its captured query/page row counts remain visible in the operation summary.
+
+**Why:** Valid Search Console captures can return page rows without query rows. The old query-row guard discarded those article observations, the 500-source guard blocked lazy refresh for large registered blogs, and projection exceptions were recorded as successful measurement runs. Those gaps hid useful SEO evidence and made the scheduled loop appear healthier than it was.
+
+**Guardrails:** Do not fabricate a site-level zero snapshot when there are no query rows. Lazy sync creates no new registry articles from oversized snapshots, and existing article publication status is preserved. Backfill over 500 sources still fails closed until indexed pagination exists.
+
+**Evidence:** `nomuonji/keywords#43` merged at `bc11fa40031a20293f2f39ac58b6832b86df9208`; local `npm run build` and GitHub Actions run `36384691397` passed. Production Vercel deployment for that commit is still building at the time of this entry.
+
+**Rollback:** Revert `nomuonji/keywords#43` if page projection, lazy sync, or measurement failure reporting regresses. Keep captured source data and current Firestore article status unchanged during rollback.
