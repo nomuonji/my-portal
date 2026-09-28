@@ -8,7 +8,7 @@ import {
   onSnapshot,
   serverTimestamp,
   updateDoc,
-} from 'firebase/firestore';
+} from '../documentDbClient';
 import { auth, db } from '../firebase';
 import ManagerJobsPanel from './ManagerJobsPanel';
 import {

@@ -9,7 +9,7 @@ import {
   doc,
   getDoc,
   deleteDoc,
-} from 'firebase/firestore';
+} from '../documentDbClient';
 import {
   Alert,
   Box,

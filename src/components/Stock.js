@@ -13,7 +13,7 @@ import {
   getDocs,
   setDoc,
   where
-} from 'firebase/firestore';
+} from '../documentDbClient';
 import {
   Box,
   Typography,

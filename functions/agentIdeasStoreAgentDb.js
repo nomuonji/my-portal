@@ -5,9 +5,11 @@ process.env.AGENT_IDEAS_DATABASE_ID = '(default)';
 
 const { getApp } = require('firebase-admin/app');
 const { initializeFirestore } = require('firebase-admin/firestore');
+const { useTurso } = require('./documentDb');
 const store = require('./agentIdeasStore');
 
 function ensureAgentDatabase() {
+  if (useTurso()) return null;
   // Bind the default database to the exact initialized Admin app and prefer
   // REST transport in the serverless runtime.
   return initializeFirestore(getApp(), { preferRest: true });

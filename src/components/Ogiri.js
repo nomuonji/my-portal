@@ -8,7 +8,7 @@ import {
 } from '@mui/icons-material';
 import {
   addDoc, collection, doc, getDoc, getDocs, increment, limit, orderBy, query, serverTimestamp, updateDoc, writeBatch,
-} from 'firebase/firestore';
+} from '../documentDbClient';
 import { db } from '../firebase';
 
 const SCHEMA_VERSION = 3;

@@ -1,4 +1,4 @@
-const { getFirestore, FieldPath, FieldValue, Timestamp } = require('firebase-admin/firestore');
+const { getDocumentDb, FieldPath, FieldValue, Timestamp } = require('./documentDb');
 
 const DATABASE_ID = '(default)';
 const COLLECTIONS = Object.freeze({
@@ -11,7 +11,7 @@ const DEFAULT_CATEGORY = '未分類';
 const POST_TYPES = new Set(['post', 'reply', 'quote', 'repost']);
 
 function db() {
-  return getFirestore();
+  return getDocumentDb(DATABASE_ID);
 }
 
 function text(value, max = 20000) {

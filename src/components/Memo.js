@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { db } from '../firebase';
-import { collection, addDoc, serverTimestamp, updateDoc, doc, getDoc, deleteDoc, getDocs } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, updateDoc, doc, getDoc, deleteDoc, getDocs } from '../documentDbClient';
 import {
   Box,
   TextField,

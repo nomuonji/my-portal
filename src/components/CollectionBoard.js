@@ -28,7 +28,7 @@ import {
   onSnapshot,
   orderBy,
   query,
-} from 'firebase/firestore';
+} from '../documentDbClient';
 import { useNavigate } from 'react-router-dom';
 
 const UNTAGGED = '__untagged__';

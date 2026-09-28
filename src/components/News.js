@@ -15,7 +15,7 @@ import {
   Container
 } from '@mui/material';
 import { Shuffle as ShuffleIcon } from '@mui/icons-material';
-import { collection, getDocs, addDoc, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, deleteDoc, doc } from '../documentDbClient';
 import { db } from '../firebase';
 
 const PAGE_SIZE = 21; // 3列でも7列でも割り切れる数

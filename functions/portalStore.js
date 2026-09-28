@@ -1,4 +1,4 @@
-const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { getDocumentDb, FieldValue } = require('./documentDb');
 
 const DATABASE_ID = '(default)';
 
@@ -24,7 +24,7 @@ const COLLECTIONS = Object.freeze({
 });
 
 function db() {
-  return getFirestore();
+  return getDocumentDb(DATABASE_ID);
 }
 
 function clampString(value, max = 20000) {

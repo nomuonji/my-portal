@@ -8,7 +8,7 @@ import {
   onSnapshot,
   query,
   where,
-} from 'firebase/firestore';
+} from '../documentDbClient';
 import { db } from '../firebase';
 import {
   Alert,
