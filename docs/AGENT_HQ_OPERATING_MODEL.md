@@ -226,6 +226,21 @@ Canonical incident metadata:
     "severity": "low | medium | high | critical",
     "detectedBy": "worker | manager | human",
     "symptom": "...",
+    "diagnosis": {
+      "failureLayer": "...",
+      "errorClass": "...",
+      "currentHypothesis": "...",
+      "confidence": "unknown | low | medium | high | confirmed",
+      "observedFacts": ["..."],
+      "exactOperation": "...",
+      "runnerProfile": "...",
+      "toolFamily": "...",
+      "fingerprint": "...",
+      "competingHypotheses": [],
+      "ruledOut": [],
+      "unknowns": [],
+      "isolationEvidence": []
+    },
     "rootCause": "...",
     "affectedManagerJobIds": [],
     "relatedWorkItemIds": [],
@@ -237,13 +252,15 @@ Canonical incident metadata:
 }
 ```
 
+Incident creation and every investigating update must include a non-empty structured `diagnosis`. Root cause may still be unknown, but uncertainty must be explicit through `currentHypothesis`, `confidence`, `observedFacts`, and `unknowns`; never omit diagnosis or invent certainty. Use `system_incident_update` to evolve the diagnosis as evidence changes.
+
 Resolution means:
 
 ```text
 Detect → Diagnose → Repair → Regression check → Prevention
 ```
 
-not merely "the error disappeared."
+not merely "the error disappeared." Resolution requires a structured diagnosis plus non-empty `rootCause`, `fix`, `prevention`, and `regressionCheck`.
 
 ## 10. Manager mission and outcome review
 

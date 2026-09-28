@@ -470,13 +470,15 @@ Managerは新規仕事を作る前にWorker escalationをtriageする。
 
 System Incidentは新しい大規模Entityを増やさず、既存Work Itemを `sourceType=system_incident` として再利用する。ただし通常Worker Queueからは除外し、Agent HQ UIで別表示する。
 
+Incident作成時から構造化 `diagnosis` を必須とする。原因未確定でも `failureLayer` / `errorClass` / `currentHypothesis` / `confidence` / `observedFacts` を空にせず、必要に応じて `unknowns` / `competingHypotheses` / `ruledOut` / `isolationEvidence` を残す。調査中の更新は `system_incident_update` を使い、詳細原因をmetadataへの場当たり的な追記だけに依存させない。
+
 Incidentの解決はエラーが消えただけではなく、
 
 ```
 Detect → Diagnose → Repair → Regression check → Prevention
 ```
 
-までを要求する。rootCause / fix / prevention / evidence / operatingModelChanged を履歴として残す。
+までを要求する。resolve時は構造化 `diagnosis` と rootCause / fix / prevention / regressionCheck を必須とし、evidence / operatingModelChanged も履歴として残す。
 
 週次Manager Outcome ReviewではIncident件数だけでなく、Workerから上がった問題、Managerが局所解決した内容、Incident化した構造問題、未解決Incident、再発防止、過去Incidentの再発有無を人間へ報告する。
 

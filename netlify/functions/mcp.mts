@@ -386,6 +386,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
     case "work_item_release": return structured(await contextStore.workItemRelease(args));
     case "work_item_report_problem": return structured(await contextStore.workItemReportProblem(args));
     case "system_incident_create": return structured(await contextStore.systemIncidentCreate(args));
+    case "system_incident_update": return structured(await contextStore.systemIncidentUpdate(args));
     case "system_incident_resolve": return structured(await contextStore.systemIncidentResolve(args));
     case "space_create": return structured(await contextStore.spaceCreate(args));
     case "space_get": return structured(await contextStore.spaceGet(args));
