@@ -160,7 +160,6 @@ function mergeValue(base, patch, now) {
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 
 function hydrate(value) {
-  if (typeof value === 'string' && ISO_DATE.test(value)) return new TursoTimestamp(value);
   if (Array.isArray(value)) return value.map(hydrate);
   if (isObject(value)) {
     const out = {};

@@ -125,7 +125,9 @@ function FeatureRequests() {
         description,
         priority,
         status,
-        createdAt: createdAt ? createdAt.toDate().toISOString() : null,
+        createdAt: createdAt
+          ? (typeof createdAt.toDate === 'function' ? createdAt.toDate() : new Date(createdAt)).toISOString()
+          : null,
       }));
     const instruction = 'ここにアプリケーションからの機能改善リクエストがあります。GEMINI.mdのガイドラインに従って処理してください:\n\n';
     navigator.clipboard.writeText(instruction + JSON.stringify(tasksToCopy, null, 2))

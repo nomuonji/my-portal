@@ -130,7 +130,8 @@ function isPortalIdea(item = {}) {
 function responseTimestamp(item) {
   if (!item?.createdAt) return '';
   try {
-    return item.createdAt.toDate().toLocaleDateString('ja-JP');
+    const date = typeof item.createdAt.toDate === 'function' ? item.createdAt.toDate() : new Date(item.createdAt);
+    return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('ja-JP');
   } catch {
     return '';
   }

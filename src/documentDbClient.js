@@ -14,10 +14,7 @@ class PortalTimestamp {
   toJSON() { return this.value.toISOString(); }
 }
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
-
 function hydrate(value) {
-  if (typeof value === 'string' && ISO_DATE.test(value)) return new PortalTimestamp(value);
   if (Array.isArray(value)) return value.map(hydrate);
   if (value && typeof value === 'object') {
     const out = {};

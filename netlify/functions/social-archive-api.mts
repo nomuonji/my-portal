@@ -86,8 +86,13 @@ async function archiveFacets() {
     };
   }).sort((a, b) => (a.username || a.accountId).localeCompare(b.username || b.accountId));
 
-  const newest = newestSnapshot.docs[0]?.get("postedAt")?.toDate?.() || null;
-  const oldest = oldestSnapshot.docs[0]?.get("postedAt")?.toDate?.() || null;
+  const toDate = (value: any) => {
+    if (!value) return null;
+    const date = typeof value?.toDate === "function" ? value.toDate() : new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  };
+  const newest = toDate(newestSnapshot.docs[0]?.get("postedAt"));
+  const oldest = toDate(oldestSnapshot.docs[0]?.get("postedAt"));
   const years: number[] = [];
   if (newest && oldest) {
     for (let year = newest.getUTCFullYear(); year >= oldest.getUTCFullYear(); year -= 1) years.push(year);
