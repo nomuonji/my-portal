@@ -1,11 +1,13 @@
 import { cert, getApp, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
-import { getFirestore, initializeFirestore } from "firebase-admin/firestore";
+import { initializeFirestore } from "firebase-admin/firestore";
 import * as storeImport from "../../functions/agentIdeasStoreAgentDb.js";
+import * as documentDbImport from "../../functions/documentDb.js";
 import * as contextStoreImport from "../../functions/contextStore.js";
 
 const store: any = (storeImport as any).default ?? storeImport;
 const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
+const documentDb: any = (documentDbImport as any).default ?? documentDbImport;
 const AGENT_DATABASE_ID = "(default)";
 
 function env(name: string): string | undefined {
@@ -73,7 +75,7 @@ function serialize(value: any): any {
 }
 
 async function listCollection(name: string, limitValue: number) {
-  const database = getFirestore(getApp());
+  const database = documentDb.getDocumentDb(AGENT_DATABASE_ID);
   const snapshot = await database.collection(name).limit(limitValue).get();
   return snapshot.docs
     .map((doc) => serialize({ id: doc.id, ...doc.data() }))

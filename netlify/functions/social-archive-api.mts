@@ -1,9 +1,11 @@
 import { cert, getApp, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
-import { getFirestore, initializeFirestore } from "firebase-admin/firestore";
+import { initializeFirestore } from "firebase-admin/firestore";
 import * as socialStoreImport from "../../functions/socialArchiveStore.js";
+import * as documentDbImport from "../../functions/documentDb.js";
 
 const socialStore: any = (socialStoreImport as any).default ?? socialStoreImport;
+const documentDb: any = (documentDbImport as any).default ?? documentDbImport;
 
 function env(name: string): string | undefined {
   try {
@@ -67,7 +69,7 @@ function serialize(value: any): any {
 }
 
 async function archiveFacets() {
-  const database = getFirestore(getApp());
+  const database = documentDb.getDocumentDb("(default)");
   const [accountsSnapshot, newestSnapshot, oldestSnapshot, archiveStatus] = await Promise.all([
     database.collection(socialStore.COLLECTIONS.accounts).limit(200).get(),
     database.collection(socialStore.COLLECTIONS.posts).orderBy("postedAt", "desc").limit(1).get(),
