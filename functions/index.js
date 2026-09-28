@@ -1,6 +1,7 @@
 const functions = require("firebase-functions");
 const {onRequest} = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
+const {getDocumentDb} = require("./documentDb");
 
 admin.initializeApp();
 
@@ -17,7 +18,7 @@ exports.getFeatureRequests = functions.https.onRequest(async (req, res) => {
   }
 
   try {
-    const db = admin.firestore();
+    const db = getDocumentDb("(default)");
     const snapshot = await db.collection("featureRequests")
         .where("status", "in", ["todo", "in_progress"])
         .orderBy("priority", "desc")
