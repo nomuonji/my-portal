@@ -124,6 +124,7 @@ function storeValue(value, previous, now) {
   }
   if (value instanceof TursoTimestamp) return value.toDate().toISOString();
   if (value instanceof Date) return value.toISOString();
+  if (value && typeof value.toDate === 'function') return value.toDate().toISOString();
   if (Array.isArray(value)) {
     return value.map(function (item, index) {
       return storeValue(item, Array.isArray(previous) ? previous[index] : undefined, now);
@@ -290,7 +291,12 @@ class Query {
   startAfter() { return this.copy({ cursor: Array.from(arguments) }); }
   count() {
     const query = this;
-    return { get: async function () { return { data: function () { return { count: query.database.count(query) }; } }; } };
+    return {
+      get: async function () {
+        const count = await query.database.count(query);
+        return { data: function () { return { count: count }; } };
+      },
+    };
   }
   get() { return this.database.runQuery(this); }
 }
