@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { collection, query, where, doc, onSnapshot, getDoc } from 'firebase/firestore';
+import { collection, query, where, doc, onSnapshot, getDoc } from '../documentDbClient';
 import { db } from '../firebase';
 import { Button, List, ListItem, ListItemText, Typography, Box } from '@mui/material';
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { collection, addDoc, doc, getDoc, updateDoc, serverTimestamp, query, where, getDocs, onSnapshot, orderBy } from 'firebase/firestore';
+import { collection, addDoc, doc, getDoc, updateDoc, serverTimestamp, query, where, getDocs, onSnapshot, orderBy } from '../documentDbClient';
 import { db } from '../firebase';
 import { Button, TextField, Typography, Box, Select, MenuItem, InputLabel, FormControl } from '@mui/material';
 
