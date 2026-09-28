@@ -1,5 +1,5 @@
 const { createHash } = require('node:crypto');
-const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { getDocumentDb, FieldValue } = require('./documentDb');
 
 const DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTIONS = Object.freeze({
@@ -44,7 +44,7 @@ const PORTAL_BOARDS = Object.freeze({
 });
 
 function db() {
-  return DATABASE_ID === '(default)' ? getFirestore() : getFirestore(DATABASE_ID);
+  return getDocumentDb(DATABASE_ID);
 }
 
 function clampString(value, max = 12000) {

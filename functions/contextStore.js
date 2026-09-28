@@ -1,5 +1,5 @@
 const { createHash } = require('node:crypto');
-const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { getDocumentDb, FieldValue } = require('./documentDb');
 const agentStore = require('./agentIdeasStore');
 const linearBridge = require('./linearMcpBridge');
 const {
@@ -121,7 +121,7 @@ const AGENT_HQ_OPERATING_MODEL = Object.freeze({
 });
 
 function db() {
-  return DATABASE_ID === '(default)' ? getFirestore() : getFirestore(DATABASE_ID);
+  return getDocumentDb(DATABASE_ID);
 }
 
 function clampString(value, max = 12000) {
