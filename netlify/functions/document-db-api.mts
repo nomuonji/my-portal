@@ -100,7 +100,7 @@ function queryFrom(body: any) {
   for (const filter of Array.isArray(body.filters) ? body.filters.slice(0, 20) : []) {
     const field = String(filter?.field || "");
     const op = String(filter?.op || "");
-    if (!field || !["==", "in", ">", ">=", "<", "<="].includes(op)) throw new Error("Invalid query filter");
+    if (!field || !["==", "in", "array-contains", ">", ">=", "<", "<="].includes(op)) throw new Error("Invalid query filter");
     ref = ref.where(field, op, decodeValue(filter.value));
   }
   for (const order of Array.isArray(body.orders) ? body.orders.slice(0, 5) : []) {

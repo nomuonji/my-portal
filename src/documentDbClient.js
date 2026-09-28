@@ -63,6 +63,11 @@ function makeCollection(path) {
   return { __portalDbKind: 'collection', path: String(path).replace(/^\/+|\/+$/g, ''), constraints: [] };
 }
 
+function randomId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID().replaceAll('-', '').slice(0, 20);
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
 function makeDocument(path) {
   const normalized = String(path).replace(/^\/+|\/+$/g, '');
   const parts = normalized.split('/');
@@ -131,6 +136,7 @@ export function collection(...args) {
 export function doc(...args) {
   if (!USE_TURSO) return firestore.doc(...args);
   const [base, ...segments] = args;
+  if (base && base.__portalDbKind === 'collection' && segments.length === 0) return makeDocument(base.path + '/' + randomId());
   if (base && base.__portalDbKind === 'collection') return makeDocument([base.path, ...segments].join('/'));
   if (base && base.__portalDbKind === 'document') return makeDocument([base.path, ...segments].join('/'));
   return makeDocument(segments.join('/'));

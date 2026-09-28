@@ -404,6 +404,11 @@ class TursoFirestore {
         args.push.apply(args, field.args.concat(values.map(sqlValue)));
         return;
       }
+      if (filter.op === 'array-contains') {
+        where.push('EXISTS (SELECT 1 FROM json_each(' + field.sql + ') WHERE value = ?)');
+        args.push.apply(args, field.args.concat([sqlValue(filter.value)]));
+        return;
+      }
       if (['>', '>=', '<', '<='].includes(filter.op)) {
         where.push(field.sql + ' ' + filter.op + ' ?');
         args.push.apply(args, field.args.concat([sqlValue(filter.value)]));
