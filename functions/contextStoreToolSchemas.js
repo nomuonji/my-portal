@@ -5,7 +5,9 @@ function objectSchema(properties, required = []) {
 }
 
 const string = (description, maxLength) => ({ type: 'string', description, ...(maxLength ? { maxLength } : {}) });
+const nonEmptyString = (description, maxLength) => ({ ...string(description, maxLength), minLength: 1 });
 const stringArray = (description, maxItems = 50) => ({ type: 'array', description, maxItems, items: { type: 'string' } });
+const nonEmptyStringArray = (description, maxItems = 50) => ({ ...stringArray(description, maxItems), minItems: 1 });
 const jsonObject = (description) => ({ type: 'object', description, additionalProperties: true });
 
 const spaceFields = {
@@ -109,6 +111,22 @@ const methodVersionFields = {
   qualityGates: stringArray('Acceptance checks for outputs created with this version.', 100),
   changeSetId: string('Optional System ChangeSet that explains this Method version change.', 160),
 };
+
+const incidentDiagnosisSchema = objectSchema({
+  failureLayer: nonEmptyString('Owning failure layer such as runtime_contract, tool_routing, canonical_source, scheduler, mutation_path, or external_dependency.', 160),
+  errorClass: nonEmptyString('Concrete error/failure class. Use unknown only when the class itself is not yet known.', 160),
+  currentHypothesis: nonEmptyString('Current best causal explanation. Clearly state what remains unproven.', 12000),
+  confidence: { type: 'string', enum: ['unknown', 'low', 'medium', 'high', 'confirmed'] },
+  observedFacts: nonEmptyStringArray('Directly observed facts supporting the diagnosis.', 50),
+  exactOperation: string('Exact operation/tool action that failed, when applicable.', 1000),
+  runnerProfile: string('Runner/session profile where the failure was observed.', 300),
+  toolFamily: string('Tool or connector family involved, when applicable.', 300),
+  fingerprint: string('Stable recurrence fingerprint, when available.', 1000),
+  competingHypotheses: stringArray('Plausible alternate explanations still under consideration.', 30),
+  ruledOut: stringArray('Candidate causes ruled out by evidence.', 30),
+  unknowns: stringArray('Important unknowns that still block root-cause confirmation.', 30),
+  isolationEvidence: stringArray('Cross-runner/session/tool comparison evidence used to isolate the cause.', 30),
+}, ['failureLayer', 'errorClass', 'currentHypothesis', 'confidence', 'observedFacts']);
 
 const TOOLS = [
   {
@@ -294,6 +312,24 @@ const TOOLS = [
     annotations: { readOnlyHint: true },
   },
 
+  {
+    name: 'system_incident_update',
+    description: 'Update an open System Incident investigation. Structured diagnosis is mandatory on every update so uncertainty is explicit rather than omitted.',
+    inputSchema: objectSchema({
+      id: nonEmptyString('System Incident Work Item ID.', 160),
+      expectedRevision: { type: 'integer', minimum: 1 },
+      incidentStatus: { type: 'string', enum: ['open', 'investigating'], default: 'investigating' },
+      diagnosis: incidentDiagnosisSchema,
+      rootCause: string('Confirmed root cause if already known; omit while still investigating.', 12000),
+      fix: string('Repair actually applied so far, if any.', 12000),
+      prevention: string('Prevention/detection measure already defined, if any.', 12000),
+      evidence: stringArray('New evidence such as errors, commits, URLs, logs, or comparison results.', 100),
+      summary: string('Compact current investigation summary.', 12000),
+      nextActions: stringArray('Concrete next diagnostic or repair actions.', 100),
+      operatingModelChanged: { type: 'boolean', default: false },
+    }, ['id', 'diagnosis']),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
   {
     name: 'manager_job_create',
     description: 'Create a schedule-agnostic Manager Job. A Manager Job observes and manages a work domain, then creates or reconciles zero to many Work Items; it is not itself the underlying worker task.',
@@ -704,10 +740,10 @@ const TOOLS = [
   },
   {
     name: 'system_incident_create',
-    description: 'Manager/Human escalation for a structural Agent HQ failure. Create only after local Work Item/routing fixes are insufficient, the problem recurs, crosses tasks, requires operating-system changes, or involves data/auth/permission/safety risk.',
+    description: 'Manager/Human escalation for a structural Agent HQ failure. Structured diagnosis is mandatory even when root cause is not yet confirmed.',
     inputSchema: objectSchema({
-      title: string('Short structural problem title.', 500),
-      symptom: string('Observed system-level failure.', 6000),
+      title: nonEmptyString('Short structural problem title.', 500),
+      symptom: nonEmptyString('Observed system-level failure.', 6000),
       severity: { type: 'string', enum: store.INCIDENT_SEVERITIES, default: 'medium' },
       detectedBy: { type: 'string', enum: ['worker', 'manager', 'human'], default: 'manager' },
       managerJobId: string('Primary affected Manager Job ID.', 160),
@@ -719,30 +755,32 @@ const TOOLS = [
       projectId: string('Optional linked Project ID.', 160),
       executionMode: { type: 'string', enum: store.WORK_ITEM_EXECUTION_MODES, default: 'agent' },
       humanReason: string('Why Human action is required if executionMode=human.', 6000),
+      diagnosis: incidentDiagnosisSchema,
       rootCause: string('Known root cause if already diagnosed.', 12000),
       fix: string('Known fix if already applied.', 12000),
       prevention: string('Known prevention if already defined.', 12000),
       operatingModelChanged: { type: 'boolean', default: false },
       evidence: stringArray('Evidence such as errors, commits, URLs, or logs.', 100),
       tags: stringArray('Additional tags.', 40),
-    }, ['title', 'symptom']),
+    }, ['title', 'symptom', 'diagnosis']),
     annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: 'system_incident_resolve',
-    description: 'Resolve a System Incident only after root cause, repair, regression check, and prevention are recorded. Resolution archives the Incident record while keeping it available as history.',
+    description: 'Resolve a System Incident only after structured diagnosis, root cause, repair, regression check, and prevention are recorded.',
     inputSchema: objectSchema({
-      id: string('System Incident Work Item ID.', 160),
-      agent: string('Manager/agent resolving the Incident.', 120),
-      rootCause: string('Diagnosed root cause.', 12000),
-      fix: string('Repair that was actually applied.', 12000),
-      prevention: string('How recurrence is prevented or detected.', 12000),
-      regressionCheck: string('How the repaired behavior was verified.', 6000),
+      id: nonEmptyString('System Incident Work Item ID.', 160),
+      agent: nonEmptyString('Manager/agent resolving the Incident.', 120),
+      diagnosis: incidentDiagnosisSchema,
+      rootCause: nonEmptyString('Diagnosed root cause.', 12000),
+      fix: nonEmptyString('Repair that was actually applied.', 12000),
+      prevention: nonEmptyString('How recurrence is prevented or detected.', 12000),
+      regressionCheck: nonEmptyString('How the repaired behavior was verified.', 6000),
       summary: string('Compact resolution summary.', 12000),
       evidence: stringArray('Commits, URLs, test results, or other repair evidence.', 100),
       nextActions: stringArray('Any follow-up checks such as next weekly recurrence review.', 100),
       operatingModelChanged: { type: 'boolean', default: false },
-    }, ['id', 'agent', 'rootCause', 'fix', 'prevention']),
+    }, ['id', 'agent', 'diagnosis', 'rootCause', 'fix', 'prevention', 'regressionCheck']),
     annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
