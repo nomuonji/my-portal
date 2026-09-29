@@ -23,6 +23,26 @@ const SOURCE_DATABASE_IDS = String(process.env.FIRESTORE_SOURCE_DATABASE_IDS || 
   .filter(Boolean);
 const CHECKPOINT_VERSION = 2;
 
+const DEFAULT_EXPLICIT_COLLECTION_PATHS = Object.freeze([
+  'memos/agent-control/workItems',
+  'memos/agent-control/managerJobs',
+  'memos/agent-control/managerRuns',
+  'memos/agent-control/operatingModels',
+  'memos/agent-control/operatingModelVersions',
+  'memos/agent-control/systemChangeSets',
+]);
+
+function explicitCollectionPaths(databaseId) {
+  const configured = process.env.FIRESTORE_EXPLICIT_COLLECTION_PATHS;
+  if (configured) {
+    return String(configured)
+      .split(',')
+      .map((value) => value.trim().replace(/^\\/+|\\/+$/g, ''))
+      .filter(Boolean);
+  }
+  return databaseId === '(default)' ? DEFAULT_EXPLICIT_COLLECTION_PATHS : [];
+}
+
 class PlannedStop extends Error {
   constructor(message) {
     super(message);
@@ -267,6 +287,18 @@ async function applyDatabase(app, databaseId, target, checkpoint, run) {
   const source = databaseId === '(default)' ? getFirestore(app) : getFirestore(app, databaseId);
   const dbState = databaseState(checkpoint, databaseId);
   await discoverTopLevel(source, dbState, checkpoint, databaseId);
+
+  // Firestore permits subcollections below a parent document that does not itself
+  // exist. Such "phantom parent" paths are invisible to collection scans that
+  // recurse only through returned documents, so seed known/configured collection
+  // paths explicitly. Existing checkpoints are extended in-place; no reset needed.
+  const explicitPaths = explicitCollectionPaths(databaseId);
+  explicitPaths.forEach((collectionPath) => registerCollection(dbState, collectionPath));
+  if (explicitPaths.length) {
+    saveCheckpoint(checkpoint);
+    console.log('[discover] seeded ' + explicitPaths.length
+      + ' explicit collection paths for ' + databaseId);
+  }
 
   while (true) {
     const next = Object.entries(dbState.collections).find(([, state]) => !state.completed);
