@@ -103,6 +103,19 @@ FIRESTORE_SOURCE_DATABASE_IDS="(default),agent-ideas" npm run migrate:turso -- -
 
 The checkpoint rejects a changed source-database list or a changed Turso target to prevent accidentally resuming into the wrong database.
 
+Firestore can contain subcollections below a parent document that does not itself exist. Those paths cannot be discovered by recursively scanning only returned parent documents. My Portal therefore seeds these known Agent HQ paths explicitly during apply runs:
+
+```text
+memos/agent-control/workItems
+memos/agent-control/managerJobs
+memos/agent-control/managerRuns
+memos/agent-control/operatingModels
+memos/agent-control/operatingModelVersions
+memos/agent-control/systemChangeSets
+```
+
+Existing checkpoints are extended automatically; do **not** reset the checkpoint. For any additional phantom-parent collection paths, set a comma-separated `FIRESTORE_EXPLICIT_COLLECTION_PATHS`.
+
 Do not include two source databases that contain conflicting collection/document IDs unless the intended result is for the later source to replace the earlier one.
 
 ## Optional dry run
