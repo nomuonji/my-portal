@@ -462,11 +462,12 @@ class TursoFirestore {
     };
   }
 
-  async runQuery(query) {
+  async runQuery(query, executor) {
     await ensureSchema();
     const parts = this.queryParts(query, true);
     const limit = query.max ? ' LIMIT ' + Math.floor(query.max) : '';
-    const rows = await connection().all(
+    const db = executor || connection();
+    const rows = await db.all(
       'SELECT document_id, data_json FROM ' + TABLE + ' WHERE ' + parts.where + parts.order + limit,
       ...parts.args,
       ...parts.orderArgs,
@@ -511,7 +512,11 @@ class TursoFirestore {
     const transaction = connection().transactionAsync(async (sqlTx) => {
       const writes = [];
       const tx = {
-        get: function (ref) { return database.getDoc(ref, sqlTx); },
+        get: function (ref) {
+          return ref instanceof Query
+            ? database.runQuery(ref, sqlTx)
+            : database.getDoc(ref, sqlTx);
+        },
         set: function (ref, data, options) { writes.push({ type: 'set', ref: ref, data: data, options: options }); return tx; },
         update: function (ref, data) { writes.push({ type: 'update', ref: ref, data: data }); return tx; },
         delete: function (ref) { writes.push({ type: 'delete', ref: ref }); return tx; },

@@ -3,11 +3,11 @@
 
 const { spawnSync } = require('node:child_process');
 
-function run(command, args) {
+function run(command, args, { shell = false } = {}) {
   const result = spawnSync(command, args, {
     stdio: 'inherit',
     env: process.env,
-    shell: process.platform === 'win32',
+    shell,
   });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status || 1);
@@ -19,4 +19,10 @@ if (process.env.TURSO_MIGRATE_ON_BUILD === '1') {
   console.log('[turso] migration and count verification completed.');
 }
 
-run('npm', ['run', 'build']);
+console.log('[turso] verifying transaction query compatibility before build.');
+run(process.execPath, ['scripts/turso-transaction-smoke.js']);
+
+// Node's executable is an absolute path that commonly contains spaces on
+// Windows, so invoke it without a shell. npm is a command shim on Windows and
+// needs the shell to resolve npm.cmd from PATH.
+run('npm', ['run', 'build'], { shell: process.platform === 'win32' });

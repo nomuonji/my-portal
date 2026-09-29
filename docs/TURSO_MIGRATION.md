@@ -148,6 +148,10 @@ TURSO_AUTH_TOKEN=...
 
 Keep `REACT_APP_PORTAL_DB_BACKEND` unset during this stage. MCP, Agent HQ, Agent Ideas, and server APIs can then be verified against Turso while the ordinary browser boards still use Firestore.
 
+### Transaction queries
+
+Turso transaction callbacks must execute query reads through the SQL transaction executor, not the global connection. Manager startup reads `managerRuns` with `tx.get(query)` and expects a Firestore-compatible `QuerySnapshot` with a `.docs` array. The transaction adapter must distinguish collection queries from document references and pass the transaction executor into `runQuery`; otherwise Manager startup fails before creating a run (`Cannot read properties of undefined (reading 'map')`). The focused regression check is `npm run test:turso-transaction`.
+
 ## Browser cutover
 
 After server verification, set:
