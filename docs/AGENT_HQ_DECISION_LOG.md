@@ -3,6 +3,14 @@
 This log records **important operating/architecture decisions and why they changed**.
 It is intentionally not a duplicate of git history.
 
+## 2026-09-29 — Action-first SEO tasks are validated at creation
+
+**Decision:** The Agent HQ API rejects agent Work Items created by the action-first Site SEO Manager unless they specify an allowed material action, a concrete repository/path scope, source-backed findings, mutation intent, acceptance criteria, and a validation strategy. `verification_only` is allowed only with the merged commit, exact production page, original marker, and expected page assertions.
+
+**Why:** Manager Method v26 already prohibited analysis-only dispatch, but the create API did not enforce that contract. Empty or generic agent tasks could still enter the Worker queue.
+
+**Consequence:** Managers may finish with zero Worker Work Items whenever no opportunity meets both the evidence and runtime gates. Human-gated work and other Manager Jobs keep their existing creation behavior.
+
 ## 2026-09-26 — Manager and Worker are separate roles
 
 **Decision:** Manager observes/reconciles/decides/delegates. Worker executes actual work.

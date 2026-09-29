@@ -5,6 +5,7 @@ const linearBridge = require('./linearMcpBridge');
 const {
   isMaterialReceipt, hasLiveEvidence, hasCommitEvidence, MATERIAL_ACTION_TYPES, trustedTargetProgress,
 } = require('./managerOutcome');
+const { validateSeoManagerWorkItem } = require('./managerWorkItemPolicy');
 
 const DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTIONS = Object.freeze({
@@ -2899,6 +2900,8 @@ async function managerRunCreateWorkItem(input, actor = {}) {
       if (existing) return;
     }
 
+    validateSeoManagerWorkItem(input, job);
+
     const workerMethodId = clampString(input.workerMethodId, 160)
       || job.defaultWorkerMethodId
       || job.metadata?.defaultWorkerMethodId
@@ -2956,7 +2959,7 @@ async function managerRunCreateWorkItem(input, actor = {}) {
     });
     if (payload.status === 'running') throw new Error('Manager-created Work Items cannot start as running; create ready or in_progress');
 
-    if (payload.status === 'ready' && job.metadata?.readyRequiresCapabilityMatch === true) {
+    if (['ready', 'in_progress'].includes(payload.status) && job.metadata?.readyRequiresCapabilityMatch === true) {
       const execution = payload.metadata?.execution || {};
       const itemRequirements = {
         requiredCapabilities: stringArray(execution.requiredCapabilities, 50, 160),
@@ -2968,15 +2971,15 @@ async function managerRunCreateWorkItem(input, actor = {}) {
         tools: stringArray(job.metadata?.workerCapabilityProfile?.tools, 100, 160),
       };
       if (!workerMethodId) {
-        throw new Error('Ready Work Items for this Manager Job require a Worker Method');
+        throw new Error('Agent-executable Work Items for this Manager Job require a Worker Method');
       }
       if (!execution.validationStrategy || (typeof execution.validationStrategy !== 'string'
         && (typeof execution.validationStrategy !== 'object' || Array.isArray(execution.validationStrategy)))) {
-        throw new Error('Ready Work Items for this Manager Job require metadata.execution.validationStrategy');
+        throw new Error('Agent-executable Work Items for this Manager Job require metadata.execution.validationStrategy');
       }
       const expectedGap = compareRuntimeRequirements(combinedRequirements, expectedAvailability);
       if (!expectedGap.ok) {
-        throw new Error('Ready Work Item requires capabilities/tools outside the configured Worker profile: ' + JSON.stringify(expectedGap));
+        throw new Error('Agent-executable Work Item requires capabilities/tools outside the configured Worker profile: ' + JSON.stringify(expectedGap));
       }
     }
 
