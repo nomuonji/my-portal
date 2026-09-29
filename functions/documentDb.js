@@ -327,6 +327,12 @@ class WriteBatch {
   commit() { return this.database.commit(this.operations); }
 }
 
+function transactionGet(database, reference, executor) {
+  return reference instanceof Query
+    ? database.runQuery(reference, executor)
+    : database.getDoc(reference, executor);
+}
+
 class TursoFirestore {
   collection(path) { return new CollectionRef(this, String(path).replace(/^\/+|\/+$/g, '')); }
   batch() { return new WriteBatch(this); }
@@ -462,11 +468,11 @@ class TursoFirestore {
     };
   }
 
-  async runQuery(query) {
+  async runQuery(query, executor) {
     await ensureSchema();
     const parts = this.queryParts(query, true);
     const limit = query.max ? ' LIMIT ' + Math.floor(query.max) : '';
-    const rows = await connection().all(
+    const rows = await (executor || connection()).all(
       'SELECT document_id, data_json FROM ' + TABLE + ' WHERE ' + parts.where + parts.order + limit,
       ...parts.args,
       ...parts.orderArgs,
@@ -511,7 +517,7 @@ class TursoFirestore {
     const transaction = connection().transactionAsync(async (sqlTx) => {
       const writes = [];
       const tx = {
-        get: function (ref) { return database.getDoc(ref, sqlTx); },
+        get: function (ref) { return transactionGet(database, ref, sqlTx); },
         set: function (ref, data, options) { writes.push({ type: 'set', ref: ref, data: data, options: options }); return tx; },
         update: function (ref, data) { writes.push({ type: 'update', ref: ref, data: data }); return tx; },
         delete: function (ref) { writes.push({ type: 'delete', ref: ref }); return tx; },
@@ -556,6 +562,8 @@ module.exports = {
   useTurso,
   getDocumentDb,
   healthCheck,
+  transactionGet,
+  Query,
   FieldValue,
   FieldPath,
   Timestamp,

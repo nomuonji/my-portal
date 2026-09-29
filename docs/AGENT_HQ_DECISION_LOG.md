@@ -11,6 +11,14 @@ It is intentionally not a duplicate of git history.
 
 **Consequence:** Managers may finish with zero Worker Work Items whenever no opportunity meets both the evidence and runtime gates. Human-gated work and other Manager Jobs keep their existing creation behavior.
 
+## 2026-09-29 — Turso transactions support query reads
+
+**Decision:** A Turso transaction's `get` operation accepts both document references and collection queries, and query reads execute on the transaction connection.
+
+**Why:** `manager_job_start` reads existing Runs inside a transaction to enforce invocation idempotency and `skip_if_open`. The adapter previously treated every `tx.get` argument as a document reference, so a scheduled Manager start failed when it attempted to map query results.
+
+**Consequence:** Idempotency and open-Run checks remain atomic on Turso, preserving the Manager Job concurrency policy.
+
 ## 2026-09-26 — Manager and Worker are separate roles
 
 **Decision:** Manager observes/reconciles/decides/delegates. Worker executes actual work.
