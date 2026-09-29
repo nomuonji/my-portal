@@ -60,6 +60,8 @@ async function main() {
       const existingRuns = await tx.get(runQuery);
       assert.ok(Array.isArray(existingRuns.docs), 'tx.get(query) must return a QuerySnapshot');
       assert.equal(existingRuns.size, 0);
+      const existingRun = await tx.get(runRef);
+      assert.equal(existingRun.exists, false, 'tx.get(documentRef) must retain DocumentSnapshot behavior');
       tx.set(runRef, { managerJobId: 'site-seo-operations', status: 'ready' });
       return existingRuns.docs.map((item) => item.id);
     });
@@ -70,6 +72,10 @@ async function main() {
       && event.method === 'all'
       && event.sql.includes('SELECT document_id, data_json FROM portal_documents')),
     'the Manager Run query must execute through the transaction connection');
+    assert.ok(events.some((event) => event.executor === 'transaction'
+      && event.method === 'get'
+      && event.sql.startsWith('SELECT data_json FROM portal_documents')),
+    'document-reference reads must remain point reads through the transaction connection');
     assert.ok(events.some((event) => event.executor === 'transaction'
       && event.method === 'run'
       && event.sql.startsWith('INSERT INTO portal_documents')),
