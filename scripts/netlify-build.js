@@ -19,4 +19,7 @@ if (process.env.TURSO_MIGRATE_ON_BUILD === '1') {
   console.log('[turso] migration and count verification completed.');
 }
 
+console.log('[turso] verifying transaction query compatibility before build.');
+run(process.execPath, ['scripts/turso-transaction-smoke.js']);
+
 run('npm', ['run', 'build']);
