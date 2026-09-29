@@ -1,0 +1,38 @@
+name: Turso transaction regression
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/turso-transaction-check.yml"
+      - "functions/documentDb.js"
+      - "package.json"
+      - "package-lock.json"
+      - "scripts/turso-transaction-smoke.js"
+      - "docs/TURSO_MIGRATION.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  turso-transaction:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify transaction query regression
+        run: npm run test:turso-transaction
+
+      - name: Build production bundle
+        run: npm run build
