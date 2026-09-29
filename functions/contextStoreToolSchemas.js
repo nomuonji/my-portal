@@ -449,7 +449,7 @@ const TOOLS = [
   },
   {
     name: 'manager_run_create_work_item',
-    description: 'Create one worker Work Item from a claimed Manager Run with provenance back to the Manager Job and Manager Run. Call zero or many times. dedupeKey prevents duplicate open work for the same managerial decision.',
+    description: 'Create one worker Work Item from a claimed Manager Run with provenance back to the Manager Job and Manager Run. For action-first SEO jobs, agent work must include a configured actionType, a specific repo/path scope, source-backed findings, mutation intent, acceptance criteria, and validation strategy; verification_only requires an already merged/deployed commit and exact public URL/marker assertions. Call zero times when no task passes these gates. dedupeKey prevents duplicate open work for the same managerial decision.',
     inputSchema: objectSchema({
       runId: string('Claimed Manager Run ID.', 160),
       agent: string('Claiming manager agent.', 120),
