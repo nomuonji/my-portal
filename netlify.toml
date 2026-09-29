@@ -8,8 +8,14 @@
 
 [functions]
   directory = "netlify/functions"
-  external_node_modules = ["firebase-admin"]
-  included_files = ["docs/AGENT_HQ_OPERATING_MODEL.md", "docs/AGENT_HQ_DECISION_LOG.md", "node_modules/firebase-admin/**/*"]
+  node_bundler = "esbuild"
+  external_node_modules = ["firebase-admin", "@tursodatabase/serverless"]
+  included_files = [
+    "docs/AGENT_HQ_OPERATING_MODEL.md",
+    "docs/AGENT_HQ_DECISION_LOG.md",
+    "node_modules/firebase-admin/**/*",
+    "node_modules/@tursodatabase/serverless/**/*"
+  ]
 
 # React Router is client-side. Keep the explicit Agent Ideas rewrite for clarity,
 # then fall back every other non-function route to the SPA entry point.
