@@ -37,7 +37,7 @@ function explicitCollectionPaths(databaseId) {
   if (configured) {
     return String(configured)
       .split(',')
-      .map((value) => value.trim().replace(/^\\/+|\\/+$/g, ''))
+      .map((value) => value.trim().replace(/^\/+|\/+$/g, ''))
       .filter(Boolean);
   }
   return databaseId === '(default)' ? DEFAULT_EXPLICIT_COLLECTION_PATHS : [];
