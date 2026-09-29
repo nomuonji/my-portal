@@ -1,5 +1,12 @@
 const { randomBytes } = require('node:crypto');
-const firebaseFirestore = require('firebase-admin/firestore');
+
+let firebaseFirestoreModule;
+function getFirebaseFirestore() {
+  if (!firebaseFirestoreModule) {
+    firebaseFirestoreModule = require('firebase-admin/firestore');
+  }
+  return firebaseFirestoreModule;
+}
 
 const FIRESTORE_BACKEND = 'firestore';
 const TURSO_BACKEND = 'turso';
@@ -56,35 +63,35 @@ class TursoFieldValue {
 
 const FieldValue = {
   serverTimestamp: function () {
-    return useTurso() ? TursoFieldValue.serverTimestamp() : firebaseFirestore.FieldValue.serverTimestamp();
+    return useTurso() ? TursoFieldValue.serverTimestamp() : getFirebaseFirestore().FieldValue.serverTimestamp();
   },
   increment: function (value) {
-    return useTurso() ? TursoFieldValue.increment(value) : firebaseFirestore.FieldValue.increment(value);
+    return useTurso() ? TursoFieldValue.increment(value) : getFirebaseFirestore().FieldValue.increment(value);
   },
   arrayUnion: function () {
     return useTurso()
       ? TursoFieldValue.arrayUnion.apply(null, arguments)
-      : firebaseFirestore.FieldValue.arrayUnion.apply(firebaseFirestore.FieldValue, arguments);
+      : getFirebaseFirestore().FieldValue.arrayUnion.apply(getFirebaseFirestore().FieldValue, arguments);
   },
   arrayRemove: function () {
     return useTurso()
       ? TursoFieldValue.arrayRemove.apply(null, arguments)
-      : firebaseFirestore.FieldValue.arrayRemove.apply(firebaseFirestore.FieldValue, arguments);
+      : getFirebaseFirestore().FieldValue.arrayRemove.apply(getFirebaseFirestore().FieldValue, arguments);
   },
   delete: function () {
-    return useTurso() ? TursoFieldValue.delete() : firebaseFirestore.FieldValue.delete();
+    return useTurso() ? TursoFieldValue.delete() : getFirebaseFirestore().FieldValue.delete();
   },
 };
 
 const FieldPath = {
   documentId: function () {
-    return useTurso() ? TursoFieldPath.documentId() : firebaseFirestore.FieldPath.documentId();
+    return useTurso() ? TursoFieldPath.documentId() : getFirebaseFirestore().FieldPath.documentId();
   },
 };
 
 const Timestamp = {
   fromDate: function (value) {
-    return useTurso() ? TursoTimestamp.fromDate(value) : firebaseFirestore.Timestamp.fromDate(value);
+    return useTurso() ? TursoTimestamp.fromDate(value) : getFirebaseFirestore().Timestamp.fromDate(value);
   },
 };
 
@@ -531,6 +538,7 @@ function getDocumentDb(databaseId) {
     if (!tursoDb) tursoDb = new TursoFirestore();
     return tursoDb;
   }
+  const firebaseFirestore = getFirebaseFirestore();
   return id === '(default)' ? firebaseFirestore.getFirestore() : firebaseFirestore.getFirestore(id);
 }
 
