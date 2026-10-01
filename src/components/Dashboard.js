@@ -411,6 +411,11 @@ function Dashboard() {
     [projects],
   );
 
+  const spaceById = useMemo(
+    () => new Map(spaces.map((space) => [space.id, space])),
+    [spaces],
+  );
+
 
   const border = isDark
     ? alpha(theme.palette.common.white, 0.1)
@@ -1212,9 +1217,15 @@ function Dashboard() {
                             {item.spaceId && (
                               <Chip
                                 size="small"
-                                label="長期テーマ"
+                                label={spaceById.has(item.spaceId)
+                                  ? `${(spaceById.get(item.spaceId)?.themeOwner || 'user') === 'assistant' ? 'AI側' : 'あなた'} · ${spaceById.get(item.spaceId)?.title || '長期テーマ'}`
+                                  : '長期テーマ'}
                                 variant="outlined"
-                                sx={{ height: 20, fontSize: '0.58rem' }}
+                                clickable={spaceById.has(item.spaceId)}
+                                onClick={spaceById.has(item.spaceId)
+                                  ? () => navigate('/thinking?space=' + encodeURIComponent(item.spaceId))
+                                  : undefined}
+                                sx={{ height: 20, fontSize: '0.58rem', maxWidth: '100%' }}
                               />
                             )}
                             {item.projectId && (
@@ -1638,7 +1649,7 @@ function Dashboard() {
                 <MenuItem value="">紐付けなし</MenuItem>
                 {activeSpaces.map((space) => (
                   <MenuItem key={space.id} value={space.id}>
-                    {space.title}
+                    {(space.themeOwner || 'user') === 'assistant' ? 'AI側' : 'あなた'} · {space.title}
                   </MenuItem>
                 ))}
               </Select>

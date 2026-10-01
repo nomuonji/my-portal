@@ -33,6 +33,7 @@ const THINKING_COLLECTIONS = Object.freeze({
 });
 
 const SPACE_STATUSES = ['active', 'paused', 'completed', 'archived'];
+const SPACE_THEME_OWNERS = ['user', 'assistant'];
 const IDEA_STATUSES = ['active', 'paused', 'archived', 'promoted'];
 const IDEA_MATURITY = ['seed', 'exploring', 'developed', 'validated', 'execution_ready'];
 const RUN_STATUSES = ['active', 'completed', 'paused', 'failed'];
@@ -722,12 +723,57 @@ async function agentHqGovernanceView() {
   };
 }
 
+function inferSpaceThemeOwner(input = {}) {
+  const explicit = clampString(input.themeOwner, 30);
+  if (explicit) return assertEnum(explicit, SPACE_THEME_OWNERS, 'themeOwner', 'user');
+
+  const tags = (Array.isArray(input.tags) ? input.tags : []).map((item) => String(item || '').trim().toLowerCase());
+  const domains = (Array.isArray(input.domains) ? input.domains : []).map((item) => String(item || '').trim().toLowerCase());
+
+  if (
+    /^ai側[:：]/i.test(String(input.title || '').trim())
+    || tags.some((item) => ['ai側の課題', 'assistant-quality', 'ai-side'].includes(item))
+    || domains.includes('assistant-quality')
+  ) {
+    return 'assistant';
+  }
+
+  // Legacy Spaces were overwhelmingly user-owned themes. Keep that as the
+  // compatibility default instead of guessing from who created the record.
+  return 'user';
+}
+
+async function bootstrapSpaceThemeOwnerMigration() {
+  const database = db();
+  const snapshot = await database.collection(COLLECTIONS.spaces).limit(500).get();
+  const missing = snapshot.docs.filter((doc) => !SPACE_THEME_OWNERS.includes(doc.data()?.themeOwner));
+  if (!missing.length) return 0;
+
+  const batch = database.batch();
+  missing.forEach((doc) => {
+    batch.update(doc.ref, { themeOwner: inferSpaceThemeOwner(doc.data() || {}) });
+  });
+  await batch.commit();
+  return missing.length;
+}
+
+function normalizeSpaceObject(space) {
+  if (!space) return space;
+  return {
+    ...space,
+    themeOwner: SPACE_THEME_OWNERS.includes(space.themeOwner)
+      ? space.themeOwner
+      : inferSpaceThemeOwner(space),
+  };
+}
+
 function spacePayload(input) {
   return {
     title: assertString(input.title, 'title', { max: 300 }),
     summary: clampString(input.summary, 5000) || '',
     goal: clampString(input.goal, 8000) || '',
     status: assertEnum(input.status, SPACE_STATUSES, 'status', 'active'),
+    themeOwner: inferSpaceThemeOwner(input),
     currentBrief: clampString(input.currentBrief, 16000) || '',
     nextActions: stringArray(input.nextActions, 100, 3000),
     tags: stringArray(input.tags, 50, 100),
@@ -750,7 +796,7 @@ async function spaceGet(input) {
   const id = assertString(input.id, 'id', { max: 160 });
   const snapshot = await db().collection(COLLECTIONS.spaces).doc(id).get();
   if (!snapshot.exists) throw new Error(`Space not found: ${id}`);
-  return documentToObject(snapshot);
+  return normalizeSpaceObject(documentToObject(snapshot));
 }
 
 async function spaceUpdate(input) {
@@ -773,6 +819,7 @@ async function spaceUpdate(input) {
     if (patch.summary !== undefined) update.summary = clampString(patch.summary, 5000) || '';
     if (patch.goal !== undefined) update.goal = clampString(patch.goal, 8000) || '';
     if (patch.status !== undefined) update.status = assertEnum(patch.status, SPACE_STATUSES, 'patch.status', current.status || 'active');
+    if (patch.themeOwner !== undefined) update.themeOwner = assertEnum(patch.themeOwner, SPACE_THEME_OWNERS, 'patch.themeOwner', inferSpaceThemeOwner(current));
     if (patch.currentBrief !== undefined) update.currentBrief = clampString(patch.currentBrief, 16000) || '';
     if (patch.nextActions !== undefined) update.nextActions = stringArray(patch.nextActions, 100, 3000);
     if (patch.tags !== undefined) update.tags = stringArray(patch.tags, 50, 100);
@@ -783,16 +830,19 @@ async function spaceUpdate(input) {
 }
 
 async function spaceSearch(input = {}) {
+  await bootstrapSpaceThemeOwnerMigration();
   const limit = Math.min(Math.max(Number(input.limit) || 30, 1), 100);
   const scanLimit = Math.min(Math.max(Number(input.scanLimit) || Math.max(limit * 5, 100), limit), 500);
   const snapshot = await db().collection(COLLECTIONS.spaces).limit(scanLimit).get();
   const q = clampString(input.query, 300)?.toLowerCase();
   const status = input.status;
+  const themeOwner = input.themeOwner ? assertEnum(input.themeOwner, SPACE_THEME_OWNERS, 'themeOwner') : null;
   const tag = clampString(input.tag, 100)?.toLowerCase();
   const domain = clampString(input.domain, 100)?.toLowerCase();
-  const items = sortRecent(snapshot.docs.map(documentToObject))
+  const items = sortRecent(snapshot.docs.map(documentToObject).map(normalizeSpaceObject))
     .filter((space) => {
       if (status && space.status !== status) return false;
+      if (themeOwner && space.themeOwner !== themeOwner) return false;
       if (tag && !(space.tags || []).some((item) => String(item).toLowerCase() === tag)) return false;
       if (domain && !(space.domains || []).some((item) => String(item).toLowerCase() === domain)) return false;
       if (q) {
@@ -4056,6 +4106,7 @@ async function migrateLegacyWorkItemStatuses() {
 async function controlPlaneOverview(input = {}) {
   const limit = Math.min(Math.max(Number(input.limit) || 80, 10), 200);
   await migrateLegacyWorkItemStatuses();
+  await bootstrapSpaceThemeOwnerMigration();
   await ensureLinearSetupTask();
   const database = db();
   const [workSnapshot, managerJobSnapshot, managerRunSnapshot, spaceSnapshot, runSnapshot, projectSnapshot, memoSnapshot] = await Promise.all([
@@ -4076,7 +4127,7 @@ async function controlPlaneOverview(input = {}) {
   const workItems = sortRecent(rawWork.map((item) => serialize(item)));
   const managerJobs = sortRecent(managerJobSnapshot.docs.map(documentToObject)).filter((item) => item.status === 'active');
   const managerRuns = sortRecent(managerRunSnapshot.docs.map(documentToObject)).filter((item) => ['ready', 'running'].includes(item.status));
-  const spaces = sortRecent(spaceSnapshot.docs.map(documentToObject)).filter((item) => item.status === 'active');
+  const spaces = sortRecent(spaceSnapshot.docs.map(documentToObject).map(normalizeSpaceObject)).filter((item) => item.status === 'active');
   const runs = sortRecent(runSnapshot.docs.map(documentToObject)).filter((item) => item.status === 'active');
   const projects = sortRecent(projectSnapshot.docs.map(documentToObject)).filter((item) => {
     const status = String(item.status || '').toLowerCase();
@@ -4259,6 +4310,7 @@ module.exports = {
   COLLECTIONS,
   THINKING_COLLECTIONS,
   SPACE_STATUSES,
+  SPACE_THEME_OWNERS,
   PROFILE_EVIDENCE_TYPES,
   PROFILE_STABILITY,
   PROFILE_STATUSES,
@@ -4331,6 +4383,7 @@ module.exports = {
   spaceUpdate,
   spaceSearch,
   spaceGetContext,
+  bootstrapSpaceThemeOwnerMigration,
   spaceIdeaExists,
   spaceIdeaCreate,
   spaceIdeaGet,
