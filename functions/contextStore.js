@@ -727,7 +727,6 @@ function inferSpaceThemeOwner(input = {}) {
   const explicit = clampString(input.themeOwner, 30);
   if (explicit) return assertEnum(explicit, SPACE_THEME_OWNERS, 'themeOwner', 'user');
 
-  const title = String(input.title || '').trim().toLowerCase();
   const tags = (Array.isArray(input.tags) ? input.tags : []).map((item) => String(item || '').trim().toLowerCase());
   const domains = (Array.isArray(input.domains) ? input.domains : []).map((item) => String(item || '').trim().toLowerCase());
 
