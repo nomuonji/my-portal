@@ -15,6 +15,11 @@ const spaceFields = {
   summary: string('Compact description of the theme.', 5000),
   goal: string('Current goal for the theme.', 8000),
   status: { type: 'string', enum: store.SPACE_STATUSES },
+  themeOwner: {
+    type: 'string',
+    enum: store.SPACE_THEME_OWNERS,
+    description: 'Whose long-running challenge/theme this is: user for the human/user side, assistant for AI/assistant capability or quality issues. This is independent from who created the record.',
+  },
   currentBrief: string('Current state distilled for the next session.', 16000),
   nextActions: stringArray('Concrete next actions.', 100),
   tags: stringArray('Loose tags.', 50),
@@ -147,6 +152,7 @@ const TOOLS = [
     inputSchema: objectSchema({
       query: string('Substring query over title, summary, goal, brief, tags, and domains.', 300),
       status: { type: 'string', enum: store.SPACE_STATUSES },
+      themeOwner: { type: 'string', enum: store.SPACE_THEME_OWNERS, description: 'Filter by user-side or assistant-side theme ownership.' },
       tag: string('Exact tag.', 100),
       domain: string('Exact domain.', 100),
       limit: { type: 'integer', minimum: 1, maximum: 100, default: 30 },
@@ -165,6 +171,7 @@ const TOOLS = [
         summary: spaceFields.summary,
         goal: spaceFields.goal,
         status: spaceFields.status,
+        themeOwner: spaceFields.themeOwner,
         currentBrief: spaceFields.currentBrief,
         nextActions: spaceFields.nextActions,
         tags: spaceFields.tags,
