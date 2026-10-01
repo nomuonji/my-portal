@@ -451,6 +451,7 @@ export default function ThinkingWorkspace() {
                 <Section title="課題の主体" subtitle="あなた自身の課題と、AI自身の能力・品質課題をデータ上も分離します">
                   <TextField
                     select
+                    SelectProps={{ native: true }}
                     fullWidth
                     size="small"
                     label="分類"
