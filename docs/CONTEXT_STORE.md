@@ -26,6 +26,19 @@ Thinking WorkspaceとAgent HQは、Space一覧をContext Store API / `control_pl
 
 Spaceは `currentBrief`, `goal`, `nextActions` を持ち、次回セッションの再開地点になる。
 
+#### user側 / AI側の分離
+
+Spaceは `themeOwner` を必ず持つ。
+
+- `user`: ユーザー本人の課題、人生・仕事・学習・企画など、ユーザー側で考え続けるテーマ
+- `assistant`: AI自身の能力・品質・推論・探索・生成など、AI側で改善すべきテーマ
+
+`themeOwner` は「誰がレコードを作成したか」ではない。AIがユーザーの課題を保存しても `user`、AI自身の弱点を保存する場合だけ `assistant` とする。
+
+Thinking Workspaceでは両者を別タブで表示する。MCPの `space_create` / `space_search` / `space_update` でも同じフィールドを使い、AI側の改善ToDoをユーザー側Spaceへ混ぜない。
+
+旧Spaceは一度だけ互換migrationされる。明示的なAI側シグナル（`AI側:` / `AI側の課題` / `assistant-quality`）があるものは `assistant`、それ以外は後方互換のため `user` として保存する。
+
 
 ### Method / Protocol
 
