@@ -107,7 +107,10 @@ function discoverMurakamiRadioLinks(html, indexUrl = MURAKAMI_RADIO_INDEX_URL) {
     const before = String(html || '').slice(Math.max(0, match.index - 700), match.index);
     const contextText = stripTags(before);
     const episodeMatch = lastMatch(contextText, /第\s*(\d+)\s*回/g);
-    const dateMatch = lastMatch(contextText, /(20\d{2})[.年\/-]\s*(\d{1,2})[.月\/-]\s*(\d{1,2})/g);
+    const episodeContext = episodeMatch && Number.isInteger(episodeMatch.index)
+      ? contextText.slice(episodeMatch.index + episodeMatch[0].length)
+      : contextText;
+    const dateMatch = episodeContext.match(/(20\d{2})[.年\/-]\s*(\d{1,2})[.月\/-]\s*(\d{1,2})/);
     const title = stripTags(match[3]);
     found.push({
       url,
