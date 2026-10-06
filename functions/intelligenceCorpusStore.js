@@ -71,6 +71,7 @@ function canonicalMurakamiUrl(value, baseUrl = MURAKAMI_RADIO_INDEX_URL) {
   const path = url.pathname.replace(/\/+$/, '');
   if (/^\/murakamiradio\/report\/\d+$/.test(path)) return `https://www.tfm.co.jp${path}`;
   if (/^\/murakamiradio\/index_\d{8}\.html$/.test(path)) return `https://www.tfm.co.jp${path}`;
+  if (path === '/murakamiradio/toshikoshisp2020') return 'https://www.tfm.co.jp/murakamiradio/toshikoshisp2020/';
   return null;
 }
 
@@ -80,6 +81,7 @@ function sourceDocId(url) {
   if (report) return `murakami_radio_report_${report[1]}`;
   const legacy = parsed.pathname.match(/index_(\d{8})\.html/);
   if (legacy) return `murakami_radio_${legacy[1]}`;
+  if (parsed.pathname.replace(/\/+$/, '') === '/murakamiradio/toshikoshisp2020') return 'murakami_radio_toshikoshisp2020';
   return `murakami_radio_${sha256(url).slice(0, 24)}`;
 }
 
