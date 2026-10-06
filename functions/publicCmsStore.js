@@ -76,6 +76,75 @@ function safeRevision(value) {
   const n = Number(value);
   return Number.isInteger(n) && n > 0 ? n : null;
 }
+function blockId(value, fallback) {
+  const v = str(value, 120).toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  return v || fallback;
+}
+function safeScalar(value, max = 1000) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  return str(value, max);
+}
+function safeDatasetColumn(input = {}, index = 0) {
+  const key = str(input.key, 80).toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || ('field_' + (index + 1));
+  return {
+    key,
+    label: str(input.label || key, 120),
+    type: ['text','status','date','url','number','boolean'].includes(input.type) ? input.type : 'text',
+    primary: input.primary === true,
+  };
+}
+function safeDatasetRecord(input = {}, columns = []) {
+  const out = {};
+  for (const column of columns) {
+    if (!Object.prototype.hasOwnProperty.call(input || {}, column.key)) continue;
+    out[column.key] = safeScalar(input[column.key], 2000);
+  }
+  return out;
+}
+function safeBlock(input = {}, index = 0) {
+  const type = ['markdown','dataset','timeline','summary','diagram'].includes(input.type) ? input.type : 'markdown';
+  const base = {
+    id: blockId(input.id, type + '-' + (index + 1)),
+    type,
+    placement: input.placement === 'before-body' ? 'before-body' : 'after-body',
+    title: str(input.title, 300),
+  };
+  if (type === 'markdown') return { ...base, markdown: str(input.markdown, 50000) };
+  if (type === 'summary') return {
+    ...base,
+    text: str(input.text, 5000),
+    items: strings(input.items, 12, 800),
+    status: str(input.status, 120),
+  };
+  if (type === 'diagram') return { ...base, mermaid: str(input.mermaid, 30000) };
+  if (type === 'timeline') return {
+    ...base,
+    items: (Array.isArray(input.items) ? input.items : []).slice(0, 200).map((item) => ({
+      date: str(item?.date, 80),
+      label: str(item?.label, 120),
+      title: str(item?.title, 300),
+      body: str(item?.body, 3000),
+      status: str(item?.status, 120),
+    })).filter((item) => item.date || item.label || item.title || item.body),
+  };
+  const columns = (Array.isArray(input.columns) ? input.columns : []).slice(0, 20).map(safeDatasetColumn);
+  const sortKey = str(input.sort?.key, 80);
+  return {
+    ...base,
+    description: str(input.description, 3000),
+    view: ['table','cards','matrix','tracker'].includes(input.view) ? input.view : 'table',
+    columns,
+    records: (Array.isArray(input.records) ? input.records : []).slice(0, 500).map((record) => safeDatasetRecord(record, columns)),
+    sort: sortKey && columns.some((column) => column.key === sortKey)
+      ? { key: sortKey, direction: input.sort?.direction === 'desc' ? 'desc' : 'asc' }
+      : null,
+  };
+}
+function safeBlocks(value) {
+  return (Array.isArray(value) ? value : []).slice(0, 40).map(safeBlock);
+}
 function safeDraft(input = {}, context = {}) {
   const locale = safeLocale(input.locale, context.slug);
   return {
@@ -85,6 +154,7 @@ function safeDraft(input = {}, context = {}) {
     contentType: str(input.contentType, 80) || 'article',
     tags: strings(input.tags, 50, 120),
     keyTakeaways: strings(input.keyTakeaways, 8, 500),
+    blocks: safeBlocks(input.blocks),
     locale,
     translationGroupId: translationGroupId(input.translationGroupId, context.slug),
     originalLocale: safeLocale(input.originalLocale || locale, context.slug),
@@ -113,6 +183,7 @@ function publicTextFields(content = {}) {
     bodyMarkdown: content.bodyMarkdown,
     tags: Array.isArray(content.tags) ? content.tags.join('\n') : '',
     keyTakeaways: Array.isArray(content.keyTakeaways) ? content.keyTakeaways.join('\n') : '',
+    blocks: JSON.stringify(content.blocks || []),
     translationGroupId: content.translationGroupId,
     seoTitle: seo.title,
     seoDescription: seo.description,
@@ -370,5 +441,5 @@ module.exports = {
   DATABASE_ID, COLLECTIONS, status, siteList, siteUpsert, contentList, contentGet,
   contentCreate, contentUpdate, contentPrivacyScan, contentPublish, contentArchive, publicGet, publicList,
   deployStatus, siteDeployTrigger,
-  _test: { normalizeSiteId, normalizeSlug, contentDocId, safeDraft, safeLocale, translationGroupId, publicProjection, scanPublicContent, assertPrivacySafe, deployHookEnvName, isAllowedDeployHookUrl, triggerDeployHookUrl },
+  _test: { normalizeSiteId, normalizeSlug, contentDocId, safeDraft, safeBlocks, safeBlock, safeLocale, translationGroupId, publicProjection, scanPublicContent, assertPrivacySafe, deployHookEnvName, isAllowedDeployHookUrl, triggerDeployHookUrl },
 };
