@@ -8,6 +8,14 @@ const COLLECTIONS = Object.freeze({
 });
 
 function db() { return getDocumentDb(DATABASE_ID); }
+function env(name) {
+  try {
+    const value = globalThis?.Netlify?.env?.get?.(name);
+    if (value) return String(value).trim();
+  } catch {}
+  if (typeof process !== 'undefined' && process.env && process.env[name]) return String(process.env[name]).trim();
+  return '';
+}
 function str(value, max = 300) {
   if (value === undefined || value === null) return '';
   return String(value).trim().slice(0, max);
@@ -71,6 +79,69 @@ function safeSources(value) {
     note: str(item?.note, 1000),
   })).filter((item) => item.type || item.id || item.spaceId || item.note);
 }
+function deployHookEnvName(siteId) {
+  return 'PUBLIC_CMS_DEPLOY_HOOK_' + normalizeSiteId(siteId).toUpperCase().replace(/[^A-Z0-9]/g, '_');
+}
+function isAllowedDeployHookUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.protocol === 'https:' &&
+      url.hostname === 'api.cloudflare.com' &&
+      !url.port && !url.username && !url.password && !url.search && !url.hash &&
+      /^\/client\/v4\/workers\/builds\/deploy_hooks\/[A-Za-z0-9-]+\/?$/.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+async function triggerDeployHookUrl(value, fetchImpl = globalThis.fetch) {
+  const hookUrl = str(value, 2000);
+  if (!hookUrl) return { configured: false, triggered: false, ok: null, reason: 'not_configured' };
+  if (!isAllowedDeployHookUrl(hookUrl)) return { configured: true, triggered: false, ok: false, reason: 'invalid_hook_url' };
+  if (typeof fetchImpl !== 'function') return { configured: true, triggered: false, ok: false, reason: 'fetch_unavailable' };
+  try {
+    const response = await fetchImpl(hookUrl, {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      redirect: 'error',
+      signal: AbortSignal.timeout(8000),
+    });
+    let payload = {};
+    try { payload = await response.json(); } catch {}
+    return {
+      configured: true,
+      triggered: true,
+      ok: response.ok && payload?.success !== false,
+      status: response.status,
+      buildUuid: str(payload?.result?.build_uuid, 160),
+      buildStatus: str(payload?.result?.status, 80),
+      alreadyExists: payload?.result?.already_exists === true,
+    };
+  } catch (error) {
+    return {
+      configured: true,
+      triggered: true,
+      ok: false,
+      status: null,
+      error: str(error?.message || error, 1000),
+    };
+  }
+}
+async function deployStatus(input = {}) {
+  const siteId = normalizeSiteId(input.siteId);
+  const envName = deployHookEnvName(siteId);
+  const hookUrl = env(envName);
+  return { siteId, envName, configured: Boolean(hookUrl), valid: Boolean(hookUrl && isAllowedDeployHookUrl(hookUrl)) };
+}
+async function triggerSiteDeploy(input = {}, fetchImpl = globalThis.fetch) {
+  const siteId = normalizeSiteId(input.siteId);
+  const envName = deployHookEnvName(siteId);
+  return { siteId, envName, ...(await triggerDeployHookUrl(env(envName), fetchImpl)) };
+}
+async function siteDeployTrigger(input = {}) {
+  confirm(input, 'site_trigger_deploy');
+  return triggerSiteDeploy(input);
+}
+
 function publicProjection(record) {
   if (!record || record.status !== 'published' || !record.published) return null;
   const p = record.published;
@@ -118,7 +189,8 @@ async function siteUpsert(input = {}) {
     ...(existing.exists ? {} : { createdAt: now }),
     updatedAt: now,
   }, { merge: true });
-  return { item: obj(await ref.get()) };
+  const item = obj(await ref.get());
+  return { item, deploy: await deployStatus({ siteId }) };
 }
 async function contentList(input = {}) {
   const siteId = normalizeSiteId(input.siteId);
@@ -182,14 +254,17 @@ async function contentPublish(input = {}) {
   });
   batch.set(ref, { status: 'published', revision, published, publishedAt, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
   await batch.commit();
-  return { item: obj(await ref.get()) };
+  const item = obj(await ref.get());
+  return { item, deploy: await triggerSiteDeploy({ siteId: current.siteId }) };
 }
 async function contentArchive(input = {}) {
   confirm(input, 'content_archive');
-  const ref = db().collection(COLLECTIONS.content).doc(contentDocId(input.siteId, input.slug));
+  const siteId = normalizeSiteId(input.siteId);
+  const ref = db().collection(COLLECTIONS.content).doc(contentDocId(siteId, input.slug));
   if (!(await ref.get()).exists) throw new Error('Public content not found');
   await ref.set({ status: 'archived', updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-  return { item: obj(await ref.get()) };
+  const item = obj(await ref.get());
+  return { item, deploy: await triggerSiteDeploy({ siteId }) };
 }
 async function publicGet(input = {}) {
   const siteId = normalizeSiteId(input.siteId);
@@ -209,5 +284,6 @@ async function publicList(input = {}) {
 module.exports = {
   DATABASE_ID, COLLECTIONS, status, siteList, siteUpsert, contentList, contentGet,
   contentCreate, contentUpdate, contentPublish, contentArchive, publicGet, publicList,
-  _test: { normalizeSiteId, normalizeSlug, contentDocId, safeDraft, publicProjection },
+  deployStatus, siteDeployTrigger,
+  _test: { normalizeSiteId, normalizeSlug, contentDocId, safeDraft, publicProjection, deployHookEnvName, isAllowedDeployHookUrl, triggerDeployHookUrl },
 };
