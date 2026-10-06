@@ -335,6 +335,13 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
         includeDerivedText: op.includeDerivedText === true,
       }));
     }
+    if (op.type === "intelligence_refresh_murakami_derived") {
+      return structured(await intelligenceStore.refreshDerivedDocuments({
+        offset: op.offset,
+        limit: op.limit,
+        confirm: args.confirm,
+      }));
+    }
   }
 
   if (name === "portal_status") return structured(await portalStore.status());
