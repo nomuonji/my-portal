@@ -32,7 +32,8 @@
     "eject": "react-scripts eject",
     "migrate:turso": "node scripts/migrate-firestore-to-turso.js",
     "test:intelligence-corpus": "node scripts/intelligence-corpus-smoke.js",
-    "prebuild": "npm run test:intelligence-corpus"
+    "prebuild": "npm run test:intelligence-corpus && npm run test:public-cms",
+    "test:public-cms": "node scripts/public-cms-smoke.js"
   },
   "eslintConfig": {
     "extends": [
