@@ -45,7 +45,7 @@ const TOOLS = [
   },
   {
     name: 'intelligence_sync_murakami_radio',
-    description: 'TOKYO FM村上RADIO公式一覧から過去回URLを発見し、公式ページのraw HTMLを改変せずCreative Intelligence corpusへ保存します。旧index_YYYYMMDD形式と新report形式の両方に対応し、同一URLは決定的IDでupsertします。1回最大12ページ。',
+    description: 'TOKYO FM村上RADIO公式一覧から過去回URLを発見し、公式ページのraw HTMLを改変せずCreative Intelligence corpusへ保存します。旧index_YYYYMMDD形式と新report形式の両方に対応し、同一URLは決定的IDでupsertします。1回最大6ページ。',
     inputSchema: {
       type: 'object',
       properties: {
