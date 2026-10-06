@@ -11,6 +11,23 @@ const arr=v=>String(v||'').split(',').map(x=>x.trim()).filter(Boolean);
 const lines=v=>String(v||'').split('\n').map(x=>x.trim()).filter(Boolean);
 const formFrom=item=>item?{title:item.draft?.title||'',slug:item.slug||'',summary:item.draft?.summary||'',bodyMarkdown:item.draft?.bodyMarkdown||'',contentType:item.draft?.contentType||'article',tags:(item.draft?.tags||[]).join(', '),keyTakeaways:(item.draft?.keyTakeaways||[]).join('\n'),locale:item.draft?.locale||(String(item.slug||'').startsWith('en/')?'en':'ja'),translationGroupId:item.draft?.translationGroupId||String(item.slug||'').replace(/^en\//,''),originalLocale:item.draft?.originalLocale||'ja',translatedFromRevision:item.draft?.translatedFromRevision||'',primaryKeyword:item.draft?.seo?.primaryKeyword||'',secondaryKeywords:(item.draft?.seo?.secondaryKeywords||[]).join(', '),searchIntent:item.draft?.seo?.searchIntent||'',seoTitle:item.draft?.seo?.title||'',seoDescription:item.draft?.seo?.description||'',canonicalPath:item.draft?.seo?.canonicalPath||'',sourceNote:item.sourceRefs?.[0]?.note||''}:empty;
 const draftFrom=f=>({title:f.title.trim(),summary:f.summary.trim(),bodyMarkdown:f.bodyMarkdown,contentType:f.contentType||'article',tags:arr(f.tags),keyTakeaways:lines(f.keyTakeaways).slice(0,8),locale:f.locale||'ja',translationGroupId:f.translationGroupId.trim()||f.slug.replace(/^en\//,''),originalLocale:f.originalLocale||'ja',translatedFromRevision:f.translatedFromRevision?Number(f.translatedFromRevision):null,seo:{primaryKeyword:f.primaryKeyword.trim(),secondaryKeywords:arr(f.secondaryKeywords),searchIntent:f.searchIntent.trim(),title:f.seoTitle.trim(),description:f.seoDescription.trim(),canonicalPath:f.canonicalPath.trim(),noindex:false}});
+const privacyScan=draft=>{
+ const fields={title:draft?.title,summary:draft?.summary,bodyMarkdown:draft?.bodyMarkdown,tags:(draft?.tags||[]).join('\n'),keyTakeaways:(draft?.keyTakeaways||[]).join('\n'),translationGroupId:draft?.translationGroupId,seoTitle:draft?.seo?.title,seoDescription:draft?.seo?.description,seoCanonicalPath:draft?.seo?.canonicalPath};
+ const rules=[
+  ['email',/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i],
+  ['phone',/(?:\+81[-\s]?(?:\d[-\s]?){9,10}|0(?:50|70|80|90)[-\s]?\d{4}[-\s]?\d{4}|0\d{1,4}-\d{1,4}-\d{4})/],
+  ['private key',/-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/],
+  ['JWT',/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/],
+  ['GitHub token',/\bgh[pousr]_[A-Za-z0-9]{20,}\b/],
+  ['secret token',/\bsk-[A-Za-z0-9_-]{20,}\b/],
+  ['AWS access key',/\bAKIA[0-9A-Z]{16}\b/],
+  ['Bearer token',/\bBearer\s+[A-Za-z0-9._~+/=-]{16,}\b/i],
+  ['credential',/\b(?:api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|password|passwd)\s*[:=]\s*["']?[A-Za-z0-9_./+=-]{12,}/i],
+  ['credentialed URL',/https?:\/\/[^\s<>"']+[?&](?:access_token|auth|api[_-]?key|apikey|token|secret|password)=[^\s&#<>"']+/i]
+ ];
+ const issues=[];for(const[field,value]of Object.entries(fields)){const text=String(value||'');for(const[label,re]of rules)if(re.test(text))issues.push(label+' in '+field)}
+ return issues;
+};
 
 export default function PublicCms(){
  const[sites,setSites]=useState([]),[siteId,setSiteId]=useState(''),[items,setItems]=useState([]),[editing,setEditing]=useState(null),[form,setForm]=useState(empty),[open,setOpen]=useState(false),[siteOpen,setSiteOpen]=useState(false),[siteForm,setSiteForm]=useState({id:'',name:'',baseUrl:'',frontendRepo:'',locale:'ja-JP'}),[busy,setBusy]=useState(false),[error,setError]=useState('');
@@ -23,11 +40,11 @@ export default function PublicCms(){
  const startNew=()=>{setEditing(null);setForm(empty);setOpen(true)};
  const startEdit=item=>{setEditing(item);setForm(formFrom(item));setOpen(true)};
  const saveContent=()=>run(async()=>{const slug=normSlug(form.slug);if(!siteId||!slug||!form.title.trim())throw new Error('site / slug / title は必須です');const id=contentId(siteId,slug);if(editing&&editing.id!==id)throw new Error('公開後のslug変更は新規コンテンツとして作成してください');const base={siteId,slug,draft:draftFrom(form),sourceRefs:form.sourceNote.trim()?[{type:'portal',note:form.sourceNote.trim()}]:[],updatedAt:serverTimestamp()};if(!editing)Object.assign(base,{status:'draft',revision:0,published:null,publishedAt:null,createdAt:serverTimestamp()});await setDoc(doc(db,'public_content',id),base,{merge:true});setOpen(false);await loadItems()});
- const publish=item=>run(async()=>{const revision=(Number(item.revision)||0)+1;const publishedAt=new Date().toISOString();const published={...item.draft,publishedAt};const batch=writeBatch(db);batch.set(doc(db,'public_content_revisions',item.id+'__r'+revision),{contentId:item.id,siteId:item.siteId,slug:item.slug,revision,published,createdAt:serverTimestamp()});batch.set(doc(db,'public_content',item.id),{status:'published',revision,published,publishedAt,updatedAt:serverTimestamp()},{merge:true});await batch.commit();await loadItems()});
+ const publish=item=>run(async()=>{const issues=privacyScan(item.draft);if(issues.length)throw new Error('Privacy gate: '+issues.join('; ')+'。公開前に削除・一般化してください。氏名・住所・所属など文脈依存の個人特定情報も別途確認が必要です。');const revision=(Number(item.revision)||0)+1;const publishedAt=new Date().toISOString();const published={...item.draft,publishedAt};const batch=writeBatch(db);batch.set(doc(db,'public_content_revisions',item.id+'__r'+revision),{contentId:item.id,siteId:item.siteId,slug:item.slug,revision,published,createdAt:serverTimestamp()});batch.set(doc(db,'public_content',item.id),{status:'published',revision,published,publishedAt,updatedAt:serverTimestamp()},{merge:true});await batch.commit();await loadItems()});
  const archive=item=>run(async()=>{await setDoc(doc(db,'public_content',item.id),{status:'archived',updatedAt:serverTimestamp()},{merge:true});await loadItems()});
  return <Box sx={{maxWidth:1100,mx:'auto'}}>
   <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" gap={1.5} mb={2}>
-   <Box><Typography variant="h5" fontWeight={900}>Public CMS</Typography><Typography color="text.secondary">思考を下書きとして整え、別repoのフロントへ公開するheadless CMS。</Typography></Box>
+   <Box><Typography variant="h5" fontWeight={900}>Public CMS</Typography><Typography color="text.secondary">思考を下書きとして整え、別repoのフロントへ公開するheadless CMS。公開前に個人特定情報・機密情報を必ず削除または一般化します。</Typography></Box>
    <Stack direction="row" gap={1}><Button variant="outlined" onClick={()=>setSiteOpen(true)}>サイト追加</Button><Button variant="contained" disabled={!siteId} onClick={startNew}>コンテンツ追加</Button></Stack>
   </Stack>
   {error&&<Typography color="error" sx={{mb:2}}>{error}</Typography>}

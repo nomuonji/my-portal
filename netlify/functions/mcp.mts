@@ -33,7 +33,7 @@ const migration: any = (migrationImport as any).default ?? migrationImport;
 const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...portalToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "1.15.0-netlify";
+const SERVER_VERSION = "1.16.0-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -334,6 +334,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "public_content_get") return structured(await publicCmsStore.contentGet(args));
   if (name === "public_content_create") return structured(await publicCmsStore.contentCreate(args));
   if (name === "public_content_update") return structured(await publicCmsStore.contentUpdate(args));
+  if (name === "public_content_privacy_scan") return structured(await publicCmsStore.contentPrivacyScan(args));
   if (name === "public_content_publish") return structured(await publicCmsStore.contentPublish(args));
   if (name === "public_content_archive") return structured(await publicCmsStore.contentArchive(args));
 
