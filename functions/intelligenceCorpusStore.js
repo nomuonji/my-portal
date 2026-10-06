@@ -10,7 +10,7 @@ const MURAKAMI_RADIO_INDEX_URL = 'https://www.tfm.co.jp/murakamiradio/';
 const DATASET = 'murakami_radio';
 const MAX_RAW_BYTES = 850000;
 const MAX_SYNC_LIMIT = 6;
-const DERIVED_TEXT_VERSION = 1;
+const DERIVED_TEXT_VERSION = 2;
 
 function db() {
   return getDocumentDb(DATABASE_ID);
@@ -51,22 +51,30 @@ function stripTags(value) {
   return decodeEntities(String(value || '').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
 }
 
-function extractDerivedText(html) {
-  const raw = String(html || '');
-  const primaryMatch = raw.match(/<section\b[^>]*class=["'][^"']*\bbnArea\b[^"']*["'][^>]*>([\s\S]*?)<\/section>/i);
-  const source = primaryMatch ? primaryMatch[1] : raw;
-  return decodeEntities(source
+function fragmentToText(fragment) {
+  return decodeEntities(String(fragment || '')
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
     .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
     .replace(/<br\s*\/?\s*>/gi, '\n')
-    .replace(/<\/(p|div|li|section|article|h[1-6]|blockquote|tr)>/gi, '\n')
+    .replace(/<\/(p|div|li|section|article|h[1-6]|blockquote|tr|dd|dt|dl)>/gi, '\n')
     .replace(/<[^>]+>/g, ''))
     .replace(/\r\n?/g, '\n')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n[ \t]+/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+function extractDerivedText(html) {
+  const raw = String(html || '');
+  const candidates = Array.from(raw.matchAll(/<section\b[^>]*class=["'][^"']*\bbnArea\b[^"']*["'][^>]*>([\s\S]*?)<\/section>/gi))
+    .map((match) => fragmentToText(match[1]))
+    .filter(Boolean);
+  if (candidates.length) {
+    return candidates.reduce((best, current) => current.length > best.length ? current : best, '');
+  }
+  return fragmentToText(raw);
 }
 
 function canonicalMurakamiUrl(value, baseUrl = MURAKAMI_RADIO_INDEX_URL) {
@@ -324,6 +332,44 @@ async function searchRawDocuments(input = {}) {
   return { items, count: items.length, scanned: snapshot.size, databaseId: DATABASE_ID };
 }
 
+async function refreshDerivedDocuments(input = {}) {
+  requireConfirmation(input, 'intelligence_refresh_murakami_derived');
+  const offset = Math.max(0, Number(input.offset) || 0);
+  const limit = Math.min(Math.max(Number(input.limit) || 25, 1), 50);
+  const snapshot = await db().collection(COLLECTIONS.rawDocuments).where('dataset', '==', DATASET).get();
+  const episodes = snapshot.docs
+    .map(snapshotObject)
+    .filter((item) => item?.contentKind === 'episode' && item.rawHtml)
+    .sort((a, b) => Number(b.episodeNumber || 0) - Number(a.episodeNumber || 0));
+  const selected = episodes.slice(offset, offset + limit);
+  const outcomes = [];
+  for (const item of selected) {
+    const derivedText = extractDerivedText(item.rawHtml);
+    await db().collection(COLLECTIONS.rawDocuments).doc(item.id).set({
+      derivedText,
+      derivedTextVersion: DERIVED_TEXT_VERSION,
+      derivedUpdatedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    outcomes.push({
+      id: item.id,
+      episodeNumber: item.episodeNumber,
+      derivedChars: derivedText.length,
+      derivedTextVersion: DERIVED_TEXT_VERSION,
+    });
+  }
+  return {
+    ok: true,
+    dataset: DATASET,
+    offset,
+    limit,
+    totalEpisodes: episodes.length,
+    refreshed: outcomes.length,
+    nextOffset: offset + selected.length < episodes.length ? offset + selected.length : null,
+    documents: outcomes,
+  };
+}
+
 async function syncMurakamiRadio(input = {}) {
   requireConfirmation(input, 'intelligence_sync_murakami_radio');
   const offset = Math.max(0, Number(input.offset) || 0);
@@ -412,6 +458,7 @@ module.exports = {
   sourceDocId,
   discoverMurakamiRadioLinks,
   extractDerivedText,
+  refreshDerivedDocuments,
   status,
   getRawDocument,
   searchRawDocuments,
