@@ -30,7 +30,8 @@
     "test": "react-scripts test",
     "test:turso-transaction": "node scripts/turso-transaction-smoke.js",
     "eject": "react-scripts eject",
-    "migrate:turso": "node scripts/migrate-firestore-to-turso.js"
+    "migrate:turso": "node scripts/migrate-firestore-to-turso.js",
+    "test:intelligence-corpus": "node scripts/intelligence-corpus-smoke.js"
   },
   "eslintConfig": {
     "extends": [
@@ -53,4 +54,4 @@
   "devDependencies": {
     "cross-env": "^7.0.3"
   }
-}
+}\n
