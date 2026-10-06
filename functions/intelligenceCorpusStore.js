@@ -250,9 +250,8 @@ async function storeIndexDocument(fetched, discoveredCount) {
 }
 
 async function status() {
-  const [all, episodes, runs] = await Promise.all([
-    db().collection(COLLECTIONS.rawDocuments).where('dataset', '==', DATASET).count().get(),
-    db().collection(COLLECTIONS.rawDocuments).where('contentKind', '==', 'episode').count().get(),
+  const [rawSnapshot, runs] = await Promise.all([
+    db().collection(COLLECTIONS.rawDocuments).where('dataset', '==', DATASET).get(),
     db().collection(COLLECTIONS.importRuns).where('dataset', '==', DATASET).count().get(),
   ]);
   return {
@@ -261,8 +260,8 @@ async function status() {
     databaseId: DATABASE_ID,
     collections: COLLECTIONS,
     counts: {
-      rawDocuments: all.data().count,
-      episodes: episodes.data().count,
+      rawDocuments: rawSnapshot.size,
+      episodes: rawSnapshot.docs.filter((doc) => doc.get('contentKind') === 'episode').length,
       importRuns: runs.data().count,
     },
   };
