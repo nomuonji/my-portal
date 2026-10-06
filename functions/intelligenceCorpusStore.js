@@ -51,7 +51,10 @@ function stripTags(value) {
 }
 
 function extractDerivedText(html) {
-  return decodeEntities(String(html || '')
+  const raw = String(html || '');
+  const primaryMatch = raw.match(/<section\b[^>]*class=["'][^"']*\bbnArea\b[^"']*["'][^>]*>([\s\S]*?)<\/section>/i);
+  const source = primaryMatch ? primaryMatch[1] : raw;
+  return decodeEntities(source
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
     .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
