@@ -5,6 +5,8 @@ import * as agentStoreImport from "../../functions/agentIdeasStoreAgentDb.js";
 import * as portalStoreImport from "../../functions/portalStore.js";
 import * as agentToolsImport from "../../functions/agentIdeasToolSchemas.js";
 import * as portalToolsImport from "../../functions/portalMcpTools.js";
+import * as publicCmsStoreImport from "../../functions/publicCmsStore.js";
+import * as publicCmsToolsImport from "../../functions/publicCmsToolSchemas.js";
 import * as socialStoreImport from "../../functions/socialArchiveStore.js";
 import * as socialToolsImport from "../../functions/socialArchiveToolSchemas.js";
 import * as intelligenceStoreImport from "../../functions/intelligenceCorpusStore.js";
@@ -18,6 +20,8 @@ const agentStore: any = (agentStoreImport as any).default ?? agentStoreImport;
 const portalStore: any = (portalStoreImport as any).default ?? portalStoreImport;
 const agentToolsModule: any = (agentToolsImport as any).default ?? agentToolsImport;
 const portalToolsModule: any = (portalToolsImport as any).default ?? portalToolsImport;
+const publicCmsStore: any = (publicCmsStoreImport as any).default ?? publicCmsStoreImport;
+const publicCmsToolsModule: any = (publicCmsToolsImport as any).default ?? publicCmsToolsImport;
 const socialStore: any = (socialStoreImport as any).default ?? socialStoreImport;
 const socialToolsModule: any = (socialToolsImport as any).default ?? socialToolsImport;
 const intelligenceStore: any = (intelligenceStoreImport as any).default ?? intelligenceStoreImport;
@@ -26,10 +30,10 @@ const contextStore: any = (contextStoreImport as any).default ?? contextStoreImp
 const contextToolsModule: any = (contextToolsImport as any).default ?? contextToolsImport;
 const linearBridge: any = (linearBridgeImport as any).default ?? linearBridgeImport;
 const migration: any = (migrationImport as any).default ?? migrationImport;
-const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...portalToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS];
+const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...portalToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "1.12.0-netlify";
+const SERVER_VERSION = "1.13.0-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -320,6 +324,16 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "portal_create") return structured(await portalStore.create(args));
   if (name === "portal_update") return structured(await portalStore.update(args));
   if (name === "portal_delete") return structured(await portalStore.remove(args));
+
+  if (name === "public_cms_status") return structured(await publicCmsStore.status());
+  if (name === "public_site_list") return structured(await publicCmsStore.siteList(args));
+  if (name === "public_site_upsert") return structured(await publicCmsStore.siteUpsert(args));
+  if (name === "public_content_list") return structured(await publicCmsStore.contentList(args));
+  if (name === "public_content_get") return structured(await publicCmsStore.contentGet(args));
+  if (name === "public_content_create") return structured(await publicCmsStore.contentCreate(args));
+  if (name === "public_content_update") return structured(await publicCmsStore.contentUpdate(args));
+  if (name === "public_content_publish") return structured(await publicCmsStore.contentPublish(args));
+  if (name === "public_content_archive") return structured(await publicCmsStore.contentArchive(args));
 
   if (name === "social_archive_status") return structured(await socialStore.status());
   if (name === "social_post_get") return structured(await socialStore.getPost(args));

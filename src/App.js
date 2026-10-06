@@ -45,6 +45,7 @@ import {
   PsychologyAlt as PsychologyAltIcon,
   EmojiObjects as EmojiObjectsIcon,
   Archive as ArchiveIcon,
+  Public as PublicIcon,
 } from '@mui/icons-material';
 
 import Memo from './components/Memo';
@@ -69,6 +70,7 @@ import FlashcardForm from './components/FlashcardForm';
 import GroupAndDeckList from './components/GroupAndDeckList';
 import Stock from './components/Stock';
 import GlobalFlashcardManagement from './components/GlobalFlashcardManagement';
+import PublicCms from './components/PublicCms';
 
 import getAppTheme from './theme';
 
@@ -129,6 +131,7 @@ function App() {
     if (path.startsWith('/agent-ideas')) return 'Agent Ideas';
     if (path.startsWith('/ogiri')) return '大喜利ラボ';
     if (path.startsWith('/social-archive')) return 'X投稿アーカイブ';
+    if (path.startsWith('/public-cms')) return 'Public CMS';
     if (path.startsWith('/ideaboard') || path.startsWith('/idea')) return 'アイデア';
     if (path.startsWith('/hobbyboard') || path.startsWith('/hobby')) return '趣味';
     if (path.startsWith('/stockboard') || path.startsWith('/stock')) return 'ストック';
@@ -317,6 +320,10 @@ function App() {
               <ListItemIcon><ArchiveIcon /></ListItemIcon>
               <ListItemText primary="X投稿アーカイブ" secondary="過去投稿の検索・分類・見返し" />
             </ListItemButton>
+            <ListItemButton selected={location.pathname.startsWith('/public-cms')} component={Link} to="/public-cms" onClick={navClick}>
+              <ListItemIcon><PublicIcon /></ListItemIcon>
+              <ListItemText primary="Public CMS" secondary="思考 → 公開 / 複数サイト" />
+            </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/project')} component={Link} to="/project" onClick={navClick}>
               <ListItemIcon><Folder /></ListItemIcon>
               <ListItemText primary="プロジェクトボード" />
@@ -493,6 +500,7 @@ function App() {
                 <Route path="/agent-ideas" element={<AgentIdeaSpace />} />
                 <Route path="/ogiri" element={<Ogiri />} />
                 <Route path="/social-archive" element={<SocialArchive />} />
+                <Route path="/public-cms" element={<PublicCms />} />
                 <Route path="/thinking" element={<ThinkingWorkspace />} />
                 <Route path="/feature-requests" element={<FeatureRequests />} />
                 <Route path="/project" element={<Project />} />
