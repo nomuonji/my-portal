@@ -33,7 +33,7 @@ const migration: any = (migrationImport as any).default ?? migrationImport;
 const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...portalToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "1.13.0-netlify";
+const SERVER_VERSION = "1.14.0-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -328,6 +328,8 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "public_cms_status") return structured(await publicCmsStore.status());
   if (name === "public_site_list") return structured(await publicCmsStore.siteList(args));
   if (name === "public_site_upsert") return structured(await publicCmsStore.siteUpsert(args));
+  if (name === "public_site_deploy_status") return structured(await publicCmsStore.deployStatus(args));
+  if (name === "public_site_trigger_deploy") return structured(await publicCmsStore.siteDeployTrigger(args));
   if (name === "public_content_list") return structured(await publicCmsStore.contentList(args));
   if (name === "public_content_get") return structured(await publicCmsStore.contentGet(args));
   if (name === "public_content_create") return structured(await publicCmsStore.contentCreate(args));
