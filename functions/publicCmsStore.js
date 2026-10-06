@@ -61,13 +61,34 @@ function safeSeo(input = {}) {
     noindex: input.noindex === true,
   };
 }
-function safeDraft(input = {}) {
+function safeLocale(value, slug = '') {
+  const explicit = str(value, 10).toLowerCase();
+  if (['ja','en'].includes(explicit)) return explicit;
+  return String(slug || '').replace(/^\/+|\/+$/g, '').startsWith('en/') ? 'en' : 'ja';
+}
+function translationGroupId(value, slug = '') {
+  const explicit = str(value, 300);
+  if (explicit) return explicit;
+  const normalized = String(slug || '').replace(/^\/+|\/+$/g, '');
+  return normalized.replace(/^en\//, '') || normalized;
+}
+function safeRevision(value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+function safeDraft(input = {}, context = {}) {
+  const locale = safeLocale(input.locale, context.slug);
   return {
     title: required(input.title, 'title', 300),
     summary: str(input.summary, 3000),
     bodyMarkdown: str(input.bodyMarkdown, 100000),
     contentType: str(input.contentType, 80) || 'article',
     tags: strings(input.tags, 50, 120),
+    keyTakeaways: strings(input.keyTakeaways, 8, 500),
+    locale,
+    translationGroupId: translationGroupId(input.translationGroupId, context.slug),
+    originalLocale: safeLocale(input.originalLocale || locale, context.slug),
+    translatedFromRevision: safeRevision(input.translatedFromRevision),
     seo: safeSeo(input.seo || {}),
   };
 }
@@ -144,19 +165,14 @@ async function siteDeployTrigger(input = {}) {
 
 function publicProjection(record) {
   if (!record || record.status !== 'published' || !record.published) return null;
-  const p = record.published;
+  const p = safeDraft(record.published, { slug: record.slug });
   return {
     id: record.id,
     siteId: record.siteId,
     slug: record.slug,
     revision: Number(record.revision) || 0,
-    title: p.title || '',
-    summary: p.summary || '',
-    bodyMarkdown: p.bodyMarkdown || '',
-    contentType: p.contentType || 'article',
-    tags: Array.isArray(p.tags) ? p.tags : [],
-    seo: safeSeo(p.seo || {}),
-    publishedAt: record.publishedAt || p.publishedAt || null,
+    ...p,
+    publishedAt: record.publishedAt || record.published?.publishedAt || null,
     updatedAt: record.updatedAt || null,
   };
 }
@@ -216,7 +232,7 @@ async function contentCreate(input = {}) {
   const now = FieldValue.serverTimestamp();
   await ref.set({
     siteId, slug, status: 'draft', revision: 0,
-    draft: safeDraft(input.content || {}),
+    draft: safeDraft(input.content || {}, { slug }),
     published: null,
     sourceRefs: safeSources(input.sourceRefs),
     seoResearch: input.seoResearch && typeof input.seoResearch === 'object' ? input.seoResearch : {},
@@ -232,7 +248,7 @@ async function contentUpdate(input = {}) {
   if (!existing.exists) throw new Error('Public content not found');
   const current = obj(existing);
   const patch = { updatedAt: FieldValue.serverTimestamp() };
-  if (input.content) patch.draft = safeDraft({ ...(current.draft||{}), ...input.content, seo: { ...(current.draft?.seo||{}), ...(input.content.seo||{}) } });
+  if (input.content) patch.draft = safeDraft({ ...(current.draft||{}), ...input.content, seo: { ...(current.draft?.seo||{}), ...(input.content.seo||{}) } }, { slug: current.slug });
   if (input.sourceRefs) patch.sourceRefs = safeSources(input.sourceRefs);
   if (input.seoResearch && typeof input.seoResearch === 'object') patch.seoResearch = input.seoResearch;
   await ref.set(patch, { merge: true });
@@ -247,7 +263,7 @@ async function contentPublish(input = {}) {
   const current = obj(existing);
   const revision = (Number(current.revision) || 0) + 1;
   const publishedAt = new Date().toISOString();
-  const published = { ...safeDraft(current.draft || {}), publishedAt };
+  const published = { ...safeDraft(current.draft || {}, { slug: current.slug }), publishedAt };
   const batch = db().batch();
   batch.set(db().collection(COLLECTIONS.revisions).doc(id + '__r' + revision), {
     contentId: id, siteId: current.siteId, slug: current.slug, revision, published, createdAt: FieldValue.serverTimestamp(),
@@ -285,5 +301,5 @@ module.exports = {
   DATABASE_ID, COLLECTIONS, status, siteList, siteUpsert, contentList, contentGet,
   contentCreate, contentUpdate, contentPublish, contentArchive, publicGet, publicList,
   deployStatus, siteDeployTrigger,
-  _test: { normalizeSiteId, normalizeSlug, contentDocId, safeDraft, publicProjection, deployHookEnvName, isAllowedDeployHookUrl, triggerDeployHookUrl },
+  _test: { normalizeSiteId, normalizeSlug, contentDocId, safeDraft, safeLocale, translationGroupId, publicProjection, deployHookEnvName, isAllowedDeployHookUrl, triggerDeployHookUrl },
 };
