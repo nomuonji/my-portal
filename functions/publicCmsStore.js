@@ -92,6 +92,63 @@ function safeDraft(input = {}, context = {}) {
     seo: safeSeo(input.seo || {}),
   };
 }
+const PRIVACY_PATTERNS = Object.freeze([
+  { type: 'email', pattern: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi },
+  { type: 'phone', pattern: /(?:\+81[-\s]?(?:\d[-\s]?){9,10}|0(?:50|70|80|90)[-\s]?\d{4}[-\s]?\d{4}|0\d{1,4}-\d{1,4}-\d{4})/g },
+  { type: 'private_key', pattern: /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/g },
+  { type: 'jwt', pattern: /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g },
+  { type: 'github_token', pattern: /\bgh[pousr]_[A-Za-z0-9]{20,}\b/g },
+  { type: 'openai_style_token', pattern: /\bsk-[A-Za-z0-9_-]{20,}\b/g },
+  { type: 'aws_access_key', pattern: /\bAKIA[0-9A-Z]{16}\b/g },
+  { type: 'bearer_token', pattern: /\bBearer\s+[A-Za-z0-9._~+/=-]{16,}\b/gi },
+  { type: 'credential_assignment', pattern: /\b(?:api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|password|passwd)\s*[:=]\s*["']?[A-Za-z0-9_./+=-]{12,}/gi },
+  { type: 'credentialed_url', pattern: /https?:\/\/[^\s<>"']+[?&](?:access_token|auth|api[_-]?key|apikey|token|secret|password)=[^\s&#<>"']+/gi },
+]);
+
+function publicTextFields(content = {}) {
+  const seo = content.seo || {};
+  return {
+    title: content.title,
+    summary: content.summary,
+    bodyMarkdown: content.bodyMarkdown,
+    tags: Array.isArray(content.tags) ? content.tags.join('\n') : '',
+    keyTakeaways: Array.isArray(content.keyTakeaways) ? content.keyTakeaways.join('\n') : '',
+    translationGroupId: content.translationGroupId,
+    seoTitle: seo.title,
+    seoDescription: seo.description,
+    seoCanonicalPath: seo.canonicalPath,
+  };
+}
+
+function scanPublicContent(content = {}) {
+  const issues = [];
+  const fields = publicTextFields(content);
+  for (const [field, raw] of Object.entries(fields)) {
+    const value = String(raw || '');
+    if (!value) continue;
+    for (const rule of PRIVACY_PATTERNS) {
+      rule.pattern.lastIndex = 0;
+      if (rule.pattern.test(value)) issues.push({ field, type: rule.type });
+      rule.pattern.lastIndex = 0;
+    }
+  }
+  return {
+    ok: issues.length === 0,
+    issueCount: issues.length,
+    issues,
+    note: 'Deterministic scan only. Semantic privacy review is still required for names, addresses, affiliations, quasi-identifiers, and context-dependent secrets.',
+  };
+}
+
+function assertPrivacySafe(content = {}) {
+  const scan = scanPublicContent(content);
+  if (!scan.ok) {
+    const summary = scan.issues.slice(0, 12).map((issue) => issue.type + ' in ' + issue.field).join('; ');
+    throw new Error('Public CMS privacy gate blocked publish: ' + summary + '. Redact/generalize before publishing.');
+  }
+  return scan;
+}
+
 function safeSources(value) {
   return (Array.isArray(value) ? value : []).slice(0, 30).map((item) => ({
     type: str(item?.type, 80),
@@ -254,6 +311,16 @@ async function contentUpdate(input = {}) {
   await ref.set(patch, { merge: true });
   return { item: obj(await ref.get()) };
 }
+async function contentPrivacyScan(input = {}) {
+  const id = contentDocId(input.siteId, input.slug);
+  const ref = db().collection(COLLECTIONS.content).doc(id);
+  const existing = await ref.get();
+  if (!existing.exists) throw new Error('Public content not found');
+  const current = obj(existing);
+  const draft = safeDraft(current.draft || {}, { slug: current.slug });
+  return { siteId: current.siteId, slug: current.slug, revision: Number(current.revision) || 0, scan: scanPublicContent(draft) };
+}
+
 async function contentPublish(input = {}) {
   confirm(input, 'content_publish');
   const id = contentDocId(input.siteId, input.slug);
@@ -263,7 +330,9 @@ async function contentPublish(input = {}) {
   const current = obj(existing);
   const revision = (Number(current.revision) || 0) + 1;
   const publishedAt = new Date().toISOString();
-  const published = { ...safeDraft(current.draft || {}, { slug: current.slug }), publishedAt };
+  const candidate = safeDraft(current.draft || {}, { slug: current.slug });
+  const privacyScan = assertPrivacySafe(candidate);
+  const published = { ...candidate, publishedAt };
   const batch = db().batch();
   batch.set(db().collection(COLLECTIONS.revisions).doc(id + '__r' + revision), {
     contentId: id, siteId: current.siteId, slug: current.slug, revision, published, createdAt: FieldValue.serverTimestamp(),
@@ -271,7 +340,7 @@ async function contentPublish(input = {}) {
   batch.set(ref, { status: 'published', revision, published, publishedAt, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
   await batch.commit();
   const item = obj(await ref.get());
-  return { item, deploy: await triggerSiteDeploy({ siteId: current.siteId }) };
+  return { item, privacyScan, deploy: await triggerSiteDeploy({ siteId: current.siteId }) };
 }
 async function contentArchive(input = {}) {
   confirm(input, 'content_archive');
@@ -299,7 +368,7 @@ async function publicList(input = {}) {
 
 module.exports = {
   DATABASE_ID, COLLECTIONS, status, siteList, siteUpsert, contentList, contentGet,
-  contentCreate, contentUpdate, contentPublish, contentArchive, publicGet, publicList,
+  contentCreate, contentUpdate, contentPrivacyScan, contentPublish, contentArchive, publicGet, publicList,
   deployStatus, siteDeployTrigger,
-  _test: { normalizeSiteId, normalizeSlug, contentDocId, safeDraft, safeLocale, translationGroupId, publicProjection, deployHookEnvName, isAllowedDeployHookUrl, triggerDeployHookUrl },
+  _test: { normalizeSiteId, normalizeSlug, contentDocId, safeDraft, safeLocale, translationGroupId, publicProjection, scanPublicContent, assertPrivacySafe, deployHookEnvName, isAllowedDeployHookUrl, triggerDeployHookUrl },
 };
