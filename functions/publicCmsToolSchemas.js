@@ -6,7 +6,11 @@ const SEO = { type:'object', additionalProperties:false, properties:{
 }};
 const CONTENT = { type:'object', additionalProperties:false, properties:{
   title:{type:'string',minLength:1,maxLength:300}, summary:{type:'string',maxLength:3000}, bodyMarkdown:{type:'string',maxLength:100000},
-  contentType:{type:'string',maxLength:80}, tags:{type:'array',items:{type:'string',maxLength:120},maxItems:50}, seo:SEO
+  contentType:{type:'string',maxLength:80}, tags:{type:'array',items:{type:'string',maxLength:120},maxItems:50},
+  keyTakeaways:{type:'array',items:{type:'string',maxLength:500},maxItems:8},
+  locale:{type:'string',enum:['ja','en']}, translationGroupId:{type:'string',maxLength:300},
+  originalLocale:{type:'string',enum:['ja','en']}, translatedFromRevision:{type:'integer',minimum:1},
+  seo:SEO
 }};
 const SOURCE = { type:'object', additionalProperties:false, properties:{ type:{type:'string',maxLength:80}, id:{type:'string',maxLength:200}, spaceId:{type:'string',maxLength:200}, note:{type:'string',maxLength:1000} } };
 const siteId = {type:'string',minLength:1,maxLength:120};
