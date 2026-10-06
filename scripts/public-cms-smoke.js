@@ -10,7 +10,7 @@ const { _test }=require('../functions/publicCmsStore');
    id:'site_1__hello',siteId:'site_1',slug:'hello',status:'published',revision:2,
    sourceRefs:[{type:'space',id:'private-id'}],seoResearch:{secret:'internal'},
    draft:{title:'new draft'},
-   published:{title:'Live',summary:'',bodyMarkdown:'# Live',contentType:'article',tags:['x'],keyTakeaways:['A','B'],locale:'en',translationGroupId:'hello',originalLocale:'ja',translatedFromRevision:1,seo:{primaryKeyword:'live keyword'},publishedAt:'2026-10-07T00:00:00Z'},
+   published:{title:'Live',summary:'',bodyMarkdown:'# Live',contentType:'article',tags:['x'],keyTakeaways:['A','B'],blocks:[{type:'summary',placement:'before-body',title:'Now',text:'Current state',items:['A']},{type:'dataset',title:'Data',view:'table',columns:[{key:'name',label:'Name',type:'text',primary:true},{key:'status',label:'Status',type:'status'}],records:[{name:'Alpha',status:'active'}]}],locale:'en',translationGroupId:'hello',originalLocale:'ja',translatedFromRevision:1,seo:{primaryKeyword:'live keyword'},publishedAt:'2026-10-07T00:00:00Z'},
    publishedAt:'2026-10-07T00:00:00Z',updatedAt:'2026-10-07T00:00:00Z'
   });
   assert.equal(projected.title,'Live');
@@ -19,6 +19,9 @@ const { _test }=require('../functions/publicCmsStore');
   assert.equal('seoResearch' in projected,false);
   assert.equal('draft' in projected,false);
   assert.deepEqual(projected.keyTakeaways,['A','B']);
+  assert.equal(projected.blocks.length,2);
+  assert.equal(projected.blocks[0].type,'summary');
+  assert.equal(projected.blocks[1].records[0].name,'Alpha');
   assert.equal(projected.locale,'en');
   assert.equal(projected.translationGroupId,'hello');
   assert.equal(projected.originalLocale,'ja');
@@ -53,11 +56,14 @@ const { _test }=require('../functions/publicCmsStore');
   assert.equal(deploy.buildUuid,'build-123');
   assert.equal('hookUrl' in deploy,false);
 
-  const safeScan=_test.scanPublicContent({title:'Safe note',summary:'No identifiers',bodyMarkdown:'Public-safe body',tags:['topic'],keyTakeaways:['safe'],seo:{title:'Safe',description:'Safe',canonicalPath:'/safe/'}});
+  const safeBlocks=_test.safeBlocks([{type:'dataset',title:'Tools',view:'tracker',columns:[{key:'name',label:'Name',primary:true},{key:'status',label:'Status',type:'status'}],records:[{name:'One',status:'active',ignored:'drop me'}]}]);
+  assert.equal(safeBlocks[0].view,'tracker');
+  assert.equal(safeBlocks[0].records[0].ignored,undefined);
+  const safeScan=_test.scanPublicContent({title:'Safe note',summary:'No identifiers',bodyMarkdown:'Public-safe body',tags:['topic'],keyTakeaways:['safe'],blocks:safeBlocks,seo:{title:'Safe',description:'Safe',canonicalPath:'/safe/'}});
   assert.equal(safeScan.ok,true);
-  const unsafeScan=_test.scanPublicContent({title:'Contact me',summary:'user@example.com',bodyMarkdown:'password=abcdefghijklmnop',tags:[],keyTakeaways:[],seo:{}});
+  const unsafeScan=_test.scanPublicContent({title:'Contact me',summary:'user@example.com',bodyMarkdown:'password=abcdefghijklmnop',tags:[],keyTakeaways:[],blocks:[{type:'summary',text:'token=abcdefghijklmnop'}],seo:{}});
   assert.equal(unsafeScan.ok,false);
-  assert.deepEqual(unsafeScan.issues.map(x=>x.type).sort(),['credential_assignment','email']);
+  assert.deepEqual(unsafeScan.issues.map(x=>x.type).sort(),['credential_assignment','credential_assignment','email']);
   assert.equal(JSON.stringify(unsafeScan).includes('user@example.com'),false);
   assert.throws(()=>_test.assertPrivacySafe({title:'Leak',summary:'',bodyMarkdown:'Bearer abcdefghijklmnopqrstu',tags:[],keyTakeaways:[],seo:{}}),/privacy gate blocked publish/i);
 
