@@ -20,7 +20,7 @@
 - `intelligence_raw_document_get`
 - `intelligence_sync_murakami_radio`
 
-`intelligence_sync_murakami_radio` は公式一覧を毎回読み、旧 `index_YYYYMMDD.html` と新 `/report/<id>` の両形式を発見する。取得は1回最大12ページに制限し、複数回に分けて全件同期する。
+`intelligence_sync_murakami_radio` は公式一覧を毎回読み、旧 `index_YYYYMMDD.html` と新 `/report/<id>` の両形式を発見する。取得は1回最大6ページに制限し、複数回に分けて全件同期する。
 
 ### Copyright / use boundary
 
