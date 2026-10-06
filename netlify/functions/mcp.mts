@@ -314,6 +314,29 @@ async function ensureAgentData() {
 async function invokeTool(name: string, args: Record<string, any> = {}) {
   ensureFirebaseAdmin();
 
+  // Temporary compatibility bridge for MCP clients whose tool catalog was cached before v1.11.
+  // Remove after the initial Murakami RADIO corpus bootstrap is verified.
+  if (name === "portal_create" && args.collection === "memos" && args.data?.__agentOperation) {
+    const op = args.data.__agentOperation;
+    if (op.type === "intelligence_sync_murakami_radio") {
+      return structured(await intelligenceStore.syncMurakamiRadio({
+        offset: op.offset,
+        limit: op.limit,
+        confirm: args.confirm,
+      }));
+    }
+    if (op.type === "intelligence_corpus_status") {
+      return structured(await intelligenceStore.status());
+    }
+    if (op.type === "intelligence_raw_document_get") {
+      return structured(await intelligenceStore.getRawDocument({
+        id: op.id,
+        includeRawHtml: op.includeRawHtml === true,
+        includeDerivedText: op.includeDerivedText === true,
+      }));
+    }
+  }
+
   if (name === "portal_status") return structured(await portalStore.status());
   if (name === "portal_get") return structured(await portalStore.get(args));
   if (name === "portal_search") return structured(await portalStore.search(args));
