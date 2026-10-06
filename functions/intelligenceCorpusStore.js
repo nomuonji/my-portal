@@ -10,6 +10,7 @@ const MURAKAMI_RADIO_INDEX_URL = 'https://www.tfm.co.jp/murakamiradio/';
 const DATASET = 'murakami_radio';
 const MAX_RAW_BYTES = 850000;
 const MAX_SYNC_LIMIT = 6;
+const DERIVED_TEXT_VERSION = 1;
 
 function db() {
   return getDocumentDb(DATABASE_ID);
@@ -172,7 +173,7 @@ async function upsertRawDocument(meta, fetched) {
   const existingSnap = await ref.get();
   const existing = existingSnap.exists ? existingSnap.data() : null;
   const rawSha256 = sha256(fetched.html);
-  const unchanged = existing && existing.rawSha256 === rawSha256;
+  const unchanged = existing && existing.rawSha256 === rawSha256 && Number(existing.derivedTextVersion || 0) === DERIVED_TEXT_VERSION;
   const now = FieldValue.serverTimestamp();
 
   const base = {
@@ -188,6 +189,7 @@ async function upsertRawDocument(meta, fetched) {
     title: meta.title || pageTitle(fetched.html) || existing?.title || null,
     discoveryOrder: meta.discoveryOrder ?? null,
     rawCanonicalField: 'rawHtml',
+    derivedTextVersion: DERIVED_TEXT_VERSION,
     rawSha256,
     rawBytes: fetched.bytes,
     contentType: fetched.contentType,
@@ -220,7 +222,7 @@ async function storeIndexDocument(fetched, discoveredCount) {
   const existing = existingSnap.exists ? existingSnap.data() : null;
   const rawSha256 = sha256(fetched.html);
   const now = FieldValue.serverTimestamp();
-  const unchanged = existing && existing.rawSha256 === rawSha256;
+  const unchanged = existing && existing.rawSha256 === rawSha256 && Number(existing.derivedTextVersion || 0) === DERIVED_TEXT_VERSION;
   const base = {
     schemaVersion: 1,
     dataset: DATASET,
@@ -231,6 +233,7 @@ async function storeIndexDocument(fetched, discoveredCount) {
     contentKind: 'index',
     discoveredEpisodeCount: discoveredCount,
     rawCanonicalField: 'rawHtml',
+    derivedTextVersion: DERIVED_TEXT_VERSION,
     rawSha256,
     rawBytes: fetched.bytes,
     contentType: fetched.contentType,
