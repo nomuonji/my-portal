@@ -53,11 +53,19 @@ const { _test }=require('../functions/publicCmsStore');
   assert.equal(deploy.buildUuid,'build-123');
   assert.equal('hookUrl' in deploy,false);
 
+  const safeScan=_test.scanPublicContent({title:'Safe note',summary:'No identifiers',bodyMarkdown:'Public-safe body',tags:['topic'],keyTakeaways:['safe'],seo:{title:'Safe',description:'Safe',canonicalPath:'/safe/'}});
+  assert.equal(safeScan.ok,true);
+  const unsafeScan=_test.scanPublicContent({title:'Contact me',summary:'user@example.com',bodyMarkdown:'password=abcdefghijklmnop',tags:[],keyTakeaways:[],seo:{}});
+  assert.equal(unsafeScan.ok,false);
+  assert.deepEqual(unsafeScan.issues.map(x=>x.type).sort(),['credential_assignment','email']);
+  assert.equal(JSON.stringify(unsafeScan).includes('user@example.com'),false);
+  assert.throws(()=>_test.assertPrivacySafe({title:'Leak',summary:'',bodyMarkdown:'Bearer abcdefghijklmnopqrstu',tags:[],keyTakeaways:[],seo:{}}),/privacy gate blocked publish/i);
+
   const rejected=await _test.triggerDeployHookUrl('https://example.com/hook', async()=>{ throw new Error('must not run'); });
   assert.equal(rejected.triggered,false);
   assert.equal(rejected.reason,'invalid_hook_url');
 
-  console.log('[OK] Public CMS projection is private-safe and Cloudflare deploy hooks are secret-safe.');
+  console.log('[OK] Public CMS projection, privacy gate, and Cloudflare deploy hooks are secret-safe.');
 })().catch((error) => {
   console.error(error);
   process.exit(1);
