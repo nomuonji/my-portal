@@ -8,7 +8,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   Link as MuiLink,
   LinearProgress,
   Paper,
