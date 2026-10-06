@@ -5,7 +5,7 @@ import{db}from'../firebase';
 
 const empty={title:'',slug:'',summary:'',bodyMarkdown:'',contentType:'article',tags:'',primaryKeyword:'',secondaryKeywords:'',searchIntent:'',seoTitle:'',seoDescription:'',canonicalPath:'',sourceNote:''};
 const normSite=v=>String(v||'').trim().toLowerCase().replace(/[^a-z0-9_-]/g,'-').replace(/^-+|-+$/g,'');
-const normSlug=v=>String(v||'').trim().toLowerCase().replace(/^\\/+|\\/+$/g,'').split('/').map(x=>x.replace(/[^a-z0-9-]/g,'-').replace(/^-+|-+$/g,'')).filter(Boolean).join('/');
+const normSlug=v=>String(v||'').trim().toLowerCase().split('/').filter(Boolean).map(x=>x.replace(/[^a-z0-9-]/g,'-').replace(/^-+|-+$/g,'')).filter(Boolean).join('/');
 const contentId=(site,slug)=>site+'__'+slug.replaceAll('/','~');
 const arr=v=>String(v||'').split(',').map(x=>x.trim()).filter(Boolean);
 const formFrom=item=>item?{title:item.draft?.title||'',slug:item.slug||'',summary:item.draft?.summary||'',bodyMarkdown:item.draft?.bodyMarkdown||'',contentType:item.draft?.contentType||'article',tags:(item.draft?.tags||[]).join(', '),primaryKeyword:item.draft?.seo?.primaryKeyword||'',secondaryKeywords:(item.draft?.seo?.secondaryKeywords||[]).join(', '),searchIntent:item.draft?.seo?.searchIntent||'',seoTitle:item.draft?.seo?.title||'',seoDescription:item.draft?.seo?.description||'',canonicalPath:item.draft?.seo?.canonicalPath||'',sourceNote:item.sourceRefs?.[0]?.note||''}:empty;
