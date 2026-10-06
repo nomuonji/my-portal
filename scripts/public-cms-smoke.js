@@ -10,7 +10,7 @@ const { _test }=require('../functions/publicCmsStore');
    id:'site_1__hello',siteId:'site_1',slug:'hello',status:'published',revision:2,
    sourceRefs:[{type:'space',id:'private-id'}],seoResearch:{secret:'internal'},
    draft:{title:'new draft'},
-   published:{title:'Live',summary:'',bodyMarkdown:'# Live',contentType:'article',tags:['x'],seo:{primaryKeyword:'live keyword'},publishedAt:'2026-10-07T00:00:00Z'},
+   published:{title:'Live',summary:'',bodyMarkdown:'# Live',contentType:'article',tags:['x'],keyTakeaways:['A','B'],locale:'en',translationGroupId:'hello',originalLocale:'ja',translatedFromRevision:1,seo:{primaryKeyword:'live keyword'},publishedAt:'2026-10-07T00:00:00Z'},
    publishedAt:'2026-10-07T00:00:00Z',updatedAt:'2026-10-07T00:00:00Z'
   });
   assert.equal(projected.title,'Live');
@@ -18,6 +18,14 @@ const { _test }=require('../functions/publicCmsStore');
   assert.equal('sourceRefs' in projected,false);
   assert.equal('seoResearch' in projected,false);
   assert.equal('draft' in projected,false);
+  assert.deepEqual(projected.keyTakeaways,['A','B']);
+  assert.equal(projected.locale,'en');
+  assert.equal(projected.translationGroupId,'hello');
+  assert.equal(projected.originalLocale,'ja');
+  assert.equal(projected.translatedFromRevision,1);
+  const legacy=_test.publicProjection({id:'site_1__en~legacy',siteId:'site_1',slug:'en/legacy',status:'published',revision:1,published:{title:'Legacy',summary:'',bodyMarkdown:'',contentType:'article',tags:[],seo:{}},publishedAt:'2026-10-07T00:00:00Z'});
+  assert.equal(legacy.locale,'en');
+  assert.equal(legacy.translationGroupId,'legacy');
   assert.equal(_test.publicProjection({...projected,status:'draft',published:null}),null);
 
   assert.equal(
