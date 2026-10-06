@@ -4,10 +4,34 @@ const SEO = { type:'object', additionalProperties:false, properties:{
   searchIntent:{type:'string',maxLength:120}, title:{type:'string',maxLength:300}, description:{type:'string',maxLength:500},
   canonicalPath:{type:'string',maxLength:500}, noindex:{type:'boolean'}
 }};
+const BLOCK_BASE = {
+  id:{type:'string',maxLength:120},
+  placement:{type:'string',enum:['before-body','after-body']},
+  title:{type:'string',maxLength:300}
+};
+const DATASET_COLUMN = {type:'object',additionalProperties:false,properties:{
+  key:{type:'string',maxLength:80},label:{type:'string',maxLength:120},
+  type:{type:'string',enum:['text','status','date','url','number','boolean']},primary:{type:'boolean'}
+},required:['key']};
+const BLOCK = {type:'object',additionalProperties:true,properties:{
+  ...BLOCK_BASE,
+  type:{type:'string',enum:['markdown','dataset','timeline','summary','diagram']},
+  markdown:{type:'string',maxLength:50000},
+  text:{type:'string',maxLength:5000},
+  items:{type:'array',maxItems:200},
+  status:{type:'string',maxLength:120},
+  mermaid:{type:'string',maxLength:30000},
+  description:{type:'string',maxLength:3000},
+  view:{type:'string',enum:['table','cards','matrix','tracker']},
+  columns:{type:'array',items:DATASET_COLUMN,maxItems:20},
+  records:{type:'array',items:{type:'object',additionalProperties:true},maxItems:500},
+  sort:{type:'object',additionalProperties:false,properties:{key:{type:'string',maxLength:80},direction:{type:'string',enum:['asc','desc']}}}
+},required:['type']};
 const CONTENT = { type:'object', additionalProperties:false, properties:{
   title:{type:'string',minLength:1,maxLength:300}, summary:{type:'string',maxLength:3000}, bodyMarkdown:{type:'string',maxLength:100000},
   contentType:{type:'string',maxLength:80}, tags:{type:'array',items:{type:'string',maxLength:120},maxItems:50},
   keyTakeaways:{type:'array',items:{type:'string',maxLength:500},maxItems:8},
+  blocks:{type:'array',items:BLOCK,maxItems:40},
   locale:{type:'string',enum:['ja','en']}, translationGroupId:{type:'string',maxLength:300},
   originalLocale:{type:'string',enum:['ja','en']}, translatedFromRevision:{type:'integer',minimum:1},
   seo:SEO
