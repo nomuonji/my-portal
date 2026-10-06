@@ -6,7 +6,9 @@ import * as portalStoreImport from "../../functions/portalStore.js";
 import * as agentToolsImport from "../../functions/agentIdeasToolSchemas.js";
 import * as portalToolsImport from "../../functions/portalMcpTools.js";
 import * as socialStoreImport from "../../functions/socialArchiveStore.js";
-import * as socialToolsImport from "../../functions/socialArchiveToolSchemas.js";\nimport * as intelligenceStoreImport from "../../functions/intelligenceCorpusStore.js";\nimport * as intelligenceToolsImport from "../../functions/intelligenceCorpusToolSchemas.js";
+import * as socialToolsImport from "../../functions/socialArchiveToolSchemas.js";
+import * as intelligenceStoreImport from "../../functions/intelligenceCorpusStore.js";
+import * as intelligenceToolsImport from "../../functions/intelligenceCorpusToolSchemas.js";
 import * as contextStoreImport from "../../functions/contextStore.js";
 import * as contextToolsImport from "../../functions/contextStoreToolSchemas.js";
 import * as linearBridgeImport from "../../functions/linearMcpBridge.js";
@@ -17,7 +19,9 @@ const portalStore: any = (portalStoreImport as any).default ?? portalStoreImport
 const agentToolsModule: any = (agentToolsImport as any).default ?? agentToolsImport;
 const portalToolsModule: any = (portalToolsImport as any).default ?? portalToolsImport;
 const socialStore: any = (socialStoreImport as any).default ?? socialStoreImport;
-const socialToolsModule: any = (socialToolsImport as any).default ?? socialToolsImport;\nconst intelligenceStore: any = (intelligenceStoreImport as any).default ?? intelligenceStoreImport;\nconst intelligenceToolsModule: any = (intelligenceToolsImport as any).default ?? intelligenceToolsImport;
+const socialToolsModule: any = (socialToolsImport as any).default ?? socialToolsImport;
+const intelligenceStore: any = (intelligenceStoreImport as any).default ?? intelligenceStoreImport;
+const intelligenceToolsModule: any = (intelligenceToolsImport as any).default ?? intelligenceToolsImport;
 const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
 const contextToolsModule: any = (contextToolsImport as any).default ?? contextToolsImport;
 const linearBridge: any = (linearBridgeImport as any).default ?? linearBridgeImport;
@@ -343,7 +347,8 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
         agentToolCount: agentToolsModule.TOOLS.length,
         contextToolCount: contextToolsModule.TOOLS.length,
         portalToolCount: portalToolsModule.TOOLS.length,
-        socialToolCount: socialToolsModule.TOOLS.length,\n        intelligenceToolCount: intelligenceToolsModule.TOOLS.length,
+        socialToolCount: socialToolsModule.TOOLS.length,
+        intelligenceToolCount: intelligenceToolsModule.TOOLS.length,
         database: await agentStore.healthCheck(),
         contextStore: await contextStore.healthCheck(),
         linear: linearBridge.configSummary(),
