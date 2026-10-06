@@ -50,7 +50,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         offset: { type: 'integer', minimum: 0, maximum: 10000, default: 0 },
-        limit: { type: 'integer', minimum: 1, maximum: 12, default: 6 },
+        limit: { type: 'integer', minimum: 1, maximum: 6, default: 6 },
         confirm: confirmSchema,
       },
       required: ['confirm'],
