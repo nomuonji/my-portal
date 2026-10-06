@@ -9,7 +9,7 @@ const COLLECTIONS = Object.freeze({
 const MURAKAMI_RADIO_INDEX_URL = 'https://www.tfm.co.jp/murakamiradio/';
 const DATASET = 'murakami_radio';
 const MAX_RAW_BYTES = 850000;
-const MAX_SYNC_LIMIT = 12;
+const MAX_SYNC_LIMIT = 6;
 
 function db() {
   return getDocumentDb(DATABASE_ID);
