@@ -10,6 +10,7 @@ const MURAKAMI_RADIO_INDEX_URL = 'https://www.tfm.co.jp/murakamiradio/';
 const DATASET = 'murakami_radio';
 const MAX_RAW_BYTES = 850000;
 const MAX_SYNC_LIMIT = 6;
+const DERIVED_TEXT_VERSION = 1;
 
 function db() {
   return getDocumentDb(DATABASE_ID);
@@ -51,7 +52,10 @@ function stripTags(value) {
 }
 
 function extractDerivedText(html) {
-  return decodeEntities(String(html || '')
+  const raw = String(html || '');
+  const primaryMatch = raw.match(/<section\b[^>]*class=["'][^"']*\bbnArea\b[^"']*["'][^>]*>([\s\S]*?)<\/section>/i);
+  const source = primaryMatch ? primaryMatch[1] : raw;
+  return decodeEntities(source
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
     .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
@@ -71,6 +75,7 @@ function canonicalMurakamiUrl(value, baseUrl = MURAKAMI_RADIO_INDEX_URL) {
   const path = url.pathname.replace(/\/+$/, '');
   if (/^\/murakamiradio\/report\/\d+$/.test(path)) return `https://www.tfm.co.jp${path}`;
   if (/^\/murakamiradio\/index_\d{8}\.html$/.test(path)) return `https://www.tfm.co.jp${path}`;
+  if (path === '/murakamiradio/toshikoshisp2020') return 'https://www.tfm.co.jp/murakamiradio/toshikoshisp2020/';
   return null;
 }
 
@@ -80,6 +85,7 @@ function sourceDocId(url) {
   if (report) return `murakami_radio_report_${report[1]}`;
   const legacy = parsed.pathname.match(/index_(\d{8})\.html/);
   if (legacy) return `murakami_radio_${legacy[1]}`;
+  if (parsed.pathname.replace(/\/+$/, '') === '/murakamiradio/toshikoshisp2020') return 'murakami_radio_toshikoshisp2020';
   return `murakami_radio_${sha256(url).slice(0, 24)}`;
 }
 
@@ -101,7 +107,10 @@ function discoverMurakamiRadioLinks(html, indexUrl = MURAKAMI_RADIO_INDEX_URL) {
     const before = String(html || '').slice(Math.max(0, match.index - 700), match.index);
     const contextText = stripTags(before);
     const episodeMatch = lastMatch(contextText, /第\s*(\d+)\s*回/g);
-    const dateMatch = lastMatch(contextText, /(20\d{2})[.年\/-]\s*(\d{1,2})[.月\/-]\s*(\d{1,2})/g);
+    const episodeContext = episodeMatch && Number.isInteger(episodeMatch.index)
+      ? contextText.slice(episodeMatch.index + episodeMatch[0].length)
+      : contextText;
+    const dateMatch = episodeContext.match(/(20\d{2})[.年\/-]\s*(\d{1,2})[.月\/-]\s*(\d{1,2})/);
     const title = stripTags(match[3]);
     found.push({
       url,
@@ -167,7 +176,7 @@ async function upsertRawDocument(meta, fetched) {
   const existingSnap = await ref.get();
   const existing = existingSnap.exists ? existingSnap.data() : null;
   const rawSha256 = sha256(fetched.html);
-  const unchanged = existing && existing.rawSha256 === rawSha256;
+  const unchanged = existing && existing.rawSha256 === rawSha256 && Number(existing.derivedTextVersion || 0) === DERIVED_TEXT_VERSION;
   const now = FieldValue.serverTimestamp();
 
   const base = {
@@ -183,6 +192,7 @@ async function upsertRawDocument(meta, fetched) {
     title: meta.title || pageTitle(fetched.html) || existing?.title || null,
     discoveryOrder: meta.discoveryOrder ?? null,
     rawCanonicalField: 'rawHtml',
+    derivedTextVersion: DERIVED_TEXT_VERSION,
     rawSha256,
     rawBytes: fetched.bytes,
     contentType: fetched.contentType,
@@ -215,7 +225,7 @@ async function storeIndexDocument(fetched, discoveredCount) {
   const existing = existingSnap.exists ? existingSnap.data() : null;
   const rawSha256 = sha256(fetched.html);
   const now = FieldValue.serverTimestamp();
-  const unchanged = existing && existing.rawSha256 === rawSha256;
+  const unchanged = existing && existing.rawSha256 === rawSha256 && Number(existing.derivedTextVersion || 0) === DERIVED_TEXT_VERSION;
   const base = {
     schemaVersion: 1,
     dataset: DATASET,
@@ -226,6 +236,7 @@ async function storeIndexDocument(fetched, discoveredCount) {
     contentKind: 'index',
     discoveredEpisodeCount: discoveredCount,
     rawCanonicalField: 'rawHtml',
+    derivedTextVersion: DERIVED_TEXT_VERSION,
     rawSha256,
     rawBytes: fetched.bytes,
     contentType: fetched.contentType,
