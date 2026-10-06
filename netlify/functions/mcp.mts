@@ -29,7 +29,7 @@ const migration: any = (migrationImport as any).default ?? migrationImport;
 const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...portalToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "1.11.0-netlify";
+const SERVER_VERSION = "1.12.0-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -314,36 +314,6 @@ async function ensureAgentData() {
 async function invokeTool(name: string, args: Record<string, any> = {}) {
   ensureFirebaseAdmin();
 
-  // Temporary compatibility bridge for MCP clients whose tool catalog was cached before v1.11.
-  // Remove after the initial Murakami RADIO corpus bootstrap is verified.
-  if (name === "portal_create" && args.collection === "memos" && args.data?.__agentOperation) {
-    const op = args.data.__agentOperation;
-    if (op.type === "intelligence_sync_murakami_radio") {
-      return structured(await intelligenceStore.syncMurakamiRadio({
-        offset: op.offset,
-        limit: op.limit,
-        confirm: args.confirm,
-      }));
-    }
-    if (op.type === "intelligence_corpus_status") {
-      return structured(await intelligenceStore.status());
-    }
-    if (op.type === "intelligence_raw_document_get") {
-      return structured(await intelligenceStore.getRawDocument({
-        id: op.id,
-        includeRawHtml: op.includeRawHtml === true,
-        includeDerivedText: op.includeDerivedText === true,
-      }));
-    }
-    if (op.type === "intelligence_refresh_murakami_derived") {
-      return structured(await intelligenceStore.refreshDerivedDocuments({
-        offset: op.offset,
-        limit: op.limit,
-        confirm: args.confirm,
-      }));
-    }
-  }
-
   if (name === "portal_status") return structured(await portalStore.status());
   if (name === "portal_get") return structured(await portalStore.get(args));
   if (name === "portal_search") return structured(await portalStore.search(args));
@@ -362,6 +332,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "intelligence_raw_document_get") return structured(await intelligenceStore.getRawDocument(args));
   if (name === "intelligence_raw_documents_search") return structured(await intelligenceStore.searchRawDocuments(args));
   if (name === "intelligence_sync_murakami_radio") return structured(await intelligenceStore.syncMurakamiRadio(args));
+  if (name === "intelligence_refresh_murakami_derived") return structured(await intelligenceStore.refreshDerivedDocuments(args));
 
   await ensureAgentData();
   switch (name) {

@@ -19,9 +19,13 @@
 - `intelligence_raw_documents_search`
 - `intelligence_raw_document_get`
 - `intelligence_sync_murakami_radio`
+- `intelligence_refresh_murakami_derived`
 
 `intelligence_sync_murakami_radio` は公式一覧を毎回読み、旧 `index_YYYYMMDD.html`、新 `/report/<id>`、および第20回の特設 `/toshikoshisp2020/` を発見する。取得は1回最大6ページに制限し、複数回に分けて全件同期する。
 
 ### Copyright / use boundary
 
 保存したraw corpusは私的な分析・参照用。公開再配布や、原文の長文コピーを生成物として出すためのデータセットにはしない。Methodでは文体・構文・思考操作を分析しつつ、参照元へ遡れるようrawを保持する。
+
+
+`intelligence_refresh_murakami_derived` は保存済み `rawHtml` から派生テキストだけを再構築する。外部サイトへ再アクセスせず、`rawHtml` と `rawSha256` を変更しない。

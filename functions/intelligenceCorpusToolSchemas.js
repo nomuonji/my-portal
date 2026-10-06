@@ -58,6 +58,21 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   },
+  {
+    name: 'intelligence_refresh_murakami_derived',
+    description: '保存済みrawHtmlを再取得せずに解析し直し、村上RADIO全エピソードのderivedTextを更新します。rawHtmlとrawSha256は変更しません。派生抽出ロジック更新後の保守用です。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        offset: { type: 'integer', minimum: 0, maximum: 10000, default: 0 },
+        limit: { type: 'integer', minimum: 1, maximum: 50, default: 25 },
+        confirm: confirmSchema,
+      },
+      required: ['confirm'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
 ];
 
 module.exports = { TOOLS };
