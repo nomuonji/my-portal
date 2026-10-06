@@ -324,6 +324,11 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "social_post_update_metadata") return structured(await socialStore.updateMetadata(args));
   if (name === "social_posts_update_metadata") return structured(await socialStore.bulkUpdateMetadata(args));
 
+  if (name === "intelligence_corpus_status") return structured(await intelligenceStore.status());
+  if (name === "intelligence_raw_document_get") return structured(await intelligenceStore.getRawDocument(args));
+  if (name === "intelligence_raw_documents_search") return structured(await intelligenceStore.searchRawDocuments(args));
+  if (name === "intelligence_sync_murakami_radio") return structured(await intelligenceStore.syncMurakamiRadio(args));
+
   await ensureAgentData();
   switch (name) {
     case "agent_ideas_status": {
