@@ -1,4 +1,4 @@
-import React,{useEffect,useState}from'react';
+import React,{useCallback,useEffect,useState}from'react';
 import{Box,Button,Chip,Dialog,DialogActions,DialogContent,DialogTitle,Divider,FormControl,InputLabel,MenuItem,Select,Stack,TextField,Typography}from'@mui/material';
 import{collection,doc,getDocs,setDoc,writeBatch,serverTimestamp,where,query}from'../documentDbClient';
 import{db}from'../firebase';
@@ -13,10 +13,10 @@ const draftFrom=f=>({title:f.title.trim(),summary:f.summary.trim(),bodyMarkdown:
 
 export default function PublicCms(){
  const[sites,setSites]=useState([]),[siteId,setSiteId]=useState(''),[items,setItems]=useState([]),[editing,setEditing]=useState(null),[form,setForm]=useState(empty),[open,setOpen]=useState(false),[siteOpen,setSiteOpen]=useState(false),[siteForm,setSiteForm]=useState({id:'',name:'',baseUrl:'',frontendRepo:'',locale:'ja-JP'}),[busy,setBusy]=useState(false),[error,setError]=useState('');
- const loadSites=async()=>{const s=await getDocs(collection(db,'public_sites'));const next=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.name||a.id).localeCompare(b.name||b.id));setSites(next);if(!siteId&&next[0])setSiteId(next[0].id)};
- const loadItems=async()=>{if(!siteId){setItems([]);return}const s=await getDocs(query(collection(db,'public_content'),where('siteId','==',siteId)));setItems(s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(b.updatedAt||'').localeCompare(String(a.updatedAt||''))))};
- useEffect(()=>{loadSites().catch(e=>setError(e.message))},[]);
- useEffect(()=>{loadItems().catch(e=>setError(e.message))},[siteId]);
+ const loadSites=useCallback(async()=>{const s=await getDocs(collection(db,'public_sites'));const next=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.name||a.id).localeCompare(b.name||b.id));setSites(next);if(!siteId&&next[0])setSiteId(next[0].id)},[siteId]);
+ const loadItems=useCallback(async()=>{if(!siteId){setItems([]);return}const s=await getDocs(query(collection(db,'public_content'),where('siteId','==',siteId)));setItems(s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(b.updatedAt||'').localeCompare(String(a.updatedAt||''))))},[siteId]);
+ useEffect(()=>{loadSites().catch(e=>setError(e.message))},[loadSites]);
+ useEffect(()=>{loadItems().catch(e=>setError(e.message))},[loadItems]);
  const run=async fn=>{setBusy(true);setError('');try{await fn()}catch(e){setError(e.message||String(e))}finally{setBusy(false)}};
  const saveSite=()=>run(async()=>{const id=normSite(siteForm.id);if(!id||!siteForm.name.trim())throw new Error('site id と name は必須です');await setDoc(doc(db,'public_sites',id),{name:siteForm.name.trim(),baseUrl:siteForm.baseUrl.trim(),frontendRepo:siteForm.frontendRepo.trim(),locale:siteForm.locale.trim()||'ja-JP',status:'active',updatedAt:serverTimestamp()},{merge:true});setSiteOpen(false);setSiteId(id);await loadSites()});
  const startNew=()=>{setEditing(null);setForm(empty);setOpen(true)};
