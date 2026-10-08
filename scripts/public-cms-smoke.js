@@ -9,6 +9,18 @@ const { _test }=require('../functions/publicCmsStore');
   const sampleDraft=_test.safeDraft({title:'Reader test',bodyMarkdown:'This is a concrete explanation.'},{slug:'hello'});
   const fingerprint=_test.draftFingerprint(sampleDraft);
   assert.match(fingerprint,/^[a-f0-9]{64}$/);
+  const session={id:'session-1',siteId:'site_1',slug:'hello',
+    methodId:_test.EDITORIAL_METHOD_ID,methodVersionId:'active-method-v5',
+    preparedAt:new Date().toISOString(),status:'begun'};
+  assert.equal(_test.validateEditingSession(session,'site_1','hello','active-method-v5'),true);
+  assert.equal(_test.validateEditingSession({...session,status:'prepared'},'site_1','hello','active-method-v5'),true);
+  assert.throws(()=>_test.validateEditingSession(null,'site_1','hello','active-method-v5'),/session missing/);
+  assert.throws(()=>_test.validateEditingSession({...session,status:'approved'},'site_1','hello','active-method-v5'),/session missing/);
+  assert.throws(()=>_test.validateEditingSession(session,'another_site','hello','active-method-v5'),/does not match/);
+  assert.throws(()=>_test.validateEditingSession(session,'site_1','different','active-method-v5'),/does not match/);
+  assert.throws(()=>_test.validateEditingSession(session,'site_1','hello','new-active-version'),/does not match/);
+  assert.throws(()=>_test.validateEditingSession(session,'site_1','hello','active-method-v5',Date.now()+2*86400000),/expired/);
+
   assert.notEqual(fingerprint,_test.draftFingerprint({...sampleDraft,bodyMarkdown:'New text'}));
   const checks=Object.fromEntries(_test.EDITORIAL_CHECKS.map(name=>[name,true]));
   const approvedAt=new Date().toISOString();
