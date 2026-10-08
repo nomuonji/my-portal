@@ -2915,6 +2915,10 @@ async function managerRunClaim(input, actor = {}) {
     if (!snapshot.exists) throw new Error('Manager run not found: ' + id);
     const current = snapshot.data();
     if (!['ready', 'running'].includes(current.status)) throw new Error('Manager run is not claimable: ' + current.status);
+    if (current.organizationId) {
+      const owner = await tx.get(db().collection(COLLECTIONS.organizations).doc(current.organizationId));
+      organizationLifecycle.assertCanManage(owner.exists ? owner.data() : null);
+    }
     const leaseMs = timestampMillis(current.leaseExpiresAt);
     if (current.claimedBy && current.claimedBy !== agent && leaseMs > nowMs) {
       throw new Error('Manager run is claimed by ' + current.claimedBy);
@@ -3444,6 +3448,16 @@ async function workItemClaim(input, actor = {}) {
       throw new Error('Worker Method changed during claim; retry');
     }
     if (['archived', 'done', 'cancelled'].includes(current.status)) throw new Error('Work item is already closed: ' + current.status);
+    if (current.sourceType === 'manager_job' && current.sourceId) {
+      const managerSnap = await tx.get(db().collection(COLLECTIONS.managerJobs).doc(current.sourceId));
+      if (!managerSnap.exists || managerSnap.data().status !== 'active') {
+        throw new Error('MANAGER_JOB_NOT_ACTIVE: HQ cannot claim work for paused, archived or missing Manager Jobs');
+      }
+      if (managerSnap.data().organizationId) {
+        const owner = await tx.get(db().collection(COLLECTIONS.organizations).doc(managerSnap.data().organizationId));
+        organizationLifecycle.assertCanManage(owner.exists ? owner.data() : null);
+      }
+    }
     if ((current.executionMode || 'agent') === 'human') throw new Error('Human task cannot be claimed by an agent; complete it in Human Tasks or delegate it back to agent mode');
     const currentLeaseMs = timestampMillis(current.leaseExpiresAt);
     const leaseActive = current.claimedBy && currentLeaseMs > nowMs;
