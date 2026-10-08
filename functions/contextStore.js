@@ -4268,7 +4268,12 @@ async function controlPlaneOverview(input = {}) {
 
   const openWork = workItems.filter((item) => !['archived', 'done', 'cancelled'].includes(item.status));
   const systemIncidents = workItems.filter((item) => item.sourceType === 'system_incident');
-  const activeSystemIncidents = systemIncidents.filter((item) => !['archived', 'done', 'cancelled'].includes(item.status));
+  // Unresolved cases transferred to an independent operator remain historical evidence,
+  // not current Agent HQ incidents or actionable HQ queue inventory.
+  const activeSystemIncidents = systemIncidents.filter((item) =>
+    !['archived', 'done', 'cancelled'].includes(item.status)
+    && item.metadata?.hqRetirement?.transferredOut !== true
+  );
   const recentResolvedSystemIncidents = systemIncidents
     .filter((item) => ['archived', 'done', 'cancelled'].includes(item.status))
     .slice(0, 20);
