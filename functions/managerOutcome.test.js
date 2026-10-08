@@ -57,3 +57,21 @@ test('local draft or URL check without a commit does not count as a material act
   assert.equal(isMaterialReceipt(item), false);
   assert.equal(trustedTargetProgress(job, [item])['bungu.antonbase.com'].actionCount, 0);
 });
+
+test('CMS published snapshot is material only with exact published readback, no fabricated commit', () => {
+  const job = { id:'culture-institute-manager', targetProgress:{} };
+  const receipt = {
+    targetId:'culture-institute',actionType:'cms_publish',deliveryStatus:'committed',
+    artifacts:['cms:culture-institute:internet-culture@r2','https://my-portal-agent.netlify.app/api/public-content?site=culture-institute&slug=internet-culture'],
+    validation:'editorial complete; published_projection_readback_ok (revision 2)',
+  };
+  const item={ id:'cms-one',sourceType:'manager_job',sourceId:job.id,status:'archived',metadata:{execution:{mutationAllowed:true}},updatedAt:'2026-10-09T00:00:00Z',executionReceipt:receipt };
+  assert.equal(isMaterialReceipt(item),true);
+  assert.equal(trustedTargetProgress(job,[item,item])['culture-institute'].actionCount,1);
+  assert.equal(trustedTargetProgress(job,[item])['culture-institute'].lastDeliveryStatus,'committed');
+  assert.equal(isMaterialReceipt({...item,executionReceipt:{...receipt,artifacts:receipt.artifacts.slice(0,1)}}),false);
+  assert.equal(isMaterialReceipt({...item,executionReceipt:{...receipt,validation:'draft only'}}),false);
+  assert.equal(isMaterialReceipt({...item,executionReceipt:{...receipt,deliveryStatus:'local_ready'}}),false);
+  assert.equal(isMaterialReceipt({...item,metadata:{execution:{mutationAllowed:false}}}),false);
+  assert.equal(isMaterialReceipt({...item,executionReceipt:{...receipt,artifacts:receipt.artifacts.map(x=>x.replace('culture-institute','knowledge-institute'))}}),false);
+});
