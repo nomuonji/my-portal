@@ -8,16 +8,16 @@ An AI may skip reading the publication Method and still call `public_content_cre
 
 ## Required workflow
 
-1. `public_content_get`: inspect the current draft, previous snapshot and provenance.
-2. `method_get_context` is useful for planning; the **enforced** retrieval is `public_content_editorial_prepare(siteId,slug)`, which fetches the active Method's current instructions, protocol, quality gates and returns a unique `reviewId` for the fingerprinted draft.
-3. Read the full Method returned by prepare. Perform the Reader Contract, whole-article structural edit, terminology check, running example or justified reference structure, fact/uncertainty check, and semantic privacy check. For substantially revised content, perform another prepare **after the last edit**.
+1. **Before the first draft edit,** call `public_content_editorial_prepare(siteId,slug)`. For a new slug it returns `mode=begin_writing`; for an existing draft `mode=review_draft`. Both return the current active Method instructions, protocol and quality gates. Read the Method before starting the actual writing.
+2. Carry the returned `reviewId` as `editorialSessionId` on `public_content_create` or `public_content_update` (when writing public-facing content). Creation/editing without the matching, unexpired Method session is refused by the CMS. This covers skipped instructions **at the start**, not just at publish time.
+3. Edit the full draft following the Reader Contract, narrative structure, concrete walkthrough or justified reference format, terminology, fact/uncertainty and privacy rules. **After the last public-facing edit**, call `public_content_editorial_prepare` again; the new `mode=review_draft` receipt is bound to the final content fingerprint.
 4. `public_content_editorial_approve(siteId,slug,reviewId,checks,reviewNotes,reviewer,confirm=true)`. Every check is true only if the reviewer actually performed it. The notes (80+ characters) should describe what a first-time reader understands and any remaining limitation. Attestation is a human/agent editorial judgment; no automatic model quality score is implied.
 5. `public_content_privacy_scan` and `public_content_publish(siteId,slug,confirm=true)`. The backend verifies that the approval refers to the current draft SHA-256 fingerprint and **currently active Method version**, that the checks are complete and that approval is not stale. If the draft or Method changes, return to prepare.
 
 ## Enforcement
 
-- The prepare operation makes an actual server-side read of `methods` and `methodVersions` (My Portal data). It returns the current Method content to the caller and creates a private review record.
-- The approve operation validates the prepared record, method version, unchanged draft and completed attestations. Approval metadata is stored privately; no reviewer identity or private provenance enters the public projection.
+- The prepare operation makes an actual server-side read of `methods` and `methodVersions` (My Portal data). It returns the current Method content to the caller and creates a private writing session (before the initial draft exists) or a draft-bound review record (after it exists).
+- The content create/update operations reject missing or outdated writing-session IDs. The approve operation validates the prepared record, method version, unchanged draft and completed attestations. Approval metadata is stored privately; no reviewer identity or private provenance enters the public projection.
 - `public_content_publish` rejects missing, unapproved, stale, altered-draft and outdated-method receipts. It additionally retains the existing deterministic privacy scan and private/public snapshot boundary.
 - There is **no new user-visible page type**. CMS drafts and published notes remain exactly the same public content model.
 - Existing published snapshots remain readable; gate is enforced on new publish/re-publish operations. An existing published page may have a new draft while the old public snapshot is still displayed.
@@ -29,7 +29,7 @@ An AI may skip reading the publication Method and still call `public_content_cre
 
 `node scripts/public-cms-smoke.js` verifies that the policy rejects missing approvals, prepared-but-not-approved receipts, wrong Method version, altered content hashes, expired approvals, and incomplete checklists.
 
-Additional integration acceptance: prepare an actual draft; read returned Method version; approve; publish; modify the draft; ensure re-publish now fails until a new prepare/approve. Repeat after activating a new Method version.
+Additional integration acceptance: prepare a nonexistent slug and obtain a writing session; verify create rejects absent session and accepts the exact prepared session; prepare again for the created draft; approve; publish; confirm that editing an existing draft without a session is rejected; repeat prepare before editing, then verify re-publish fails until a new final-draft review. Repeat after activating a new Method version.
 
 ## Recovery
 
