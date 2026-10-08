@@ -335,6 +335,8 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "public_content_create") return structured(await publicCmsStore.contentCreate(args));
   if (name === "public_content_update") return structured(await publicCmsStore.contentUpdate(args));
   if (name === "public_content_privacy_scan") return structured(await publicCmsStore.contentPrivacyScan(args));
+  if (name === "public_content_editorial_prepare") return structured(await publicCmsStore.contentEditorialPrepare(args));
+  if (name === "public_content_editorial_approve") return structured(await publicCmsStore.contentEditorialApprove(args));
   if (name === "public_content_publish") return structured(await publicCmsStore.contentPublish(args));
   if (name === "public_content_archive") return structured(await publicCmsStore.contentArchive(args));
 

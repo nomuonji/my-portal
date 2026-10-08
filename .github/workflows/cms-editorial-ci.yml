@@ -1,0 +1,33 @@
+name: CMS editorial gate
+on:
+  pull_request:
+    paths:
+      - 'functions/publicCmsStore.js'
+      - 'functions/publicCmsToolSchemas.js'
+      - 'netlify/functions/mcp.mts'
+      - 'scripts/public-cms-smoke.js'
+      - 'docs/PUBLIC_CMS_EDITORIAL_GATE.md'
+      - '.github/workflows/cms-editorial-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'functions/publicCmsStore.js'
+      - 'functions/publicCmsToolSchemas.js'
+      - 'netlify/functions/mcp.mts'
+      - 'scripts/public-cms-smoke.js'
+      - '.github/workflows/cms-editorial-ci.yml'
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node --check functions/publicCmsStore.js
+      - run: node --check functions/publicCmsToolSchemas.js
+      - run: npm run test:public-cms
