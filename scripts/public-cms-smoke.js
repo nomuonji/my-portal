@@ -5,6 +5,28 @@ const { _test }=require('../functions/publicCmsStore');
   assert.equal(_test.normalizeSiteId('Site_1'),'site_1');
   assert.equal(_test.normalizeSlug('/hello/world/'),'hello/world');
   assert.equal(_test.contentDocId('site_1','hello/world'),'site_1__hello~world');
+  // Editorial reviews are bound to both the actual draft body and active Method version.
+  const sampleDraft=_test.safeDraft({title:'Reader test',bodyMarkdown:'This is a concrete explanation.'},{slug:'hello'});
+  const fingerprint=_test.draftFingerprint(sampleDraft);
+  assert.match(fingerprint,/^[a-f0-9]{64}$/);
+  assert.notEqual(fingerprint,_test.draftFingerprint({...sampleDraft,bodyMarkdown:'New text'}));
+  const checks=Object.fromEntries(_test.EDITORIAL_CHECKS.map(name=>[name,true]));
+  const approvedAt=new Date().toISOString();
+  const methodVersionId='active-method-v5';
+  const receipt={reviewId:'test-review-1',methodVersionId,draftFingerprint:fingerprint,approvedAt};
+  const review={...receipt,id:receipt.reviewId,methodId:_test.EDITORIAL_METHOD_ID,status:'approved',checks};
+  assert.deepEqual(_test.validateEditorialReceipt(receipt,review,methodVersionId,fingerprint),{
+    reviewId:receipt.reviewId,methodVersionId,draftFingerprint:fingerprint
+  });
+  assert.throws(()=>_test.validateEditorialReceipt(null,review,methodVersionId,fingerprint),/no completed review/);
+  assert.throws(()=>_test.validateEditorialReceipt(receipt,null,methodVersionId,fingerprint),/no completed review/);
+  assert.throws(()=>_test.validateEditorialReceipt(receipt,{...review,status:'prepared'},methodVersionId,fingerprint),/no completed review/);
+  assert.throws(()=>_test.validateEditorialReceipt(receipt,review,'new-method-version',fingerprint),/Method changed/);
+  assert.throws(()=>_test.validateEditorialReceipt(receipt,review,methodVersionId,'different-draft-hash'),/draft changed/);
+  assert.throws(()=>_test.validateEditorialReceipt(receipt,{...review,checks:{...checks,readerContract:false}},methodVersionId,fingerprint),/not all required/);
+  assert.throws(()=>_test.validateEditorialReceipt(receipt,review,methodVersionId,fingerprint,Date.now()+8*86400000),/expired/);
+  assert.equal(_test.validateEditorialReceipt(receipt,review,methodVersionId,fingerprint).methodVersionId,methodVersionId);
+
 
   const projected=_test.publicProjection({
    id:'site_1__hello',siteId:'site_1',slug:'hello',status:'published',revision:2,
