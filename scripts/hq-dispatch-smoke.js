@@ -53,4 +53,40 @@ const work = [
 ];
 assert.deepEqual(selectWorkerDispatch(work, pair, owners).map(w => w.id), ['knowledge-open', 'culture-open']);
 assert.deepEqual(selectWorkerDispatch(work, pair, [{ ...owners[0], status: 'independent' }, owners[1]]).map(w => w.id), ['knowledge-open']);
-console.log('Agent HQ unified dispatch smoke passed: ownership, timezone, due, dedupe, worker scope');
+
+const { staleManagerRunReason, staleRunsForJob, recoveryAlreadyStartedToday } = require('../functions/managerRunRecovery');
+const atRecovery = Date.parse('2026-10-09T12:05:00Z'); // 21:05 JST, next dispatcher tick
+const staleKnowledgeJob = { ...knowledge, lastStartedAt: '2026-10-09T06:05:00Z' };
+const expiredManager = {
+  id:'expired-mgr',managerJobId:knowledge.id,status:'running',claimedBy:'old-manager',
+  createdAt:'2026-10-09T06:05:00Z',startedAt:'2026-10-09T06:05:10Z',
+  leaseExpiresAt:'2026-10-09T07:00:00Z',createdWorkItemIds:['already-delegated'],
+};
+assert.equal(staleManagerRunReason(expiredManager,atRecovery),'expired_lease');
+assert.equal(staleRunsForJob([expiredManager],knowledge.id,atRecovery).length,1);
+assert.equal(staleManagerRunReason({ ...expiredManager,leaseExpiresAt:'2026-10-09T13:00:00Z' },atRecovery),null);
+assert.equal(staleManagerRunReason({ ...expiredManager,status:'completed' },atRecovery),null);
+assert.equal(staleManagerRunReason({ ...expiredManager,status:'ready',claimedBy:null },atRecovery),'unclaimed_ready_timeout');
+assert.equal(staleManagerRunReason({ ...expiredManager,leaseExpiresAt:null,startedAt:'2026-10-09T09:00:00Z',lastHeartbeatAt:null },atRecovery),'missing_lease_timeout');
+assert.equal(staleManagerRunReason({ ...expiredManager,leaseExpiresAt:null,startedAt:'2026-10-09T11:00:00Z',lastHeartbeatAt:null },atRecovery),null);
+// Valid active leases and foreign organizations must never be superseded.
+assert.equal(buildDispatchPlan([staleKnowledgeJob],owners,atRecovery,10,[{ ...expiredManager,leaseExpiresAt:'2026-10-09T13:00:00Z' }]).dueManagerJobs.length,0);
+assert.equal(buildDispatchPlan([staleKnowledgeJob],owners,atRecovery,10,[]).dueManagerJobs.length,0);
+const recover = buildDispatchPlan([staleKnowledgeJob],owners,atRecovery,10,[expiredManager]);
+assert.equal(recover.dueManagerJobs.length,1);
+assert.equal(recover.dueManagerJobs[0].reason,'stale_manager_run_recovery');
+assert.equal(recover.dueManagerJobs[0].staleManagerRunId,'expired-mgr');
+assert.equal(recover.dueManagerJobs[0].invocationId,'agent-hq-dispatch:knowledge-institute-manager:2026-10-09:recovery:expired-mgr');
+const recoverAgain = { ...expiredManager,id:'recovery-attempt',invocationId:recover.dueManagerJobs[0].invocationId,createdAt:'2026-10-09T10:00:00Z' };
+assert.equal(recoveryAlreadyStartedToday([recoverAgain],knowledge.id,'2026-10-09',inTokyo),true);
+assert.equal(buildDispatchPlan([staleKnowledgeJob],owners,atRecovery,10,[expiredManager,recoverAgain]).dueManagerJobs.length,0);
+assert.equal(buildDispatchPlan([staleKnowledgeJob],owners,atRecovery,10,[{
+  ...expiredManager,status:'ready',claimedBy:null,leaseExpiresAt:null,
+}]).dueManagerJobs.length,1);
+assert.equal(buildDispatchPlan([staleKnowledgeJob],[{ ...owners[1],status:'independent' }],atRecovery,10,[expiredManager]).dueManagerJobs.length,0);
+// Once the next local day is due, normal daily scheduling takes priority; no
+// persistent block from a previous-day expired Manager.
+const nextDay = Date.parse('2026-10-10T06:05:00Z');
+assert.equal(buildDispatchPlan([staleKnowledgeJob],owners,nextDay,10,[expiredManager]).dueManagerJobs[0].reason,'due');
+
+console.log('Agent HQ unified dispatch smoke passed: ownership, timezone, due, dedupe, worker scope, stale recovery');
