@@ -341,7 +341,8 @@ function Dashboard() {
   );
 
   const activeSystemIncidents = useMemo(
-    () => systemIncidents.filter((item) => !['archived', 'done', 'cancelled'].includes(item.status)),
+    () => systemIncidents.filter((item) => !['archived', 'done', 'cancelled'].includes(item.status)
+      && item.metadata?.hqRetirement?.transferredOut !== true),
     [systemIncidents],
   );
 
