@@ -318,6 +318,22 @@ async function siteList() {
   const snap = await db().collection(COLLECTIONS.sites).limit(200).get();
   return { items: snap.docs.map(obj).sort((a,b) => String(a.name||a.id).localeCompare(String(b.name||b.id))) };
 }
+// Site-specific routing and editorial ownership; the public API still serves only published projections.
+function safePublicationContract(input = {}) {
+  const routePrefix = str(input.routePrefix || '/notes/', 80);
+  if (!/^\/[a-z0-9-]+\/$/.test(routePrefix)) throw new Error('publicationContract.routePrefix must be one URL segment such as /features/');
+  const owner = str(input.owner || 'editorial-cms', 80);
+  if (!['agent-hq','editorial-cms'].includes(owner)) throw new Error('Invalid publicationContract.owner');
+  return {
+    routePrefix,
+    owner,
+    mode: 'additive',
+    // Frontends render this route only. The CMS never replaces repo-owned routes or files.
+    editorialScope: str(input.editorialScope, 2500),
+    excludedPaths: strings(input.excludedPaths, 20, 120),
+  };
+}
+
 async function siteUpsert(input = {}) {
   confirm(input, 'site_upsert');
   const siteId = normalizeSiteId(input.siteId);
@@ -332,6 +348,7 @@ async function siteUpsert(input = {}) {
     frontendRepo: str(data.frontendRepo, 300),
     description: str(data.description, 3000),
     status: ['active','paused','archived'].includes(data.status) ? data.status : 'active',
+    publicationContract: safePublicationContract(data.publicationContract || (existing.exists ? existing.data()?.publicationContract : {}) || {}),
     ...(existing.exists ? {} : { createdAt: now }),
     updatedAt: now,
   }, { merge: true });
@@ -465,9 +482,13 @@ async function contentEditorialPrepare(input = {}) {
     draftFingerprint: draft ? draftFingerprint(draft) : null,
     status: draft ? 'prepared' : 'begun', preparedAt: now
   });
+  const siteSnap = await db().collection(COLLECTIONS.sites).doc(siteId).get();
+  if (!siteSnap.exists || siteSnap.data()?.status !== 'active') throw new Error('Editorial gate: target CMS site unavailable or inactive.');
   return { reviewId, mode: draft ? 'review_draft' : 'begin_writing',
     draftFingerprint: draft ? draftFingerprint(draft) : null, preparedAt: now,
-    requiredChecks: EDITORIAL_CHECKS, method };
+    requiredChecks: EDITORIAL_CHECKS, method,
+    // Editorial Method is global; additionally read the organization-specific contract.
+    publicationContract: safePublicationContract(siteSnap.data()?.publicationContract || {}) };
 }
 async function contentEditorialApprove(input = {}) {
   confirm(input, 'editorial_approve');
@@ -563,5 +584,5 @@ module.exports = {
   DATABASE_ID, COLLECTIONS, status, siteList, siteUpsert, contentList, contentGet,
   contentCreate, contentUpdate, contentPrivacyScan, contentEditorialPrepare, contentEditorialApprove, contentPublish, contentArchive, publicGet, publicList,
   deployStatus, siteDeployTrigger,
-  _test: { EDITORIAL_METHOD_ID, EDITORIAL_CHECKS, draftFingerprint, validateEditingSession, validateEditorialReceipt, normalizeSiteId, normalizeSlug, contentDocId, safeDraft, safeBlocks, safeBlock, safeLocale, translationGroupId, publicProjection, scanPublicContent, assertPrivacySafe, deployHookEnvName, isAllowedDeployHookUrl, triggerDeployHookUrl },
+  _test: { EDITORIAL_METHOD_ID, EDITORIAL_CHECKS, draftFingerprint, validateEditingSession, validateEditorialReceipt, normalizeSiteId, normalizeSlug, contentDocId, safePublicationContract, safeDraft, safeBlocks, safeBlock, safeLocale, translationGroupId, publicProjection, scanPublicContent, assertPrivacySafe, deployHookEnvName, isAllowedDeployHookUrl, triggerDeployHookUrl },
 };
