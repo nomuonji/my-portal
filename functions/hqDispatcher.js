@@ -4,6 +4,7 @@
 // The only dispatchable entities are active HQ-owned incubating Manager Jobs
 // explicitly opted into metadata.hqDispatch.
 const VALID_STATES = new Set(['incubating', 'graduation_ready']);
+const { millis, staleRunsForJob, recoveryAlreadyStartedToday } = require('./managerRunRecovery');
 
 function inTokyo(atMs) {
   if (!Number.isFinite(atMs)) throw new Error('Invalid dispatch timestamp');
@@ -52,10 +53,31 @@ function dueForJob(job, owner, atMs) {
   };
 }
 
-function buildDispatchPlan(jobs, organizations, atMs = Date.now(), limit = 10) {
+function buildDispatchPlan(jobs, organizations, atMs = Date.now(), limit = 10, managerRuns = []) {
   const owners = new Map(organizations.map(o => [o.id, o]));
   const checked = jobs.filter(job => job?.metadata?.hqDispatch?.enabled === true)
-    .map(job => ({ jobId: job.id, ...dueForJob(job, owners.get(job.organizationId), atMs) }));
+    .map(job => {
+      const normal = dueForJob(job, owners.get(job.organizationId), atMs);
+      if (normal.due || normal.reason !== 'already_started_this_local_day') {
+        return { jobId: job.id, ...normal };
+      }
+      // A Manager started earlier today but did not finish. Recover once at
+      // the next eligible dispatcher tick, instead of losing the entire day.
+      const stale = staleRunsForJob(managerRuns, job.id, atMs);
+      const localDay = inTokyo(atMs).day;
+      if (!stale.length || recoveryAlreadyStartedToday(managerRuns, job.id, localDay, inTokyo)) {
+        return { jobId: job.id, ...normal };
+      }
+      const oldest = stale.sort((a, b) => millis(a.createdAt) - millis(b.createdAt))[0];
+      return {
+        jobId: job.id, due: true, reason: 'stale_manager_run_recovery',
+        id: job.id, organizationId: job.organizationId,
+        projectId: job.projectId || null, managerMethodId: job.methodId || null,
+        priority: job.priority || 'medium', localDay,
+        localHour: job.metadata.hqDispatch.localHour, staleManagerRunId: oldest.id,
+        invocationId: 'agent-hq-dispatch:' + job.id + ':' + localDay + ':recovery:' + oldest.id,
+      };
+    });
   const rank = { critical: 0, high: 1, medium: 2, low: 3 };
   const due = checked.filter(item => item.due)
     .sort((a, b) => a.localHour - b.localHour
