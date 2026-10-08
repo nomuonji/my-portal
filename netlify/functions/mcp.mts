@@ -373,6 +373,11 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
         legacyBootstrap,
       });
     }
+    case "organization_list": return structured(await contextStore.organizationList(args));
+    case "organization_get": return structured(await contextStore.organizationGet(args));
+    case "organization_create": return structured(await contextStore.organizationCreate(args));
+    case "organization_update": return structured(await contextStore.organizationUpdate(args));
+    case "organization_graduate": return structured(await contextStore.organizationGraduate(args));
     case "control_plane_overview": return structured(await contextStore.controlPlaneOverview(args));
     case "agent_hq_operating_model": return structured(await contextStore.agentHqOperatingModel(args));
     case "operating_model_get_context": return structured(await contextStore.operatingModelGetContext(args));

@@ -27,6 +27,7 @@ const DEFAULT_EXPLICIT_COLLECTION_PATHS = Object.freeze([
   'memos/agent-control/workItems',
   'memos/agent-control/managerJobs',
   'memos/agent-control/managerRuns',
+  'memos/agent-control/organizations',
   'memos/agent-control/operatingModels',
   'memos/agent-control/operatingModelVersions',
   'memos/agent-control/systemChangeSets',

@@ -22,7 +22,7 @@ Manager
   ↓ handles escalations / outcomes / incidents
 ```
 
-My Portal owns durable operational state. External schedulers own *when* Manager/Worker runs happen.
+My Portal owns durable operational state **for incubating organizations only**. External schedulers own *when* their Manager/Worker runs happen. Independent organizations, including Sites Operator/SEO, retain their own operational control plane; HQ must not mutate their queues, policies, Managers or ongoing work. See [Organization Incubator](AGENT_HQ_ORGANIZATION_INCUBATOR.md).
 
 ## 2. Roles
 
@@ -266,7 +266,7 @@ not merely "the error disappeared." Resolution requires a structured diagnosis p
 
 A Manager owns a measurable mission. Activity volume is not the outcome.
 
-For the current Site SEO Manager the primary mission is to increase organic access measured by Analytics / Search Console.
+For each HQ-incubated organization, the primary mission and evaluation criteria come from that organization's outcomeContract and versioned operatingPolicy. For a culture organization these may be verified cultural findings and usable creative outputs; for a knowledge organization they may be sourced, reviewed knowledge and resolved gaps. Do not generalize SEO metrics or task types across organizations. The former SEO Manager is archived and independent Sites Operator is explicitly out of HQ scope.
 
 Periodic human reports include:
 - Mission status,
@@ -312,3 +312,7 @@ Low-risk autonomous repair is allowed only inside the existing mission, quality,
    - or an Agent HQ system problem.
 6. Repair the narrowest correct layer.
 7. Record structural failures as Incidents and important design changes in the Decision Log.
+
+## 13. Organization incubation and graduation
+
+HQ registers new organizations with `organization_create` and operates only `incubating`/`graduation_ready` organizations. Domain knowledge stays in specialist OS/Operator; HQ keeps their Manager Jobs, versioned Methods, task state and mission/outcome policy. Each linked Manager Run snapshots the organization policy revision. New ready Work Items must pass a capability/validation route. Graduating requires human-approved, evidenced target ownership and no open HQ jobs/runs/work; `organization_graduate` makes the HQ registry read-only. There is no implicit parent authority after graduation. Independent Site SEO is not a candidate for HQ reactivation.

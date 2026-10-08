@@ -6,6 +6,8 @@ const {
   isMaterialReceipt, hasLiveEvidence, hasCommitEvidence, MATERIAL_ACTION_TYPES, trustedTargetProgress,
 } = require('./managerOutcome');
 const { validateSeoManagerWorkItem } = require('./managerWorkItemPolicy');
+const organizationRegistry = require('./organizationRegistry');
+const organizationLifecycle = require('./organizationLifecycle');
 
 const DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTIONS = Object.freeze({
@@ -18,6 +20,7 @@ const COLLECTIONS = Object.freeze({
   workItems: 'memos/agent-control/workItems',
   managerJobs: 'memos/agent-control/managerJobs',
   managerRuns: 'memos/agent-control/managerRuns',
+  organizations: organizationRegistry.ORGANIZATIONS,
   operatingModels: 'memos/agent-control/operatingModels',
   operatingModelVersions: 'memos/agent-control/operatingModelVersions',
   systemChangeSets: 'memos/agent-control/systemChangeSets',
@@ -2452,6 +2455,7 @@ function managerJobPayload(input) {
     priority: assertEnum(input.priority, WORK_ITEM_PRIORITIES, 'priority', 'medium'),
     spaceId: clampString(input.spaceId, 160) || null,
     projectId: clampString(input.projectId, 160) || null,
+    organizationId: clampString(input.organizationId, 160) || null,
     methodId: clampString(input.methodId, 160) || null,
     defaultWorkerMethodId: clampString(input.defaultWorkerMethodId || input.metadata?.defaultWorkerMethodId, 160) || null,
     concurrencyPolicy: assertEnum(
@@ -2487,7 +2491,7 @@ async function managerJobCreate(input, actor = {}) {
   }
 
   const now = FieldValue.serverTimestamp();
-  await ref.set({
+  const jobData = {
     ...payload,
     startCount: 0,
     finishCount: 0,
@@ -2499,7 +2503,18 @@ async function managerJobCreate(input, actor = {}) {
     createdBy: createdBy(input.createdBy, actor),
     createdAt: now,
     updatedAt: now,
-  });
+  };
+  if (payload.organizationId) {
+    await db().runTransaction(async (tx) => {
+      const org = await tx.get(db().collection(COLLECTIONS.organizations).doc(payload.organizationId));
+      organizationLifecycle.assertCanManage(org.exists ? org.data() : null);
+      const old = await tx.get(ref);
+      if (old.exists) throw new Error('Manager job already exists: ' + ref.id);
+      tx.set(ref, jobData);
+    });
+  } else {
+    await ref.set(jobData);
+  }
   return documentToObject(await ref.get());
 }
 
@@ -2522,6 +2537,7 @@ async function managerJobSearch(input = {}) {
   const projectId = clampString(input.projectId, 160);
   const spaceId = clampString(input.spaceId, 160);
   const methodId = clampString(input.methodId, 160);
+  const organizationId = clampString(input.organizationId, 160);
   const managedWork = workSnapshot.docs.map(documentToObject)
     .filter((item) => item.sourceType === 'manager_job' && item.sourceId);
 
@@ -2531,6 +2547,7 @@ async function managerJobSearch(input = {}) {
       if (projectId && item.projectId !== projectId) return false;
       if (spaceId && item.spaceId !== spaceId) return false;
       if (methodId && item.methodId !== methodId) return false;
+      if (organizationId && item.organizationId !== organizationId) return false;
       if (q) {
         const haystack = [
           item.title,
@@ -2585,6 +2602,10 @@ async function managerJobUpdate(input) {
     if (input.expectedRevision !== undefined && Number(input.expectedRevision) !== Number(current.revision || 1)) {
       throw new Error('Revision conflict: expected ' + input.expectedRevision + ', actual ' + (current.revision || 1));
     }
+    if (current.organizationId && patch.status === 'active') {
+      const owner = await tx.get(db().collection(COLLECTIONS.organizations).doc(current.organizationId));
+      organizationLifecycle.assertCanManage(owner.exists ? owner.data() : null);
+    }
 
     const update = {
       revision: Number(current.revision || 1) + 1,
@@ -2597,6 +2618,17 @@ async function managerJobUpdate(input) {
     if (patch.priority !== undefined) update.priority = assertEnum(patch.priority, WORK_ITEM_PRIORITIES, 'patch.priority', current.priority || 'medium');
     if (patch.spaceId !== undefined) update.spaceId = nextSpaceId;
     if (patch.projectId !== undefined) update.projectId = clampString(patch.projectId, 160) || null;
+    if (patch.organizationId !== undefined) {
+      const nextOrgId = clampString(patch.organizationId, 160) || null;
+      if (current.organizationId && current.organizationId !== nextOrgId) {
+        throw new Error('Organization reassignment requires a separate migration; do not detach a Manager Job in place');
+      }
+      if (nextOrgId) {
+        const orgSnapshot = await tx.get(db().collection(COLLECTIONS.organizations).doc(nextOrgId));
+        organizationLifecycle.assertCanManage(orgSnapshot.exists ? orgSnapshot.data() : null);
+      }
+      update.organizationId = nextOrgId;
+    }
     if (patch.methodId !== undefined) update.methodId = nextMethodId;
     if (patch.defaultWorkerMethodId !== undefined) update.defaultWorkerMethodId = nextDefaultWorkerMethodId;
     if (patch.concurrencyPolicy !== undefined) {
@@ -2763,6 +2795,7 @@ async function managerJobGetContext(input) {
       recentResolved: recentResolvedIncidents,
     },
     operatingModel,
+    organization: job.organizationId ? await organizationRegistry.organizationGet({ id: job.organizationId }) : null,
     recentManagerRuns: managerHistory.items,
   };
 }
@@ -2788,6 +2821,19 @@ async function managerJobStart(input, actor = {}) {
     if (!jobSnapshot.exists) throw new Error('Manager job not found: ' + jobId);
     const job = documentToObject(jobSnapshot);
     if (job.status !== 'active') throw new Error('Manager job is not active: ' + job.status);
+    let organizationContext = null;
+    if (job.organizationId) {
+      const org = await tx.get(db().collection(COLLECTIONS.organizations).doc(job.organizationId));
+      organizationLifecycle.assertCanManage(org.exists ? org.data() : null);
+      const owner = org.data();
+      organizationContext = {
+        id: job.organizationId, status: owner.status, mission: owner.mission,
+        systemOfRecord: owner.systemOfRecord || null,
+        outcomeContract: owner.outcomeContract || {},
+        operatingPolicy: owner.operatingPolicy || {},
+        policyRevision: owner.revision || 1,
+      };
+    }
     if (job.methodId !== initialJob.methodId) throw new Error('Manager job Method changed during start; retry');
 
     const existingSnapshot = await tx.get(runs.where('managerJobId', '==', jobId).limit(200));
@@ -2811,6 +2857,8 @@ async function managerJobStart(input, actor = {}) {
       objective: job.objective || '',
       instructions: job.instructions || '',
       projectId: job.projectId || null,
+      organizationId: job.organizationId || null,
+      organizationContext,
       spaceId: job.spaceId || null,
       priority: job.priority || 'medium',
       methodId: methodExecution?.methodId || job.methodId || null,
@@ -2867,6 +2915,10 @@ async function managerRunClaim(input, actor = {}) {
     if (!snapshot.exists) throw new Error('Manager run not found: ' + id);
     const current = snapshot.data();
     if (!['ready', 'running'].includes(current.status)) throw new Error('Manager run is not claimable: ' + current.status);
+    if (current.organizationId) {
+      const owner = await tx.get(db().collection(COLLECTIONS.organizations).doc(current.organizationId));
+      organizationLifecycle.assertCanManage(owner.exists ? owner.data() : null);
+    }
     const leaseMs = timestampMillis(current.leaseExpiresAt);
     if (current.claimedBy && current.claimedBy !== agent && leaseMs > nowMs) {
       throw new Error('Manager run is claimed by ' + current.claimedBy);
@@ -2936,6 +2988,10 @@ async function managerRunCreateWorkItem(input, actor = {}) {
     const jobSnapshot = await tx.get(jobRef);
     if (!jobSnapshot.exists) throw new Error('Manager job not found: ' + run.managerJobId);
     const job = jobSnapshot.data();
+    if (job.organizationId) {
+      const org = await tx.get(db().collection(COLLECTIONS.organizations).doc(job.organizationId));
+      organizationLifecycle.assertCanManage(org.exists ? org.data() : null);
+    }
 
     const dedupeKey = clampString(input.dedupeKey, 300) || null;
     if (dedupeKey) {
@@ -2991,6 +3047,8 @@ async function managerRunCreateWorkItem(input, actor = {}) {
       dueAt: input.dueAt,
       metadata: {
         ...(jsonSafe(input.metadata || {})),
+        organizationId: job.organizationId || null,
+        organizationPolicyRevision: run.organizationContext?.policyRevision || null,
         managerJob: {
           id: run.managerJobId,
           managerRunId: runId,
@@ -3009,7 +3067,7 @@ async function managerRunCreateWorkItem(input, actor = {}) {
     });
     if (payload.status === 'running') throw new Error('Manager-created Work Items cannot start as running; create ready or in_progress');
 
-    if (['ready', 'in_progress'].includes(payload.status) && job.metadata?.readyRequiresCapabilityMatch === true) {
+    if (['ready', 'in_progress'].includes(payload.status) && (job.organizationId || job.metadata?.readyRequiresCapabilityMatch === true)) {
       const execution = payload.metadata?.execution || {};
       const itemRequirements = {
         requiredCapabilities: stringArray(execution.requiredCapabilities, 50, 160),
@@ -3390,6 +3448,16 @@ async function workItemClaim(input, actor = {}) {
       throw new Error('Worker Method changed during claim; retry');
     }
     if (['archived', 'done', 'cancelled'].includes(current.status)) throw new Error('Work item is already closed: ' + current.status);
+    if (current.sourceType === 'manager_job' && current.sourceId) {
+      const managerSnap = await tx.get(db().collection(COLLECTIONS.managerJobs).doc(current.sourceId));
+      if (!managerSnap.exists || managerSnap.data().status !== 'active') {
+        throw new Error('MANAGER_JOB_NOT_ACTIVE: HQ cannot claim work for paused, archived or missing Manager Jobs');
+      }
+      if (managerSnap.data().organizationId) {
+        const owner = await tx.get(db().collection(COLLECTIONS.organizations).doc(managerSnap.data().organizationId));
+        organizationLifecycle.assertCanManage(owner.exists ? owner.data() : null);
+      }
+    }
     if ((current.executionMode || 'agent') === 'human') throw new Error('Human task cannot be claimed by an agent; complete it in Human Tasks or delegate it back to agent mode');
     const currentLeaseMs = timestampMillis(current.leaseExpiresAt);
     const leaseActive = current.claimedBy && currentLeaseMs > nowMs;
@@ -4340,6 +4408,11 @@ module.exports = {
   linearIssueImportToWorkItem,
   workItemPushToLinear,
   controlPlaneOverview,
+  organizationGet: organizationRegistry.organizationGet,
+  organizationList: organizationRegistry.organizationList,
+  organizationCreate: organizationRegistry.organizationCreate,
+  organizationUpdate: organizationRegistry.organizationUpdate,
+  organizationGraduate: organizationRegistry.organizationGraduate,
   managerJobCreate,
   managerJobGet,
   managerJobSearch,
