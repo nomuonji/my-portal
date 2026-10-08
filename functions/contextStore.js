@@ -8,6 +8,7 @@ const {
 const { validateSeoManagerWorkItem } = require('./managerWorkItemPolicy');
 const organizationRegistry = require('./organizationRegistry');
 const organizationLifecycle = require('./organizationLifecycle');
+const hqDispatcher = require('./hqDispatcher');
 
 const DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTIONS = Object.freeze({
@@ -4257,6 +4258,13 @@ async function controlPlaneOverview(input = {}) {
   }
 
   const nowMs = Date.now();
+  // Cross-organization dispatcher policy lives on each Manager Job, not in
+  // the scheduled-task prompt. Independent operators are excluded in code.
+  const dispatchOrganizations = managerJobs.some((job) => job.metadata?.hqDispatch?.enabled === true)
+    ? (await organizationRegistry.organizationList({ limit: 200 })).items
+    : [];
+  const hqDispatch = hqDispatcher.buildDispatchPlan(managerJobs, dispatchOrganizations, nowMs);
+  hqDispatch.dueWorkItems = hqDispatcher.selectWorkerDispatch(workItems, managerJobs, dispatchOrganizations);
   const staleLeases = rawWork
     .filter((item) =>
       item.status === 'running' &&
@@ -4355,6 +4363,8 @@ async function controlPlaneOverview(input = {}) {
     },
     recentSystemChanges,
     operatingModel,
+    hqDispatch,
+    dueManagerJobs: hqDispatch.dueManagerJobs,
     staleLeases,
     activeManagerJobs: managerJobs.slice(0, 50),
     managerRuns: managerRuns.slice(0, 50),
@@ -4370,6 +4380,8 @@ async function controlPlaneOverview(input = {}) {
     },
     operatingProtocol: [
       'Call control_plane_overview before starting autonomous work.',
+      'If invoked as the HQ unified scheduler, use dueManagerJobs as the only dispatch list and each invocationId for manager_job_start. Do not execute other active Manager Jobs merely because they are present. Load the pinned Method/Job context, then claim/finish each Manager Run; do not invent domain instructions in the scheduler.',
+      'For the unified scheduler, also process hqDispatch.dueWorkItems after re-reading control_plane_overview following Manager delegation. Claim Work Items only with actual Worker Method and runtime tools; never claim unrelated Projects, paused Managers or independent Operators.',
       'Prefer a resumable in_progress item or a ready work item; create one for an unqueued Space next action when appropriate. Backlog means deliberately deferred from near-term execution, so do not move active or ongoing work there merely to stop working on it. Never start a running item owned by another active lease. Linear issues are external candidates: import relevant unlinked issues with linear_issue_import_to_work_item before autonomous execution.',
       'Claim exactly one agent work item before execution. Claiming moves it to running; in_progress means the task is ongoing but no agent is actively executing it right now.',
       'Manager Jobs are schedule-agnostic queue managers. External schedulers should call manager_job_start, claim the returned Manager Run with manager_run_claim, load manager_job_get_context, then observe/reconcile/decide/delegate. A Manager Run may create zero or many Work Items and should not perform the underlying worker task itself. Use manager_run_create_work_item and manager_run_reconcile_work_item, then manager_run_finish.',

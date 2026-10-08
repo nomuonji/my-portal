@@ -46,6 +46,30 @@ Each organization Manager loads:
 
 Use Observe → Reconcile → Decide → Delegate → Verify → Evaluate. A Manager may recommend a new domain policy but must not silently revise mission, risk/safety rules or independently elevate an unverified observation into policy. Record unknown/missing measurements as unknown, never zero. Choose work by expected mission impact and evidence; empty runs are valid.
 
+## Unified scheduler / system-side dispatch
+
+Only **one thin external ChatGPT Scheduled Task** is needed for all HQ-incubated organizations. It is a clock/runner, not a policy carrier.
+
+**Canonical dispatch selection** is calculated by the existing `control_plane_overview` response, field `dueManagerJobs`, from each Manager Job's `metadata.hqDispatch`:
+
+```json
+{ "enabled": true, "frequency": "daily", "timeZone": "Asia/Tokyo", "localHour": 8 }
+```
+
+The general `schedulerDispatchContract` in the active Agent HQ Operating Model is the only instruction for scheduling/execution. Managers hold substantive goals and domain rules in current Job + version-pinned Manager Method and organization Mission/Policy. Workers hold execution rules in Worker Methods. **No domain instructions, queue-size quotas, hardcoded Manager IDs or per-org hours in the external prompt.**
+
+Dispatcher rules are tested in `scripts/hq-dispatch-smoke.js` and enforced by `functions/hqDispatcher.js`:
+- Only Manager Jobs with explicit opt-in, `status=active`, HQ-owned incubating/graduation_ready organizations and valid dispatch configuration are eligible. Inactive, independent, archived, unaffiliated or unconfigured jobs (including the HQ Outcome Auditor) are ignored.
+- The hourly clock observes the current Tokyo-local date. Each daily manager becomes due at/after its configured local hour and may start once per Tokyo-local day. No backlog replay of missed days.
+- The returned item includes a deterministic `invocationId`. Pass it unchanged to `manager_job_start` so retries cannot create duplicate Runs. Then claim the Run, load its pinned Method/current context, execute, finish and report actual result. If an earlier Run is open, reconcile rather than generating duplicate work.
+- The same overview exposes `hqDispatch.dueWorkItems` for executable, unclaimed Worker tasks originating from active HQ-owned, opted-in Managers. Re-read the overview after any Manager delegation; then claim at most a bounded number of available Worker tasks using their pinned Worker Methods and real capabilities. Leave unexecutable tasks in the correct blocked/review state, not success.
+- In the next clock tick, only still-due Managers are considered. A Manager may create zero Work Items; this is not an error.
+- If `dueManagerJobs` is empty, no Manager runs are started. Organization graduation automatically removes it from scheduling without editing the clock task.
+- Adding another small organization requires configuring `hqDispatch` on its own Manager Job, not editing the shared Scheduled Task.
+- Separate independent Operators (such as Sites Operator) own their own schedules and do not appear in HQ due lists.
+
+**Current incubation configuration:** Culture Institute Manager scheduled at 08:00 JST, Knowledge Institute Manager at 15:00 JST. Both are managed in their own Job metadata and can be changed without changing the outer clock. The single outer Scheduled Task runs hourly; timing is flexible, so execution may be delayed within the hour. Do not report a missed hour as a missed organization day without checking lastStartedAt.
+
 ## Graduation checklist (human decision)
 
 - Independent runtime and specialized database are demonstrably ready.
