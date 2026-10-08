@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { inTokyo, dueForJob, buildDispatchPlan } = require('../functions/hqDispatcher');
+const { inTokyo, dueForJob, buildDispatchPlan, selectWorkerDispatch } = require('../functions/hqDispatcher');
 
 const at = Date.parse('2026-10-09T06:05:00Z'); // 15:05 in Tokyo
 const beforeCulture = Date.parse('2026-10-08T23:01:00Z'); // 08:01 next day
@@ -43,4 +43,14 @@ assert.equal(dueForJob(culture, graduated, at).reason, 'organization_not_hq_mana
 assert.equal(dueForJob({ ...culture, status: 'paused' }, owners[0], at).reason, 'manager_not_active');
 assert.equal(dueForJob({ ...culture, metadata: { hqDispatch: { enabled: true, frequency: 'daily', timeZone: 'UTC', localHour: 8 } } }, owners[0], at).reason, 'invalid_dispatch_policy');
 assert.equal(buildDispatchPlan([{ ...culture, metadata: {} }], owners, at).dueManagerJobs.length, 0);
-console.log('Agent HQ unified dispatch smoke passed: ownership, timezone, due, dedupe, capacity');
+const work = [
+  { id: 'culture-open', status: 'ready', sourceType: 'manager_job', sourceId: culture.id, executionMode: 'agent', priority: 'medium' },
+  { id: 'knowledge-open', status: 'in_progress', sourceType: 'manager_job', sourceId: knowledge.id, executionMode: 'agent', priority: 'high' },
+  { id: 'seo-open', status: 'ready', sourceType: 'manager_job', sourceId: seo.id, executionMode: 'agent', priority: 'critical' },
+  { id: 'unrelated', status: 'ready', sourceType: 'manual', sourceId: 'foo', executionMode: 'agent' },
+  { id: 'claimed', status: 'ready', sourceType: 'manager_job', sourceId: culture.id, claimedBy: 'other-runner' },
+  { id: 'human-only', status: 'ready', sourceType: 'manager_job', sourceId: culture.id, executionMode: 'human' },
+];
+assert.deepEqual(selectWorkerDispatch(work, pair, owners).map(w => w.id), ['knowledge-open', 'culture-open']);
+assert.deepEqual(selectWorkerDispatch(work, pair, [{ ...owners[0], status: 'independent' }, owners[1]]).map(w => w.id), ['knowledge-open']);
+console.log('Agent HQ unified dispatch smoke passed: ownership, timezone, due, dedupe, worker scope');
