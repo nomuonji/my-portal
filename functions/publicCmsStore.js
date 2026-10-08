@@ -359,6 +359,7 @@ async function contentCreate(input = {}) {
   const id = contentDocId(siteId, slug);
   const ref = db().collection(COLLECTIONS.content).doc(id);
   if ((await ref.get()).exists) throw new Error('Public content already exists: ' + siteId + '/' + slug);
+  const editing = await requireEditingSession(input,siteId,slug);
   const now = FieldValue.serverTimestamp();
   await ref.set({
     siteId, slug, status: 'draft', revision: 0,
@@ -366,6 +367,7 @@ async function contentCreate(input = {}) {
     published: null,
     sourceRefs: safeSources(input.sourceRefs),
     seoResearch: input.seoResearch && typeof input.seoResearch === 'object' ? input.seoResearch : {},
+    editorialStart: editing,
     createdAt: now, updatedAt: now, publishedAt: null,
   });
   return { item: obj(await ref.get()) };
@@ -377,7 +379,8 @@ async function contentUpdate(input = {}) {
   const existing = await ref.get();
   if (!existing.exists) throw new Error('Public content not found');
   const current = obj(existing);
-  const patch = { updatedAt: FieldValue.serverTimestamp() };
+  const editing = input.content ? await requireEditingSession(input,current.siteId,current.slug) : null;
+  const patch = { updatedAt: FieldValue.serverTimestamp(), ...(editing ? {editorialStart:editing} : {}) };
   if (input.content) patch.draft = safeDraft({ ...(current.draft||{}), ...input.content, seo: { ...(current.draft?.seo||{}), ...(input.content.seo||{}) } }, { slug: current.slug });
   if (input.sourceRefs) patch.sourceRefs = safeSources(input.sourceRefs);
   if (input.seoResearch && typeof input.seoResearch === 'object') patch.seoResearch = input.seoResearch;
@@ -402,6 +405,24 @@ const EDITORIAL_CHECKS = Object.freeze([
 ]);
 function draftFingerprint(draft) {
   return createHash('sha256').update(JSON.stringify(draft)).digest('hex');
+}
+function validateEditingSession(session,siteId,slug,policyVersion,now=Date.now()) {
+  if (!session || !['begun','prepared'].includes(session.status))
+    throw new Error('Editorial gate: writing session missing; call public_content_editorial_prepare before creating/editing content.');
+  if (session.siteId!==siteId || session.slug!==slug ||
+      session.methodId!==EDITORIAL_METHOD_ID || session.methodVersionId!==policyVersion)
+    throw new Error('Editorial gate: writing session does not match the site, slug, or active Method.');
+  if (!session.preparedAt || !Number.isFinite(Date.parse(session.preparedAt)) ||
+      now < Date.parse(session.preparedAt) || now-Date.parse(session.preparedAt)>86400000)
+    throw new Error('Editorial gate: writing session expired; read the active Method again.');
+  return true;
+}
+async function requireEditingSession(input,siteId,slug) {
+  const sessionId = required(input.editorialSessionId,'editorialSessionId',100);
+  const sessionSnap = await db().collection(COLLECTIONS.editorialReviews).doc(sessionId).get();
+  const method = await activeEditorialMethod();
+  validateEditingSession(sessionSnap.exists ? obj(sessionSnap) : null,siteId,slug,method.methodVersionId);
+  return {sessionId,methodVersionId:method.methodVersionId};
 }
 function validateEditorialReceipt(receipt, review, policyVersion, fingerprint, now = Date.now()) {
   if (!receipt || !review || review.status !== 'approved' || receipt.reviewId !== review.id)
@@ -434,17 +455,18 @@ async function contentEditorialPrepare(input = {}) {
   const siteId = normalizeSiteId(input.siteId);
   const slug = normalizeSlug(input.slug);
   const contentSnap = await db().collection(COLLECTIONS.content).doc(contentDocId(siteId,slug)).get();
-  if (!contentSnap.exists) throw new Error('Public content not found');
-  const current = obj(contentSnap);
-  const draft = safeDraft(current.draft || {}, {slug});
+  const current = contentSnap.exists ? obj(contentSnap) : null;
+  const draft = current ? safeDraft(current.draft || {}, {slug}) : null;
   const method = await activeEditorialMethod();
   const reviewId = randomUUID();
   const now = new Date().toISOString();
   await db().collection(COLLECTIONS.editorialReviews).doc(reviewId).set({
     id: reviewId, siteId, slug, methodId: method.methodId, methodVersionId: method.methodVersionId,
-    draftFingerprint: draftFingerprint(draft), status: 'prepared', preparedAt: now
+    draftFingerprint: draft ? draftFingerprint(draft) : null,
+    status: draft ? 'prepared' : 'begun', preparedAt: now
   });
-  return { reviewId, draftFingerprint: draftFingerprint(draft), preparedAt: now,
+  return { reviewId, mode: draft ? 'review_draft' : 'begin_writing',
+    draftFingerprint: draft ? draftFingerprint(draft) : null, preparedAt: now,
     requiredChecks: EDITORIAL_CHECKS, method };
 }
 async function contentEditorialApprove(input = {}) {
@@ -541,5 +563,5 @@ module.exports = {
   DATABASE_ID, COLLECTIONS, status, siteList, siteUpsert, contentList, contentGet,
   contentCreate, contentUpdate, contentPrivacyScan, contentEditorialPrepare, contentEditorialApprove, contentPublish, contentArchive, publicGet, publicList,
   deployStatus, siteDeployTrigger,
-  _test: { EDITORIAL_METHOD_ID, EDITORIAL_CHECKS, draftFingerprint, validateEditorialReceipt, normalizeSiteId, normalizeSlug, contentDocId, safeDraft, safeBlocks, safeBlock, safeLocale, translationGroupId, publicProjection, scanPublicContent, assertPrivacySafe, deployHookEnvName, isAllowedDeployHookUrl, triggerDeployHookUrl },
+  _test: { EDITORIAL_METHOD_ID, EDITORIAL_CHECKS, draftFingerprint, validateEditingSession, validateEditorialReceipt, normalizeSiteId, normalizeSlug, contentDocId, safeDraft, safeBlocks, safeBlock, safeLocale, translationGroupId, publicProjection, scanPublicContent, assertPrivacySafe, deployHookEnvName, isAllowedDeployHookUrl, triggerDeployHookUrl },
 };
