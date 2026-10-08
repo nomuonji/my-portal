@@ -132,13 +132,22 @@ async function organizationGraduate(input) {
     const current = snap.data();
     if (input.expectedRevision !== undefined && input.expectedRevision !== current.revision) throw new Error('Revision conflict');
     const jobSnapshot = await tx.get(jobQuery);
+    if (jobSnapshot.size >= 200) throw new Error('Graduation check incomplete: too many linked Manager Jobs');
     const jobs = jobSnapshot.docs.map(obj);
-    const runsSnapshot = await tx.get(database.collection(RUNS).limit(1000));
-    const workSnapshot = await tx.get(database.collection(WORK).limit(1000));
+    const managerRuns = [];
+    const workItems = [];
+    for (const job of jobs) {
+      const runs = await tx.get(database.collection(RUNS).where('managerJobId', '==', job.id).limit(1000));
+      const work = await tx.get(database.collection(WORK).where('sourceId', '==', job.id).limit(1000));
+      if (runs.size >= 1000 || work.size >= 1000) {
+        throw new Error('Graduation check incomplete: bounded history limit reached');
+      }
+      managerRuns.push(...runs.docs.map(obj));
+      workItems.push(...work.docs.map(obj));
+    }
     policy.validateGraduation({
       organization: current, managerJobs: jobs,
-      managerRuns: runsSnapshot.docs.map(obj), workItems: workSnapshot.docs.map(obj),
-      handoff: normalizedHandoff,
+      managerRuns, workItems, handoff: normalizedHandoff,
     });
     tx.update(ref, {
       status: 'independent',
