@@ -60,15 +60,15 @@ The general `schedulerDispatchContract` in the active Agent HQ Operating Model i
 
 Dispatcher rules are tested in `scripts/hq-dispatch-smoke.js` and enforced by `functions/hqDispatcher.js`:
 - Only Manager Jobs with explicit opt-in, `status=active`, HQ-owned incubating/graduation_ready organizations and valid dispatch configuration are eligible. Inactive, independent, archived, unaffiliated or unconfigured jobs (including the HQ Outcome Auditor) are ignored.
-- The hourly clock observes the current Tokyo-local date. Each daily manager becomes due at/after its configured local hour and may start once per Tokyo-local day. No backlog replay of missed days.
+- The single daily clock (15:00 Asia/Tokyo) observes the current Tokyo-local date. Each daily manager becomes due at/after its configured local hour and may start once per Tokyo-local day. No backlog replay of missed days.
 - The returned item includes a deterministic `invocationId`. Pass it unchanged to `manager_job_start` so retries cannot create duplicate Runs. Then claim the Run, load its pinned Method/current context, execute, finish and report actual result. If an earlier Run is open, reconcile rather than generating duplicate work.
 - The same overview exposes `hqDispatch.dueWorkItems` for executable, unclaimed Worker tasks originating from active HQ-owned, opted-in Managers. Re-read the overview after any Manager delegation; then claim at most a bounded number of available Worker tasks using their pinned Worker Methods and real capabilities. Leave unexecutable tasks in the correct blocked/review state, not success.
-- In the next clock tick, only still-due Managers are considered. A Manager may create zero Work Items; this is not an error.
+- On the next daily run, only still-due Managers are considered. A Manager may create zero Work Items; this is not an error.
 - If `dueManagerJobs` is empty, no Manager runs are started. Organization graduation automatically removes it from scheduling without editing the clock task.
-- Adding another small organization requires configuring `hqDispatch` on its own Manager Job, not editing the shared Scheduled Task.
+- Adding another daily organization requires setting `hqDispatch` on its own Manager Job with `localHour` no later than the shared 15:00 clock. More frequent or later-than-15:00 SLAs require a deliberate common schedule review, not copying long prompts.
 - Separate independent Operators (such as Sites Operator) own their own schedules and do not appear in HQ due lists.
 
-**Current incubation configuration:** Culture Institute Manager scheduled at 08:00 JST, Knowledge Institute Manager at 15:00 JST. Both are managed in their own Job metadata and can be changed without changing the outer clock. The single outer Scheduled Task runs hourly; timing is flexible, so execution may be delayed within the hour. Do not report a missed hour as a missed organization day without checking lastStartedAt.
+**Current incubation configuration:** Both Culture Institute and Knowledge Institute Managers have `localHour=15` in their own HQ Manager Job metadata. One shared Scheduled Task invokes HQ daily at about 15:00 JST; timing is flexible by up to approximately an hour. It does not wake up 24 times per day when nothing is due. Daily due status is determined against the Tokyo-local date and lastStartedAt; absent evidence stays unknown.
 
 ## Graduation checklist (human decision)
 
