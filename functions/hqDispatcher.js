@@ -69,4 +69,29 @@ function buildDispatchPlan(jobs, organizations, atMs = Date.now(), limit = 10) {
   };
 }
 
-module.exports = { inTokyo, dueForJob, buildDispatchPlan };
+function selectWorkerDispatch(items, jobs, organizations, limit = 3) {
+  const owners = new Map(organizations.map(owner => [owner.id, owner]));
+  const dispatchable = new Set(jobs.filter(job =>
+    job.status === 'active'
+    && job.metadata?.hqDispatch?.enabled === true
+    && job.organizationId
+    && VALID_STATES.has(owners.get(job.organizationId)?.status)
+    && owners.get(job.organizationId)?.controlPlane === 'my-portal-agent-hq'
+  ).map(job => job.id));
+  const priority = { critical: 0, high: 1, medium: 2, low: 3 };
+  return items.filter(item => item.sourceType === 'manager_job' &&
+      dispatchable.has(item.sourceId) && (item.executionMode || 'agent') === 'agent'
+      && ['ready', 'in_progress'].includes(item.status) && !item.claimedBy)
+    .sort((a, b) => (priority[a.priority] ?? 2) - (priority[b.priority] ?? 2)
+      || String(a.updatedAt || '').localeCompare(String(b.updatedAt || '')))
+    .slice(0, Math.min(Math.max(Number(limit) || 3, 1), 20))
+    .map(item => ({
+      id: item.id,
+      managerJobId: item.sourceId,
+      projectId: item.projectId || null,
+      status: item.status,
+      workerMethodId: item.workerMethodId || item.metadata?.workerMethodId || null,
+    }));
+}
+
+module.exports = { inTokyo, dueForJob, buildDispatchPlan, selectWorkerDispatch };
