@@ -5,7 +5,18 @@ const { _test }=require('../functions/publicCmsStore');
   assert.equal(_test.normalizeSiteId('Site_1'),'site_1');
   assert.equal(_test.normalizeSlug('/hello/world/'),'hello/world');
   assert.equal(_test.contentDocId('site_1','hello/world'),'site_1__hello~world');
-  // Editorial reviews are bound to both the actual draft body and active Method version.
+  // CMS does not own the surrounding site's existing code/content.
+  assert.deepEqual(_test.safePublicationContract({
+    routePrefix:'/features/', owner:'agent-hq',
+    excludedPaths:['/articles/','/research/'],
+    editorialScope:'Research essays only',
+  }), {
+    routePrefix:'/features/',owner:'agent-hq',mode:'additive',
+    editorialScope:'Research essays only',excludedPaths:['/articles/','/research/']
+  });
+  assert.throws(() => _test.safePublicationContract({routePrefix:'/articles/other/'}),/one URL segment/);
+  assert.throws(() => _test.safePublicationContract({owner:'groq'}),/Invalid publicationContract.owner/);
+    // Editorial reviews are bound to both the actual draft body and active Method version.
   const sampleDraft=_test.safeDraft({title:'Reader test',bodyMarkdown:'This is a concrete explanation.'},{slug:'hello'});
   const fingerprint=_test.draftFingerprint(sampleDraft);
   assert.match(fingerprint,/^[a-f0-9]{64}$/);
