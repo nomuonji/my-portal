@@ -2475,7 +2475,39 @@ function managerJobPayload(input) {
 }
 
 async function managerJobCreate(input, actor = {}) {
-  const payload = managerJobPayload(input);
+  // Compatibility for older connected MCP manifests which do not yet expose
+  // organization_create / organizationId. Explicitly opt-in to one-time
+  // registration through existing manager_job_create metadata only.
+  const bootstrap = input.metadata?.hqOrganizationBootstrap || null;
+  const bootstrapId = clampString(bootstrap?.id, 160) || null;
+  if (bootstrap && (bootstrap.humanAuthorized !== true || !bootstrapId || !bootstrap.title || !bootstrap.mission)) {
+    throw new Error('HQ organization bootstrap requires id, title, mission and explicit humanAuthorized=true');
+  }
+  const requestedOrganizationId = clampString(input.organizationId || bootstrapId || input.metadata?.organizationId, 160) || null;
+  if (bootstrap && requestedOrganizationId !== bootstrapId) throw new Error('HQ bootstrap organization ID mismatch');
+  const metadata = { ...(input.metadata || {}) };
+  delete metadata.hqOrganizationBootstrap; // Do not duplicate source-of-truth policy in job metadata.
+  const payload = managerJobPayload({ ...input, organizationId: requestedOrganizationId, metadata });
+  if (payload.organizationId && bootstrap) {
+    const ref = db().collection(COLLECTIONS.organizations).doc(payload.organizationId);
+    const existing = await ref.get();
+    if (existing.exists) {
+      const current = existing.data();
+      if (current.title !== bootstrap.title || current.mission !== bootstrap.mission
+          || current.status !== 'incubating') {
+        throw new Error('HQ bootstrap conflicts with existing organization; inspect canonical registry');
+      }
+    } else {
+      await organizationRegistry.organizationCreate({
+        id: bootstrapId, title: bootstrap.title, mission: bootstrap.mission,
+        domain: bootstrap.domain, projectId: bootstrap.projectId || input.projectId,
+        systemOfRecord: bootstrap.systemOfRecord,
+        outcomeContract: bootstrap.outcomeContract,
+        operatingPolicy: bootstrap.operatingPolicy,
+        evidenceSources: bootstrap.evidenceSources,
+      });
+    }
+  }
   if (payload.spaceId) await spaceGet({ id: payload.spaceId });
   if (payload.methodId) await methodGet({ id: payload.methodId });
   if (payload.defaultWorkerMethodId) await methodGet({ id: payload.defaultWorkerMethodId });
