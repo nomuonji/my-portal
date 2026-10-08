@@ -4,7 +4,7 @@
 // The only dispatchable entities are active HQ-owned incubating Manager Jobs
 // explicitly opted into metadata.hqDispatch.
 const VALID_STATES = new Set(['incubating', 'graduation_ready']);
-const { millis, staleRunsForJob, recoveryAlreadyStartedToday } = require('./managerRunRecovery');
+const { staleRunsForJob, recoveryAlreadyStartedToday } = require('./managerRunRecovery');
 
 function inTokyo(atMs) {
   if (!Number.isFinite(atMs)) throw new Error('Invalid dispatch timestamp');
