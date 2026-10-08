@@ -13,6 +13,10 @@ function millis(value) {
 }
 
 function staleManagerRunReason(run, atMs = Date.now()) {
+  if (run?.status === 'ready' && !run.claimedBy) {
+    const created = millis(run.createdAt);
+    return created > 0 && created + MISSING_LEASE_GRACE_MS <= atMs ? 'unclaimed_ready_timeout' : null;
+  }
   if (run?.status !== 'running') return null;
   const lease = millis(run.leaseExpiresAt);
   if (lease > 0) return lease <= atMs ? 'expired_lease' : null;
