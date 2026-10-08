@@ -6,6 +6,10 @@ on:
       - 'functions/publicCmsToolSchemas.js'
       - 'netlify/functions/mcp.mts'
       - 'scripts/public-cms-smoke.js'
+      - 'functions/managerOutcome.js'
+      - 'functions/managerOutcome.test.js'
+      - 'functions/contextStore.js'
+      - 'package.json'
       - 'docs/PUBLIC_CMS_EDITORIAL_GATE.md'
       - '.github/workflows/cms-editorial-ci.yml'
   push:
@@ -15,6 +19,10 @@ on:
       - 'functions/publicCmsToolSchemas.js'
       - 'netlify/functions/mcp.mts'
       - 'scripts/public-cms-smoke.js'
+      - 'functions/managerOutcome.js'
+      - 'functions/managerOutcome.test.js'
+      - 'functions/contextStore.js'
+      - 'package.json'
       - '.github/workflows/cms-editorial-ci.yml'
 permissions:
   contents: read
@@ -31,3 +39,6 @@ jobs:
       - run: node --check functions/publicCmsStore.js
       - run: node --check functions/publicCmsToolSchemas.js
       - run: npm run test:public-cms
+      - run: node --check functions/managerOutcome.js
+      - run: node --check functions/contextStore.js
+      - run: npm run test:hq-outcome

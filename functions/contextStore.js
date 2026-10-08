@@ -3,7 +3,7 @@ const { getDocumentDb, FieldValue } = require('./documentDb');
 const agentStore = require('./agentIdeasStore');
 const linearBridge = require('./linearMcpBridge');
 const {
-  isMaterialReceipt, hasLiveEvidence, hasCommitEvidence, MATERIAL_ACTION_TYPES, trustedTargetProgress,
+  isMaterialReceipt, hasLiveEvidence, hasCommitEvidence, hasCmsEvidence, MATERIAL_ACTION_TYPES, trustedTargetProgress,
 } = require('./managerOutcome');
 const { validateSeoManagerWorkItem } = require('./managerWorkItemPolicy');
 const organizationRegistry = require('./organizationRegistry');
@@ -3599,8 +3599,8 @@ async function workItemFinish(input) {
       if (current.metadata?.execution?.mutationAllowed === false) {
         throw new Error('Read-only work cannot be completed as a material action');
       }
-      if (receipt.deliveryStatus === 'local_ready' || !hasCommitEvidence(receipt)) {
-        throw new Error('Material action completion requires a commit receipt');
+      if (receipt.deliveryStatus === 'local_ready' || !(receipt.actionType.startsWith('cms_') ? hasCmsEvidence(receipt) : hasCommitEvidence(receipt))) {
+        throw new Error('Material action completion requires a verified commit or published CMS snapshot receipt');
       }
       if (receipt.deliveryStatus === 'live_verified' && !hasLiveEvidence(receipt)) {
         throw new Error('live_verified material action requires a production URL artifact');
