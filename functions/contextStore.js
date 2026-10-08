@@ -4274,7 +4274,8 @@ async function controlPlaneOverview(input = {}) {
   const rawWork = workSnapshot.docs.map((snapshot) => ({ id: snapshot.id, ...snapshot.data() }));
   const workItems = sortRecent(rawWork.map((item) => serialize(item)));
   const managerJobs = sortRecent(managerJobSnapshot.docs.map(documentToObject)).filter((item) => item.status === 'active');
-  const managerRuns = sortRecent(managerRunSnapshot.docs.map(documentToObject)).filter((item) => ['ready', 'running'].includes(item.status));
+  const allManagerRuns = sortRecent(managerRunSnapshot.docs.map(documentToObject));
+  const managerRuns = allManagerRuns.filter((item) => ['ready', 'running'].includes(item.status));
   const spaces = sortRecent(spaceSnapshot.docs.map(documentToObject).map(normalizeSpaceObject)).filter((item) => item.status === 'active');
   const runs = sortRecent(runSnapshot.docs.map(documentToObject)).filter((item) => item.status === 'active');
   const projects = sortRecent(projectSnapshot.docs.map(documentToObject)).filter((item) => {
@@ -4310,7 +4311,7 @@ async function controlPlaneOverview(input = {}) {
   const dispatchOrganizations = managerJobs.some((job) => job.metadata?.hqDispatch?.enabled === true)
     ? (await organizationRegistry.organizationList({ limit: 200 })).items
     : [];
-  const hqDispatch = hqDispatcher.buildDispatchPlan(managerJobs, dispatchOrganizations, nowMs, 10, managerRuns);
+  const hqDispatch = hqDispatcher.buildDispatchPlan(managerJobs, dispatchOrganizations, nowMs, 10, allManagerRuns);
   hqDispatch.dueWorkItems = hqDispatcher.selectWorkerDispatch(workItems, managerJobs, dispatchOrganizations);
   const staleManagerRuns = managerRuns.filter(run => staleManagerRunReason(run, nowMs));
   const staleLeases = rawWork
