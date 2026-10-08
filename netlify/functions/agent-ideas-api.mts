@@ -141,6 +141,9 @@ export default async (request: Request) => {
       if (resource === "profile") {
         return json(await contextStore.profileGetContext({ includeInferred: true, limit: 200 }));
       }
+      if (resource === "organizations") {
+        return json(await contextStore.organizationList({ limit: 100 }));
+      }
       if (resource === "manager_jobs") {
         return json(await contextStore.managerJobSearch({ limit: 100, scanLimit: 500 }));
       }
@@ -269,6 +272,15 @@ export default async (request: Request) => {
           activate: body.activate === true,
         }, { agent: "portal-ui", model: "my-portal-ui" }));
       }
+      if (action === "organization_create") {
+        return json(await contextStore.organizationCreate(body));
+      }
+      if (action === "organization_update") {
+        return json(await contextStore.organizationUpdate(body));
+      }
+      if (action === "organization_graduate") {
+        return json(await contextStore.organizationGraduate(body));
+      }
       if (action === "manager_job_create") {
         return json(await contextStore.managerJobCreate({
           id: body.id,
@@ -279,6 +291,7 @@ export default async (request: Request) => {
           priority: body.priority || "medium",
           spaceId: body.spaceId,
           projectId: body.projectId,
+          organizationId: body.organizationId,
           methodId: body.methodId,
           defaultWorkerMethodId: body.defaultWorkerMethodId,
           concurrencyPolicy: body.concurrencyPolicy || "skip_if_open",
