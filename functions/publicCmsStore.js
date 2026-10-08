@@ -1,10 +1,12 @@
 const { getDocumentDb, FieldValue } = require('./documentDb');
+const { createHash, randomUUID } = require('node:crypto');
 
 const DATABASE_ID = '(default)';
 const COLLECTIONS = Object.freeze({
   sites: 'public_sites',
   content: 'public_content',
   revisions: 'public_content_revisions',
+  editorialReviews: 'public_content_editorial_reviews',
 });
 
 function db() { return getDocumentDb(DATABASE_ID); }
@@ -392,6 +394,97 @@ async function contentPrivacyScan(input = {}) {
   return { siteId: current.siteId, slug: current.slug, revision: Number(current.revision) || 0, scan: scanPublicContent(draft) };
 }
 
+
+const EDITORIAL_METHOD_ID = 'TbvbUVFjkC2xPAbNqU2Q'; // Public Content Publishing: active version remains the source of truth
+const EDITORIAL_CHECKS = Object.freeze([
+  'readerContract','narrativeStructure','concreteExampleOrRationale',
+  'terminologyExplained','wholeArticleEdit','factsAndUncertainty','semanticPrivacy'
+]);
+function draftFingerprint(draft) {
+  return createHash('sha256').update(JSON.stringify(draft)).digest('hex');
+}
+function validateEditorialReceipt(receipt, review, policyVersion, fingerprint, now = Date.now()) {
+  if (!receipt || !review || review.status !== 'approved' || receipt.reviewId !== review.id)
+    throw new Error('Editorial gate: no completed review. Call public_content_editorial_prepare then public_content_editorial_approve.');
+  if (review.methodId !== EDITORIAL_METHOD_ID || review.methodVersionId !== policyVersion ||
+      receipt.methodVersionId !== policyVersion)
+    throw new Error('Editorial gate: active writing Method changed; retrieve and review the latest rules.');
+  if (review.draftFingerprint !== fingerprint || receipt.draftFingerprint !== fingerprint)
+    throw new Error('Editorial gate: draft changed after review; repeat the full editorial review.');
+  if (!review.approvedAt || !Number.isFinite(Date.parse(review.approvedAt)) ||
+      now - Date.parse(review.approvedAt) > 7 * 86400000 || now < Date.parse(review.approvedAt))
+    throw new Error('Editorial gate: editorial receipt expired; review the draft again.');
+  if (!EDITORIAL_CHECKS.every(check => review.checks?.[check] === true))
+    throw new Error('Editorial gate: not all required reader and privacy checks were attested.');
+  return { reviewId: receipt.reviewId, methodVersionId: policyVersion, draftFingerprint: fingerprint };
+}
+async function activeEditorialMethod() {
+  const database = db();
+  const methodDoc = await database.collection('methods').doc(EDITORIAL_METHOD_ID).get();
+  if (!methodDoc.exists || methodDoc.data()?.status !== 'active' || !methodDoc.data()?.currentVersionId)
+    throw new Error('Editorial gate: no active Public Content Publishing Method; publishing is blocked.');
+  const version = await database.collection('methodVersions').doc(methodDoc.data().currentVersionId).get();
+  if (!version.exists || version.data()?.methodId !== EDITORIAL_METHOD_ID || version.data()?.status !== 'active')
+    throw new Error('Editorial gate: active Method version unavailable; publishing is blocked.');
+  return { methodId: EDITORIAL_METHOD_ID, methodVersionId: version.id,
+    versionNumber: Number(version.data().versionNumber), instructions: version.data().instructions || '',
+    protocol: version.data().protocol || {}, qualityGates: version.data().qualityGates || [] };
+}
+async function contentEditorialPrepare(input = {}) {
+  const siteId = normalizeSiteId(input.siteId);
+  const slug = normalizeSlug(input.slug);
+  const contentSnap = await db().collection(COLLECTIONS.content).doc(contentDocId(siteId,slug)).get();
+  if (!contentSnap.exists) throw new Error('Public content not found');
+  const current = obj(contentSnap);
+  const draft = safeDraft(current.draft || {}, {slug});
+  const method = await activeEditorialMethod();
+  const reviewId = randomUUID();
+  const now = new Date().toISOString();
+  await db().collection(COLLECTIONS.editorialReviews).doc(reviewId).set({
+    id: reviewId, siteId, slug, methodId: method.methodId, methodVersionId: method.methodVersionId,
+    draftFingerprint: draftFingerprint(draft), status: 'prepared', preparedAt: now
+  });
+  return { reviewId, draftFingerprint: draftFingerprint(draft), preparedAt: now,
+    requiredChecks: EDITORIAL_CHECKS, method };
+}
+async function contentEditorialApprove(input = {}) {
+  confirm(input, 'editorial_approve');
+  const siteId = normalizeSiteId(input.siteId);
+  const slug = normalizeSlug(input.slug);
+  const reviewId = required(input.reviewId, 'reviewId', 100);
+  const checks = input.checks || {};
+  if (!EDITORIAL_CHECKS.every(check=>checks[check]===true))
+    throw new Error('Editorial gate: all required semantic checks must be completed before approval.');
+  const notes = required(input.reviewNotes, 'reviewNotes', 3000);
+  if (notes.length < 80) throw new Error('Editorial gate: reviewNotes must explain the reader test and evidence (80+ characters).');
+  const ref = db().collection(COLLECTIONS.editorialReviews).doc(reviewId);
+  const reviewSnap = await ref.get();
+  if (!reviewSnap.exists || reviewSnap.data()?.status !== 'prepared' ||
+      reviewSnap.data()?.siteId !== siteId || reviewSnap.data()?.slug !== slug)
+    throw new Error('Editorial gate: no matching prepared review.');
+  const prepared = reviewSnap.data();
+  if (!Number.isFinite(Date.parse(prepared.preparedAt)) ||
+      Date.now() - Date.parse(prepared.preparedAt) > 86400000)
+    throw new Error('Editorial gate: prepared review expired; retrieve the latest rules again.');
+  const [method, contentSnap] = await Promise.all([
+    activeEditorialMethod(),db().collection(COLLECTIONS.content).doc(contentDocId(siteId,slug)).get()
+  ]);
+  if (!contentSnap.exists) throw new Error('Public content not found');
+  const fingerprint = draftFingerprint(safeDraft(contentSnap.data()?.draft || {}, {slug}));
+  if (method.methodVersionId !== prepared.methodVersionId || fingerprint !== prepared.draftFingerprint)
+    throw new Error('Editorial gate: Method version or draft changed; prepare and review again.');
+  assertPrivacySafe(safeDraft(contentSnap.data()?.draft || {}, {slug}));
+  const approvedAt = new Date().toISOString();
+  const receipt = { reviewId, methodVersionId: method.methodVersionId, draftFingerprint: fingerprint, approvedAt };
+  const batch = db().batch();
+  batch.set(ref,{status:'approved',checks:Object.fromEntries(EDITORIAL_CHECKS.map(key=>[key,true])),
+    reviewNotes:notes,reviewer:required(input.reviewer,'reviewer',120),approvedAt},{merge:true});
+  batch.set(contentSnap.ref,{editorialReview:receipt,updatedAt:FieldValue.serverTimestamp()},{merge:true});
+  await batch.commit();
+  return { siteId,slug, editorialReview:receipt, approved:true,
+    note:'Human-readable clarity was attested by the reviewer, not automatically proven by software.' };
+}
+
 async function contentPublish(input = {}) {
   confirm(input, 'content_publish');
   const id = contentDocId(input.siteId, input.slug);
@@ -403,15 +496,22 @@ async function contentPublish(input = {}) {
   const publishedAt = new Date().toISOString();
   const candidate = safeDraft(current.draft || {}, { slug: current.slug });
   const privacyScan = assertPrivacySafe(candidate);
+  const method = await activeEditorialMethod();
+  const receipt = current.editorialReview;
+  const reviewSnap = receipt?.reviewId
+    ? await db().collection(COLLECTIONS.editorialReviews).doc(receipt.reviewId).get()
+    : null;
+  const editorialReview = validateEditorialReceipt(receipt, reviewSnap?.exists ? obj(reviewSnap) : null,
+    method.methodVersionId, draftFingerprint(candidate));
   const published = { ...candidate, publishedAt };
   const batch = db().batch();
   batch.set(db().collection(COLLECTIONS.revisions).doc(id + '__r' + revision), {
-    contentId: id, siteId: current.siteId, slug: current.slug, revision, published, createdAt: FieldValue.serverTimestamp(),
+    contentId: id, siteId: current.siteId, slug: current.slug, revision, published, editorialReview, createdAt: FieldValue.serverTimestamp(),
   });
   batch.set(ref, { status: 'published', revision, published, publishedAt, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
   await batch.commit();
   const item = obj(await ref.get());
-  return { item, privacyScan, deploy: await triggerSiteDeploy({ siteId: current.siteId }) };
+  return { item, privacyScan, editorialReview, deploy: await triggerSiteDeploy({ siteId: current.siteId }) };
 }
 async function contentArchive(input = {}) {
   confirm(input, 'content_archive');
@@ -439,7 +539,7 @@ async function publicList(input = {}) {
 
 module.exports = {
   DATABASE_ID, COLLECTIONS, status, siteList, siteUpsert, contentList, contentGet,
-  contentCreate, contentUpdate, contentPrivacyScan, contentPublish, contentArchive, publicGet, publicList,
+  contentCreate, contentUpdate, contentPrivacyScan, contentEditorialPrepare, contentEditorialApprove, contentPublish, contentArchive, publicGet, publicList,
   deployStatus, siteDeployTrigger,
-  _test: { normalizeSiteId, normalizeSlug, contentDocId, safeDraft, safeBlocks, safeBlock, safeLocale, translationGroupId, publicProjection, scanPublicContent, assertPrivacySafe, deployHookEnvName, isAllowedDeployHookUrl, triggerDeployHookUrl },
+  _test: { EDITORIAL_METHOD_ID, EDITORIAL_CHECKS, draftFingerprint, validateEditorialReceipt, normalizeSiteId, normalizeSlug, contentDocId, safeDraft, safeBlocks, safeBlock, safeLocale, translationGroupId, publicProjection, scanPublicContent, assertPrivacySafe, deployHookEnvName, isAllowedDeployHookUrl, triggerDeployHookUrl },
 };
