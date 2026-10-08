@@ -11,6 +11,7 @@ import {
 } from '../documentDbClient';
 import { auth, db } from '../firebase';
 import ManagerJobsPanel from './ManagerJobsPanel';
+import OrganizationsPanel from './OrganizationsPanel';
 import {
   Alert,
   Box,
@@ -706,6 +707,7 @@ function Dashboard() {
         ))}
       </Box>
 
+      <OrganizationsPanel />
       <ManagerJobsPanel projects={projects} />
 
       <Paper
