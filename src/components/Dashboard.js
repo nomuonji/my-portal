@@ -214,6 +214,7 @@ function Dashboard() {
   const [governanceLoading, setGovernanceLoading] = useState(false);
   const [governanceError, setGovernanceError] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  const [organizationRevision, setOrganizationRevision] = useState(0);
   const [createError, setCreateError] = useState('');
   const [draft, setDraft] = useState({
     title: '',
@@ -707,8 +708,8 @@ function Dashboard() {
         ))}
       </Box>
 
-      <OrganizationsPanel />
-      <ManagerJobsPanel projects={projects} />
+      <OrganizationsPanel onCreated={() => setOrganizationRevision((value) => value + 1)} />
+      <ManagerJobsPanel key={organizationRevision} projects={projects} />
 
       <Paper
         elevation={0}
