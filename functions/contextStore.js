@@ -2602,6 +2602,10 @@ async function managerJobUpdate(input) {
     if (input.expectedRevision !== undefined && Number(input.expectedRevision) !== Number(current.revision || 1)) {
       throw new Error('Revision conflict: expected ' + input.expectedRevision + ', actual ' + (current.revision || 1));
     }
+    if (current.organizationId && patch.status === 'active') {
+      const owner = await tx.get(db().collection(COLLECTIONS.organizations).doc(current.organizationId));
+      organizationLifecycle.assertCanManage(owner.exists ? owner.data() : null);
+    }
 
     const update = {
       revision: Number(current.revision || 1) + 1,
@@ -2791,6 +2795,7 @@ async function managerJobGetContext(input) {
       recentResolved: recentResolvedIncidents,
     },
     operatingModel,
+    organization: job.organizationId ? await organizationRegistry.organizationGet({ id: job.organizationId }) : null,
     recentManagerRuns: managerHistory.items,
   };
 }
@@ -2816,9 +2821,18 @@ async function managerJobStart(input, actor = {}) {
     if (!jobSnapshot.exists) throw new Error('Manager job not found: ' + jobId);
     const job = documentToObject(jobSnapshot);
     if (job.status !== 'active') throw new Error('Manager job is not active: ' + job.status);
+    let organizationContext = null;
     if (job.organizationId) {
       const org = await tx.get(db().collection(COLLECTIONS.organizations).doc(job.organizationId));
       organizationLifecycle.assertCanManage(org.exists ? org.data() : null);
+      const owner = org.data();
+      organizationContext = {
+        id: job.organizationId, status: owner.status, mission: owner.mission,
+        systemOfRecord: owner.systemOfRecord || null,
+        outcomeContract: owner.outcomeContract || {},
+        operatingPolicy: owner.operatingPolicy || {},
+        policyRevision: owner.revision || 1,
+      };
     }
     if (job.methodId !== initialJob.methodId) throw new Error('Manager job Method changed during start; retry');
 
@@ -2844,6 +2858,7 @@ async function managerJobStart(input, actor = {}) {
       instructions: job.instructions || '',
       projectId: job.projectId || null,
       organizationId: job.organizationId || null,
+      organizationContext,
       spaceId: job.spaceId || null,
       priority: job.priority || 'medium',
       methodId: methodExecution?.methodId || job.methodId || null,
@@ -3029,6 +3044,7 @@ async function managerRunCreateWorkItem(input, actor = {}) {
       metadata: {
         ...(jsonSafe(input.metadata || {})),
         organizationId: job.organizationId || null,
+        organizationPolicyRevision: run.organizationContext?.policyRevision || null,
         managerJob: {
           id: run.managerJobId,
           managerRunId: runId,
@@ -3047,7 +3063,7 @@ async function managerRunCreateWorkItem(input, actor = {}) {
     });
     if (payload.status === 'running') throw new Error('Manager-created Work Items cannot start as running; create ready or in_progress');
 
-    if (['ready', 'in_progress'].includes(payload.status) && job.metadata?.readyRequiresCapabilityMatch === true) {
+    if (['ready', 'in_progress'].includes(payload.status) && (job.organizationId || job.metadata?.readyRequiresCapabilityMatch === true)) {
       const execution = payload.metadata?.execution || {};
       const itemRequirements = {
         requiredCapabilities: stringArray(execution.requiredCapabilities, 50, 160),
