@@ -38,6 +38,7 @@ const emptyDraft = {
   status: 'active',
   priority: 'medium',
   projectId: '',
+  organizationId: '',
   methodId: '',
   defaultWorkerMethodId: '',
   concurrencyPolicy: 'skip_if_open',
@@ -125,6 +126,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
     : 'rgba(255,255,255,0.76)';
 
   const [jobs, setJobs] = useState([]);
+  const [organizations, setOrganizations] = useState([]);
   const [methods, setMethods] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -174,12 +176,14 @@ export default function ManagerJobsPanel({ projects = [] }) {
     setLoading(true);
     setError('');
     try {
-      const [jobResult, methodResult] = await Promise.all([
+      const [jobResult, methodResult, organizationResult] = await Promise.all([
         api('?resource=manager_jobs'),
         api('?resource=methods'),
+        api('?resource=organizations'),
       ]);
       setJobs(jobResult.items || []);
       setMethods(methodResult.items || []);
+      setOrganizations(organizationResult.items || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -255,6 +259,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
       status: job.status || 'active',
       priority: job.priority || 'medium',
       projectId: job.projectId || '',
+      organizationId: job.organizationId || '',
       methodId: job.methodId || '',
       defaultWorkerMethodId: job.defaultWorkerMethodId || job.metadata?.defaultWorkerMethodId || '',
       concurrencyPolicy: job.concurrencyPolicy || 'skip_if_open',
@@ -360,6 +365,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
               status: draft.status,
               priority: draft.priority,
               projectId: draft.projectId || null,
+              organizationId: draft.organizationId || null,
               methodId: draft.methodId || null,
               defaultWorkerMethodId: draft.defaultWorkerMethodId || null,
               concurrencyPolicy: draft.concurrencyPolicy,
@@ -384,6 +390,7 @@ export default function ManagerJobsPanel({ projects = [] }) {
             status: draft.status,
             priority: draft.priority,
             projectId: draft.projectId || null,
+            organizationId: draft.organizationId || null,
             methodId: draft.methodId || null,
             defaultWorkerMethodId: draft.defaultWorkerMethodId || null,
             concurrencyPolicy: draft.concurrencyPolicy,
@@ -812,6 +819,21 @@ export default function ManagerJobsPanel({ projects = [] }) {
                     >
                       <MenuItem value="">なし</MenuItem>
                       {projects.map((project) => <MenuItem key={project.id} value={project.id}>{project.name || project.id}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                  <FormControl fullWidth>
+                    <InputLabel>所属組織（HQが育成中の場合のみ）</InputLabel>
+                    <Select
+                      label="所属組織（HQが育成中の場合のみ）"
+                      value={draft.organizationId}
+                      onChange={(event) => setDraft((prev) => ({ ...prev, organizationId: event.target.value }))}
+                    >
+                      <MenuItem value="">組織に所属しない（従来型）</MenuItem>
+                      {organizations.filter((org) => ['incubating', 'graduation_ready'].includes(org.status) || org.id === draft.organizationId).map((org) => (
+                        <MenuItem key={org.id} value={org.id} disabled={org.status === 'independent' || org.status === 'archived'}>
+                          {org.title} · {org.status === 'incubating' ? '育成中' : org.status === 'graduation_ready' ? '独立準備' : 'HQ管理外'}
+                        </MenuItem>
+                      ))}
                     </Select>
                   </FormControl>
                   <FormControl fullWidth>
