@@ -120,6 +120,36 @@ External runners must report only tools/capabilities that are **actually availab
 - A Work Item keeps a Worker Method reference; the active Worker Method version is resolved and pinned on the first successful Worker claim.
 - Historical work therefore remains traceable to the exact manual used even after Method improvements.
 
+### Manager Run interrupted-execution recovery
+
+An aborted scheduler or rejected API call can leave a Manager Run in `running`
+even though the Worker delivery was never completed. Recover this as an
+**interrupted Manager**, not a completed Manager or automatically delivered work.
+
+- `manager_job_start` atomically retires expired `running` leases and
+  orphan `ready` runs (after a two-hour grace period) as `failed` before
+  creating the next Run. An active lease must not be taken over.
+- Preserve `createdWorkItemIds`, `updatedWorkItemIds`, `archivedWorkItemIds`,
+  the pinned Method and existing Worker statuses. The new Manager reconciles
+  those records rather than duplicating publication or claims.
+- An older Run closed through recovery has `recovery.reason`,
+  `recovery.preservedWorkItemIds`, `finishedBy=agent-hq-stale-recovery`,
+  and `finishedAt` for auditability. The new Run is not a continuation that
+  can claim it completed earlier work.
+- If a Manager began earlier in the same Tokyo-local day and its lease expires,
+  the shared dispatcher may issue **one** additional recovery invocation that
+  day. Repeated expired recovery invocations are deferred until a later day
+  to prevent retry storms. The existing daily 09/15/21 scheduler is unchanged.
+- `control_plane_overview` exposes `staleManagerRuns` separately from Worker
+  `staleLeases`, and the dispatcher consumes both current Manager Job state
+  and Manager Runs.
+- `manager_run_finish` records `finishedBy`; an identical terminal
+  acknowledgement from the same Manager is idempotent. Differing status/agent
+  or a run retired through lease recovery remains rejected.
+- An API safety rejection is **not** proof of a backend failure and must not
+  be retried through disguised tools or unauthorized paths. This recovery only
+  restores Agent HQ scheduling; it does not grant CMS/GitHub write permission.
+
 ### Scheduler boundary
 
 External Scheduled Tasks own:

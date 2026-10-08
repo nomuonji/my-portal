@@ -9,6 +9,7 @@ const { validateSeoManagerWorkItem } = require('./managerWorkItemPolicy');
 const organizationRegistry = require('./organizationRegistry');
 const organizationLifecycle = require('./organizationLifecycle');
 const hqDispatcher = require('./hqDispatcher');
+const { staleManagerRunReason } = require('./managerRunRecovery');
 
 const DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTIONS = Object.freeze({
@@ -2876,14 +2877,48 @@ async function managerJobStart(input, actor = {}) {
       outcome = { created: false, duplicate: true, skipped: false, reason: 'invocation_already_materialized', managerRun: duplicate };
       return;
     }
+    const currentMs = Date.now();
+    const stale = existingRuns.filter(run => staleManagerRunReason(run, currentMs));
     const open = (job.concurrencyPolicy || 'skip_if_open') === 'skip_if_open'
-      && existingRuns.find((run) => ['ready', 'running'].includes(run.status));
+      && existingRuns.find(run => ['ready', 'running'].includes(run.status)
+        && !staleManagerRunReason(run, currentMs));
     if (open) {
       outcome = { created: false, duplicate: false, skipped: true, resumable: true, reason: 'open_manager_run_exists', managerRun: open };
       return;
     }
 
+    // Atomic lease-expiration reconciliation: mark interrupted Managers as
+    // FAILED, not completed, preserve their Worker IDs and evidence, and
+    // create only one new Run within this same Firestore transaction.
+    // A concurrent heartbeat/finish conflicts and retries the transaction.
     const now = FieldValue.serverTimestamp();
+    for (const staleRun of stale) {
+      const recoveryReason = staleManagerRunReason(staleRun, currentMs);
+      tx.update(runs.doc(staleRun.id), {
+        status: 'failed',
+        summary: staleRun.summary ||
+          'Manager Run interrupted before a confirmed finish (' + recoveryReason +
+          '). Existing Worker items retained for reconciliation; no delivery inferred.',
+        recovery: {
+          reason: recoveryReason,
+          replacedByInvocationId: invocationId,
+          preservedWorkItemIds: [...new Set([
+            ...(staleRun.createdWorkItemIds || []),
+            ...(staleRun.updatedWorkItemIds || []),
+            ...(staleRun.archivedWorkItemIds || []),
+          ])],
+          previousClaimedBy: staleRun.claimedBy || null,
+        },
+        claimedBy: null,
+        claimedModel: null,
+        leaseExpiresAt: null,
+        finishedBy: 'agent-hq-stale-recovery',
+        finishedAt: now,
+        lastHeartbeatAt: now,
+        revision: Number(staleRun.revision || 1) + 1,
+        updatedAt: now,
+      });
+    }
     tx.set(runRef, {
       managerJobId: jobId,
       title: job.title,
@@ -2924,9 +2959,15 @@ async function managerJobStart(input, actor = {}) {
       lastManagerRunId: runRef.id,
       lastExecutionStatus: 'manager_ready',
       startCount: FieldValue.increment(1),
+      ...(stale.length ? {
+        finishCount: FieldValue.increment(stale.length),
+        lastFinishedAt: now,
+        lastRecoveredManagerRunIds: stale.map(run => run.id),
+      } : {}),
       updatedAt: now,
     });
-    outcome = { created: true, duplicate: false, skipped: false };
+    outcome = { created: true, duplicate: false, skipped: false,
+      recoveredManagerRunIds: stale.map(run => run.id) };
   });
 
   const job = await managerJobGet({ id: jobId });
@@ -3210,7 +3251,12 @@ async function managerRunFinish(input) {
     const snapshot = await tx.get(ref);
     if (!snapshot.exists) throw new Error('Manager run not found: ' + id);
     const current = snapshot.data();
-    if (['completed', 'failed'].includes(current.status)) throw new Error('Manager run is already closed: ' + current.status);
+    if (['completed', 'failed'].includes(current.status)) {
+      // If a response was lost after a successful finish, this caller may
+      // safely retry without double-incrementing finishCount.
+      if (current.status === status && current.finishedBy === agent) return;
+      throw new Error('Manager run is already closed: ' + current.status);
+    }
     if (current.claimedBy && current.claimedBy !== agent) throw new Error('Manager run is claimed by ' + current.claimedBy);
     const jobRef = db().collection(COLLECTIONS.managerJobs).doc(current.managerJobId);
     const jobSnapshot = await tx.get(jobRef);
@@ -3227,6 +3273,7 @@ async function managerRunFinish(input) {
       leaseExpiresAt: null,
       lastHeartbeatAt: now,
       finishedAt: now,
+      finishedBy: agent,
       revision: Number(current.revision || 1) + 1,
       updatedAt: now,
     });
@@ -4227,7 +4274,8 @@ async function controlPlaneOverview(input = {}) {
   const rawWork = workSnapshot.docs.map((snapshot) => ({ id: snapshot.id, ...snapshot.data() }));
   const workItems = sortRecent(rawWork.map((item) => serialize(item)));
   const managerJobs = sortRecent(managerJobSnapshot.docs.map(documentToObject)).filter((item) => item.status === 'active');
-  const managerRuns = sortRecent(managerRunSnapshot.docs.map(documentToObject)).filter((item) => ['ready', 'running'].includes(item.status));
+  const allManagerRuns = sortRecent(managerRunSnapshot.docs.map(documentToObject));
+  const managerRuns = allManagerRuns.filter((item) => ['ready', 'running'].includes(item.status));
   const spaces = sortRecent(spaceSnapshot.docs.map(documentToObject).map(normalizeSpaceObject)).filter((item) => item.status === 'active');
   const runs = sortRecent(runSnapshot.docs.map(documentToObject)).filter((item) => item.status === 'active');
   const projects = sortRecent(projectSnapshot.docs.map(documentToObject)).filter((item) => {
@@ -4263,8 +4311,9 @@ async function controlPlaneOverview(input = {}) {
   const dispatchOrganizations = managerJobs.some((job) => job.metadata?.hqDispatch?.enabled === true)
     ? (await organizationRegistry.organizationList({ limit: 200 })).items
     : [];
-  const hqDispatch = hqDispatcher.buildDispatchPlan(managerJobs, dispatchOrganizations, nowMs);
+  const hqDispatch = hqDispatcher.buildDispatchPlan(managerJobs, dispatchOrganizations, nowMs, 10, allManagerRuns);
   hqDispatch.dueWorkItems = hqDispatcher.selectWorkerDispatch(workItems, managerJobs, dispatchOrganizations);
+  const staleManagerRuns = managerRuns.filter(run => staleManagerRunReason(run, nowMs));
   const staleLeases = rawWork
     .filter((item) =>
       item.status === 'running' &&
@@ -4340,6 +4389,7 @@ async function controlPlaneOverview(input = {}) {
       activeManagerJobs: managerJobs.length,
       readyManagerRuns: managerRuns.filter((item) => item.status === 'ready').length,
       runningManagerRuns: managerRuns.filter((item) => item.status === 'running').length,
+      staleManagerRuns: staleManagerRuns.length,
       activeRuns: runs.length,
       staleLeases: staleLeases.length,
       unqueuedNextActions: unqueuedNextActions.length,
@@ -4366,6 +4416,7 @@ async function controlPlaneOverview(input = {}) {
     hqDispatch,
     dueManagerJobs: hqDispatch.dueManagerJobs,
     staleLeases,
+    staleManagerRuns,
     activeManagerJobs: managerJobs.slice(0, 50),
     managerRuns: managerRuns.slice(0, 50),
     activeRuns: runs.slice(0, 30),

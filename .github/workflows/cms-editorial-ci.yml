@@ -9,6 +9,9 @@ on:
       - 'functions/managerOutcome.js'
       - 'functions/managerOutcome.test.js'
       - 'functions/contextStore.js'
+      - 'functions/managerRunRecovery.js'
+      - 'functions/hqDispatcher.js'
+      - 'scripts/hq-dispatch-smoke.js'
       - 'package.json'
       - 'docs/PUBLIC_CMS_EDITORIAL_GATE.md'
       - '.github/workflows/cms-editorial-ci.yml'
@@ -22,6 +25,9 @@ on:
       - 'functions/managerOutcome.js'
       - 'functions/managerOutcome.test.js'
       - 'functions/contextStore.js'
+      - 'functions/managerRunRecovery.js'
+      - 'functions/hqDispatcher.js'
+      - 'scripts/hq-dispatch-smoke.js'
       - 'package.json'
       - '.github/workflows/cms-editorial-ci.yml'
 permissions:
@@ -41,4 +47,7 @@ jobs:
       - run: npm run test:public-cms
       - run: node --check functions/managerOutcome.js
       - run: node --check functions/contextStore.js
+      - run: node --check functions/managerRunRecovery.js
+      - run: node --check functions/hqDispatcher.js
+      - run: npm run test:hq-dispatch
       - run: npm run test:hq-outcome
