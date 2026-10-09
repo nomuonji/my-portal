@@ -38,3 +38,5 @@ After setting variables, deploy the Netlify functions. The server refuses to min
 ## Future extensions
 
 Move to a shared, cross-domain asset catalog (`assets`) when another part of My Portal needs ImageKit, keeping stable ImageKit file IDs and ownership references. Add private file delivery, asset lifecycle/garbage collection, and version history rather than mirroring Images into Turso or Firestore. Twitter/Tweets Operator remains the owner of its own posting persona configuration; character `externalRefs` are merely links.
+
+For direct MCP imports, see [MCP image import](CHARACTER_MCP_IMAGE_IMPORT.md).

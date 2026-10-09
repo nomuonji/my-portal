@@ -2,6 +2,9 @@ name: CMS editorial gate
 on:
   pull_request:
     paths:
+      - 'functions/characterImageStore.js'
+      - 'functions/characterImageMcpTools.js'
+      - 'functions/characterImageStore.test.js'
       - 'functions/publicCmsStore.js'
       - 'functions/publicCmsToolSchemas.js'
       - 'netlify/functions/mcp.mts'
@@ -42,6 +45,9 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
+      - run: node --check functions/characterImageStore.js
+      - run: node --check functions/characterImageMcpTools.js
+      - run: npm run test:character-image
       - run: node --check functions/publicCmsStore.js
       - run: node --check functions/publicCmsToolSchemas.js
       - run: npm run test:public-cms
