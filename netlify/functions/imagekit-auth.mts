@@ -36,12 +36,7 @@ export default async (request: Request) => {
 
   const publicKey = env("IMAGEKIT_PUBLIC_KEY");
   const privateKey = env("IMAGEKIT_PRIVATE_KEY");
-  const allowlist = env("IMAGEKIT_ALLOWED_EMAILS")
-    .split(",")
-    .map((address) => address.trim().toLowerCase())
-    .filter(Boolean);
-
-  if (!publicKey || !privateKey || allowlist.length === 0) {
+  if (!publicKey || !privateKey) {
     return json({ error: "ImageKit is not yet configured by the portal owner." }, 503);
   }
 
@@ -50,8 +45,8 @@ export default async (request: Request) => {
 
   try {
     const user = await getAuth(ensureFirebaseAdmin()).verifyIdToken(bearer);
-    if (!user.email_verified || !allowlist.includes(String(user.email || "").toLowerCase())) {
-      return json({ error: "You are not allowed to upload files." }, 403);
+    if (!user.email_verified) {
+      return json({ error: "A verified Google account is required to upload images." }, 403);
     }
 
     // Short-lived upload tokens never expose the ImageKit private key.
