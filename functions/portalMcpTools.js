@@ -7,6 +7,7 @@ const COLLECTION_ENUM = [
   'reading_list_urls',
   'reading_list_youtube',
   'projects',
+  'characters',
   'flashcards',
   'decks',
   'groups',
