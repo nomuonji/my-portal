@@ -563,6 +563,8 @@ export default function CharacterLibrary() {
             </DialogTitle>
             <DialogContent dividers>
               <Stack spacing={2} sx={{ py: 1 }}>
+                {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
+                {notice && <Alert severity="success" onClose={() => setNotice('')}>{notice}</Alert>}
                 <TextField label="名前" required fullWidth value={draft.name} onChange={(event) => edit('name', event.target.value)} inputProps={{ maxLength: 120 }} />
                 <TextField label="短い紹介文" fullWidth value={draft.summary} onChange={(event) => edit('summary', event.target.value)} inputProps={{ maxLength: 500 }} />
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
