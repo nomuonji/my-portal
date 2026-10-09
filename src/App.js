@@ -46,6 +46,7 @@ import {
   EmojiObjects as EmojiObjectsIcon,
   Archive as ArchiveIcon,
   Public as PublicIcon,
+  FaceRetouchingNatural as CharacterIcon,
 } from '@mui/icons-material';
 
 import Memo from './components/Memo';
@@ -71,6 +72,7 @@ import GroupAndDeckList from './components/GroupAndDeckList';
 import Stock from './components/Stock';
 import GlobalFlashcardManagement from './components/GlobalFlashcardManagement';
 import PublicCms from './components/PublicCms';
+import CharacterLibrary from './components/CharacterLibrary';
 
 import getAppTheme from './theme';
 
@@ -132,6 +134,7 @@ function App() {
     if (path.startsWith('/ogiri')) return '大喜利ラボ';
     if (path.startsWith('/social-archive')) return 'X投稿アーカイブ';
     if (path.startsWith('/public-cms')) return 'Public CMS';
+    if (path.startsWith('/characters')) return 'キャラクターDB';
     if (path.startsWith('/ideaboard') || path.startsWith('/idea')) return 'アイデア';
     if (path.startsWith('/hobbyboard') || path.startsWith('/hobby')) return '趣味';
     if (path.startsWith('/stockboard') || path.startsWith('/stock')) return 'ストック';
@@ -324,6 +327,10 @@ function App() {
               <ListItemIcon><PublicIcon /></ListItemIcon>
               <ListItemText primary="Public CMS" secondary="思考 → 公開 / 複数サイト" />
             </ListItemButton>
+            <ListItemButton selected={location.pathname.startsWith('/characters')} component={Link} to="/characters" onClick={navClick}>
+              <ListItemIcon><CharacterIcon /></ListItemIcon>
+              <ListItemText primary="キャラクターDB" secondary="キャラクター設定 / 画像ライブラリ" />
+            </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/project')} component={Link} to="/project" onClick={navClick}>
               <ListItemIcon><Folder /></ListItemIcon>
               <ListItemText primary="プロジェクトボード" />
@@ -501,6 +508,7 @@ function App() {
                 <Route path="/ogiri" element={<Ogiri />} />
                 <Route path="/social-archive" element={<SocialArchive />} />
                 <Route path="/public-cms" element={<PublicCms />} />
+                <Route path="/characters" element={<CharacterLibrary />} />
                 <Route path="/thinking" element={<ThinkingWorkspace />} />
                 <Route path="/feature-requests" element={<FeatureRequests />} />
                 <Route path="/project" element={<Project />} />
