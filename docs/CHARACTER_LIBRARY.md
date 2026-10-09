@@ -2,6 +2,24 @@
 
 Route: `/characters` — signed-in users can create, update, search, archive, and associate characters with Projects and external account references. The canonical record collection is `characters` and works with the existing Firestore/Turso document adapter. The character record schema is additive and does not migrate Tweets Operator records.
 
+
+## Browsing UX (image-first gallery)
+
+- The landing view of \`/characters\` is a responsive, image-led gallery rather than an always-open editing form. Cards show an un-cropped (\`object-fit: contain\`) avatar or fallback image, name, status, and short summary. Search and status filters continue to operate on the same live character collection.
+- Selecting a card opens the detail viewer. It starts with a **reference** image (e.g., the complete character sheet) when available; the avatar remains the thumbnail in the gallery. The viewer provides original-size access, fullscreen image viewing, image thumbnails, and previous/next navigation.
+- Existing text fields and ImageKit upload/avatar promotion/unlink workflows are retained inside the **Edit** dialog. No automatic asset deletion or promotion occurs when an image is viewed.
+- Some legacy characters have only \`sourceImage.libraryPath\` or no linked ImageKit asset. Library file paths are not public URLs; their cards render an explicit missing-image state rather than constructing inaccessible URLs.
+- Responsive check: two gallery columns on small phones, three on tablets, four on wide screens. The detail viewer stacks image before prose on small screens and uses an image-dominant two-column layout on desktop.
+- Images are always rendered with \`object-fit: contain\` (no crop). The downloaded CDN URL is the stored original for that asset, not a guessed ImageKit transformation URL.
+
+### UI acceptance checklist
+
+1. A character with an avatar and full-sheet reference opens to the full-sheet image, but the gallery uses the avatar.
+2. Switch images via arrows and thumbnails; fullscreen viewer and original-size link show the entire image, including landscape and portrait assets.
+3. Search, status filters, keyboard card activation, and previous/next character navigation work in both desktop and mobile layouts.
+4. Create, edit, upload, promote avatar, and unlink reference still write to the original \`characters\` collection; closing the viewer does not modify DB state.
+5. Image-free characters remain selectable with a useful placeholder. The editor still warns that ImageKit URLs are public.
+
 ## Required ImageKit setup
 
 Add these **server-side** Netlify environment variables (Functions scope, all contexts used by the portal):
