@@ -11,6 +11,7 @@ const COLLECTIONS = Object.freeze({
   reading_list_urls: { label: 'あとで読むURL', tagsField: 'tags' },
   reading_list_youtube: { label: 'あとで見るYouTube', tagsField: 'tags' },
   projects: { label: 'プロジェクト', tagsField: 'tags' },
+  characters: { label: 'キャラクター', tagsField: 'tags' },
   flashcards: { label: 'フラッシュカード' },
   decks: { label: 'デッキ' },
   groups: { label: 'デッキグループ' },
