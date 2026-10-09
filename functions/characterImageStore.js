@@ -43,7 +43,8 @@ function parseRemoteUrl(value) {
   let url;
   try { url = new URL(value); } catch (_) { throw new Error('imageUrl must be an HTTPS URL.'); }
   if (url.protocol !== 'https:' || url.port || url.username || url.password || url.hash ||
-      !url.hostname || isIP(url.hostname) || url.hostname.endsWith('.local')) {
+      !url.hostname || url.hostname.startsWith('[') || isIP(url.hostname) ||
+      url.hostname === 'localhost' || url.hostname.endsWith('.localhost') || url.hostname.endsWith('.local')) {
     throw new Error('imageUrl must be a public HTTPS URL without credentials, an IP address, fragments or custom ports.');
   }
   return url;
