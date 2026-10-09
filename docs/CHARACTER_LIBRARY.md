@@ -8,11 +8,12 @@ Add these **server-side** Netlify environment variables (Functions scope, all co
 
 - `IMAGEKIT_PUBLIC_KEY`: ImageKit public API key (`public_...`).
 - `IMAGEKIT_PRIVATE_KEY`: ImageKit private API key (`private_...`), never commit or expose via `REACT_APP_*`.
-- `IMAGEKIT_ALLOWED_EMAILS`: comma-delimited allowlist of the Firebase-verified email addresses authorized to upload, e.g. `owner@example.com`.
 
 The existing `FIREBASE_SERVICE_ACCOUNT_JSON` Netlify secret must also be configured for token verification. No browser secret or build-time ImageKit variable is needed. Find the public/private keys in ImageKit Developer Options. Use a restricted upload-scoped key where the provider permissions allow it.
 
-After setting variables, deploy the Netlify functions. The server refuses to mint upload signatures until all variables and the allowlist are configured. It verifies the Firebase ID token, verified email, and allowlist before returning a unique, 120-second signed upload grant. The browser uploads the original file directly to ImageKit.
+After setting variables, deploy the Netlify functions. The server refuses to mint upload signatures unless both ImageKit keys are configured. It verifies the Firebase ID token and verified email before returning a unique, 120-second signed upload grant. The browser uploads the original file directly to ImageKit.
+
+**Security boundary:** Authentication is not a single-owner check: with the current Google sign-in configuration, any account that can sign in to this Firebase app and has a verified email can request an ImageKit upload grant. This single-user convenience mode removes an explicit email allowlist; it does not prevent signups by other Google accounts. If the portal is ever exposed to other users, restrict Firebase sign-in/authorization at the application level or restore a stable owner-UID check before enabling uploads for them.
 
 ## Image management
 
@@ -26,12 +27,12 @@ After setting variables, deploy the Netlify functions. The server refuses to min
 
 ## Production checklist
 
-1. Configure the three ImageKit Netlify secrets and verify the Firebase Admin secret.
+1. Configure the two ImageKit Netlify keys and verify the existing Firebase Admin secret.
 2. Confirm the Netlify deploy includes `/api/imagekit-auth` and the `/characters` SPA route.
 3. When using Firestore as browser backend, deploy the updated `firestore.rules` separately; Netlify deploy does not apply Firebase rules.
-4. Sign in with one of the allowlisted, verified Firebase emails; create and save a character.
+4. Sign in with your verified Firebase Google account; create and save a character.
 5. Upload a small test JPEG; reload and verify the character card, avatar, and DB asset metadata.
-6. Confirm users outside the allowlist cannot receive upload grants; confirm no private key appears in browser bundles, API JSON, or logs.
+6. Confirm unauthenticated requests cannot receive upload grants; confirm no private key appears in browser bundles, API JSON, or logs. A verified user with access to Firebase sign-in is not blocked by this endpoint.
 7. Check ImageKit storage and bandwidth in the dashboard. The free plan stops new uploads at 3 GB of DAM storage and stops delivery after its 20 GB/month traffic quota.
 
 ## Future extensions
