@@ -378,7 +378,15 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   switch (name) {
     case "agent_ideas_status": {
       const legacyBootstrap = await contextStore.bootstrapIncomeSearchMigration();
+      // Include actual DB readback; the one-time chat Skill import runs only if
+      // the corresponding canonical chatSkills document is still missing.
+      const chatSkills = await chatContext.listSkills().then(result => ({
+        ok: true, count: result.items.length, sourceOfTruth: result.sourceOfTruth,
+      })).catch(error => ({
+        ok: false, error: String(error?.message || error).slice(0,240),
+      }));
       return structured({
+        chatSkills,
         service: SERVER_NAME,
         serverVersion: SERVER_VERSION,
         databaseId: agentStore.DATABASE_ID,
