@@ -86,9 +86,10 @@ async function listEvents(input={}) {
  const contextId=txt(input.contextId,160);
  if(!contextId)throw new Error('contextId required');
  const cap=Math.min(Math.max(Number(input.limit)||75,1),100);
- const [newSnap,legacySnap]=await Promise.all([
+ const [newSnap,legacySnap,decisionsSnap]=await Promise.all([
    db().collection(EVENTS).limit(250).get(),
-   db().collection(LEGACY_NOTES).limit(250).get()
+   db().collection(LEGACY_NOTES).limit(250).get(),
+   db().collection('decisions').limit(250).get()
  ]);
  const oldId=contextId.startsWith('legacy-')?contextId.slice(7):null;
  const newItems=newSnap.docs.map(d=>({id:d.id,...d.data(),createdAt:iso(d.data().createdAt)}))
@@ -97,7 +98,16 @@ async function listEvents(input={}) {
  const oldItems=legacySnap.docs.map(d=>({id:'legacy-note-'+d.id,...d.data(),
    contextId,createdAt:iso(d.data().createdAt),provenance:'legacy-ai-context-note'}))
    .filter(x=>oldId && x.spaceId===oldId);
- const items=[...newItems,...oldItems].sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))).slice(0,cap);
+ // Decisions previously attached to AI-owned Spaces remain available as historic evidence.
+ // They are not copied into or edited as human Thinking Spaces.
+ const decisionItems=decisionsSnap.docs.map(d=>({
+   id:'legacy-decision-'+d.id,contextId,spaceId:d.data().spaceId,
+   kind:'decision',summary:txt(d.data().decision+' — '+d.data().reason,1000),
+   detail:txt(d.data().reason,5000),source:'My Portal legacy decision',
+   createdAt:iso(d.data().createdAt),status:d.data().status||'active',
+   provenance:'legacy-space-decision'
+ })).filter(x=>oldId&&x.spaceId===oldId);
+ const items=[...newItems,...oldItems,...decisionItems].sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))).slice(0,cap);
  return {items,count:items.length,contextId,legacyNotesIncluded:Boolean(oldId)};
 }
 async function get(input={}) {
