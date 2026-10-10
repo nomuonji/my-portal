@@ -10,6 +10,7 @@ const data = {
   spaces: [{ id: 'seo-space', title: 'SEO研究', status: 'active', themeOwner:'user', tags: ['seo'] },
            { id: 'ai-space', title:'AI側の記録', status:'active', themeOwner:'assistant', currentBrief:'手戻りを防ぐ' }],
   methods: [{ id: 'method-1', title: 'Manager Method', status: 'active', currentVersionNumber: 2 }],
+  decisions: [{id:'legacy-decision-1',spaceId:'ai-space',decision:'adopt',reason:'Do not conflate human Spaces and Contexts',status:'active'}],
 };
 let counter=0;
 function documentRef(collection,id) {
@@ -92,7 +93,8 @@ try {
     await assert.rejects(()=>chatContext.createNote({spaceId:'seo-space',summary:'incorrect',confirm:true}),/AI-side/);
     await chatContext.createNote({spaceId:'ai-space',kind:'correction',summary:'Skill and Method must stay separate',confirm:true,idempotencyKey:'test-conversation-1'});
     const legacy=await contexts.get({id:'legacy-ai-space'});
-    assert.equal(legacy.history.length,1);
+    assert.equal(legacy.history.length,2);
+    assert.ok(legacy.history.some(x=>x.provenance==='legacy-space-decision'));
     assert.equal(legacy.history[0].kind,'correction');
     assert.equal(legacy.context.title,'AI側の記録');
     const revision=legacy.context.revision;
@@ -104,7 +106,7 @@ try {
     await contexts.addEvent({contextId:legacy.context.id,kind:'decision',summary:'Respect project boundaries',confirm:true,idempotencyKey:'confirmed-decision-1'});
     await contexts.addEvent({contextId:legacy.context.id,kind:'decision',summary:'Respect project boundaries',confirm:true,idempotencyKey:'confirmed-decision-1'});
     const continuity=await contexts.get({id:legacy.context.id});
-    assert.equal(continuity.history.length,2);
+    assert.equal(continuity.history.length,3);
     assert.ok(continuity.history.some(x=>x.kind==='decision'));
     assert.ok(continuity.history.some(x=>x.kind==='correction'));
     assert.equal((await contexts.list({domain:'seo'})).count,1);
