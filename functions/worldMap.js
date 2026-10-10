@@ -44,6 +44,13 @@ const ROUTES = Object.freeze([
     boundary: 'ラジ父と大喜利は同じレンズ。最新のMethod版を参照する。',
   },
   {
+    id: 'skills', title: 'スキル・Methodの所在地', keywords: ['Skill', 'スキル', 'Method', 'SKILL.md', 'ChatGPTスキル'],
+    description: 'ChatGPTインストール済みSkill、My PortalのMethod、GitHub保存版スキルを区別して探す。',
+    projectId: 'my-portal', primary: 'My Portal Methods / ChatGPT Skills / GitHub',
+    tools: ['My Portal', 'GitHub'], spaceIds: [], url: 'https://github.com/nomuonji/skills',
+    boundary: 'ChatGPTに導入済みSkillはセッション内のスキル一覧を確認。My PortalのMethodは別の実体。GitHub保存だけではChatGPTへ自動インストールされない。',
+  },
+  {
     id: 'sns', title: 'SNS投稿・運用', keywords: ['Threads', 'X投稿', '下書き', 'SNS', '自動投稿'],
     description: 'SNS投稿、人格、在庫、配信実績。',
     projectId: 'tweets', primary: 'Tweets Operator',
@@ -95,9 +102,9 @@ const ROUTES = Object.freeze([
   {
     id: 'english-notes', title: 'English Notesの収益化', keywords: ['English Notes', 'english.antonbase.com', '英語サイト収益'],
     description: 'English Notes単独サイトの商品、購入導線、サイト内売上。',
-    projectId: null, primary: 'English Notes（実装リポジトリ要確認）',
+    projectId: 'english-notes', primary: 'English Notes（実装リポジトリ要確認）',
     tools: ['GitHub'], spaceIds: [], url: 'https://english.antonbase.com/',
-    boundary: '別運用のThreads/A8/Tweets収益事業へ転換しない。My Portal Projectへの登録は未確認。',
+    boundary: '別運用のThreads/A8/Tweets収益事業へ転換しない。Project登録済み、実装repoは未特定。',
   },
 ]);
 
