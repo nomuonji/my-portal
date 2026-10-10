@@ -25,6 +25,21 @@ An AI may skip reading the publication Method and still call `public_content_cre
 - The check is not a semantic proof that prose is good. A reviewer can lie; approval is recorded and attributable in the private audit record. The enforceable invariant is **no unreviewed or old-draft publication through this API**.
 - Reviewer identities should be functional (e.g. `chatgpt_editor`), not personal information. Reviews are private data.
 
+## Antonbase Notes: private editorial-angle evidence (v9+)
+
+For `siteId=antonbase-notes`, starting with Public Content Publishing Method v9, merely passing the seven generic checks and a 80-character boilerplate `reviewNotes` is insufficient. The approval step must include **four substantive, newline-delimited private fields** in `reviewNotes`, each with a real, source-grounded explanation:
+
+```text
+sourceMotive: <why the work/story began, and what outcome was sought>
+readerPull: <concrete observation/question that makes an unknown reader continue>
+angleAlternatives: <at least one discarded angle, chosen approach, and reason>
+leadCheck: <how the actual title/summary/first two paragraphs were tested>
+```
+
+Each field must be more than a terse placeholder. The server rejects an absent, generic or empty field before saving an editorial approval. Other CMS sites continue to use their own genre-specific rules; old Method versions are not retroactively blocked. Additional `storyVsFacts` and `omittedPrivateContext` evidence remains required by Method guidance.
+
+This is an **execution-accountability check, not a semantic AI quality score**. A model can still write a plausible but wrong review, so an editor must actually read the full draft and discard a weak angle. Private review evidence is never included in anonymous public content projection.
+
 ## Regression tests
 
 `node scripts/public-cms-smoke.js` verifies that the policy rejects missing approvals, prepared-but-not-approved receipts, wrong Method version, altered content hashes, expired approvals, and incomplete checklists.
