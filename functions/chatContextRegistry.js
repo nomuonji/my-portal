@@ -57,8 +57,27 @@ async function bootstrapSkills() {
   });
  });
 }
+async function upgradeNavigationContextRoute() {
+ const ref=db().collection(SKILLS).doc('world-home-navigation');
+ await db().runTransaction(async tx=>{
+   const snap=await tx.get(ref);
+   if(!snap.exists)return;
+   const old=snap.data();
+   // One-time guarded compatibility migration; never overwrite user-edited Skills.
+   if(Number(old.revision)!==1 || !String(old.body||'').includes('aiContexts'))return;
+   const body=String(old.body).replaceAll('aiContexts','contexts')
+     .replace('登録済みのProject/Method/Spaceは動的に反映される。',
+       '登録済みのProjects/Skills/ContextsはWorld Homeに動的に反映される。Contextsは人間側Spaceと別DBで、Project IDとDomainを使って context_list / context_get で既決事項と訂正履歴を確認する。');
+   const updated={...old,body,revision:2,updatedAt:FieldValue.serverTimestamp()};
+   tx.set(ref,updated);
+   const version=db().collection(SKILL_VERSIONS).doc('world-home-navigation__000002');
+   tx.set(version,{...updated,versionNumber:2,changeReason:'Switch from AI-side Spaces to project/domain Contexts',
+     createdAt:FieldValue.serverTimestamp()});
+ });
+}
 async function listSkills() {
  await bootstrapSkills();
+ await upgradeNavigationContextRoute();
  const snap=await db().collection(SKILLS).limit(250).get();
  return {items:snap.docs.map(d=>summary({id:d.id,...d.data()})).filter(s=>s.status!=='archived').sort((a,b)=>a.title.localeCompare(b.title)),
   sourceOfTruth:'My Portal DB / chatSkills',
