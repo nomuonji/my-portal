@@ -133,7 +133,6 @@ export default async (request: Request) => {
       if (resource === "chat_skills") return json(await chatContext.listSkills());
       if (resource === "chat_skill") return json(await chatContext.getSkill({ id:url.searchParams.get("id")||"" }));
       if (resource === "chat_skill_versions") return json(await chatContext.skillVersions({ id:url.searchParams.get("id")||"" }));
-      if (resource === "ai_context_notes") return json(await chatContext.listNotes({ spaceId:url.searchParams.get("spaceId")||undefined,limit:100 }));
       if (resource === "contexts") return json(await contextRegistry.list({projectId:url.searchParams.get("projectId")||undefined,domain:url.searchParams.get("domain")||undefined}));
       if (resource === "context") return json(await contextRegistry.get({id:url.searchParams.get("id")||""}));
       if (resource === "context_history") return json(await contextRegistry.listEvents({contextId:url.searchParams.get("id")||""}));
@@ -258,7 +257,6 @@ export default async (request: Request) => {
         }));
       }
       if (action === "chat_skill_upsert") return json(await chatContext.upsertSkill({skill:body.skill,expectedRevision:body.expectedRevision,changeReason:body.changeReason,confirm:body.confirm===true}));
-      if (action === "ai_context_note_create") return json(await chatContext.createNote({spaceId:body.spaceId,summary:body.summary,kind:body.kind,detail:body.detail,source:body.source||"portal-ui",sourceUrl:body.sourceUrl,idempotencyKey:body.idempotencyKey,confirm:body.confirm===true}));
       if (action === "context_save") return json(await contextRegistry.save({id:body.id,context:body.context,expectedRevision:body.expectedRevision,confirm:body.confirm===true}));
       if (action === "context_event_create") return json(await contextRegistry.addEvent({contextId:body.contextId,kind:body.kind,summary:body.summary,detail:body.detail,source:body.source||"portal-ui",sourceUrl:body.sourceUrl,idempotencyKey:body.idempotencyKey,confirm:body.confirm===true}));
       if (action === "world_map_update") {
