@@ -16,7 +16,10 @@ function documentRef(collection,id) {
   const key=collection+'/'+(id||'auto-'+(++counter));
   return {
     id:key.split('/').pop(),
-    get: async () => documentMap.has(key) ? { id:key.split('/').pop(),exists:true,data:()=>documentMap.get(key) } : { exists:false },
+    get: async () => {
+      const value=documentMap.get(key) || (data[collection]||[]).find(x=>x.id===id);
+      return value ? {id:key.split('/').pop(),exists:true,data:()=>value} : {exists:false};
+    },
     set: obj => { documentMap.set(key,obj); },
   };
 }
