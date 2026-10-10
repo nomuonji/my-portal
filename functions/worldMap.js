@@ -5,6 +5,7 @@
 const { getDocumentDb, FieldValue } = require('./documentDb');
 const chatContext = require('./chatContextRegistry');
 const contexts = require('./contextRegistry');
+const { DEFAULT_GUIDE, validateGuide } = require('./worldHomeGuide');
 
 const DB_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTION = 'portalContextAtlas';
@@ -165,9 +166,24 @@ function dateValue(value) {
   if (typeof value === 'string') return value;
   return null;
 }
+async function ensureAgentGuide() {
+  const ref=db().collection(COLLECTION).doc(DOC_ID);
+  const before=await ref.get();
+  if(before.exists && before.data()?.agentGuide?.instructions)return before;
+  // One-time seed: idempotent and never overwrites subsequent UI edits.
+  await db().runTransaction(async tx=>{
+    const snap=await tx.get(ref);
+    if(snap.exists && snap.data()?.agentGuide?.instructions)return;
+    const previous=snap.exists?snap.data():{};
+    tx.set(ref,{...previous,agentGuide:{...DEFAULT_GUIDE},
+      agentGuideUpdatedAt:FieldValue.serverTimestamp(),
+      revision:Number(previous.revision)||0});
+  });
+  return ref.get();
+}
 async function get() {
   const results = await Promise.allSettled([
-    db().collection(COLLECTION).doc(DOC_ID).get(),
+    ensureAgentGuide(),
     listCollection('projects'), listCollection('spaces'), listCollection('methods'),
     chatContext.listSkills(), contexts.list(),
   ]);
@@ -189,6 +205,9 @@ async function get() {
     generatedAt: new Date().toISOString(),
     metadataRevision: Number(settings.revision) || 0,
     metadataUpdatedAt: dateValue(settings.updatedAt),
+    agentGuide:settings.agentGuide?.instructions ? settings.agentGuide : {...DEFAULT_GUIDE},
+    agentGuideUpdatedAt:dateValue(settings.agentGuideUpdatedAt),
+    agentGuideStorage:results[0].status==='fulfilled'&&Boolean(settings.agentGuide?.instructions)?'persisted':'fallback-unavailable',
     routes: [...merged.values()].filter(r => !deleted.has(r.id)),
     boundaries: safeArray(settings.boundaries, 40),
     projects: items(1).map(summarizeProject).sort((a,b) => a.name.localeCompare(b.name)),
@@ -209,7 +228,8 @@ async function update(input = {}) {
   const routes = Array.isArray(input.routes) ? input.routes.map(cleanRoute) : null;
   const hiddenRouteIds = input.hiddenRouteIds === undefined ? null : safeArray(input.hiddenRouteIds, 100);
   const boundaries = input.boundaries === undefined ? null : safeArray(input.boundaries, 40);
-  if (routes === null && hiddenRouteIds === null && boundaries === null) throw new Error('No world map changes');
+  const guide = input.agentGuide === undefined ? null : validateGuide(input.agentGuide);
+  if (routes === null && hiddenRouteIds === null && boundaries === null && guide === null) throw new Error('No world map changes');
   if (routes && routes.length > 80) throw new Error('Too many route overrides');
   const ref = db().collection(COLLECTION).doc(DOC_ID);
   await db().runTransaction(async tx => {
@@ -221,10 +241,11 @@ async function update(input = {}) {
       ...(routes !== null ? { routes } : {}),
       ...(hiddenRouteIds !== null ? { hiddenRouteIds } : {}),
       ...(boundaries !== null ? { boundaries } : {}),
+      ...(guide !== null ? {agentGuide:{...guide,version:(Number(data.agentGuide?.version)||0)+1},agentGuideUpdatedAt:FieldValue.serverTimestamp()} : {}),
       revision: expectedRevision + 1,
       updatedAt: FieldValue.serverTimestamp(),
     });
   });
   return get();
 }
-module.exports = { get, update, ROUTES, cleanRoute, summarizeProject, summarizeMethod, summarizeSpace };
+module.exports = { get, update, ROUTES, cleanRoute, summarizeProject, summarizeMethod, summarizeSpace, ensureAgentGuide };
