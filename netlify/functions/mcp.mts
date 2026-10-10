@@ -381,8 +381,6 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "chat_skill_get") return structured(await chatContext.getSkill(args));
   if (name === "chat_skill_versions") return structured(await chatContext.skillVersions(args));
   if (name === "chat_skill_upsert") return structured(await chatContext.upsertSkill(args));
-  if (name === "ai_context_notes_list") return structured(await chatContext.listNotes(args));
-  if (name === "ai_context_note_create") return structured(await chatContext.createNote(args));
   if (name === "world_map_update") return structured(await worldMap.update(args));
   switch (name) {
     case "agent_ideas_status": {
