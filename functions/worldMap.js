@@ -39,17 +39,17 @@ const ROUTES = Object.freeze([
   },
   {
     id: 'creative', title: 'Creative Intelligence', keywords: ['大喜利', 'ラジ父', '村上RADIO', '創作', '発想', 'キャラクター'],
-    description: '発想レンズ、Method、キャラクター設定。画像素材はImageKitとの接続状態を確認。',
+    description: '発想レンズはMy Portalのチャット用Skill DB、キャラクター設定は専用DB。画像の実体はImageKitの接続先を確認。',
     projectId: 'my-portal', primary: 'My Portal',
     tools: ['My Portal'], spaceIds: ['dCl9tY6FgwkmMsamDUah'],
-    boundary: 'ラジ父と大喜利は同じレンズ。最新のMethod版を参照する。',
+    boundary: 'ラジ父と大喜利は同じレンズ。チャット用Skill本文はMy PortalのchatSkillsが正本。',
   },
   {
     id: 'skills', title: 'チャット用Skillの所在地', keywords: ['Skill', 'スキル', 'Method', 'SKILL.md', 'ChatGPTスキル'],
-    description: 'チャット用SKILL.mdを探す。Manager/WorkerのMethodはAgent HQ内で扱う。',
-    projectId: 'my-portal', primary: 'My Portal Chat Skills / GitHub',
-    tools: ['My Portal', 'GitHub'], spaceIds: [], url: 'https://github.com/nomuonji/skills',
-    boundary: 'チャット用Skillの正本はGitHub SKILL.md。Manager/Worker MethodをSkillとして使わない。ChatGPTへのインストール状況はセッション側で別途確認。',
+    description: 'チャット用Skill本文と更新履歴はMy Portal DBに保存。Manager/Worker MethodはAgent HQ内で扱う。',
+    projectId: 'my-portal', primary: 'My Portal chatSkills DB',
+    tools: ['My Portal'], spaceIds: [],
+    boundary: 'チャット用Skillの正本はMy Portal DB（chatSkills）。GitHubは任意のエクスポート先。Manager/Worker MethodをSkillとして使わない。',
   },
   {
     id: 'sns', title: 'SNS投稿・運用', keywords: ['Threads', 'X投稿', '下書き', 'SNS', '自動投稿'],
@@ -198,7 +198,7 @@ async function get() {
     aiContextNotes: allNotes,
     methods: items(3).map(summarizeMethod).sort((a,b) => a.title.localeCompare(b.title)),
     coverage: Object.fromEntries(names.slice(1).map((n, i) => [n, results[i+1].status === 'fulfilled' ? 'loaded' : 'unavailable'])),
-    registrySemantics: {skills:'GitHub SKILL.md',methods:'Agent HQ Manager/Worker execution',aiContexts:'assistant-owned Spaces with append-only chat notes',spaces:'Thinking Workspace themes'}, 
+    registrySemantics: {skills:'My Portal DB / chatSkills',methods:'Agent HQ Manager/Worker execution',aiContexts:'assistant-owned Spaces with append-only chat notes',spaces:'Thinking Workspace themes'}, 
     warnings,
     help: '最初にこの地図で正本/Skill/AI側の会話履歴を確認する。MethodはManager/Workerの運用契約で、Skillの代替ではない。GitHub保存だけではChatGPTへのスキル導入を保証しない。',
   };
