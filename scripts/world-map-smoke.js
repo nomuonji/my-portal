@@ -58,6 +58,11 @@ try {
 
     const before = await world.get();
     assert.equal(before.metadataRevision, 0);
+    assert.equal(before.agentGuideStorage,'persisted');
+    assert.ok(before.agentGuide.instructions.includes('context_get'));
+    assert.ok(before.agentGuide.instructions.includes('chat_skill_get'));
+    assert.ok(before.agentGuide.minimalCustomInstruction.includes('world_map_get'));
+    assert.ok(before.agentGuide.minimalCustomInstruction.length<150);
     assert.equal(before.coverage.projects, 'loaded');
     assert.equal(before.projects[0].id, 'site-operations');
     assert.ok(before.spaces.some(space=>space.id==='seo-space'));
@@ -124,6 +129,16 @@ try {
     assert.equal(after.metadataRevision, 1);
     assert.equal(after.routes.find(r => r.id === 'site-seo').title, 'Site SEO');
     assert.equal(after.routes.some(r => r.id === 'keywords'), true);
+    const originalGuide=after.agentGuide.instructions;
+    const edited=await world.update({confirm:true,expectedRevision:1,agentGuide:{title:'Chat Entry Guide',instructions:originalGuide+'\nFinal: always preserve context.',minimalCustomInstruction:'最初にMy Portalの world_map_get を読んでください。'}});
+    assert.equal(edited.metadataRevision,2);
+    assert.equal(edited.agentGuide.title,'Chat Entry Guide');
+    assert.equal(edited.agentGuide.version,2);
+    assert.match(edited.agentGuide.instructions,/preserve context/);
+    const stable=await world.get();
+    assert.equal(stable.agentGuide.instructions,edited.agentGuide.instructions);
+    assert.equal(stable.agentGuide.version,2);
+    await assert.rejects(()=>world.update({confirm:true,expectedRevision:2,agentGuide:{title:'Bad',instructions:'short',minimalCustomInstruction:'world_map_get'}}),/250-20000/);
     await assert.rejects(() => world.update({ confirm:true, expectedRevision:0, boundaries:['test'] }), /revision conflict/);
 
     const app = fs.readFileSync(path.join(__dirname, '../src/App.js'), 'utf8');
@@ -136,6 +151,11 @@ try {
     assert.match(mcp,/chat_skill_list/);
     assert.doesNotMatch(mcp,/ai_context_note_create/);
     const home=fs.readFileSync(path.join(__dirname, '../src/components/WorldHome.js'),'utf8');
+    assert.match(home,/AgentGuidePanel/);
+    assert.match(home,/show\('guide'\)/);
+    assert.match(mcp,/world_map_get/);
+    const server=fs.readFileSync(path.join(__dirname,'../netlify/functions/agent-ideas-api.mts'),'utf8');
+    assert.match(server,/agentGuide: body.agentGuide/);
     assert.match(home, /show\('skills'\)/);
     assert.match(home, /show\('contexts'\)/);
     const contextPanel=fs.readFileSync(path.join(__dirname,'../src/components/ContextPanel.js'),'utf8');

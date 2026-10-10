@@ -265,6 +265,7 @@ export default async (request: Request) => {
           routes: body.routes,
           hiddenRouteIds: body.hiddenRouteIds,
           boundaries: body.boundaries,
+          agentGuide: body.agentGuide,
           confirm: body.confirm === true,
         }));
       }
