@@ -12,6 +12,12 @@ on:
       - 'functions/managerOutcome.js'
       - 'functions/managerOutcome.test.js'
       - 'functions/contextStore.js'
+      - 'functions/worldMap.js'
+      - 'functions/worldMapToolSchemas.js'
+      - 'src/App.js'
+      - 'src/components/WorldHome.js'
+      - 'netlify/functions/agent-ideas-api.mts'
+      - 'scripts/world-map-smoke.js'
       - 'functions/managerRunRecovery.js'
       - 'functions/hqDispatcher.js'
       - 'scripts/hq-dispatch-smoke.js'
@@ -53,6 +59,10 @@ jobs:
       - run: npm run test:public-cms
       - run: node --check functions/managerOutcome.js
       - run: node --check functions/contextStore.js
+      - run: node --check functions/worldMap.js
+      - run: node --check functions/worldMapToolSchemas.js
+      - run: npm run test:world-home
+      - run: CI=false npm run build
       - run: node --check functions/managerRunRecovery.js
       - run: node --check functions/hqDispatcher.js
       - run: npm run test:hq-dispatch
