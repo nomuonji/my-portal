@@ -23,6 +23,7 @@ import {
 } from '@mui/icons-material';
 import { Link as RouterLink } from 'react-router-dom';
 import ContextPanel from './ContextPanel';
+import AgentGuidePanel from './AgentGuidePanel';
 import { auth } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -49,7 +50,7 @@ async function fetchPortalWorld(path = '?resource=world_map', options = {}) {
 
 const EMPTY = { routes: [], projects: [], spaces: [], methods: [], chatSkills: [], contexts: [], warnings: [], coverage: {} };
 const SEARCH_TABS = [
-  { id: 'all', label: 'すべて' }, { id: 'routes', label: '分野・入口' },
+  { id: 'all', label: 'すべて' }, { id: 'guide', label: 'Agent Guide' }, { id: 'routes', label: '分野・入口' },
   { id: 'projects', label: 'Projects' }, { id: 'skills', label: 'Skills' },
   { id: 'contexts', label: 'Contexts' },
 ];
@@ -244,6 +245,12 @@ export default function WorldHome() {
       </Paper>
 
       {loading && <Box sx={{ py: 7, display: 'flex', justifyContent: 'center' }}><CircularProgress /></Box>}
+
+      {!loading && show('guide') && (
+        <AgentGuidePanel guide={data.agentGuide} metadataRevision={data.metadataRevision}
+          storage={data.agentGuideStorage} updatedAt={data.agentGuideUpdatedAt}
+          api={fetchPortalWorld} onSaved={refreshWorld}/>
+      )}
 
       {!loading && show('routes') && (
         <section aria-label="参照先の地図">
