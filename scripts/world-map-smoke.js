@@ -72,7 +72,8 @@ try {
     await assert.rejects(() => world.update({ confirm:true, expectedRevision:0, boundaries:['test'] }), /revision conflict/);
 
     const app = fs.readFileSync(path.join(__dirname, '../src/App.js'), 'utf8');
-    assert.match(app, /Route path="\/" element=\{<WorldHome\s*\/>\}/);
+    assert.match(app, /Route path="\/" element=.+<WorldHome\s*\/>/);
+    assert.match(app, /\/boards\$\{location\.search\}/);
     assert.match(app, /Route path="\/boards" element=\{<PortalBoards\s*\/>\}/);
     const mcp = fs.readFileSync(path.join(__dirname, '../netlify/functions/mcp.mts'), 'utf8');
     assert.match(mcp, /world_map_get/);
