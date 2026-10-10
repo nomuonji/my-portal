@@ -18,13 +18,13 @@ const ROUTE = {
 const TOOLS = [
   {
     name: 'world_map_get',
-    description: 'FIRST ENTRYPOINT for ChatGPT user-specific work. Read the top-level My Portal world map BEFORE choosing between Sites Operator, Keywords Operator, My Portal Spaces, Skills, Projects and GitHub. Returns live Project/Space/Method indexes plus route and canonical-source guidance. This is NOT a Space and does NOT modify scheduled Managers or Workers.',
+    description: 'FIRST ENTRYPOINT for user-specific project conversations. Read world_map_get once first, then FOLLOW its agentGuide.instructions (the canonical, editable bootstrap protocol stored in My Portal, not ChatGPT custom instructions). Use its routes, Projects, Contexts and Skills to select relevant authoritative tools. This is not a Space and does not change scheduled Managers or Workers.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true },
   },
   {
     name: 'world_map_update',
-    description: 'Edit the meta-level My Portal world map navigation routes/boundaries after a confirmed addition, retirement or change of responsibility. Does not modify target Operators, Projects, Spaces, Methods, or scheduled agents. Routes are optional overrides of built-in defaults; new Projects/Spaces/Methods are indexed automatically.',
+    description: 'Revision-checked update for World Home routes/boundaries and the canonical agentGuide bootstrap instructions. Agent Guide governs chat initialization; not scheduled Manager/Worker instructions. Does not change connected Operators, Projects, Spaces or Skills.',
     inputSchema: {
       type: 'object', additionalProperties: false,
       properties: {
@@ -32,6 +32,11 @@ const TOOLS = [
         routes: { type: 'array', maxItems: 80, items: ROUTE },
         hiddenRouteIds: { type: 'array', maxItems: 100, items: { type: 'string' } },
         boundaries: { type: 'array', maxItems: 40, items: { type: 'string' } },
+        agentGuide: { type: 'object', additionalProperties: false, description: 'Canonical ChatGPT conversation bootstrap rules stored in World Home. Not instructions for autonomous Manager/Worker.', properties: {
+          title: {type:'string',minLength:1,maxLength:150},
+          instructions: {type:'string',minLength:250,maxLength:20000},
+          minimalCustomInstruction: {type:'string',minLength:1,maxLength:350},
+        }, required:['title','instructions','minimalCustomInstruction'] },
         confirm: { type: 'boolean', description: 'Confirm explicit authority to edit the navigation directory, not to change underlying systems.' },
       },
       required: ['expectedRevision', 'confirm'],
