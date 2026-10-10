@@ -63,10 +63,27 @@ try {
     assert.equal(before.methods[0].currentVersionNumber, 2);
     assert.equal(before.aiContexts.length, 1);
     assert.equal(before.aiContexts[0].id,'ai-space');
-    assert.equal(before.chatSkills.length,3);
+    assert.equal(before.chatSkills.length,11);
+    assert.equal(before.chatSkills[0].sourceOfTruth,'My Portal DB');
+    assert.ok(before.chatSkills.every(s=>!('body' in s)));
     assert.ok(!before.aiContexts.some(space=>space.id==='seo-space'));
     const chatContext=require('../functions/chatContextRegistry');
-    assert.equal(chatContext.checkSkill({id:'custom',title:'My Skill',repo:'nomuonji/skills',path:'custom/SKILL.md'}).id,'custom');
+    assert.equal(chatContext.cleanSkill({id:'custom',title:'My Skill',body:'A'.repeat(70)}).id,'custom');
+    const skill=await chatContext.getSkill({id:'human-web-voice'});
+    assert.ok(skill.body.length>1000);
+    assert.equal(skill.sourceOfTruth,'My Portal DB');
+    const updated=await chatContext.upsertSkill({
+      skill:{id:skill.id,title:skill.title,summary:skill.summary,triggers:skill.triggers,body:skill.body+'\nRevision proof.'},
+      expectedRevision:1,changeReason:'Revision test',confirm:true
+    });
+    assert.equal(updated.revision,2);
+    assert.match(updated.body,/Revision proof/);
+    const versions=await chatContext.skillVersions({id:skill.id});
+    assert.equal(versions.items.length,2);
+    assert.equal(versions.items[0].versionNumber,2);
+    await assert.rejects(()=>chatContext.upsertSkill({
+      skill:{id:skill.id,title:skill.title,body:skill.body},expectedRevision:1,confirm:true,
+    }),/revision conflict/);
     await assert.rejects(()=>chatContext.createNote({spaceId:'seo-space',summary:'incorrect',confirm:true}),/AI-side/);
     await chatContext.createNote({spaceId:'ai-space',kind:'correction',summary:'Skill and Method must stay separate',confirm:true,idempotencyKey:'test-conversation-1'});
     const noteView=await world.get();
