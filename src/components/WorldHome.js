@@ -25,7 +25,7 @@ import { Link as RouterLink } from 'react-router-dom';
 import { auth } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
-async function fetchPortalWorld(path = '?resource=world_map') {
+async function fetchPortalWorld(path = '?resource=world_map', options = {}) {
   let user = auth.currentUser;
   if (!user) {
     user = await new Promise((resolve, reject) => {
@@ -38,18 +38,19 @@ async function fetchPortalWorld(path = '?resource=world_map') {
   }
   const token = await user.getIdToken();
   const response = await fetch(`/api/agent-ideas${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    ...options,
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(options.headers||{}) },
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || `API error (${response.status})`);
   return data;
 }
 
-const EMPTY = { routes: [], projects: [], spaces: [], methods: [], warnings: [], coverage: {} };
+const EMPTY = { routes: [], projects: [], spaces: [], methods: [], chatSkills: [], aiContexts: [], aiContextNotes: [], warnings: [], coverage: {} };
 const SEARCH_TABS = [
   { id: 'all', label: 'すべて' }, { id: 'routes', label: '分野・入口' },
-  { id: 'projects', label: 'Projects' }, { id: 'methods', label: 'Methods' },
-  { id: 'spaces', label: 'Spaces' },
+  { id: 'projects', label: 'Projects' }, { id: 'skills', label: 'Skills' },
+  { id: 'aiContexts', label: 'AI側の記録' },
 ];
 function searchable(item) {
   return JSON.stringify(item || {}).toLocaleLowerCase();
@@ -106,8 +107,10 @@ export default function WorldHome() {
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState('all');
   const [expanded, setExpanded] = useState(null);
-  const [inspectedMethod, setInspectedMethod] = useState(null);
-  const [methodLoading, setMethodLoading] = useState(false);
+  const [noteTarget, setNoteTarget] = useState(null);
+  const [noteDraft, setNoteDraft] = useState({kind:'handoff',summary:'',detail:''});
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteError, setNoteError] = useState('');
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -125,8 +128,8 @@ export default function WorldHome() {
   const q = query.trim().toLocaleLowerCase();
   const routes = useMemo(() => (data.routes || []).filter(item => routeMatches(item, q)), [data.routes, q]);
   const projects = useMemo(() => (data.projects || []).filter(item => !q || searchable(item).includes(q)), [data.projects, q]);
-  const methods = useMemo(() => (data.methods || []).filter(item => !q || searchable(item).includes(q)), [data.methods, q]);
-  const spaces = useMemo(() => (data.spaces || []).filter(item => !q || searchable(item).includes(q)), [data.spaces, q]);
+  const skills = useMemo(() => (data.chatSkills || []).filter(item => !q || searchable(item).includes(q)), [data.chatSkills, q]);
+  const aiContexts = useMemo(() => (data.aiContexts || []).filter(item => !q || searchable(item).includes(q)), [data.aiContexts, q]);
   const tools = useMemo(() => {
     const results = new Map();
     (data.projects || []).forEach(project => (project.mcpTools || []).forEach(tool => {
@@ -138,17 +141,22 @@ export default function WorldHome() {
     return [...results.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [data.projects]);
   const show = (name) => tab === 'all' || tab === name;
-  const openMethod = async method => {
-    setInspectedMethod({ method, currentVersion: null });
-    setMethodLoading(true);
+  const addNote = async () => {
+    if (!noteTarget || !noteDraft.summary.trim()) return;
+    setNoteSaving(true);
+    setNoteError('');
     try {
-      const context = await fetchPortalWorld(`?resource=method_context&id=${encodeURIComponent(method.id)}`);
-      setInspectedMethod(context);
-    } catch (err) {
-      setInspectedMethod({ method, error: err.message });
-    } finally {
-      setMethodLoading(false);
-    }
+      await fetchPortalWorld('', {method:'POST',body:JSON.stringify({
+        action:'ai_context_note_create',spaceId:noteTarget.id,
+        summary:noteDraft.summary.trim(),detail:noteDraft.detail.trim(),
+        kind:noteDraft.kind,confirm:true,source:'my-portal-home',
+      })});
+      setNoteTarget(null);
+      setNoteDraft({kind:'handoff',summary:'',detail:''});
+      await reload();
+    } catch(err) {
+      setNoteError(err.message || '保存できませんでした');
+    } finally {setNoteSaving(false);}
   };
   const line = dark ? alpha(theme.palette.common.white, 0.13) : 'rgba(31,57,80,0.13)';
   const surface = dark ? alpha(theme.palette.background.paper, 0.8) : '#fff';
@@ -172,7 +180,7 @@ export default function WorldHome() {
             </Typography>
             <Typography variant="body1" sx={{ maxWidth: 680, mt: 1, lineHeight: 1.75, color: 'text.secondary' }}>
               何をしていて、何を知っていて、それぞれどこにあるのか。
-              Project・Method・Space・接続先を一つの入口から探せます。
+              チャット用Skill、AI側の検討履歴、Project、担当Operatorを明確に分けて探せます。
             </Typography>
           </Box>
           <Tooltip title="最新のディレクトリを読み直す">
@@ -185,8 +193,8 @@ export default function WorldHome() {
 
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(3,minmax(0,1fr))', sm: 'repeat(4,minmax(0,1fr))' }, gap: { xs: 1.2, sm: 3 }, mt: 3.8, position: 'relative' }}>
           <SummaryNumber label="Projects" number={data.projects?.length ?? '—'} caption="実装・運用単位" />
-          <SummaryNumber label="Methods" number={data.methods?.length ?? '—'} caption="手順とスキル" />
-          <SummaryNumber label="Spaces" number={data.spaces?.length ?? '—'} caption="長期的な知見" />
+          <SummaryNumber label="Chat Skills" number={data.chatSkills?.length ?? '—'} caption="SKILL.md が正本" />
+          <SummaryNumber label="AI Context" number={data.aiContexts?.length ?? '—'} caption="会話の記録と判断" />
           <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
             <SummaryNumber label="Tools" number={tools.length} caption="Projectから検出" />
           </Box>
@@ -201,7 +209,7 @@ export default function WorldHome() {
       <Paper variant="outlined" sx={{ p: { xs: 1.35, sm: 1.7 }, mt: 2, borderRadius: 2.5, borderColor: line, background: surface }}>
         <TextField
           value={query} onChange={e => setQuery(e.target.value)} fullWidth size="small"
-          placeholder="SEO、Culture、ラジ父、repo名、Method名から探す"
+          placeholder="SEO、Culture、Skill名、AIの検討記録、repo名から探す"
           inputProps={{ 'aria-label': 'World Home内を検索' }}
           InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon color="action" /></InputAdornment> }}
         />
@@ -301,41 +309,77 @@ export default function WorldHome() {
         </section>
       )}
 
-      {!loading && show('methods') && (
-        <section aria-label="Methodsとスキル">
-          <SectionHeading eyebrow="03 / HOW WE WORK" title="Methods / スキル" subtitle="My Portalの有効な方法論。ChatGPTに導入されたスキルは別途確認します。" count={methods.length} icon={<SparkIcon color="primary" />} />
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2,minmax(0,1fr))' }, gap: 1.15 }}>
-            {methods.map(method => (
-              <Paper key={method.id} variant="outlined" sx={{ p: 1.8, borderRadius: 2.3, borderColor: line }}>
-                <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1}>
-                  <Typography variant="subtitle2" fontWeight={850}>{method.title}</Typography>
-                  <Chip size="small" label={method.currentVersionNumber ? `v${method.currentVersionNumber}` : 'version未設定'} variant="outlined" />
+      {!loading && show('skills') && (
+        <section aria-label="チャット専用Skills">
+          <SectionHeading eyebrow="03 / CHATGPT SKILLS" title="Skills"
+            subtitle="チャットで使う手順はSKILL.mdを正本として保存。Agent HQ Manager / WorkerのMethodとは別です。"
+            count={skills.length} icon={<SparkIcon color="primary" />} />
+          <Alert severity="info" sx={{ mb: 1.5, '& .MuiAlert-message':{fontSize:13} }}>
+            My PortalはSkillの保存場所を案内します。GitHubに保存されていてもChatGPTへインストール済みとは限りません。
+          </Alert>
+          <Box sx={{ display:'grid', gridTemplateColumns:{xs:'1fr',md:'repeat(2,minmax(0,1fr))'},gap:1.15 }}>
+            {skills.map(skill=>(
+              <Paper key={skill.id} variant="outlined" sx={{ p:2,borderRadius:2.3,borderColor:line }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
+                  <Typography variant="subtitle1" fontWeight={850}>{skill.title}</Typography>
+                  <Chip size="small" variant="outlined" color="success" label="SKILL.md" />
                 </Stack>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: .65, lineHeight: 1.65 }}>{method.summary}</Typography>
-                <Stack direction="row" flexWrap="wrap" useFlexGap spacing={.55} sx={{ mt: 1.05 }}>
-                  <Button size="small" onClick={() => openMethod(method)} endIcon={<BookIcon fontSize="small" />}>Methodの中身</Button>
-                  {method.spaceId && <RuleLink to={`/thinking?space=${encodeURIComponent(method.spaceId)}`}>関連Space</RuleLink>}
+                <Typography variant="body2" color="text.secondary" sx={{mt:.6,lineHeight:1.65}}>{skill.summary}</Typography>
+                <Stack direction="row" flexWrap="wrap" useFlexGap spacing={.5} sx={{mt:1.1}}>
+                  {(skill.triggers||[]).slice(0,4).map(t=><Chip key={t} label={t} size="small" variant="outlined" />)}
                 </Stack>
-              </Paper>
-            ))}
-          </Box>
-        </section>
-      )}
-
-      {!loading && show('spaces') && (
-        <section aria-label="知識と長期テーマ">
-          <SectionHeading eyebrow="04 / WHAT WE KNOW" title="Spaces / 知見" subtitle="研究・決定・長期テーマの保存場所。ProjectやMethodとは役割が異なります。" count={spaces.length} icon={<ThinkingIcon color="primary" />} />
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2,minmax(0,1fr))' }, gap: 1.05 }}>
-            {spaces.map(space => (
-              <Paper key={space.id} variant="outlined" sx={{ p: 1.7, borderRadius: 2.3, borderColor: line }}>
-                <Typography variant="subtitle2" fontWeight={800}>{space.title}</Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: .4, lineHeight: 1.65 }}>{space.summary}</Typography>
-                <Box sx={{ mt: 1 }}>
-                  <RuleLink to={`/thinking?space=${encodeURIComponent(space.id)}`}>知見を開く</RuleLink>
+                <Box sx={{mt:1.15}}>
+                  <RuleLink href={skill.url}>Skill本文を開く</RuleLink>
+                  <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:.5,overflowWrap:'anywhere'}}>{skill.repo}/{skill.path}</Typography>
                 </Box>
               </Paper>
             ))}
           </Box>
+          {skills.length===0&&<Typography color="text.secondary">登録済みSkillがありません。</Typography>}
+        </section>
+      )}
+
+      {!loading && show('aiContexts') && (
+        <section aria-label="AI側の会話記録と長期コンテクスト">
+          <SectionHeading eyebrow="04 / AI CONTEXT" title="AI側のコンテクスト"
+            subtitle="AI側のSpaceだけを独立表示。チャットで決まったこと・訂正・引き継ぎを保存して、手戻りを防ぎます。"
+            count={aiContexts.length} icon={<ThinkingIcon color="primary" />} />
+          <Box sx={{ display:'grid',gridTemplateColumns:{xs:'1fr',md:'repeat(2,minmax(0,1fr))'},gap:1.15 }}>
+            {aiContexts.map(space=>(
+              <Paper key={space.id} variant="outlined" sx={{p:2,borderRadius:2.3,borderColor:line}}>
+                <Typography variant="subtitle1" fontWeight={850}>{space.title}</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{mt:.45,lineHeight:1.65}}>{space.summary}</Typography>
+                {(space.latestNotes||[]).length>0 && (
+                  <Box sx={{mt:1.2}}>
+                    <Typography variant="overline" color="text.secondary" fontWeight={850}>最近のチャット記録</Typography>
+                    {(space.latestNotes||[]).map(note=>(
+                      <Box key={note.id} sx={{py:.7,borderTop:`1px solid ${line}`}}>
+                        <Typography variant="caption" color="text.secondary">{note.kind} · {note.createdAt?new Date(note.createdAt).toLocaleDateString('ja-JP'):''}</Typography>
+                        <Typography variant="body2" sx={{mt:.2,lineHeight:1.55}}>{note.summary}</Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                )}
+                <Stack direction="row" flexWrap="wrap" useFlexGap spacing={.4} sx={{mt:1.25}}>
+                  <RuleLink to={`/thinking?space=${encodeURIComponent(space.id)}`}>詳細を開く</RuleLink>
+                  <Button size="small" onClick={()=>{
+                    setNoteTarget(space);setNoteError('');setNoteDraft({kind:'handoff',summary:'',detail:''});
+                  }}>会話の要点を記録</Button>
+                </Stack>
+              </Paper>
+            ))}
+          </Box>
+          {aiContexts.length===0 && <Typography color="text.secondary">AI側のコンテクストがありません。</Typography>}
+          <Paper variant="outlined" sx={{mt:1.5,p:1.6,borderColor:line,borderRadius:2.2}}>
+            <Typography variant="body2" fontWeight={750}>人間側のSpace・運営Methodは別の場所にあります</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{mt:.4}}>
+              人間側の長期テーマはThinking Workspaceへ。Manager/WorkerのMethodはAgent HQで運用します。
+            </Typography>
+            <Stack direction="row" spacing={.6} sx={{mt:.8}} flexWrap="wrap" useFlexGap>
+              <RuleLink to="/thinking">Thinking Workspace</RuleLink>
+              <RuleLink to="/dashboard">Agent HQ</RuleLink>
+            </Stack>
+          </Paper>
         </section>
       )}
 
@@ -369,25 +413,29 @@ export default function WorldHome() {
         {data.generatedAt && ` · 最終取得 ${new Date(data.generatedAt).toLocaleString('ja-JP')}`}
       </Typography>
 
-      <Dialog open={Boolean(inspectedMethod)} onClose={() => setInspectedMethod(null)} fullWidth maxWidth="md">
-        <DialogTitle sx={{ fontWeight: 850 }}>{inspectedMethod?.method?.title || 'Method'}</DialogTitle>
+      <Dialog open={Boolean(noteTarget)} onClose={() => {if(!noteSaving)setNoteTarget(null);}} fullWidth maxWidth="sm">
+        <DialogTitle sx={{fontWeight:850}}>AI側の会話記録を残す</DialogTitle>
         <DialogContent dividers>
-          {methodLoading ? <CircularProgress size={24} /> : (
-            <Stack spacing={1.2}>
-              {inspectedMethod?.error && <Alert severity="warning">{inspectedMethod.error}</Alert>}
-              <Typography variant="body2" color="text.secondary">{inspectedMethod?.method?.summary}</Typography>
-              {inspectedMethod?.currentVersion && (
-                <>
-                  <Chip size="small" label={inspectedMethod.currentVersion.label || `v${inspectedMethod.currentVersion.versionNumber}`} sx={{ alignSelf: 'start' }} />
-                  <Typography variant="body2" component="div" sx={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', lineHeight: 1.7 }}>
-                    {inspectedMethod.currentVersion.instructions || '手順は未登録です。'}
-                  </Typography>
-                </>
-              )}
-            </Stack>
-          )}
+          <Typography variant="body2" color="text.secondary" sx={{mb:1.5}}>{noteTarget?.title}</Typography>
+          <Stack spacing={1.7}>
+            <TextField select SelectProps={{native:true}} label="記録の種類" value={noteDraft.kind}
+              onChange={e=>setNoteDraft(d=>({...d,kind:e.target.value}))}>
+              <option value="decision">確定した決定</option>
+              <option value="correction">訂正・手戻り防止</option>
+              <option value="handoff">次回への引き継ぎ</option>
+              <option value="finding">新しい発見</option>
+            </TextField>
+            <TextField label="次のチャットに残す要点" value={noteDraft.summary} multiline minRows={2} required
+              onChange={e=>setNoteDraft(d=>({...d,summary:e.target.value}))} inputProps={{maxLength:800}}/>
+            <TextField label="理由・背景（任意）" value={noteDraft.detail} multiline minRows={3}
+              onChange={e=>setNoteDraft(d=>({...d,detail:e.target.value}))} inputProps={{maxLength:4500}}/>
+          </Stack>
+          {noteError&&<Alert severity="error" sx={{mt:1.3}}>{noteError}</Alert>}
         </DialogContent>
-        <DialogActions><Button onClick={() => setInspectedMethod(null)}>閉じる</Button></DialogActions>
+        <DialogActions>
+          <Button disabled={noteSaving} onClick={()=>setNoteTarget(null)}>キャンセル</Button>
+          <Button variant="contained" disabled={noteSaving||!noteDraft.summary.trim()} onClick={addNote}>保存</Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );
