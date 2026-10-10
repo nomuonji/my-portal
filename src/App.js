@@ -500,7 +500,7 @@ function App() {
           >
             {user ? (
               <Routes>
-                <Route path="/" element={<WorldHome />} />
+                <Route path="/" element={new URLSearchParams(location.search).has("board") ? <Navigate to={`/boards${location.search}`} replace /> : <WorldHome />} />
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/memo" element={<Memo />} />
                 <Route path="/memo/:memoId" element={<Memo />} />
