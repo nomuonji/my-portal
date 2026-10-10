@@ -1,4 +1,5 @@
 const { getDocumentDb, FieldValue } = require('./documentDb');
+const { normalizedSource, sourceId } = require('./curationSourceRules');
 
 const DATABASE_ID = '(default)';
 
@@ -22,6 +23,7 @@ const COLLECTIONS = Object.freeze({
   ogiri_responses: { label: '大喜利回答', tagsField: 'signals' },
   creative_profile: { label: '創造性プロファイル' },
   humor_examples: { label: 'センス帳', tagsField: 'signals' },
+  curation_sources: { label: '人間選考済み情報源', tagsField: 'tags' },
 });
 
 function db() {
@@ -164,9 +166,13 @@ async function search(input = {}) {
 async function create(input = {}) {
   requireConfirmation(input, 'create');
   const config = collectionConfig(input.collection);
-  const data = jsonSafe(input.data && typeof input.data === 'object' ? input.data : {});
+  let data = jsonSafe(input.data && typeof input.data === 'object' ? input.data : {});
   if (config.name === 'ideas') data.owner = 'portal';
-  const explicitId = clampString(input.id, 500);
+  if (config.name === 'curation_sources') data = normalizedSource(data);
+  const explicitId = clampString(input.id, 500) || (config.name === 'curation_sources' ? sourceId(data.url) : undefined);
+  if (config.name === 'curation_sources' && explicitId !== sourceId(data.url)) {
+    throw new Error('Curation source ID must match canonical source URL');
+  }
   const ref = explicitId
     ? db().collection(config.name).doc(explicitId)
     : db().collection(config.name).doc();
@@ -189,13 +195,18 @@ async function update(input = {}) {
   requireConfirmation(input, 'update');
   const config = collectionConfig(input.collection);
   const id = assertString(input.id, 'id', 500);
-  const patch = jsonSafe(input.patch && typeof input.patch === 'object' ? input.patch : {});
+  let patch = jsonSafe(input.patch && typeof input.patch === 'object' ? input.patch : {});
   if (!Object.keys(patch).length) throw new Error('patch must contain at least one field');
   const ref = db().collection(config.name).doc(id);
   const existing = await ref.get();
   if (!existing.exists) throw new Error(`Document not found: ${config.name}/${id}`);
   assertPortalOwned(config, documentToObject(existing));
   if (config.name === 'ideas') patch.owner = 'portal';
+  if (config.name === 'curation_sources') {
+    const prior=existing.data();
+    patch=normalizedSource(patch,prior);
+    if(sourceId(patch.url)!==id)throw new Error('Change a source URL by adding a new source; its identity is immutable');
+  }
   await ref.set({ ...patch, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
   return { collection: config.name, item: documentToObject(await ref.get()), databaseId: DATABASE_ID };
 }

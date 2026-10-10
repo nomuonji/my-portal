@@ -48,6 +48,7 @@ import {
   Archive as ArchiveIcon,
   Public as PublicIcon,
   FaceRetouchingNatural as CharacterIcon,
+  BookmarksOutlined as SourcesIcon,
 } from '@mui/icons-material';
 
 import Memo from './components/Memo';
@@ -75,6 +76,7 @@ import Stock from './components/Stock';
 import GlobalFlashcardManagement from './components/GlobalFlashcardManagement';
 import PublicCms from './components/PublicCms';
 import CharacterLibrary from './components/CharacterLibrary';
+import CurationSources from './components/CurationSources';
 
 import getAppTheme from './theme';
 
@@ -138,6 +140,7 @@ function App() {
     if (path.startsWith('/social-archive')) return 'X投稿アーカイブ';
     if (path.startsWith('/public-cms')) return 'Public CMS';
     if (path.startsWith('/characters')) return 'キャラクターDB';
+    if (path.startsWith('/curation-sources')) return '情報源ライブラリ';
     if (path.startsWith('/ideaboard') || path.startsWith('/idea')) return 'アイデア';
     if (path.startsWith('/hobbyboard') || path.startsWith('/hobby')) return '趣味';
     if (path.startsWith('/stockboard') || path.startsWith('/stock')) return 'ストック';
@@ -322,6 +325,10 @@ function App() {
 
               <ListItemIcon><SmartToyIcon /></ListItemIcon>
               <ListItemText primary="Agent Ideas" secondary="Portalと同じ構造でAIが補充" />
+            </ListItemButton>
+            <ListItemButton selected={location.pathname.startsWith('/curation-sources')} component={Link} to="/curation-sources" onClick={navClick}>
+              <ListItemIcon><SourcesIcon /></ListItemIcon>
+              <ListItemText primary="情報源ライブラリ" secondary="人間の選考で発掘した情報源" />
             </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/ogiri')} component={Link} to="/ogiri" onClick={navClick}>
               <ListItemIcon><EmojiObjectsIcon /></ListItemIcon>
@@ -517,6 +524,7 @@ function App() {
                 <Route path="/social-archive" element={<SocialArchive />} />
                 <Route path="/public-cms" element={<PublicCms />} />
                 <Route path="/characters" element={<CharacterLibrary />} />
+                <Route path="/curation-sources" element={<CurationSources />} />
                 <Route path="/thinking" element={<ThinkingWorkspace />} />
                 <Route path="/feature-requests" element={<FeatureRequests />} />
                 <Route path="/project" element={<Project />} />

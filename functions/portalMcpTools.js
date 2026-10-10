@@ -18,6 +18,7 @@ const COLLECTION_ENUM = [
   'ogiri_responses',
   'creative_profile',
   'humor_examples',
+  'curation_sources',
 ];
 
 const collectionSchema = {
