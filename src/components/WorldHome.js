@@ -232,7 +232,7 @@ export default function WorldHome() {
 
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(3,minmax(0,1fr))', sm: 'repeat(4,minmax(0,1fr))' }, gap: { xs: 1.2, sm: 3 }, mt: 3.8, position: 'relative' }}>
           <SummaryNumber label="Projects" number={data.projects?.length ?? '—'} caption="実装・運用単位" />
-          <SummaryNumber label="Chat Skills" number={data.chatSkills?.length ?? '—'} caption="SKILL.md が正本" />
+          <SummaryNumber label="Chat Skills" number={data.chatSkills?.length ?? '—'} caption="My Portal DBが正本" />
           <SummaryNumber label="AI Context" number={data.aiContexts?.length ?? '—'} caption="会話の記録と判断" />
           <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
             <SummaryNumber label="Tools" number={tools.length} caption="Projectから検出" />
