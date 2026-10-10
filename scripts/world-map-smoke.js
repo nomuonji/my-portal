@@ -132,7 +132,7 @@ try {
     assert.match(mcp, /world_map_get/);
     assert.match(mcp, /world_map_update/);
     assert.match(mcp,/chat_skill_list/);
-    assert.match(mcp,/ai_context_note_create/);
+    assert.doesNotMatch(mcp,/ai_context_note_create/);
     const home=fs.readFileSync(path.join(__dirname, '../src/components/WorldHome.js'),'utf8');
     assert.match(home, /show\('skills'\)/);
     assert.match(home, /show\('contexts'\)/);
