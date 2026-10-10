@@ -1,0 +1,13 @@
+{
+  "id": "tweet-to-youtube-essay",
+  "title": "Tweet to YouTube Essay",
+  "summary": "短い投稿から知的なYouTubeエッセイの構成と動画素材を組み立てる。",
+  "triggers": [
+    "ツイート動画",
+    "知的YouTube",
+    "動画脚本"
+  ],
+  "body": "---\nname: tweet-to-youtube-essay\ndescription: \"短い投稿から知的なYouTubeエッセイの構成と動画素材を組み立てる。\"\n---\n\n# Tweet to YouTube Essay\n\nチャット用スキルの正本はMy Portal DBの`chatSkills/tweet-to-youtube-essay`。以下は過去のMethod指示から一回だけ移管した初期本文。以後は旧Methodを優先して使わない。必要な外部情報は対応するOperatorで取得する。\n\n# Tweet → Intellectual YouTube Essay v0.2\n\nv0.1の知的リサーチ・Collision・Original Thesisを維持しつつ、完成動画の視聴体験を制作工程の中心に置く。\n\n動画尺は目的別に分ける。short = 60–150秒、standard = 5–8分、deep = 10–20分。思想・批評系の通常制作はstandardを既定とし、短尺pilotを本編扱いしない。\n\nScript、Spoken Script、On-screen Textを別成果物として扱う。文章として良い文を、そのままTTS原稿や画面字幕へ流用しない。\n\nSpoken Scriptでは読み・句読点・間・固有語の発音を音声用に調整する。AI→エーアイ、LLM→エルエルエム等、必要なら表示文と読みを分ける。\n\nAttention Timelineを先に設計し、各beatで視聴者が何を見るかを一つに絞る。原則として同時に複数の長文を読ませない。\n\nカードや重要テキストを読ませる場面では通常字幕を抑制し、読む時間を確保する。内容理解のための静止や無音を失敗とみなさない。\n\n本番TTSは無料・ローカル実行を前提とし、有料APIや従量課金を必須にしない。現在のanimation-factory標準はVOICEVOX Nemo。必要なクレジットを成果物に保持する。\n\nピクセルアートは背景・キャラクターの表現に使い、字幕・見出し・論点カードはフル解像度の通常フォントで描画する。\n\n長尺本番の前に30〜60秒のQuality Probeをレンダーし、音声、発音、テンポ、視線誘導、文字量、BGM、余白を確認する。probeが不合格なら本編レンダーへ進まない。",
+  "status": "available",
+  "importProvenance": "2026-10-10 one-time migration from former My Portal Method tweet-intellectual-youtube-essay. My Portal chatSkills DB is canonical thereafter."
+}

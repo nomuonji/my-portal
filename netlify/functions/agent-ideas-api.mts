@@ -5,10 +5,12 @@ import * as storeImport from "../../functions/agentIdeasStoreAgentDb.js";
 import * as documentDbImport from "../../functions/documentDb.js";
 import * as contextStoreImport from "../../functions/contextStore.js";
 import * as worldMapImport from "../../functions/worldMap.js";
+import * as chatContextImport from "../../functions/chatContextRegistry.js";
 
 const store: any = (storeImport as any).default ?? storeImport;
 const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
 const worldMap: any = (worldMapImport as any).default ?? worldMapImport;
+const chatContext: any = (chatContextImport as any).default ?? chatContextImport;
 const documentDb: any = (documentDbImport as any).default ?? documentDbImport;
 const AGENT_DATABASE_ID = "(default)";
 
@@ -126,6 +128,10 @@ export default async (request: Request) => {
       if (resource === "runs") {
         return json({ items: await listCollection(store.COLLECTIONS.runs, 150), databaseId: store.DATABASE_ID });
       }
+      if (resource === "chat_skills") return json(await chatContext.listSkills());
+      if (resource === "chat_skill") return json(await chatContext.getSkill({ id:url.searchParams.get("id")||"" }));
+      if (resource === "chat_skill_versions") return json(await chatContext.skillVersions({ id:url.searchParams.get("id")||"" }));
+      if (resource === "ai_context_notes") return json(await chatContext.listNotes({ spaceId:url.searchParams.get("spaceId")||undefined,limit:100 }));
       if (resource === "world_map") {
         return json(await worldMap.get());
       }
@@ -246,6 +252,8 @@ export default async (request: Request) => {
           nextActions: body.nextActions || [],
         }));
       }
+      if (action === "chat_skill_upsert") return json(await chatContext.upsertSkill({skill:body.skill,expectedRevision:body.expectedRevision,changeReason:body.changeReason,confirm:body.confirm===true}));
+      if (action === "ai_context_note_create") return json(await chatContext.createNote({spaceId:body.spaceId,summary:body.summary,kind:body.kind,detail:body.detail,source:body.source||"portal-ui",sourceUrl:body.sourceUrl,idempotencyKey:body.idempotencyKey,confirm:body.confirm===true}));
       if (action === "world_map_update") {
         return json(await worldMap.update({
           expectedRevision: body.expectedRevision,

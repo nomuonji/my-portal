@@ -1,0 +1,13 @@
+{
+  "id": "murakami-radio-thinking",
+  "title": "Murakami Radio Thinking",
+  "summary": "村上RADIOの資料から着想方法や文体の観察を行う。",
+  "triggers": [
+    "村上RADIO",
+    "村上春樹モード",
+    "文体分析"
+  ],
+  "body": "---\nname: murakami-radio-thinking\ndescription: \"村上RADIO由来の観察と思考の進め方を、外部rawコーパスを尊重してチャットで活用するスキル。\"\n---\n\n# Murakami Radio Thinking\n\n**ChatGPT用スキルの正本:** My Portal DBの本Skill本文。下記は既存Methodの実行指示をスキルへ移管した内容であり、以降My PortalのManager/Worker Methodをチャット実行の正本として扱わない。旧Method ID: `9EobZmqCfRz8J1zs95gS`（履歴・互換用）。\n\n# murakami-radio-thinking v1\n\n## 目的\n村上RADIO公式アーカイブを、思考の仕方だけでなく文体そのものも観察できる外部教師コーパスとして使う。説明過剰・箇条書き的・企画書的なAI出力から距離を取り、具体的な観察から自然に思考を広げる。\n\n## データ境界\n- 正本: My Portal `intelligence_raw_documents`, dataset=`murakami_radio`。\n- `rawHtml` がcanonical。取得時の句読点、段落、改行、括弧、語尾、引用、固有名詞などを勝手に正規化しない。\n- `derivedText`、style profile、thinking mechanism、embeddingは派生データ。rawを上書きしない。\n- ラジ父 `humor_examples/dataset=radichichi` とは別コーパスとして扱う。\n- 外部コーパスをユーザー本人の嗜好や意見と混同しない。\n\n## 1. Task grounding\nまず依頼の目的、事実制約、どの程度文章表現が重要かを通常どおり理解する。「村上春樹モード」「村上RADIOモード」が明示された場合は本Methodを主レンズとして使う。\n\n## 2. Raw retrieval\n関連テーマだけに絞りすぎず、複数回・複数時期から参照する。内容類似だけでなく、話し方・話題転換・説明の運びを見るためのサンプルも取る。\n必要な原文はrawへ遡って確認する。派生プロフィールだけを正本扱いしない。\n\n## 3. Style analysis\n毎回すべてを使う必要はないが、少なくとも以下を観察する:\n- 一文・一段落の長短とリズム\n- 文末、留保、断定の弱め方\n- 一人称と読者/聴取者への距離\n- 接続詞、脱線、話題復帰の方法\n- 括弧、補足、列挙、固有名詞の置き方\n- 抽象語と具体物の比率\n- 比喩の密度と出し方\n- 低温のユーモア、自己ツッコミ、過小反応\n- 説明を閉じ切らない余白\n- 音声会話としての自然なテンポ\n\n## 4. Thinking analysis\n表面文体とは別に、思考の移動を観察する:\n- 小さな具体・個人的経験から始める\n- すぐ一般論に飛ばず、具体の周囲を歩く\n- 遠い文化・音楽・記憶・人物へ横方向に連想する\n- 「正しさ」より自分の見え方・好みを位置づける\n- 真面目な話へ小さなユーモアを挟む\n- 一般化したあとも例外や留保を残す\n- 結論を必要以上に密閉しない\n\n## 5. Transfer\n参照した原文を名詞置換しない。まず style operation と thinking operation に分けて抽象化し、現在の課題へ距離を取って転用する。\n文体が重要な生成では、語彙の表面的な模写よりも、文の長短、視点、接続、具体と抽象の往復、留保、余白の配置を優先する。\n\n## 6. Draft\n最初から「それっぽい比喩」を盛らない。通常の明晰さを保った下書きを作り、必要な箇所だけ観察・連想・リズム・余白を入れる。\n事実タスクでは、文体レンズが事実・市場データ・技術制約・法的制約を上書きしてはならない。\n\n## 7. Distance / copy check\n最終出力は参照原文の長いフレーズ、固有の比喩、特徴的な文章展開をそのまま再現しない。\n複数の原文に共通する高次の特徴を使い、特定回の文章の復元にならないようにする。\n\n## 8. Feedback learning\nユーザーが「ここは近い」「狙いすぎ」「文章が気取っている」「もっと乾いている」「この距離感がいい」等を評価した場合、外部コーパスとは別のユーザー評価として蓄積し、次回以降は明示評価を優先する。\n\n## 呼び出し\n- 「村上春樹モードで考えて」\n- 「村上RADIOモードで」\n- 「Creative Intelligenceを村上RADIOレンズで」\n- 「村上RADIOの文体と思考の運びを使って」\n",
+  "status": "available",
+  "importProvenance": "2026-10-10 imported from nomuonji/skills/murakami-radio-thinking/SKILL.md; My Portal DB is canonical thereafter"
+}

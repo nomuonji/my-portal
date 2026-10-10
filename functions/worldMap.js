@@ -3,6 +3,7 @@
  * Projects, Spaces and Methods. No scheduled Manager/Worker is changed.
  */
 const { getDocumentDb, FieldValue } = require('./documentDb');
+const chatContext = require('./chatContextRegistry');
 
 const DB_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTION = 'portalContextAtlas';
@@ -38,17 +39,17 @@ const ROUTES = Object.freeze([
   },
   {
     id: 'creative', title: 'Creative Intelligence', keywords: ['大喜利', 'ラジ父', '村上RADIO', '創作', '発想', 'キャラクター'],
-    description: '発想レンズ、Method、キャラクター設定。画像素材はImageKitとの接続状態を確認。',
+    description: '発想レンズはMy Portalのチャット用Skill DB、キャラクター設定は専用DB。画像の実体はImageKitの接続先を確認。',
     projectId: 'my-portal', primary: 'My Portal',
     tools: ['My Portal'], spaceIds: ['dCl9tY6FgwkmMsamDUah'],
-    boundary: 'ラジ父と大喜利は同じレンズ。最新のMethod版を参照する。',
+    boundary: 'ラジ父と大喜利は同じレンズ。チャット用Skill本文はMy PortalのchatSkillsが正本。',
   },
   {
-    id: 'skills', title: 'スキル・Methodの所在地', keywords: ['Skill', 'スキル', 'Method', 'SKILL.md', 'ChatGPTスキル'],
-    description: 'ChatGPTインストール済みSkill、My PortalのMethod、GitHub保存版スキルを区別して探す。',
-    projectId: 'my-portal', primary: 'My Portal Methods / ChatGPT Skills / GitHub',
-    tools: ['My Portal', 'GitHub'], spaceIds: [], url: 'https://github.com/nomuonji/skills',
-    boundary: 'ChatGPTに導入済みSkillはセッション内のスキル一覧を確認。My PortalのMethodは別の実体。GitHub保存だけではChatGPTへ自動インストールされない。',
+    id: 'skills', title: 'チャット用Skillの所在地', keywords: ['Skill', 'スキル', 'Method', 'SKILL.md', 'ChatGPTスキル'],
+    description: 'チャット用Skill本文と更新履歴はMy Portal DBに保存。Manager/Worker MethodはAgent HQ内で扱う。',
+    projectId: 'my-portal', primary: 'My Portal chatSkills DB',
+    tools: ['My Portal'], spaceIds: [],
+    boundary: 'チャット用Skillの正本はMy Portal DB（chatSkills）。GitHubは任意のエクスポート先。Manager/Worker MethodをSkillとして使わない。',
   },
   {
     id: 'sns', title: 'SNS投稿・運用', keywords: ['Threads', 'X投稿', '下書き', 'SNS', '自動投稿'],
@@ -167,8 +168,9 @@ async function get() {
   const results = await Promise.allSettled([
     db().collection(COLLECTION).doc(DOC_ID).get(),
     listCollection('projects'), listCollection('spaces'), listCollection('methods'),
+    chatContext.listSkills(), chatContext.listNotes({limit:45}),
   ]);
-  const names = ['directory', 'projects', 'spaces', 'methods'];
+  const names = ['directory', 'projects', 'spaces', 'methods', 'chatSkills', 'aiContextNotes'];
   const warnings = results.flatMap((r, i) => r.status === 'rejected' ? [`${names[i]}: unavailable (${safeText(r.reason?.message || r.reason, 160)})`] : []);
   const settings = results[0].status === 'fulfilled' && results[0].value.exists ? results[0].value.data() : {};
   const edited = Array.isArray(settings.routes) ? settings.routes : [];
@@ -178,10 +180,12 @@ async function get() {
   });
   const deleted = new Set(safeArray(settings.hiddenRouteIds, 100));
   const items = n => (results[n].status === 'fulfilled' ? results[n].value : []);
+  const aiSpaces = items(2).filter(s => s.themeOwner === 'assistant' && s.status !== 'archived');
+  const allNotes = results[5].status === 'fulfilled' ? results[5].value.items : [];
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     title: 'My Portal · World Home',
-    description: 'チャットと人間が共通して参照する、プロジェクト・Method・Space・データ所在地の上位ディレクトリ。',
+    description: 'SkillとAgent HQ Methodを分離し、AI側の会話履歴とProject/Operatorの所在地を案内するホーム。',
     generatedAt: new Date().toISOString(),
     metadataRevision: Number(settings.revision) || 0,
     metadataUpdatedAt: dateValue(settings.updatedAt),
@@ -189,10 +193,14 @@ async function get() {
     boundaries: safeArray(settings.boundaries, 40),
     projects: items(1).map(summarizeProject).sort((a,b) => a.name.localeCompare(b.name)),
     spaces: items(2).map(summarizeSpace).sort((a,b) => a.title.localeCompare(b.title)),
+    aiContexts: aiSpaces.map(s=>({ ...summarizeSpace(s), currentBrief:safeText(s.currentBrief,1700), latestNotes:allNotes.filter(n=>n.spaceId===s.id).slice(0,3) })).sort((a,b)=>a.title.localeCompare(b.title)),
+    chatSkills: results[4].status === 'fulfilled' ? results[4].value.items : [],
+    aiContextNotes: allNotes,
     methods: items(3).map(summarizeMethod).sort((a,b) => a.title.localeCompare(b.title)),
     coverage: Object.fromEntries(names.slice(1).map((n, i) => [n, results[i+1].status === 'fulfilled' ? 'loaded' : 'unavailable'])),
+    registrySemantics: {skills:'My Portal DB / chatSkills',methods:'Agent HQ Manager/Worker execution',aiContexts:'assistant-owned Spaces with append-only chat notes',spaces:'Thinking Workspace themes'}, 
     warnings,
-    help: '最初にこの地図を見て、話題に合う担当Operator/Project/Methodを選ぶ。表示された登録状態は現在の本番稼働の保証ではない。',
+    help: '最初にこの地図で正本/Skill/AI側の会話履歴を確認する。MethodはManager/Workerの運用契約で、Skillの代替ではない。GitHub保存だけではChatGPTへのスキル導入を保証しない。',
   };
 }
 async function update(input = {}) {
