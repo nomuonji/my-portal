@@ -1,67 +1,105 @@
-/* ChatGPT skills and AI-side conversation context belong above the Agent HQ
- * Method/Worker layer. GitHub SKILL.md files are canonical; this directory
- * stores pointers and classification, never a second executable Method.
+/* ChatGPT Skill data: My Portal's chatSkills collection is canonical.
+ * GitHub SKILL.md files and prior Methods are import sources or optional exports,
+ * not execution authorities. The first read bootstraps imported skills into DB
+ * only if missing; subsequent reads and edits always use the database.
  */
 const { getDocumentDb, FieldValue } = require('./documentDb');
+const SEEDS = require('./chatSkillSeeds');
 const DB_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const db = () => getDocumentDb(DB_ID);
 const SKILLS = 'chatSkills';
+const SKILL_VERSIONS = 'chatSkillVersions';
 const NOTES = 'aiContextNotes';
-const BUILTIN_SKILLS = Object.freeze([
- {id:'human-web-voice',title:'Human Web Voice',summary:'人が書いたネット文章を観察し、媒体の役割に合わせて執筆・編集する。',triggers:['文章','記事執筆','SNS文体','自然な文体'],repo:'nomuonji/skills',path:'human-web-voice/SKILL.md',status:'available',kind:'github_skill'},
- {id:'site-originality-studio',title:'Site Originality Studio',summary:'サイトの編集思想から世界観、UI/UX、ブランドの独自性を設計する。',triggers:['サイトデザイン','UI','UX','世界観','ブランディング'],repo:'nomuonji/skills',path:'site-originality-studio/SKILL.md',status:'available',kind:'github_skill'},
- {id:'idea-resonance-lab',title:'Idea Resonance Lab',summary:'実際の観測から、刺さる企画・商品・コンテンツを発想して検証する。',triggers:['企画','アイデア','市場','刺さる'],repo:'nomuonji/skills',path:'idea-resonance-lab/SKILL.md',status:'available',kind:'github_skill'},
-]);
 function safeString(value, limit=4000) { return String(value??'').trim().slice(0,limit); }
 function safeStrings(value, max=20) { return Array.isArray(value) ? value.slice(0,max).map(x=>safeString(x,180)).filter(Boolean) : []; }
-function checkSkill(value) {
+function cleanSkill(value) {
  const id=safeString(value?.id,90);
  if (!/^[a-z][a-z0-9-]*$/.test(id)) throw new Error('Skill id must be kebab-case');
  const title=safeString(value?.title,220);
  if (!title) throw new Error('Skill title required');
- const repo=safeString(value?.repo,190);
- const path=safeString(value?.path,320);
- if (!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repo) || !/^(?!\/)(?!.*\.\.)[a-zA-Z0-9_./-]+\/SKILL\.md$/.test(path))
-   throw new Error('Skill must point at a GitHub repo SKILL.md');
+ const body=safeString(value?.body,45000);
+ if(!body||body.length<50) throw new Error('Skill body required (full executable instructions)');
  return {
-  id,title,summary:safeString(value?.summary,1100),triggers:safeStrings(value?.triggers,25),
-  repo,path,kind:'github_skill',
+  id,title,summary:safeString(value?.summary,1100),
+  triggers:safeStrings(value?.triggers,25), body,
   status:['available','paused','archived'].includes(value.status)?value.status:'available',
-  note:safeString(value?.note,1200),
+  sourceOfTruth:'My Portal DB', kind:'chat_skill',
+  importProvenance:safeString(value?.importProvenance,350)||null,
  };
 }
-function projectSkill(skill) {
- const x=checkSkill(skill);
- return { ...x, url:`https://github.com/${x.repo}/blob/main/${x.path}`, installState:'not_verified',
-   sourceOfTruth:'GitHub SKILL.md', revision:Number(skill.revision)||0,
-   updatedAt: skill.updatedAt?.toDate?.()?.toISOString?.() || skill.updatedAt || null };
+function summary(skill) {
+ return {
+  id:skill.id,title:skill.title,summary:skill.summary,triggers:skill.triggers,
+  status:skill.status||'available',kind:'chat_skill',
+  sourceOfTruth:'My Portal DB',revision:Number(skill.revision)||0,
+  updatedAt:skill.updatedAt?.toDate?.()?.toISOString?.() || skill.updatedAt || null,
+  importProvenance:skill.importProvenance||null,
+ };
+}
+function skillData(snapshot) {
+ const v={id:snapshot.id,...snapshot.data()};
+ return {...summary(v),body:v.body};
+}
+async function bootstrapSkills() {
+ const collection=db().collection(SKILLS);
+ const all=await collection.limit(250).get();
+ const known=new Set(all.docs.map(d=>d.id));
+ const missing=SEEDS.filter(s=>!known.has(s.id));
+ if(missing.length===0)return;
+ await db().runTransaction(async tx=>{
+  const refs=missing.map(s=>({value:cleanSkill(s),ref:collection.doc(s.id)}));
+  const snaps=await Promise.all(refs.map(o=>tx.get(o.ref)));
+  refs.forEach((o,i)=>{
+   if(snaps[i].exists)return;
+   tx.set(o.ref,{...o.value,revision:1,createdAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
+   const vref=db().collection(SKILL_VERSIONS).doc(o.value.id+'__000001');
+   tx.set(vref,{...o.value,versionNumber:1,changeReason:'Initial migration to My Portal Skill DB',createdAt:FieldValue.serverTimestamp()});
+  });
+ });
 }
 async function listSkills() {
+ await bootstrapSkills();
  const snap=await db().collection(SKILLS).limit(250).get();
- const skills=new Map(BUILTIN_SKILLS.map(s=>[s.id,projectSkill(s)]));
- snap.docs.forEach(d=>{try{const entry=projectSkill({id:d.id,...d.data()});skills.set(entry.id,entry);}catch(_) {}});
- return {items:[...skills.values()].filter(s=>s.status!=='archived').sort((a,b)=>a.title.localeCompare(b.title)),source:'chatSkills + built-in verified pointers',notInstalledWarning:'GitHub storage does not mean the skill is installed in ChatGPT. Check the active ChatGPT Skill catalog in that session.'};
+ return {items:snap.docs.map(d=>summary({id:d.id,...d.data()})).filter(s=>s.status!=='archived').sort((a,b)=>a.title.localeCompare(b.title)),
+  sourceOfTruth:'My Portal DB / chatSkills',
+  notInstalledWarning:'Saving a skill in My Portal does not install it in ChatGPT. ChatGPT Skill installation is a separate user/product action.'};
 }
 async function getSkill(input) {
+ await bootstrapSkills();
  const id=safeString(input.id,90);
  const snap=await db().collection(SKILLS).doc(id).get();
- const entry=snap.exists ? {id,...snap.data()} : BUILTIN_SKILLS.find(s=>s.id===id);
- if(!entry)throw new Error('Unknown chat skill: '+id);
- return projectSkill(entry);
+ if(!snap.exists)throw new Error('Unknown chat Skill: '+id);
+ return skillData(snap);
 }
 async function upsertSkill(input) {
  if(input.confirm!==true)throw new Error('Explicit confirmation required');
- const cleaned=checkSkill(input.skill||{});
+ const cleaned=cleanSkill(input.skill||{});
+ const expectedRevision=Number(input.expectedRevision);
+ if(!Number.isInteger(expectedRevision)||expectedRevision<0)throw new Error('expectedRevision must be a nonnegative integer');
  const ref=db().collection(SKILLS).doc(cleaned.id);
- const revision=Number(input.expectedRevision);
- if(!Number.isInteger(revision)||revision<0)throw new Error('expectedRevision required');
  await db().runTransaction(async tx=>{
-   const snap=await tx.get(ref);
-   const current=snap.exists ? snap.data() : {};
-   if((Number(current.revision)||0)!==revision)throw new Error('Skill revision conflict');
-   tx.set(ref,{...cleaned,revision:revision+1,updatedAt:FieldValue.serverTimestamp()}, {merge:false});
+  const snap=await tx.get(ref);
+  const current=snap.exists?snap.data():{};
+  const rev=Number(current.revision)||0;
+  if(rev!==expectedRevision)throw new Error('Skill revision conflict');
+  const next=rev+1;
+  // Preserve imported provenance unless the editor intentionally supplies it.
+  const record={...cleaned,importProvenance:cleaned.importProvenance||current.importProvenance||null,
+    revision:next,createdAt:current.createdAt||FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()};
+  tx.set(ref,record);
+  const versionRef=db().collection(SKILL_VERSIONS).doc(cleaned.id+'__'+String(next).padStart(6,'0'));
+  tx.set(versionRef,{...record,versionNumber:next,changeReason:safeString(input.changeReason,800)||'Skill updated',createdAt:FieldValue.serverTimestamp()});
  });
  return getSkill({id:cleaned.id});
+}
+async function skillVersions(input={}) {
+ const id=safeString(input.id,90);
+ if(!id)throw new Error('Skill id required');
+ const snap=await db().collection(SKILL_VERSIONS).limit(250).get();
+ const items=snap.docs.map(d=>({id:d.id,...d.data()})).filter(d=>d.id.startsWith(id+'__'))
+  .sort((a,b)=>Number(b.versionNumber)-Number(a.versionNumber)).slice(0,30)
+  .map(d=>({...summary(d),versionNumber:d.versionNumber,changeReason:d.changeReason||'',body:d.body}));
+ return {skillId:id,items};
 }
 const NOTE_KINDS=['decision','correction','handoff','finding'];
 function serializeNote(doc) {
@@ -96,4 +134,4 @@ async function createNote(input) {
  const snapshot=await ref.get();
  return serializeNote(snapshot);
 }
-module.exports={listSkills,getSkill,upsertSkill,listNotes,createNote,BUILTIN_SKILLS,checkSkill};
+module.exports={listSkills,getSkill,upsertSkill,skillVersions,listNotes,createNote,cleanSkill};
