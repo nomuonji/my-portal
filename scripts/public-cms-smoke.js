@@ -33,6 +33,26 @@ const { _test }=require('../functions/publicCmsStore');
   assert.throws(()=>_test.validateEditingSession(session,'site_1','hello','active-method-v5',Date.now()+2*86400000),/expired/);
 
   assert.notEqual(fingerprint,_test.draftFingerprint({...sampleDraft,bodyMarkdown:'New text'}));
+  // In the Antonbase Notes publication lane, generic 7/7 checks alone are
+  // insufficient. The private review needs an actual editorial angle brief.
+  const validAngleBrief = [
+    'sourceMotive: The work began because program approvals take time; store candidates before needing to publish.',
+    'readerPull: One OAuth Allow click appeared inert but the next said used; the first click had changed server state.',
+    'angleAlternatives: Candidate A starts with an error-code explainer; candidate B begins with the actual motivation and a surprising silent click; B preserves more specific reader interest.',
+    'leadCheck: The title and first two paragraphs establish why the connection mattered and create a concrete question without revealing a secret.',
+    'storyVsFacts: The browser console violation was not captured; the post-fix connection succeeded.',
+    'omittedPrivateContext: Account identifiers, credential values, user identity and internal tickets were omitted.'
+  ].join('\\n');
+  assert.equal(_test.assertEditorialAngleEvidence('antonbase-notes',9,validAngleBrief),true);
+  assert.equal(_test.assertEditorialAngleEvidence('culture-institute',9,'brief not required'),true);
+  assert.equal(_test.assertEditorialAngleEvidence('antonbase-notes',8,'existing pre-v9 method'),true);
+  assert.throws(()=>_test.assertEditorialAngleEvidence('antonbase-notes',9,
+    'All seven checks completed and article is ready to publish.'),/sourceMotive/);
+  assert.throws(()=>_test.assertEditorialAngleEvidence('antonbase-notes',9,
+    validAngleBrief.replace(/readerPull:[^\\n]+/,'readerPull: OK')),/readerPull/);
+  assert.throws(()=>_test.assertEditorialAngleEvidence('antonbase-notes',9,
+    validAngleBrief.replace(/angleAlternatives:[^\\n]+/,'angleAlternatives: none')),/angleAlternatives/);
+
   const checks=Object.fromEntries(_test.EDITORIAL_CHECKS.map(name=>[name,true]));
   const approvedAt=new Date().toISOString();
   const methodVersionId='active-method-v5';
