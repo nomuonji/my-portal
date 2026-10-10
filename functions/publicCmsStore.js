@@ -490,6 +490,29 @@ async function contentEditorialPrepare(input = {}) {
     // Editorial Method is global; additionally read the organization-specific contract.
     publicationContract: safePublicationContract(siteSnap.data()?.publicationContract || {}) };
 }
+
+// Only Antonbase Notes uses this versioned, genre-sensitive private angle brief.
+// It is a review-process audit, NOT an automated verdict that prose is engaging.
+// Never publish these notes or expose their contents in an error message.
+function assertEditorialAngleEvidence(siteId, versionNumber, notes) {
+  if (siteId !== 'antonbase-notes' || versionNumber < 9) return true;
+  const required = [
+    ['sourceMotive', 24],
+    ['readerPull', 24],
+    ['angleAlternatives', 32],
+    ['leadCheck', 24],
+  ];
+  for (const [label, minChars] of required) {
+    const match = String(notes).match(new RegExp('(?:^|\\n)' + label + '\\s*:\\s*([^\\n]+)', 'i'));
+    const value = match?.[1]?.trim() || '';
+    if (value.length < minChars || /^(?:n\/?a|none|なし|確認済み|問題なし|ok|yes|pass|todo)$/i.test(value)) {
+      throw new Error('Editorial angle gate: private reviewNotes must include substantive ' + label +
+        ': evidence before approving Antonbase Notes; revise angle and lead rather than attesting without review.');
+    }
+  }
+  return true;
+}
+
 async function contentEditorialApprove(input = {}) {
   confirm(input, 'editorial_approve');
   const siteId = normalizeSiteId(input.siteId);
@@ -517,6 +540,7 @@ async function contentEditorialApprove(input = {}) {
   if (method.methodVersionId !== prepared.methodVersionId || fingerprint !== prepared.draftFingerprint)
     throw new Error('Editorial gate: Method version or draft changed; prepare and review again.');
   assertPrivacySafe(safeDraft(contentSnap.data()?.draft || {}, {slug}));
+  assertEditorialAngleEvidence(siteId, method.versionNumber, notes);
   const approvedAt = new Date().toISOString();
   const receipt = { reviewId, methodVersionId: method.methodVersionId, draftFingerprint: fingerprint, approvedAt };
   const batch = db().batch();
@@ -584,5 +608,5 @@ module.exports = {
   DATABASE_ID, COLLECTIONS, status, siteList, siteUpsert, contentList, contentGet,
   contentCreate, contentUpdate, contentPrivacyScan, contentEditorialPrepare, contentEditorialApprove, contentPublish, contentArchive, publicGet, publicList,
   deployStatus, siteDeployTrigger,
-  _test: { EDITORIAL_METHOD_ID, EDITORIAL_CHECKS, draftFingerprint, validateEditingSession, validateEditorialReceipt, normalizeSiteId, normalizeSlug, contentDocId, safePublicationContract, safeDraft, safeBlocks, safeBlock, safeLocale, translationGroupId, publicProjection, scanPublicContent, assertPrivacySafe, deployHookEnvName, isAllowedDeployHookUrl, triggerDeployHookUrl },
+  _test: { EDITORIAL_METHOD_ID, EDITORIAL_CHECKS, assertEditorialAngleEvidence, draftFingerprint, validateEditingSession, validateEditorialReceipt, normalizeSiteId, normalizeSlug, contentDocId, safePublicationContract, safeDraft, safeBlocks, safeBlock, safeLocale, translationGroupId, publicProjection, scanPublicContent, assertPrivacySafe, deployHookEnvName, isAllowedDeployHookUrl, triggerDeployHookUrl },
 };
