@@ -117,6 +117,9 @@ export default function WorldHome() {
   const [skillError, setSkillError] = useState('');
   const [skillEditing, setSkillEditing] = useState(false);
 
+  const refreshWorld = useCallback(async () => {
+    try { setData(await fetchPortalWorld()); } catch (err) { setError(err.message || 'Context一覧の更新に失敗しました'); }
+  }, []);
   const reload = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -363,7 +366,7 @@ export default function WorldHome() {
       {!loading && show('contexts') && (
         <section aria-label="Contexts — ProjectとDomainに結びつくコンテクスト">
           <ContextPanel contexts={data.contexts || []} projects={data.projects || []}
-            query={q} api={fetchPortalWorld} afterSave={reload}/>
+            query={q} api={fetchPortalWorld} afterSave={refreshWorld}/>
         </section>
       )}
 
