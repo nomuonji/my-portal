@@ -42,16 +42,16 @@ const { _test }=require('../functions/publicCmsStore');
     'leadCheck: The title and first two paragraphs establish why the connection mattered and create a concrete question without revealing a secret.',
     'storyVsFacts: The browser console violation was not captured; the post-fix connection succeeded.',
     'omittedPrivateContext: Account identifiers, credential values, user identity and internal tickets were omitted.'
-  ].join('\\n');
+  ].join('\n');
   assert.equal(_test.assertEditorialAngleEvidence('antonbase-notes',9,validAngleBrief),true);
   assert.equal(_test.assertEditorialAngleEvidence('culture-institute',9,'brief not required'),true);
   assert.equal(_test.assertEditorialAngleEvidence('antonbase-notes',8,'existing pre-v9 method'),true);
   assert.throws(()=>_test.assertEditorialAngleEvidence('antonbase-notes',9,
     'All seven checks completed and article is ready to publish.'),/sourceMotive/);
   assert.throws(()=>_test.assertEditorialAngleEvidence('antonbase-notes',9,
-    validAngleBrief.replace(/readerPull:[^\\n]+/,'readerPull: OK')),/readerPull/);
+    validAngleBrief.replace(/readerPull:[^\n]+/,'readerPull: OK')),/readerPull/);
   assert.throws(()=>_test.assertEditorialAngleEvidence('antonbase-notes',9,
-    validAngleBrief.replace(/angleAlternatives:[^\\n]+/,'angleAlternatives: none')),/angleAlternatives/);
+    validAngleBrief.replace(/angleAlternatives:[^\n]+/,'angleAlternatives: none')),/angleAlternatives/);
 
   const checks=Object.fromEntries(_test.EDITORIAL_CHECKS.map(name=>[name,true]));
   const approvedAt=new Date().toISOString();
