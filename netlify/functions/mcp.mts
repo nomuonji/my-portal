@@ -16,6 +16,8 @@ import * as intelligenceToolsImport from "../../functions/intelligenceCorpusTool
 import * as contextStoreImport from "../../functions/contextStore.js";
 import * as worldMapImport from "../../functions/worldMap.js";
 import * as chatContextImport from "../../functions/chatContextRegistry.js";
+import * as contextRegistryImport from "../../functions/contextRegistry.js";
+import * as contextRegistryToolsImport from "../../functions/contextRegistryToolSchemas.js";
 import * as chatContextToolsImport from "../../functions/chatContextToolSchemas.js";
 import * as worldMapToolsImport from "../../functions/worldMapToolSchemas.js";
 import * as contextToolsImport from "../../functions/contextStoreToolSchemas.js";
@@ -37,12 +39,14 @@ const intelligenceToolsModule: any = (intelligenceToolsImport as any).default ??
 const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
 const worldMap: any = (worldMapImport as any).default ?? worldMapImport;
 const chatContext: any = (chatContextImport as any).default ?? chatContextImport;
+const contextRegistry: any = (contextRegistryImport as any).default ?? contextRegistryImport;
+const contextRegistryTools: any = (contextRegistryToolsImport as any).default ?? contextRegistryToolsImport;
 const chatContextTools: any = (chatContextToolsImport as any).default ?? chatContextToolsImport;
 const worldMapTools: any = (worldMapToolsImport as any).default ?? worldMapToolsImport;
 const contextToolsModule: any = (contextToolsImport as any).default ?? contextToolsImport;
 const linearBridge: any = (linearBridgeImport as any).default ?? linearBridgeImport;
 const migration: any = (migrationImport as any).default ?? migrationImport;
-const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...worldMapTools.TOOLS, ...chatContextTools.TOOLS, ...portalToolsModule.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS];
+const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...worldMapTools.TOOLS, ...chatContextTools.TOOLS, ...contextRegistryTools.TOOLS, ...portalToolsModule.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS];
 
 const SERVER_NAME = "my-portal";
 const SERVER_VERSION = "1.17.1-netlify";
@@ -368,12 +372,15 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
 
   await ensureAgentData();
   if (name === "world_map_get") return structured(await worldMap.get());
+  if (name === "context_list") return structured(await contextRegistry.list(args));
+  if (name === "context_get") return structured(await contextRegistry.get(args));
+  if (name === "context_save") return structured(await contextRegistry.save(args));
+  if (name === "context_history") return structured(await contextRegistry.listEvents(args));
+  if (name === "context_event_create") return structured(await contextRegistry.addEvent(args));
   if (name === "chat_skill_list") return structured(await chatContext.listSkills());
   if (name === "chat_skill_get") return structured(await chatContext.getSkill(args));
   if (name === "chat_skill_versions") return structured(await chatContext.skillVersions(args));
   if (name === "chat_skill_upsert") return structured(await chatContext.upsertSkill(args));
-  if (name === "ai_context_notes_list") return structured(await chatContext.listNotes(args));
-  if (name === "ai_context_note_create") return structured(await chatContext.createNote(args));
   if (name === "world_map_update") return structured(await worldMap.update(args));
   switch (name) {
     case "agent_ideas_status": {

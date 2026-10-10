@@ -15,6 +15,10 @@ on:
       - 'functions/worldMap.js'
       - 'functions/worldMapToolSchemas.js'
       - 'functions/chatContextRegistry.js'
+      - 'functions/contextRegistry.js'
+      - 'functions/contextRegistryToolSchemas.js'
+      - 'src/components/ContextPanel.js'
+      - 'src/components/ThinkingWorkspace.js'
       - 'functions/chatContextToolSchemas.js'
       - 'functions/chatSkillSeeds.js'
       - 'functions/chatSkillSeeds/**'
@@ -66,6 +70,8 @@ jobs:
       - run: node --check functions/worldMap.js
       - run: node --check functions/worldMapToolSchemas.js
       - run: node --check functions/chatContextRegistry.js
+      - run: node --check functions/contextRegistry.js
+      - run: node --check functions/contextRegistryToolSchemas.js
       - run: node --check functions/chatContextToolSchemas.js
       - run: npm run test:world-home
       - run: CI=false npm run build

@@ -20,18 +20,6 @@ const tools=[
  annotations:{readOnlyHint:false,destructiveHint:false}},
  {name:'chat_skill_versions',description:'Read version history of canonical chat Skill instructions stored in My Portal DB.',
  inputSchema:obj({id:string('Skill slug',90)},['id']),annotations:{readOnlyHint:true}},
- {name:'ai_context_notes_list',description:'Read durable conversation decisions, corrections and handoffs for AI-side Spaces, separately from user-side Spaces and scheduled Managers.',
- inputSchema:obj({spaceId:string('Optional AI-side Space ID',160),limit:{type:'integer',minimum:1,maximum:100}}),annotations:{readOnlyHint:true}},
- {name:'ai_context_note_create',description:'Record a confirmed conversational decision, correction, handoff or finding against an existing assistant-owned Space. Append-only, not a Manager/Worker Method.',
- inputSchema:obj({
-  spaceId:string('Existing assistant-owned Space ID',160),
-  kind:{type:'string',enum:['decision','correction','handoff','finding']},
-  summary:string('What should survive into a future chat',800),
-  detail:string('Reason or relevant distinction',4500),
-  source:string('Where the information came from, e.g. current user chat',180),
-  sourceUrl:string('Optional chat/thread URL',1000),
-  idempotencyKey:string('Stable ID to avoid repeating a note on retry',200),
-  confirm:{type:'boolean'},
- },['spaceId','summary','confirm']),annotations:{readOnlyHint:false,destructiveHint:false}},
+
 ];
 module.exports={TOOLS:tools};

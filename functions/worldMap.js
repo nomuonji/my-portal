@@ -4,6 +4,7 @@
  */
 const { getDocumentDb, FieldValue } = require('./documentDb');
 const chatContext = require('./chatContextRegistry');
+const contexts = require('./contextRegistry');
 
 const DB_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTION = 'portalContextAtlas';
@@ -168,9 +169,9 @@ async function get() {
   const results = await Promise.allSettled([
     db().collection(COLLECTION).doc(DOC_ID).get(),
     listCollection('projects'), listCollection('spaces'), listCollection('methods'),
-    chatContext.listSkills(), chatContext.listNotes({limit:45}),
+    chatContext.listSkills(), contexts.list(),
   ]);
-  const names = ['directory', 'projects', 'spaces', 'methods', 'chatSkills', 'aiContextNotes'];
+  const names = ['directory', 'projects', 'spaces', 'methods', 'chatSkills', 'contexts'];
   const warnings = results.flatMap((r, i) => r.status === 'rejected' ? [`${names[i]}: unavailable (${safeText(r.reason?.message || r.reason, 160)})`] : []);
   const settings = results[0].status === 'fulfilled' && results[0].value.exists ? results[0].value.data() : {};
   const edited = Array.isArray(settings.routes) ? settings.routes : [];
@@ -180,27 +181,25 @@ async function get() {
   });
   const deleted = new Set(safeArray(settings.hiddenRouteIds, 100));
   const items = n => (results[n].status === 'fulfilled' ? results[n].value : []);
-  const aiSpaces = items(2).filter(s => s.themeOwner === 'assistant' && s.status !== 'archived');
-  const allNotes = results[5].status === 'fulfilled' ? results[5].value.items : [];
+  const contextRows = results[5].status === 'fulfilled' ? results[5].value.items : [];
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     title: 'My Portal · World Home',
-    description: 'SkillとAgent HQ Methodを分離し、AI側の会話履歴とProject/Operatorの所在地を案内するホーム。',
+    description: 'Project・Domainと紐づく独立Contexts、Chat Skills、運用Operatorの所在地を案内するホーム。',
     generatedAt: new Date().toISOString(),
     metadataRevision: Number(settings.revision) || 0,
     metadataUpdatedAt: dateValue(settings.updatedAt),
     routes: [...merged.values()].filter(r => !deleted.has(r.id)),
     boundaries: safeArray(settings.boundaries, 40),
     projects: items(1).map(summarizeProject).sort((a,b) => a.name.localeCompare(b.name)),
-    spaces: items(2).map(summarizeSpace).sort((a,b) => a.title.localeCompare(b.title)),
-    aiContexts: aiSpaces.map(s=>({ ...summarizeSpace(s), currentBrief:safeText(s.currentBrief,1700), latestNotes:allNotes.filter(n=>n.spaceId===s.id).slice(0,3) })).sort((a,b)=>a.title.localeCompare(b.title)),
+    spaces: items(2).filter(s=>s.themeOwner!=='assistant').map(summarizeSpace).sort((a,b) => a.title.localeCompare(b.title)),
+    contexts: contextRows,
     chatSkills: results[4].status === 'fulfilled' ? results[4].value.items : [],
-    aiContextNotes: allNotes,
     methods: items(3).map(summarizeMethod).sort((a,b) => a.title.localeCompare(b.title)),
     coverage: Object.fromEntries(names.slice(1).map((n, i) => [n, results[i+1].status === 'fulfilled' ? 'loaded' : 'unavailable'])),
-    registrySemantics: {skills:'My Portal DB / chatSkills',methods:'Agent HQ Manager/Worker execution',aiContexts:'assistant-owned Spaces with append-only chat notes',spaces:'Thinking Workspace themes'}, 
+    registrySemantics: {skills:'My Portal DB / chatSkills',methods:'Agent HQ Manager/Worker execution',contexts:'Independent project/domain context records and decision history',spaces:'Human Thinking Workspace only'}, 
     warnings,
-    help: '最初にこの地図で正本/Skill/AI側の会話履歴を確認する。MethodはManager/Workerの運用契約で、Skillの代替ではない。GitHub保存だけではChatGPTへのスキル導入を保証しない。',
+    help: '最初にWorld Homeで担当とProject/Domain別のContextsを確認する。ContextsはSpaceとは別DB。MethodはManager/Worker専用、Skillはチャット用。',
   };
 }
 async function update(input = {}) {

@@ -120,7 +120,6 @@ export default function ThinkingWorkspace() {
   const navigate = useNavigate();
   const initialSpaceId = new URLSearchParams(location.search).get('space') || '';
   const [tab, setTab] = useState(0);
-  const [spaceOwnerView, setSpaceOwnerView] = useState('user');
   const [spaces, setSpaces] = useState([]);
   const [selectedSpaceId, setSelectedSpaceId] = useState(initialSpaceId);
   const [context, setContext] = useState(null);
@@ -132,7 +131,6 @@ export default function ThinkingWorkspace() {
   const [briefDraft, setBriefDraft] = useState('');
   const [goalDraft, setGoalDraft] = useState('');
   const [nextDraft, setNextDraft] = useState('');
-  const [ownerDraft, setOwnerDraft] = useState('user');
   const [editingFact, setEditingFact] = useState(null);
   const [factDraft, setFactDraft] = useState(null);
 
@@ -144,14 +142,15 @@ export default function ThinkingWorkspace() {
         contextApi('?resource=spaces'),
         contextApi('?resource=profile'),
       ]);
-      setSpaces(spaceResult.items || []);
+      const humanSpaces=(spaceResult.items||[]).filter(space=>space.themeOwner!=='assistant');
+      setSpaces(humanSpaces);
       setProfile(profileResult.items || []);
-      if (!selectedSpaceId && (spaceResult.items || []).length) {
-        const userSpaces = (spaceResult.items || []).filter((space) => (space.themeOwner || 'user') === 'user');
+      if ((!selectedSpaceId||!humanSpaces.some(s=>s.id===selectedSpaceId)) && humanSpaces.length) {
+        const userSpaces = humanSpaces;
         const first = userSpaces.find((space) => space.status === 'active')
           || userSpaces[0]
-          || (spaceResult.items || []).find((space) => space.status === 'active')
-          || spaceResult.items[0];
+          || humanSpaces.find((space) => space.status === 'active')
+          || humanSpaces[0];
         setSelectedSpaceId(first.id);
       }
     } catch (err) {
@@ -174,9 +173,7 @@ export default function ThinkingWorkspace() {
       setBriefDraft(result.currentBrief || '');
       setGoalDraft(result.goal || '');
       setNextDraft((result.nextActions || []).join('\n'));
-      const themeOwner = result.space?.themeOwner || 'user';
-      setOwnerDraft(themeOwner);
-      setSpaceOwnerView(themeOwner);
+      if(result.space?.themeOwner==='assistant')throw new Error('旧AI側SpaceはContextsへ移行しました。World HomeのContextsを参照してください。');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -202,19 +199,6 @@ export default function ThinkingWorkspace() {
     navigate(`/thinking?space=${encodeURIComponent(id)}`, { replace: true });
   };
 
-  const selectSpaceOwnerView = (owner) => {
-    setSpaceOwnerView(owner);
-    const candidates = spaces.filter((space) => (space.themeOwner || 'user') === owner);
-    const next = candidates.find((space) => space.status === 'active') || candidates[0];
-    if (next) {
-      selectSpace(next.id);
-    } else {
-      setSelectedSpaceId('');
-      setContext(null);
-      navigate('/thinking', { replace: true });
-    }
-  };
-
   const saveSpace = async () => {
     if (!context?.space) return;
     setError('');
@@ -226,7 +210,7 @@ export default function ThinkingWorkspace() {
           id: context.space.id,
           expectedRevision: context.space.revision,
           patch: {
-            themeOwner: ownerDraft,
+            themeOwner: 'user',
             currentBrief: briefDraft,
             goal: goalDraft,
             nextActions: nextDraft.split('\n').map((item) => item.trim()).filter(Boolean),
@@ -290,15 +274,7 @@ export default function ThinkingWorkspace() {
     return [...(context.themeLocalConstraints || []), ...(context.relevantProfileFacts || [])];
   }, [context]);
 
-  const visibleSpaces = useMemo(
-    () => spaces.filter((space) => (space.themeOwner || 'user') === spaceOwnerView),
-    [spaces, spaceOwnerView],
-  );
-  const userSpaceCount = useMemo(
-    () => spaces.filter((space) => (space.themeOwner || 'user') === 'user').length,
-    [spaces],
-  );
-  const assistantSpaceCount = spaces.length - userSpaceCount;
+  const visibleSpaces=spaces;
 
   return (
     <Box sx={{ maxWidth: 1500, mx: 'auto', pb: 4 }}>
@@ -310,7 +286,7 @@ export default function ThinkingWorkspace() {
             <Chip label="Context Store" size="small" color="primary" variant="outlined" />
           </Stack>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.4 }}>
-            長期テーマの「現在地・判断・次の行動」をSpace単位で保存し、AIとの続きをここから再開します。
+            ここは人間側の思考テーマ専用です。チャットの引き継ぎ・決定履歴はWorld HomeのContextsで管理します。
           </Typography>
         </Box>
         <Button startIcon={<RefreshIcon />} onClick={() => { loadBase(); if (selectedSpaceId) loadContext(selectedSpaceId); }}>
@@ -334,19 +310,9 @@ export default function ThinkingWorkspace() {
               <AutoAwesomeIcon fontSize="small" color="primary" />
               <Typography fontWeight={900}>長期テーマ</Typography>
             </Stack>
-            <Tabs
-              value={spaceOwnerView}
-              onChange={(_, value) => selectSpaceOwnerView(value)}
-              variant="fullWidth"
-              sx={{ mb: 1, minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0.5, fontSize: '0.78rem', fontWeight: 850 } }}
-            >
-              <Tab value="user" label={`あなたの課題 ${userSpaceCount}`} />
-              <Tab value="assistant" label={`AI側の課題 ${assistantSpaceCount}`} />
-            </Tabs>
+
             <Stack spacing={1}>
-              {visibleSpaces.length === 0 && (
-                <Empty>{spaceOwnerView === 'assistant' ? 'AI側の課題はまだありません。' : 'あなた側の長期テーマはまだありません。'}</Empty>
-              )}
+              {visibleSpaces.length === 0 && <Empty>思考テーマはまだありません。</Empty>}
               {visibleSpaces.map((space) => (
                 <Paper
                   key={space.id}
@@ -405,8 +371,8 @@ export default function ThinkingWorkspace() {
                     </Box>
                     <Stack direction={{ xs: 'row', md: 'column' }} spacing={0.8} alignItems={{ xs: 'center', md: 'stretch' }}>
                       <Chip
-                        label={(context.space.themeOwner || 'user') === 'assistant' ? 'AI側の課題' : 'あなたの課題'}
-                        color={(context.space.themeOwner || 'user') === 'assistant' ? 'secondary' : 'primary'}
+                        label="あなたの思考テーマ"
+                        color="primary"
                         variant="filled"
                       />
                       <Chip label={context.space.status || 'active'} color="primary" variant="outlined" />
@@ -447,20 +413,7 @@ export default function ThinkingWorkspace() {
                   </Box>
                 </Paper>
 
-                <Section title="課題の主体" subtitle="あなた自身の課題と、AI自身の能力・品質課題をデータ上も分離します">
-                  <TextField
-                    select
-                    SelectProps={{ native: true }}
-                    fullWidth
-                    size="small"
-                    label="分類"
-                    value={ownerDraft}
-                    onChange={(event) => setOwnerDraft(event.target.value)}
-                  >
-                    <option value="user">あなたの課題 / 思考テーマ</option>
-                    <option value="assistant">AI側の課題 / 改善テーマ</option>
-                  </TextField>
-                </Section>
+
 
                 <Section title="1. Current State / Current Brief" subtitle="次回セッションが最初に読む、現在地の圧縮版">
                   <TextField multiline minRows={4} fullWidth value={briefDraft} onChange={(event) => setBriefDraft(event.target.value)} />
