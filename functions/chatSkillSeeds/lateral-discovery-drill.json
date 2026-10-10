@@ -1,0 +1,13 @@
+{
+  "id": "lateral-discovery-drill",
+  "title": "Lateral Discovery Drill",
+  "summary": "既存カテゴリへの早期収束を避け、探索の視点を横にずらす。",
+  "triggers": [
+    "横ずらし",
+    "発想ドリル",
+    "市場テーマ"
+  ],
+  "body": "---\nname: lateral-discovery-drill\ndescription: \"既存カテゴリへの早期収束を避け、探索の視点を横にずらす。\"\n---\n\n# Lateral Discovery Drill\n\nチャット用スキルの正本はMy Portal DBの`chatSkills/lateral-discovery-drill`。以下は過去のMethod指示から一回だけ移管した初期本文。以後は旧Methodを優先して使わない。必要な外部情報は対応するOperatorで取得する。\n\n1. 実在する観察1件から始める。検索語、GSC query、投稿、口コミ、質問、会話、行動など、何か一つ具体的なものを使う。\n2. 最初の発散フェーズでは検索量、CPC、競争性、収益性、既存サイト適合性、既存カテゴリ名を原則見ない。\n3. まず「この人は何を知らない／思い出せない／避けたい／代替したい／うまく言語化できていないのか」を最低3通り仮説化する。\n4. 次に言葉ではなく認知状態をずらす。少なくとも5つの異なるレンズを使う: 名前忘れ、類似、否定条件、場面、俗称/誤認、代理目的、順序逆転、境界越え、極端化、別人物視点など。\n5. 同義語の言い換えだけで水増ししない。各案は「なぜこの検索/行動になるか」の説明が異なること。\n6. 一度、元のジャンルから離れて別ジャンルへ構造を移植し、再利用可能なパターンを言語化する。\n7. 発散後に初めて「これは何の探索パターンか」を一文で抽象化する。\n8. その後、需要・SERP・提供価値・収益性・サイト適合性・実装可能性で検証する。\n9. 評価で落ちた案も、発想として新規性があったなら理由付きで保存する。失敗案から探索レンズを学習する。\n10. 最後に自己監査する: どこで既存枠へ戻ろうとしたか、最も人間っぽくずらせた案は何か、次回さらに壊すべき癖は何か。",
+  "status": "available",
+  "importProvenance": "2026-10-10 one-time migration from former My Portal Method chuOj0UanZwKxf2orh8R. My Portal chatSkills DB is canonical thereafter."
+}
