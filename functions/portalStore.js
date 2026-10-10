@@ -170,6 +170,9 @@ async function create(input = {}) {
   if (config.name === 'ideas') data.owner = 'portal';
   if (config.name === 'curation_sources') data = normalizedSource(data);
   const explicitId = clampString(input.id, 500) || (config.name === 'curation_sources' ? sourceId(data.url) : undefined);
+  if (config.name === 'curation_sources' && explicitId !== sourceId(data.url)) {
+    throw new Error('Curation source ID must match canonical source URL');
+  }
   const ref = explicitId
     ? db().collection(config.name).doc(explicitId)
     : db().collection(config.name).doc();
