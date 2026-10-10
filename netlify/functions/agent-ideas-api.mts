@@ -6,11 +6,13 @@ import * as documentDbImport from "../../functions/documentDb.js";
 import * as contextStoreImport from "../../functions/contextStore.js";
 import * as worldMapImport from "../../functions/worldMap.js";
 import * as chatContextImport from "../../functions/chatContextRegistry.js";
+import * as contextRegistryImport from "../../functions/contextRegistry.js";
 
 const store: any = (storeImport as any).default ?? storeImport;
 const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
 const worldMap: any = (worldMapImport as any).default ?? worldMapImport;
 const chatContext: any = (chatContextImport as any).default ?? chatContextImport;
+const contextRegistry: any = (contextRegistryImport as any).default ?? contextRegistryImport;
 const documentDb: any = (documentDbImport as any).default ?? documentDbImport;
 const AGENT_DATABASE_ID = "(default)";
 
@@ -132,6 +134,9 @@ export default async (request: Request) => {
       if (resource === "chat_skill") return json(await chatContext.getSkill({ id:url.searchParams.get("id")||"" }));
       if (resource === "chat_skill_versions") return json(await chatContext.skillVersions({ id:url.searchParams.get("id")||"" }));
       if (resource === "ai_context_notes") return json(await chatContext.listNotes({ spaceId:url.searchParams.get("spaceId")||undefined,limit:100 }));
+      if (resource === "contexts") return json(await contextRegistry.list({projectId:url.searchParams.get("projectId")||undefined,domain:url.searchParams.get("domain")||undefined}));
+      if (resource === "context") return json(await contextRegistry.get({id:url.searchParams.get("id")||""}));
+      if (resource === "context_history") return json(await contextRegistry.listEvents({contextId:url.searchParams.get("id")||""}));
       if (resource === "world_map") {
         return json(await worldMap.get());
       }
@@ -254,6 +259,8 @@ export default async (request: Request) => {
       }
       if (action === "chat_skill_upsert") return json(await chatContext.upsertSkill({skill:body.skill,expectedRevision:body.expectedRevision,changeReason:body.changeReason,confirm:body.confirm===true}));
       if (action === "ai_context_note_create") return json(await chatContext.createNote({spaceId:body.spaceId,summary:body.summary,kind:body.kind,detail:body.detail,source:body.source||"portal-ui",sourceUrl:body.sourceUrl,idempotencyKey:body.idempotencyKey,confirm:body.confirm===true}));
+      if (action === "context_save") return json(await contextRegistry.save({id:body.id,context:body.context,expectedRevision:body.expectedRevision,confirm:body.confirm===true}));
+      if (action === "context_event_create") return json(await contextRegistry.addEvent({contextId:body.contextId,kind:body.kind,summary:body.summary,detail:body.detail,source:body.source||"portal-ui",sourceUrl:body.sourceUrl,idempotencyKey:body.idempotencyKey,confirm:body.confirm===true}));
       if (action === "world_map_update") {
         return json(await worldMap.update({
           expectedRevision: body.expectedRevision,
