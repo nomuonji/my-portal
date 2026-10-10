@@ -513,9 +513,9 @@ function assertEditorialAngleEvidence(siteId, versionNumber, notes) {
     // Distinct editorial questions must not be answered by copying the same
     // generic paragraph. This is a mechanical sanity check, not a prose score.
     const normalized = value.normalize('NFKC').toLowerCase()
-      .replace(/[\\s\\p{P}\\p{S}]+/gu, '');
+      .replace(/[\s\p{P}\p{S}]+/gu, '');
     if (normalized.length < 12 || evidence.includes(normalized) ||
-        /(.)\\1{15,}/u.test(normalized)) {
+        /(.)\1{15,}/u.test(normalized)) {
       throw new Error('Editorial angle gate: each section needs distinct, non-placeholder evidence; revise ' + label + '.');
     }
     evidence.push(normalized);
