@@ -52,6 +52,24 @@ const { _test }=require('../functions/publicCmsStore');
     validAngleBrief.replace(/readerPull:[^\n]+/,'readerPull: OK')),/readerPull/);
   assert.throws(()=>_test.assertEditorialAngleEvidence('antonbase-notes',9,
     validAngleBrief.replace(/angleAlternatives:[^\n]+/,'angleAlternatives: none')),/angleAlternatives/);
+  // A checklist can be gamed with identical, content-free paragraphs. The
+  // audit can detect this obvious failure, even though it cannot score prose.
+  const copyPasted = [
+    'sourceMotive: This entire article is carefully reviewed and the content is suitable for publication.',
+    'readerPull: This entire article is carefully reviewed and the content is suitable for publication.',
+    'angleAlternatives: This entire article is carefully reviewed and the content is suitable for publication.',
+    'leadCheck: This entire article is carefully reviewed and the content is suitable for publication.'
+  ].join('\\n');
+  assert.throws(()=>_test.assertEditorialAngleEvidence('antonbase-notes',10,copyPasted),/distinct/);
+  const punctuationOnly = validAngleBrief.replace(
+    /readerPull:[^\\n]+/,
+    'readerPull: The work began because program approvals take time; store candidates before needing to publish!!!'
+  );
+  assert.throws(()=>_test.assertEditorialAngleEvidence('antonbase-notes',10,punctuationOnly),/distinct/);
+  const filler = validAngleBrief.replace(/leadCheck:[^\\n]+/,'leadCheck: '+ 'あ'.repeat(45));
+  assert.throws(()=>_test.assertEditorialAngleEvidence('antonbase-notes',10,filler),/non-placeholder/);
+  assert.equal(_test.assertEditorialAngleEvidence('antonbase-notes',10,validAngleBrief),true);
+
 
   const checks=Object.fromEntries(_test.EDITORIAL_CHECKS.map(name=>[name,true]));
   const approvedAt=new Date().toISOString();
