@@ -111,6 +111,13 @@ export default function WorldHome() {
   const [noteDraft, setNoteDraft] = useState({kind:'handoff',summary:'',detail:''});
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState('');
+  const [skillDetail, setSkillDetail] = useState(null);
+  const [skillDraft, setSkillDraft] = useState(null);
+  const [skillHistory, setSkillHistory] = useState([]);
+  const [skillLoading, setSkillLoading] = useState(false);
+  const [skillSaving, setSkillSaving] = useState(false);
+  const [skillError, setSkillError] = useState('');
+  const [skillEditing, setSkillEditing] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -157,6 +164,38 @@ export default function WorldHome() {
     } catch(err) {
       setNoteError(err.message || '保存できませんでした');
     } finally {setNoteSaving(false);}
+  };
+  const openSkill = async (skill) => {
+    setSkillDetail({id:skill.id,title:skill.title});
+    setSkillLoading(true);setSkillEditing(false);setSkillError('');
+    try {
+      const [full,hist] = await Promise.all([
+        fetchPortalWorld(`?resource=chat_skill&id=${encodeURIComponent(skill.id)}`),
+        fetchPortalWorld(`?resource=chat_skill_versions&id=${encodeURIComponent(skill.id)}`),
+      ]);
+      setSkillDetail(full);
+      setSkillDraft({...full,triggersText:(full.triggers||[]).join(', ')});
+      setSkillHistory(hist.items||[]);
+    } catch(e) {setSkillError(e.message);}
+    finally {setSkillLoading(false);}
+  };
+  const saveSkill = async () => {
+    if(!skillDetail||!skillDraft)return;
+    setSkillSaving(true);setSkillError('');
+    try {
+      const skill = {
+        id:skillDetail.id,title:skillDraft.title,summary:skillDraft.summary,
+        triggers:skillDraft.triggersText.split(/[,、\n]/).map(v=>v.trim()).filter(Boolean),
+        body:skillDraft.body,status:skillDraft.status||'available',
+      };
+      await fetchPortalWorld('',{method:'POST',body:JSON.stringify({
+        action:'chat_skill_upsert',skill,expectedRevision:skillDetail.revision,
+        changeReason:'Updated from World Home Skill editor',confirm:true,
+      })});
+      await Promise.all([openSkill(skill),reload()]);
+      setSkillEditing(false);
+    } catch(err){setSkillError(err.message||'更新に失敗しました');}
+    finally{setSkillSaving(false);}
   };
   const line = dark ? alpha(theme.palette.common.white, 0.13) : 'rgba(31,57,80,0.13)';
   const surface = dark ? alpha(theme.palette.background.paper, 0.8) : '#fff';
@@ -312,25 +351,25 @@ export default function WorldHome() {
       {!loading && show('skills') && (
         <section aria-label="チャット専用Skills">
           <SectionHeading eyebrow="03 / CHATGPT SKILLS" title="Skills"
-            subtitle="チャットで使う手順はSKILL.mdを正本として保存。Agent HQ Manager / WorkerのMethodとは別です。"
+            subtitle="チャット用スキルはMy PortalのDBで本文と履歴を管理。Agent HQ Manager / WorkerのMethodとは別です。"
             count={skills.length} icon={<SparkIcon color="primary" />} />
           <Alert severity="info" sx={{ mb: 1.5, '& .MuiAlert-message':{fontSize:13} }}>
-            My PortalはSkillの保存場所を案内します。GitHubに保存されていてもChatGPTへインストール済みとは限りません。
+            Skill本文の正本はMy Portal DB（chatSkills）。GitHubは旧版・エクスポート先です。DB登録とChatGPTへのインストールは別です。
           </Alert>
           <Box sx={{ display:'grid', gridTemplateColumns:{xs:'1fr',md:'repeat(2,minmax(0,1fr))'},gap:1.15 }}>
             {skills.map(skill=>(
               <Paper key={skill.id} variant="outlined" sx={{ p:2,borderRadius:2.3,borderColor:line }}>
                 <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
                   <Typography variant="subtitle1" fontWeight={850}>{skill.title}</Typography>
-                  <Chip size="small" variant="outlined" color="success" label="SKILL.md" />
+                  <Chip size="small" variant="outlined" color="success" label="My Portal DB" />
                 </Stack>
                 <Typography variant="body2" color="text.secondary" sx={{mt:.6,lineHeight:1.65}}>{skill.summary}</Typography>
                 <Stack direction="row" flexWrap="wrap" useFlexGap spacing={.5} sx={{mt:1.1}}>
                   {(skill.triggers||[]).slice(0,4).map(t=><Chip key={t} label={t} size="small" variant="outlined" />)}
                 </Stack>
                 <Box sx={{mt:1.15}}>
-                  <RuleLink href={skill.url}>Skill本文を開く</RuleLink>
-                  <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:.5,overflowWrap:'anywhere'}}>{skill.repo}/{skill.path}</Typography>
+                  <Button size="small" onClick={()=>openSkill(skill)} endIcon={<BookIcon fontSize="small"/>}>DBのSkill本文を開く・編集</Button>
+                  <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:.5}}>revision {skill.revision||1} · 正本: My Portal DB</Typography>
                 </Box>
               </Paper>
             ))}
@@ -412,6 +451,46 @@ export default function WorldHome() {
         このホームは既存DBの索引です。重要な方針と責務の変更のみ地図を更新し、実行状態はそれぞれの専門システムで確認してください。
         {data.generatedAt && ` · 最終取得 ${new Date(data.generatedAt).toLocaleString('ja-JP')}`}
       </Typography>
+
+      <Dialog open={Boolean(skillDetail)} onClose={() => {if(!skillSaving)setSkillDetail(null);}} fullWidth maxWidth="md">
+        <DialogTitle sx={{fontWeight:850}}>{skillDetail?.title || 'Chat Skill'} — My Portal DB</DialogTitle>
+        <DialogContent dividers>
+          {skillLoading && <CircularProgress size={25}/>}
+          {skillError && <Alert severity="error" sx={{mb:1.4}}>{skillError}</Alert>}
+          {!skillLoading && skillDraft && (
+            <Stack spacing={1.7}>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+                <Chip size="small" label={`revision ${skillDetail?.revision||1}`} />
+                <Chip size="small" label="正本: My Portal DB" variant="outlined"/>
+                {!skillEditing && <Button size="small" variant="outlined" onClick={()=>setSkillEditing(true)}>編集</Button>}
+              </Stack>
+              {skillEditing ? (
+                <>
+                  <TextField label="名称" value={skillDraft.title||''} onChange={e=>setSkillDraft(d=>({...d,title:e.target.value}))}/>
+                  <TextField label="概要" multiline minRows={2} value={skillDraft.summary||''} onChange={e=>setSkillDraft(d=>({...d,summary:e.target.value}))}/>
+                  <TextField label="呼び出しキーワード（カンマ区切り）" value={skillDraft.triggersText||''} onChange={e=>setSkillDraft(d=>({...d,triggersText:e.target.value}))}/>
+                  <TextField label="Skill本文（Markdown）" multiline fullWidth minRows={15} maxRows={26}
+                    value={skillDraft.body||''} onChange={e=>setSkillDraft(d=>({...d,body:e.target.value}))}
+                    InputProps={{sx:{fontFamily:'monospace',fontSize:13,lineHeight:1.65}}}
+                    helperText="本文を更新するとDBに新しいrevisionを保存します。Manager/Worker Methodは変更しません。"/>
+                </>
+              ):(
+                <>
+                  <Typography variant="body2" color="text.secondary">{skillDetail?.summary}</Typography>
+                  <Paper variant="outlined" sx={{p:2,borderRadius:2,maxHeight:460,overflow:'auto'}}>
+                    <Typography component="pre" variant="body2" sx={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',fontFamily:'monospace',fontSize:12.5,lineHeight:1.7}}>{skillDetail?.body||'本文がありません'}</Typography>
+                  </Paper>
+                </>
+              )}
+              <Typography variant="caption" color="text.secondary">保存履歴: {skillHistory.map(v=>`v${v.versionNumber}`).join('、') || '未取得'}</Typography>
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={skillSaving} onClick={()=>{setSkillDetail(null);setSkillDraft(null);}}>閉じる</Button>
+          {skillEditing && <Button variant="contained" disabled={skillSaving||!skillDraft?.body?.trim()||!skillDraft?.title?.trim()} onClick={saveSkill}>DBに保存</Button>}
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={Boolean(noteTarget)} onClose={() => {if(!noteSaving)setNoteTarget(null);}} fullWidth maxWidth="sm">
         <DialogTitle sx={{fontWeight:850}}>AI側の会話記録を残す</DialogTitle>
