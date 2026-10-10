@@ -40,7 +40,7 @@ function database() {
 }
 try {
   Module._load = function(request, parent, isMain) {
-    if (request === './documentDb' && ['worldMap.js','chatContextRegistry.js'].some(name=>parent?.filename?.endsWith(path.join('functions',name)))) {
+    if (request === './documentDb' && ['worldMap.js','chatContextRegistry.js','contextRegistry.js'].some(name=>parent?.filename?.endsWith(path.join('functions',name)))) {
       return { getDocumentDb: database, FieldValue: { serverTimestamp: () => new Date('2026-10-10T02:00:00Z') } };
     }
     return originalLoad.call(this, request, parent, isMain);
@@ -60,15 +60,18 @@ try {
     assert.equal(before.coverage.projects, 'loaded');
     assert.equal(before.projects[0].id, 'site-operations');
     assert.ok(before.spaces.some(space=>space.id==='seo-space'));
-    assert.ok(before.spaces.some(space=>space.id==='ai-space'));
+    assert.ok(!before.spaces.some(space=>space.id==='ai-space'));
 
     assert.equal(before.methods[0].currentVersionNumber, 2);
-    assert.equal(before.aiContexts.length, 1);
-    assert.equal(before.aiContexts[0].id,'ai-space');
+    assert.equal(before.contexts.length,1);
+    assert.equal(before.contexts[0].id,'legacy-ai-space');
+    assert.equal(before.contexts[0].legacySpaceId,'ai-space');
+    assert.deepEqual(before.contexts[0].domains,['general']);
     assert.equal(before.chatSkills.length,11);
     assert.equal(before.chatSkills[0].sourceOfTruth,'My Portal DB');
     assert.ok(before.chatSkills.every(s=>!('body' in s)));
-    assert.ok(!before.aiContexts.some(space=>space.id==='seo-space'));
+    assert.ok(!before.contexts.some(c=>c.id==='seo-space'));
+    const contexts=require('../functions/contextRegistry');
     const chatContext=require('../functions/chatContextRegistry');
     assert.equal(chatContext.cleanSkill({id:'custom',title:'My Skill',body:'A'.repeat(70)}).id,'custom');
     const skill=await chatContext.getSkill({id:'human-web-voice'});
@@ -88,9 +91,23 @@ try {
     }),/revision conflict/);
     await assert.rejects(()=>chatContext.createNote({spaceId:'seo-space',summary:'incorrect',confirm:true}),/AI-side/);
     await chatContext.createNote({spaceId:'ai-space',kind:'correction',summary:'Skill and Method must stay separate',confirm:true,idempotencyKey:'test-conversation-1'});
-    const noteView=await world.get();
-    assert.equal(noteView.aiContextNotes.length,1);
-    assert.equal(noteView.aiContexts[0].latestNotes[0].kind,'correction');
+    const legacy=await contexts.get({id:'legacy-ai-space'});
+    assert.equal(legacy.history.length,1);
+    assert.equal(legacy.history[0].kind,'correction');
+    assert.equal(legacy.context.title,'AI側の記録');
+    const revision=legacy.context.revision;
+    const updatedContext=await contexts.save({id:legacy.context.id,expectedRevision:revision,confirm:true,context:{title:'Team Continuity',purpose:'Remember project decisions',projectIds:['site-operations'],domains:['seo'],summary:'Stable decisions',decisions:'SEO knowledge for chat only',currentState:'Moved out of Space',nextActions:'Preserve boundaries'}});
+    assert.equal(updatedContext.context.revision,revision+1);
+    assert.equal(updatedContext.context.projectIds[0],'site-operations');
+    assert.equal((await contexts.list({projectId:'site-operations'})).count,1);
+    await assert.rejects(()=>contexts.save({id:legacy.context.id,expectedRevision:revision,confirm:true,context:{title:'Invalid stale update',domains:['seo']}}),/revision conflict/);
+    await contexts.addEvent({contextId:legacy.context.id,kind:'decision',summary:'Respect project boundaries',confirm:true,idempotencyKey:'confirmed-decision-1'});
+    await contexts.addEvent({contextId:legacy.context.id,kind:'decision',summary:'Respect project boundaries',confirm:true,idempotencyKey:'confirmed-decision-1'});
+    const continuity=await contexts.get({id:legacy.context.id});
+    assert.equal(continuity.history.length,2);
+    assert.ok(continuity.history.some(x=>x.kind==='decision'));
+    assert.ok(continuity.history.some(x=>x.kind==='correction'));
+    assert.equal((await contexts.list({domain:'seo'})).count,1);
     assert.equal(before.routes.some(r => r.id === 'site-seo'), true);
 
     await assert.rejects(() => world.update({ expectedRevision:0, routes:[] }), /confirm/);
@@ -118,7 +135,13 @@ try {
     assert.match(mcp,/ai_context_note_create/);
     const home=fs.readFileSync(path.join(__dirname, '../src/components/WorldHome.js'),'utf8');
     assert.match(home, /show\('skills'\)/);
-    assert.match(home, /show\('aiContexts'\)/);
+    assert.match(home, /show\('contexts'\)/);
+    const contextPanel=fs.readFileSync(path.join(__dirname,'../src/components/ContextPanel.js'),'utf8');
+    assert.match(contextPanel,/projectFilter/);
+    assert.match(contextPanel,/domainFilter/);
+    const thought=fs.readFileSync(path.join(__dirname,'../src/components/ThinkingWorkspace.js'),'utf8');
+    assert.doesNotMatch(thought,/AI側の課題/);
+    assert.match(mcp,/context_event_create/);
     assert.doesNotMatch(home, /Methods \/ スキル/);
     console.log('world-map-smoke: ok — meta directory, live registries, writes and routes');
   })().catch(error => { console.error(error); process.exitCode = 1; });
