@@ -14,6 +14,10 @@ on:
       - 'functions/contextStore.js'
       - 'functions/worldMap.js'
       - 'functions/worldMapToolSchemas.js'
+      - 'functions/chatContextRegistry.js'
+      - 'functions/chatContextToolSchemas.js'
+      - 'functions/chatSkillSeeds.js'
+      - 'functions/chatSkillSeeds/**'
       - 'src/App.js'
       - 'src/components/WorldHome.js'
       - 'netlify/functions/agent-ideas-api.mts'
@@ -61,6 +65,8 @@ jobs:
       - run: node --check functions/contextStore.js
       - run: node --check functions/worldMap.js
       - run: node --check functions/worldMapToolSchemas.js
+      - run: node --check functions/chatContextRegistry.js
+      - run: node --check functions/chatContextToolSchemas.js
       - run: npm run test:world-home
       - run: CI=false npm run build
       - run: node --check functions/managerRunRecovery.js
