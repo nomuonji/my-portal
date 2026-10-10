@@ -36,7 +36,9 @@ angleAlternatives: <at least one discarded angle, chosen approach, and reason>
 leadCheck: <how the actual title/summary/first two paragraphs were tested>
 ```
 
-Each field must be more than a terse placeholder. The server rejects an absent, generic or empty field before saving an editorial approval. Other CMS sites continue to use their own genre-specific rules; old Method versions are not retroactively blocked. Additional `storyVsFacts` and `omittedPrivateContext` evidence remains required by Method guidance.
+Each field must be more than a terse placeholder. The server rejects an absent, generic or empty field before saving an editorial approval.
+
+The server additionally rejects identical evidence repeated under different labels (ignoring whitespace and punctuation) and long same-character filler. These are narrow anti-boilerplate checks, **not automated evidence that the writing is engaging**: the editor must still compare real alternatives, read the actual lead and record the specific reason the reader will care. Other CMS sites continue to use their own genre-specific rules; old Method versions are not retroactively blocked. Additional `storyVsFacts` and `omittedPrivateContext` evidence remains required by Method guidance.
 
 This is an **execution-accountability check, not a semantic AI quality score**. A model can still write a plausible but wrong review, so an editor must actually read the full draft and discard a weak angle. Private review evidence is never included in anonymous public content projection.
 
