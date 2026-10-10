@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Box, Button, Card, CardActionArea, CardContent, Chip, CircularProgress,
+  Alert, Box, Button, Card, CardActionArea, Chip, CircularProgress,
   Dialog, DialogActions, DialogContent, DialogTitle, Divider, InputAdornment,
   Link as MuiLink, Paper, Stack, Tab, Tabs, TextField, Tooltip, Typography,
   useTheme,
@@ -17,9 +17,7 @@ import {
   RouteOutlined as RouteIcon,
   Refresh as RefreshIcon,
   OpenInNew as ExternalIcon,
-  CodeOutlined as CodeIcon,
   InfoOutlined as InfoIcon,
-  PsychologyAltOutlined as ThinkingIcon,
 } from '@mui/icons-material';
 import { Link as RouterLink } from 'react-router-dom';
 import ContextPanel from './ContextPanel';
