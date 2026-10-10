@@ -15,6 +15,7 @@ import * as intelligenceStoreImport from "../../functions/intelligenceCorpusStor
 import * as intelligenceToolsImport from "../../functions/intelligenceCorpusToolSchemas.js";
 import * as contextStoreImport from "../../functions/contextStore.js";
 import * as worldMapImport from "../../functions/worldMap.js";
+import * as workspaceAppImport from "../../functions/mcpWorkspaceApp.js";
 import * as chatContextImport from "../../functions/chatContextRegistry.js";
 import * as contextRegistryImport from "../../functions/contextRegistry.js";
 import * as contextRegistryToolsImport from "../../functions/contextRegistryToolSchemas.js";
@@ -38,6 +39,7 @@ const intelligenceStore: any = (intelligenceStoreImport as any).default ?? intel
 const intelligenceToolsModule: any = (intelligenceToolsImport as any).default ?? intelligenceToolsImport;
 const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
 const worldMap: any = (worldMapImport as any).default ?? worldMapImport;
+const workspaceApp: any = (workspaceAppImport as any).default ?? workspaceAppImport;
 const chatContext: any = (chatContextImport as any).default ?? chatContextImport;
 const contextRegistry: any = (contextRegistryImport as any).default ?? contextRegistryImport;
 const contextRegistryTools: any = (contextRegistryToolsImport as any).default ?? contextRegistryToolsImport;
@@ -46,7 +48,7 @@ const worldMapTools: any = (worldMapToolsImport as any).default ?? worldMapTools
 const contextToolsModule: any = (contextToolsImport as any).default ?? contextToolsImport;
 const linearBridge: any = (linearBridgeImport as any).default ?? linearBridgeImport;
 const migration: any = (migrationImport as any).default ?? migrationImport;
-const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...worldMapTools.TOOLS, ...chatContextTools.TOOLS, ...contextRegistryTools.TOOLS, ...portalToolsModule.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS];
+const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...worldMapTools.TOOLS, ...chatContextTools.TOOLS, ...contextRegistryTools.TOOLS, ...portalToolsModule.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS, ...workspaceApp.TOOLS];
 
 const SERVER_NAME = "my-portal";
 const SERVER_VERSION = "1.17.1-netlify";
@@ -372,6 +374,29 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
 
   await ensureAgentData();
   if (name === "world_map_get") return structured(await worldMap.get());
+  if (name === "portal_workspace_open") {
+    const data = await worldMap.get();
+    const projects = (data.projects || []).filter((p: any) => p && p.id).map((p: any) => ({
+      id: p.id, name: p.name, status: p.status, description: p.description,
+    }));
+    return {
+      content: [{ type: "text", text: "Opened My Portal Workspace. Select a Project and Context in the app." }],
+      structuredContent: { projects },
+    };
+  }
+  if (name === "portal_workspace_contexts") {
+    if (typeof args.projectId !== "string" || !args.projectId.trim() || args.projectId.length > 140) {
+      throw new Error("A valid projectId is required.");
+    }
+    const data = await contextRegistry.list({ projectId: args.projectId });
+    const contexts = (data.items || []).map((c: any) => ({
+      id: c.id, title: c.title, summary: c.summary, status: c.status,
+    }));
+    return {
+      content: [{ type: "text", text: "Loaded Context summaries for " + args.projectId }],
+      structuredContent: { projectId: args.projectId, contexts },
+    };
+  }
   if (name === "context_list") return structured(await contextRegistry.list(args));
   if (name === "context_get") return structured(await contextRegistry.get(args));
   if (name === "context_save") return structured(await contextRegistry.save(args));
@@ -611,13 +636,32 @@ async function handleRpc(message: any) {
       id,
       result: {
         protocolVersion,
-        capabilities: { tools: { listChanged: true } },
+        capabilities: { tools: { listChanged: true }, resources: {}, experimental: { "openai/ui": {} } },
         serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
         instructions: "My Portal is an Agent Control Plane + Context Store + Thinking Workspace. Autonomous work should begin with control_plane_overview. Claim executable agent work with work_item_claim before acting. Claiming moves the Work Item to running, which means an agent is actively executing it now; in_progress means ongoing but not currently being executed. Backlog is only for work deliberately deferred from near-term execution, not for merely paused or ongoing work. Do not take over a running item with an active lease owned by another agent. Heartbeat long work, and finish/release the item with a durable handoff so parallel agents do not duplicate effort. Use archived as the single closed state for completed or withdrawn Work Items. Manager Jobs are schedule-agnostic management definitions: My Portal never owns cron/time/timezone state. External schedulers such as ChatGPT should call manager_job_start(jobId, optional invocationId), claim the returned Manager Run with manager_run_claim, then load manager_job_get_context. A Manager Run observes the current queue/domain, reconciles existing Work Items, decides what work is needed, and delegates zero to many worker Work Items with manager_run_create_work_item. It should not perform the underlying worker task itself. Existing Work Items can be reprioritized or archived with manager_run_reconcile_work_item. Finish the management pass with manager_run_finish; zero new Work Items is valid. Linear is an external task source: control_plane_overview includes open Linear issues when configured; import relevant issues with linear_issue_import_to_work_item before autonomous execution, and use work_item_push_to_linear to create/update linked Linear issues. For broader Linear operations, inspect linear_tool_catalog then call linear_tool_call, which proxies Linear's official Remote MCP without exposing the API key. If Linear setup is missing, the control plane creates a Human Task for the user to store LINEAR_API_KEY directly in Netlify. If a step genuinely requires a person, move it to the Human Tasks box with work_item_delegate_to_human instead of leaving it in the agent queue or only mentioning it in chat. If execution hits a capability, safety, validation, tool, state, or external-dependency problem, Workers should call work_item_report_problem so their Manager can triage it; Workers should not normally create System Incidents directly. Managers should create system_incident records only for structural, recurring, cross-task, or manager-unresolvable failures. Read agent_hq_operating_model when diagnosing Agent HQ behavior. Manager and Worker procedures belong in Method versions, not scheduler prompts. Manager Method protocol.runtimeRequirements and Worker Method protocol.runtimeRequirements declare required capabilities/tools. External runners must report only actually available capabilities/tools when claiming Manager Runs or Work Items. Work Item Worker Method versions are pinned on first successful claim. Use space_search then space_get_context to resume long-running themes. Every Space has themeOwner=user|assistant: user means the human/user's own challenge or thinking theme, while assistant means an AI/assistant capability, quality, or reasoning problem. Never store assistant self-improvement problems inside user-owned Spaces; when creating/searching/updating Spaces, preserve this separation explicitly. Use profile_get_context for scoped User Model facts, preserving explicit vs inferred evidence. If the host is temporarily exposing an older cached tool schema without the new Context Store tools, use idea_search with query prefixed by `space:` to search Spaces and idea_get_context with id `space:<spaceId>` to fetch the same Space Context Pack. Thinking Spaces and Agent Ideas are separate storage layers, but idea_* tools are interoperable: spaceId targets durable Thinking Space ideas, categoryId targets Agent Ideas board items, and ID-based reads/updates resolve the correct layer automatically. Use space_* / profile_* / decision_* / opportunity_* for long-running thinking themes. Use method_search then method_get_context for reusable, versioned Agent Methods/Protocols; start method executions with idea_run_start + methodId so the exact methodVersionId is persisted for later evaluation and improvement. Agent Ideas mirrors the Portal board hierarchy: ideas/hobbies/stocks as the large categories and the Portal tags beneath them. Use idea_generation_work to find mirrored tag categories that need replenishment, then idea_create with categoryId. When the user adopts an Agent Idea, use idea_promote_to_portal so it is copied into the matching Portal board/tag and marked promoted with provenance retained. Existing portal_* data remains separate; projects are implementation workspaces, not idea bins. A Project may span multiple GitHub repositories and stores repositories[], mcpTools[], spaceIds[], and tags[]; actual execution lives in Work Items linked by projectId. Read a Project with portal_get/portal_search and its work with work_item_search({ projectId }). portal_delete requires explicit confirm=true. social_* tools manage the personal SNS archive: search historical posts, import official X archive posts in batches, and update only review metadata such as category/tags/starred/note.",
       },
     };
   }
   if (message.method === "ping") return { jsonrpc: "2.0", id, result: {} };
+  if (message.method === "resources/list") return {
+    jsonrpc: "2.0", id, result: { resources: [{ uri: workspaceApp.UI_URI, name: "My Portal Workspace", mimeType: "text/html;profile=mcp-app" }] },
+  };
+  if (message.method === "resources/read") {
+    if (message.params?.uri !== workspaceApp.UI_URI) {
+      return { jsonrpc: "2.0", id, error: { code: -32002, message: "Resource not found" } };
+    }
+    return {
+      jsonrpc: "2.0", id,
+      result: {
+        contents: [{
+          uri: workspaceApp.UI_URI,
+          mimeType: "text/html;profile=mcp-app",
+          text: workspaceApp.UI_HTML,
+          _meta: { "openai/ui": { preferredDisplayMode: "fullscreen", availableDisplayModes: ["inline", "fullscreen"] } },
+        }],
+      },
+    };
+  }
   if (message.method === "tools/list") return { jsonrpc: "2.0", id, result: { tools: TOOLS } };
   if (message.method === "tools/call") {
     const name = message.params?.name;
