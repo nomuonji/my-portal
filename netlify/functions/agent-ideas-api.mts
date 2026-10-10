@@ -129,6 +129,8 @@ export default async (request: Request) => {
         return json({ items: await listCollection(store.COLLECTIONS.runs, 150), databaseId: store.DATABASE_ID });
       }
       if (resource === "chat_skills") return json(await chatContext.listSkills());
+      if (resource === "chat_skill") return json(await chatContext.getSkill({ id:url.searchParams.get("id")||"" }));
+      if (resource === "chat_skill_versions") return json(await chatContext.skillVersions({ id:url.searchParams.get("id")||"" }));
       if (resource === "ai_context_notes") return json(await chatContext.listNotes({ spaceId:url.searchParams.get("spaceId")||undefined,limit:100 }));
       if (resource === "world_map") {
         return json(await worldMap.get());
@@ -250,7 +252,7 @@ export default async (request: Request) => {
           nextActions: body.nextActions || [],
         }));
       }
-      if (action === "chat_skill_upsert") return json(await chatContext.upsertSkill({skill:body.skill,expectedRevision:body.expectedRevision,confirm:body.confirm===true}));
+      if (action === "chat_skill_upsert") return json(await chatContext.upsertSkill({skill:body.skill,expectedRevision:body.expectedRevision,changeReason:body.changeReason,confirm:body.confirm===true}));
       if (action === "ai_context_note_create") return json(await chatContext.createNote({spaceId:body.spaceId,summary:body.summary,kind:body.kind,detail:body.detail,source:body.source||"portal-ui",sourceUrl:body.sourceUrl,idempotencyKey:body.idempotencyKey,confirm:body.confirm===true}));
       if (action === "world_map_update") {
         return json(await worldMap.update({
