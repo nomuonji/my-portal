@@ -59,14 +59,14 @@ const { _test }=require('../functions/publicCmsStore');
     'readerPull: This entire article is carefully reviewed and the content is suitable for publication.',
     'angleAlternatives: This entire article is carefully reviewed and the content is suitable for publication.',
     'leadCheck: This entire article is carefully reviewed and the content is suitable for publication.'
-  ].join('\\n');
+  ].join('\n');
   assert.throws(()=>_test.assertEditorialAngleEvidence('antonbase-notes',10,copyPasted),/distinct/);
   const punctuationOnly = validAngleBrief.replace(
-    /readerPull:[^\\n]+/,
+    /readerPull:[^\n]+/,
     'readerPull: The work began because program approvals take time; store candidates before needing to publish!!!'
   );
   assert.throws(()=>_test.assertEditorialAngleEvidence('antonbase-notes',10,punctuationOnly),/distinct/);
-  const filler = validAngleBrief.replace(/leadCheck:[^\\n]+/,'leadCheck: '+ 'あ'.repeat(45));
+  const filler = validAngleBrief.replace(/leadCheck:[^\n]+/,'leadCheck: '+ 'あ'.repeat(45));
   assert.throws(()=>_test.assertEditorialAngleEvidence('antonbase-notes',10,filler),/non-placeholder/);
   assert.equal(_test.assertEditorialAngleEvidence('antonbase-notes',10,validAngleBrief),true);
 
