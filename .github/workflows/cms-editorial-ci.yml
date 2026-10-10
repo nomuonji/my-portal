@@ -13,6 +13,8 @@ on:
       - 'functions/managerOutcome.test.js'
       - 'functions/contextStore.js'
       - 'functions/worldMap.js'
+      - 'functions/worldHomeGuide.js'
+      - 'src/components/AgentGuidePanel.js'
       - 'functions/worldMapToolSchemas.js'
       - 'functions/chatContextRegistry.js'
       - 'functions/contextRegistry.js'
@@ -68,6 +70,7 @@ jobs:
       - run: node --check functions/managerOutcome.js
       - run: node --check functions/contextStore.js
       - run: node --check functions/worldMap.js
+      - run: node --check functions/worldHomeGuide.js
       - run: node --check functions/worldMapToolSchemas.js
       - run: node --check functions/chatContextRegistry.js
       - run: node --check functions/contextRegistry.js
