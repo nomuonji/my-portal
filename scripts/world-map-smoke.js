@@ -59,7 +59,9 @@ try {
     assert.equal(before.metadataRevision, 0);
     assert.equal(before.coverage.projects, 'loaded');
     assert.equal(before.projects[0].id, 'site-operations');
-    assert.equal(before.spaces[0].id, 'seo-space');
+    assert.ok(before.spaces.some(space=>space.id==='seo-space'));
+    assert.ok(before.spaces.some(space=>space.id==='ai-space'));
+
     assert.equal(before.methods[0].currentVersionNumber, 2);
     assert.equal(before.aiContexts.length, 1);
     assert.equal(before.aiContexts[0].id,'ai-space');
