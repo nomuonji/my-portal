@@ -34,6 +34,7 @@ import {
   Menu as MenuIcon,
   Dashboard as DashboardIcon,
   ViewCompact as ViewCompactIcon,
+  HomeOutlined as HomeIcon,
   Build as BuildIcon,
   Brightness4 as Brightness4Icon,
   Brightness7 as Brightness7Icon,
@@ -57,6 +58,7 @@ import AgentIdeaSpace from './components/AgentIdeaSpace';
 import Ogiri from './components/Ogiri';
 import SocialArchive from './components/SocialArchive';
 import PortalBoards from './components/PortalBoards';
+import WorldHome from './components/WorldHome';
 import ThinkingWorkspace from './components/ThinkingWorkspace';
 import Hobby from './components/Hobby';
 import FeatureRequests from './components/FeatureRequests';
@@ -127,7 +129,8 @@ function App() {
 
   const pageTitle = useMemo(() => {
     const path = location.pathname;
-    if (path === '/' || path.startsWith('/boards')) return 'ボード';
+    if (path === '/') return 'ホーム';
+    if (path.startsWith('/boards')) return 'ボード';
     if (path.startsWith('/dashboard')) return 'Agent HQ';
     if (path.startsWith('/thinking')) return '思考テーマ';
     if (path.startsWith('/agent-ideas')) return 'Agent Ideas';
@@ -150,8 +153,9 @@ function App() {
 
   const mobileNavValue = useMemo(() => {
     const path = location.pathname;
-    if (path === '/' || path.startsWith('/boards') || path.startsWith('/ideaboard') || path.startsWith('/hobbyboard') || path.startsWith('/stockboard')) return '/';
-    if (path.startsWith('/idea') || path.startsWith('/hobby') || path.startsWith('/stock')) return '/';
+    if (path === '/') return '/';
+    if (path.startsWith('/boards') || path.startsWith('/ideaboard') || path.startsWith('/hobbyboard') || path.startsWith('/stockboard')) return '/boards';
+    if (path.startsWith('/idea') || path.startsWith('/hobby') || path.startsWith('/stock')) return '/boards';
     if (path.startsWith('/dashboard')) return '/dashboard';
     if (path.startsWith('/thinking')) return '/thinking';
     if (path.startsWith('/agent-ideas')) return '/agent-ideas';
@@ -298,7 +302,11 @@ function App() {
       <List sx={{ flexGrow: 1, overflowY: 'auto', overscrollBehavior: 'contain', py: 1 }}>
         {user && (
           <>
-            <ListItemButton selected={location.pathname === '/' || location.pathname.startsWith('/boards') || location.pathname.startsWith('/ideaboard') || location.pathname.startsWith('/hobbyboard') || location.pathname.startsWith('/stockboard') || location.pathname === '/idea' || location.pathname === '/hobby' || location.pathname === '/stock'} component={Link} to="/" onClick={navClick}>
+            <ListItemButton selected={location.pathname === '/'} component={Link} to="/" onClick={navClick}>
+              <ListItemIcon><HomeIcon /></ListItemIcon>
+              <ListItemText primary="ホーム" secondary="全体像 / 参照先 / Skills" />
+            </ListItemButton>
+            <ListItemButton selected={location.pathname.startsWith('/boards') || location.pathname.startsWith('/ideaboard') || location.pathname.startsWith('/hobbyboard') || location.pathname.startsWith('/stockboard') || location.pathname === '/idea' || location.pathname === '/hobby' || location.pathname === '/stock'} component={Link} to="/boards" onClick={navClick}>
               <ListItemIcon><ViewCompactIcon /></ListItemIcon>
               <ListItemText primary="ボード" secondary="企画・ビジネス / 興味・趣味 / ネタ・表現" />
             </ListItemButton>
@@ -492,7 +500,7 @@ function App() {
           >
             {user ? (
               <Routes>
-                <Route path="/" element={<PortalBoards />} />
+                <Route path="/" element={new URLSearchParams(location.search).has("board") ? <Navigate to={`/boards${location.search}`} replace /> : <WorldHome />} />
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/memo" element={<Memo />} />
                 <Route path="/memo/:memoId" element={<Memo />} />
@@ -501,9 +509,9 @@ function App() {
                 <Route path="/idea" element={<Idea />} />
                 <Route path="/hobby" element={<Hobby />} />
                 <Route path="/boards" element={<PortalBoards />} />
-                <Route path="/ideaboard" element={<Navigate to="/?board=ideas" replace />} />
-                <Route path="/hobbyboard" element={<Navigate to="/?board=hobbies" replace />} />
-                <Route path="/stockboard" element={<Navigate to="/?board=stocks" replace />} />
+                <Route path="/ideaboard" element={<Navigate to="/boards?board=ideas" replace />} />
+                <Route path="/hobbyboard" element={<Navigate to="/boards?board=hobbies" replace />} />
+                <Route path="/stockboard" element={<Navigate to="/boards?board=stocks" replace />} />
                 <Route path="/agent-ideas" element={<AgentIdeaSpace />} />
                 <Route path="/ogiri" element={<Ogiri />} />
                 <Route path="/social-archive" element={<SocialArchive />} />
@@ -559,10 +567,10 @@ function App() {
             }}
             value={mobileNavValue}
           >
-            <BottomNavigationAction value="/" label="ボード" icon={<ViewCompactIcon />} component={Link} to="/" />
+            <BottomNavigationAction value="/" label="ホーム" icon={<HomeIcon />} component={Link} to="/" />
             <BottomNavigationAction value="/thinking" label="思考" icon={<PsychologyAltIcon />} component={Link} to="/thinking" />
             <BottomNavigationAction value="/agent-ideas" label="Agent" icon={<SmartToyIcon />} component={Link} to="/agent-ideas" />
-            <BottomNavigationAction value="/ogiri" label="大喜利" icon={<EmojiObjectsIcon />} component={Link} to="/ogiri" />
+            <BottomNavigationAction value="/boards" label="ボード" icon={<ViewCompactIcon />} component={Link} to="/boards" />
             <BottomNavigationAction value="/dashboard" label="Agent HQ" icon={<DashboardIcon />} component={Link} to="/dashboard" />
           </BottomNavigation>
         )}

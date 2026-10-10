@@ -4,9 +4,11 @@ import { initializeFirestore } from "firebase-admin/firestore";
 import * as storeImport from "../../functions/agentIdeasStoreAgentDb.js";
 import * as documentDbImport from "../../functions/documentDb.js";
 import * as contextStoreImport from "../../functions/contextStore.js";
+import * as worldMapImport from "../../functions/worldMap.js";
 
 const store: any = (storeImport as any).default ?? storeImport;
 const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
+const worldMap: any = (worldMapImport as any).default ?? worldMapImport;
 const documentDb: any = (documentDbImport as any).default ?? documentDbImport;
 const AGENT_DATABASE_ID = "(default)";
 
@@ -124,6 +126,9 @@ export default async (request: Request) => {
       if (resource === "runs") {
         return json({ items: await listCollection(store.COLLECTIONS.runs, 150), databaseId: store.DATABASE_ID });
       }
+      if (resource === "world_map") {
+        return json(await worldMap.get());
+      }
       if (resource === "spaces") {
         // Additive, idempotent bootstraps. Loading the Thinking Workspace is
         // enough to make durable starter Spaces/Methods available.
@@ -239,6 +244,15 @@ export default async (request: Request) => {
           expectedRevision: body.expectedRevision,
           findings: body.findings || [],
           nextActions: body.nextActions || [],
+        }));
+      }
+      if (action === "world_map_update") {
+        return json(await worldMap.update({
+          expectedRevision: body.expectedRevision,
+          routes: body.routes,
+          hiddenRouteIds: body.hiddenRouteIds,
+          boundaries: body.boundaries,
+          confirm: body.confirm === true,
         }));
       }
       if (action === "space_update") {

@@ -32,12 +32,13 @@
     "eject": "react-scripts eject",
     "migrate:turso": "node scripts/migrate-firestore-to-turso.js",
     "test:intelligence-corpus": "node scripts/intelligence-corpus-smoke.js",
-    "prebuild": "npm run test:intelligence-corpus && npm run test:public-cms && npm run test:organization-lifecycle && npm run test:hq-dispatch && npm run test:hq-outcome && npm run test:character-image",
+    "prebuild": "npm run test:intelligence-corpus && npm run test:public-cms && npm run test:organization-lifecycle && npm run test:hq-dispatch && npm run test:hq-outcome && npm run test:character-image && npm run test:world-home",
     "test:hq-dispatch": "node scripts/hq-dispatch-smoke.js",
     "test:organization-lifecycle": "node scripts/organization-lifecycle-smoke.js",
     "test:public-cms": "node scripts/public-cms-smoke.js",
     "test:hq-outcome": "node --test functions/managerOutcome.test.js",
-    "test:character-image": "node --test functions/characterImageStore.test.js"
+    "test:character-image": "node --test functions/characterImageStore.test.js",
+    "test:world-home": "node scripts/world-map-smoke.js"
   },
   "eslintConfig": {
     "extends": [

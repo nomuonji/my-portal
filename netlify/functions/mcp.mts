@@ -14,6 +14,8 @@ import * as socialToolsImport from "../../functions/socialArchiveToolSchemas.js"
 import * as intelligenceStoreImport from "../../functions/intelligenceCorpusStore.js";
 import * as intelligenceToolsImport from "../../functions/intelligenceCorpusToolSchemas.js";
 import * as contextStoreImport from "../../functions/contextStore.js";
+import * as worldMapImport from "../../functions/worldMap.js";
+import * as worldMapToolsImport from "../../functions/worldMapToolSchemas.js";
 import * as contextToolsImport from "../../functions/contextStoreToolSchemas.js";
 import * as linearBridgeImport from "../../functions/linearMcpBridge.js";
 import * as migrationImport from "../../functions/agentIdeasMigration.js";
@@ -31,10 +33,12 @@ const socialToolsModule: any = (socialToolsImport as any).default ?? socialTools
 const intelligenceStore: any = (intelligenceStoreImport as any).default ?? intelligenceStoreImport;
 const intelligenceToolsModule: any = (intelligenceToolsImport as any).default ?? intelligenceToolsImport;
 const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
+const worldMap: any = (worldMapImport as any).default ?? worldMapImport;
+const worldMapTools: any = (worldMapToolsImport as any).default ?? worldMapToolsImport;
 const contextToolsModule: any = (contextToolsImport as any).default ?? contextToolsImport;
 const linearBridge: any = (linearBridgeImport as any).default ?? linearBridgeImport;
 const migration: any = (migrationImport as any).default ?? migrationImport;
-const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...portalToolsModule.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS];
+const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...worldMapTools.TOOLS, ...portalToolsModule.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS];
 
 const SERVER_NAME = "my-portal";
 const SERVER_VERSION = "1.17.1-netlify";
@@ -359,6 +363,8 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "intelligence_refresh_murakami_derived") return structured(await intelligenceStore.refreshDerivedDocuments(args));
 
   await ensureAgentData();
+  if (name === "world_map_get") return structured(await worldMap.get());
+  if (name === "world_map_update") return structured(await worldMap.update(args));
   switch (name) {
     case "agent_ideas_status": {
       const legacyBootstrap = await contextStore.bootstrapIncomeSearchMigration();
