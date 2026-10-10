@@ -502,6 +502,7 @@ function assertEditorialAngleEvidence(siteId, versionNumber, notes) {
     ['angleAlternatives', 32],
     ['leadCheck', 24],
   ];
+  const evidence = [];
   for (const [label, minChars] of required) {
     const match = String(notes).match(new RegExp('(?:^|\\n)' + label + '\\s*:\\s*([^\\n]+)', 'i'));
     const value = match?.[1]?.trim() || '';
@@ -509,6 +510,15 @@ function assertEditorialAngleEvidence(siteId, versionNumber, notes) {
       throw new Error('Editorial angle gate: private reviewNotes must include substantive ' + label +
         ': evidence before approving Antonbase Notes; revise angle and lead rather than attesting without review.');
     }
+    // Distinct editorial questions must not be answered by copying the same
+    // generic paragraph. This is a mechanical sanity check, not a prose score.
+    const normalized = value.normalize('NFKC').toLowerCase()
+      .replace(/[\s\p{P}\p{S}]+/gu, '');
+    if (normalized.length < 12 || evidence.includes(normalized) ||
+        /(.)\1{15,}/u.test(normalized)) {
+      throw new Error('Editorial angle gate: each section needs distinct, non-placeholder evidence; revise ' + label + '.');
+    }
+    evidence.push(normalized);
   }
   return true;
 }
