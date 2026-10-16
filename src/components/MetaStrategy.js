@@ -158,8 +158,8 @@ export default function MetaStrategy() {
             </Stack>
             <Typography variant="h4" component="h1" sx={{ fontWeight: 900, letterSpacing: '-.045em', mt: .5 }}>次、何をしてみる？</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1, maxWidth: 760, lineHeight: 1.8 }}>
-              今のプロジェクトだけでなく、知らなかった分野、趣味、文化、遊び、日常の小さな実験まで。
-              役に立つ必要も、稼げる必要もありません。AIが発見をストックし、気になったものを選べます。
+              既存プロジェクトの改善・新企画・事業の方向転換から、知らなかった分野、趣味、文化、遊び、日常の楽しみまで。
+              仕事の提案も、仕事と無関係な発見も、どちらも蓄積します。興味や余暇の提案には、収益化の理由は要りません。
             </Typography>
           </Box>
           <Button onClick={reload} disabled={loading} startIcon={<RefreshIcon />} variant="outlined">更新</Button>
