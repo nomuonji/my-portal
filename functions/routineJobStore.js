@@ -33,7 +33,7 @@ function seedDraftJob() {
       'Tweets Operatorで1回の下書き補充を実行する。',
       '1. get_system_health、list_accountsを読み、autoPostEnabled=trueのアカウントだけを対象にする。',
       '2. 各対象にget_generation_workを実行し、neededCountが1以上の場合だけget_accountで最新のキャラクター設定、文体、文字数、禁止事項を確認する。',
-      '3. neededCountと同じ件数の独自で重複しない日本語下書きを作成する。上限は各アカウント5件。',
+      '3. 一度に処理するのは最大20アカウント。neededCountと同じ件数の独自で重複しない日本語下書きを作成する。上限は各アカウント5件。',
       '4. create_draftsにはget_generation_workのcharacterVersionをexpectedCharacterVersionとして指定する。idempotencyKeyは実行枠・アカウント単位で安定させ、保存不明の再試行で新しいキーを生成しない。',
       '5. 保存後にget_generation_workで在庫を再確認する。十分な在庫の場合は何も書き込まない。',
       '6. publish_draft、sync_posts、update_account、delete_draft、delete_guidance、archive_productは絶対に呼ばない。投稿・公開は禁止。',
@@ -46,6 +46,8 @@ function seedDraftJob() {
 async function ensureSeed() {
   const database = db();
   const ref = database.collection(JOBS).doc('tweets-draft-replenishment');
+  const existing = await ref.get();
+  if (existing.exists) return;
   await database.runTransaction(async (tx) => {
     const current = await tx.get(ref);
     if (!current.exists) tx.set(ref, { ...seedDraftJob(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), seedVersion: 1 });
@@ -148,7 +150,7 @@ async function finish(input = {}) {
 }
 async function runs(input = {}) {
   const limit = Math.max(1, Math.min(100, Number(input.limit) || 30));
-  const result = await db().collection(RUNS).limit(300).get();
+  const result = await db().collection(RUNS).orderBy('startedAt', 'desc').limit(300).get();
   const items = result.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
     .filter((run) => !input.jobId || run.jobId === input.jobId)
     .sort((a,b) => String(b.startedAt).localeCompare(String(a.startedAt))).slice(0, limit);
