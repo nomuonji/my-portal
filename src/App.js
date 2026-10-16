@@ -319,7 +319,7 @@ function App() {
             </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/meta')} component={Link} to="/meta" onClick={navClick}>
               <ListItemIcon><MetaIcon /></ListItemIcon>
-              <ListItemText primary="次に何をする？" secondary="全活動の再評価 / AI提案ストック" />
+              <ListItemText primary="次、何してみる？" secondary="新しい興味 / 暮らし / 全活動" />
             </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/dashboard')} component={Link} to="/dashboard" onClick={navClick}>
               <ListItemIcon><DashboardIcon /></ListItemIcon>
