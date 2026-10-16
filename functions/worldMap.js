@@ -12,6 +12,15 @@ const COLLECTION = 'portalContextAtlas';
 const DOC_ID = 'home';
 const ROUTES = Object.freeze([
   {
+    id: 'meta-strategy', title: '全活動のメタ戦略・提案ストック',
+    description: '個別Taskの進捗ではなく、チャットでの活動や仕事全体を批判的に俯瞰し、未知の可能性も含めて提案を蓄積・評価する。',
+    keywords: ['次に何をする','メタ戦略','全チャット','提案ストック','全活動','Chief of Staff'],
+    projectId: 'my-portal', primary: 'My Portal Meta Strategy Ledger',
+    tools: ['My Portal meta_proposal_list/create/feedback', 'My Portal Contexts'],
+    spaceIds: [], url: '/meta',
+    boundary: 'Agent HQのManager/Worker実行キュー、Keywordsの市場アイデア、人間のThinking Spacesとは独立。全チャットを直接読めると仮定せず、利用可能な履歴・記憶・Contexts・正本の範囲を明記。提案保存は実行権限や公開承認ではない。',
+  },
+  {
     id: 'site-seo', title: 'サイトSEO・インデックス', keywords: ['SEO', 'インデックス', 'GSC', 'GA4', '検索流入', 'サイト改善'],
     description: '運用中サイトの計測、SEO施策、ポートフォリオ方針、公開確認。',
     projectId: 'site-operations', primary: 'Sites Operator',
