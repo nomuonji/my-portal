@@ -6,7 +6,7 @@ const PROPS = {
   ideaKey: STR('Stable topic identity across repeated runs. Reuse for the same underlying proposal, even if title changes.', 180),
   summary: STR('Explain the new experience, topic, activity or reconsideration. Personal/curiosity suggestions need not yield income, productivity or projects.', 2800),
   reason: STR('Why this matters now; distinguish actual evidence from inference.', 2500),
-  nextStep: STR('An optional-feeling, low-friction first experience or experiment, not a mandatory productivity task.', 1200),
+  nextStep: STR('For project recommendations, a concrete strategic next step; for personal/curiosity recommendations, an optional low-friction experience to try. Not all proposals are productivity tasks.', 1200),
   category: STR('Open-ended topic label: film, literature, travel, history, science, business, relationships, everyday life, etc. Not limited to established interests.', 70),
   lens: { type: 'string', enum: ['projects','personal','curiosity','cross-cutting'], description: 'projects=existing work, personal=private everyday life/leisure/habits without sensitive inferences, curiosity=new hobbies/cultural/scientific/artistic/intellectual interests, cross-cutting=meta-level reframing. Choose personal or curiosity for novel non-work suggestions; do not relabel them as work.' },
   priority: { type: 'string', enum: ['now', 'soon', 'explore'] },
