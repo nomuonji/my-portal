@@ -206,12 +206,15 @@ export default function WorldHome() {
               チャット用Skill、Project・Domain別のContexts、担当Operatorを一つの地図で探せます。
             </Typography>
           </Box>
+          <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
+            <Button component={RouterLink} to="/meta" variant="contained" startIcon={<SparkIcon />}>次に何をする？</Button>
           <Tooltip title="最新のディレクトリを読み直す">
             <Button onClick={reload} disabled={loading} variant="outlined" startIcon={<RefreshIcon />}
               sx={{ flexShrink: 0, bgcolor: dark ? 'transparent' : alpha('#ffffff', 0.6) }}>
               更新
             </Button>
           </Tooltip>
+          </Stack>
         </Stack>
 
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(3,minmax(0,1fr))', sm: 'repeat(4,minmax(0,1fr))' }, gap: { xs: 1.2, sm: 3 }, mt: 3.8, position: 'relative' }}>
