@@ -43,6 +43,7 @@ import {
   ExpandMore,
   MoreHoriz as MoreHorizIcon,
   SmartToy as SmartToyIcon,
+  AutoAwesomeOutlined as MetaIcon,
   PsychologyAlt as PsychologyAltIcon,
   EmojiObjects as EmojiObjectsIcon,
   Archive as ArchiveIcon,
@@ -56,6 +57,7 @@ import Dashboard from './components/Dashboard';
 import News from './components/News';
 import Idea from './components/Idea';
 import AgentIdeaSpace from './components/AgentIdeaSpace';
+import MetaStrategy from './components/MetaStrategy';
 import Ogiri from './components/Ogiri';
 import SocialArchive from './components/SocialArchive';
 import PortalBoards from './components/PortalBoards';
@@ -136,6 +138,7 @@ function App() {
     if (path.startsWith('/dashboard')) return 'Agent HQ';
     if (path.startsWith('/thinking')) return '思考テーマ';
     if (path.startsWith('/agent-ideas')) return 'Agent Ideas';
+    if (path.startsWith('/meta')) return 'メタ戦略 / 提案ストック';
     if (path.startsWith('/ogiri')) return '大喜利ラボ';
     if (path.startsWith('/social-archive')) return 'X投稿アーカイブ';
     if (path.startsWith('/public-cms')) return 'Public CMS';
@@ -162,6 +165,7 @@ function App() {
     if (path.startsWith('/dashboard')) return '/dashboard';
     if (path.startsWith('/thinking')) return '/thinking';
     if (path.startsWith('/agent-ideas')) return '/agent-ideas';
+    if (path.startsWith('/meta')) return '/meta';
     if (path.startsWith('/ogiri')) return '/ogiri';
     return false;
   }, [location.pathname]);
@@ -312,6 +316,10 @@ function App() {
             <ListItemButton selected={location.pathname.startsWith('/boards') || location.pathname.startsWith('/ideaboard') || location.pathname.startsWith('/hobbyboard') || location.pathname.startsWith('/stockboard') || location.pathname === '/idea' || location.pathname === '/hobby' || location.pathname === '/stock'} component={Link} to="/boards" onClick={navClick}>
               <ListItemIcon><ViewCompactIcon /></ListItemIcon>
               <ListItemText primary="ボード" secondary="企画・ビジネス / 興味・趣味 / ネタ・表現" />
+            </ListItemButton>
+            <ListItemButton selected={location.pathname.startsWith('/meta')} component={Link} to="/meta" onClick={navClick}>
+              <ListItemIcon><MetaIcon /></ListItemIcon>
+              <ListItemText primary="次に何をする？" secondary="全活動の再評価 / AI提案ストック" />
             </ListItemButton>
             <ListItemButton selected={location.pathname.startsWith('/dashboard')} component={Link} to="/dashboard" onClick={navClick}>
               <ListItemIcon><DashboardIcon /></ListItemIcon>
@@ -520,6 +528,7 @@ function App() {
                 <Route path="/hobbyboard" element={<Navigate to="/boards?board=hobbies" replace />} />
                 <Route path="/stockboard" element={<Navigate to="/boards?board=stocks" replace />} />
                 <Route path="/agent-ideas" element={<AgentIdeaSpace />} />
+                <Route path="/meta" element={<MetaStrategy />} />
                 <Route path="/ogiri" element={<Ogiri />} />
                 <Route path="/social-archive" element={<SocialArchive />} />
                 <Route path="/public-cms" element={<PublicCms />} />

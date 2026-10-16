@@ -7,12 +7,14 @@ import * as contextStoreImport from "../../functions/contextStore.js";
 import * as worldMapImport from "../../functions/worldMap.js";
 import * as chatContextImport from "../../functions/chatContextRegistry.js";
 import * as contextRegistryImport from "../../functions/contextRegistry.js";
+import * as metaStoreImport from "../../functions/metaStrategyStore.js";
 
 const store: any = (storeImport as any).default ?? storeImport;
 const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
 const worldMap: any = (worldMapImport as any).default ?? worldMapImport;
 const chatContext: any = (chatContextImport as any).default ?? chatContextImport;
 const contextRegistry: any = (contextRegistryImport as any).default ?? contextRegistryImport;
+const metaStore: any = (metaStoreImport as any).default ?? metaStoreImport;
 const documentDb: any = (documentDbImport as any).default ?? documentDbImport;
 const AGENT_DATABASE_ID = "(default)";
 
@@ -118,6 +120,8 @@ export default async (request: Request) => {
           contextStore: await contextStore.healthCheck(),
         });
       }
+      if (resource === "meta_proposals") return json(await metaStore.list({limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 150, 1), 200), status: url.searchParams.get("status") || undefined}));
+      if (resource === "meta_proposal") return json(await metaStore.get({ id: url.searchParams.get("id") || "" }));
       if (resource === "ideas") {
         return json(await store.ideaSearch({ limit: 500, scanLimit: 2000 }));
       }
@@ -206,6 +210,7 @@ export default async (request: Request) => {
     if (request.method === "POST") {
       const body: any = await parseBody(request);
       const action = String(body.action || "");
+      if (action === "meta_proposal_feedback") return json(await metaStore.feedback({ id:body.id, status:body.status, feedback:body.feedback, expectedRevision:body.expectedRevision }));
       if (action === "category_upsert") {
         return json(await store.categoryUpsert({
           id: body.id,
