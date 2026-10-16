@@ -11,6 +11,7 @@ import {
 } from '../documentDbClient';
 import { auth, db } from '../firebase';
 import ManagerJobsPanel from './ManagerJobsPanel';
+import RoutineJobsPanel from './RoutineJobsPanel';
 import OrganizationsPanel from './OrganizationsPanel';
 import {
   Alert,
@@ -711,6 +712,7 @@ function Dashboard() {
 
       <OrganizationsPanel onCreated={() => setOrganizationRevision((value) => value + 1)} />
       <ManagerJobsPanel key={organizationRevision} projects={projects} />
+      <RoutineJobsPanel />
 
       <Paper
         elevation={0}

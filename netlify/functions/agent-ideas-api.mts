@@ -8,6 +8,7 @@ import * as worldMapImport from "../../functions/worldMap.js";
 import * as chatContextImport from "../../functions/chatContextRegistry.js";
 import * as contextRegistryImport from "../../functions/contextRegistry.js";
 import * as metaStoreImport from "../../functions/metaStrategyStore.js";
+import * as routineStoreImport from "../../functions/routineJobStore.js";
 
 const store: any = (storeImport as any).default ?? storeImport;
 const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
@@ -15,6 +16,7 @@ const worldMap: any = (worldMapImport as any).default ?? worldMapImport;
 const chatContext: any = (chatContextImport as any).default ?? chatContextImport;
 const contextRegistry: any = (contextRegistryImport as any).default ?? contextRegistryImport;
 const metaStore: any = (metaStoreImport as any).default ?? metaStoreImport;
+const routineStore: any = (routineStoreImport as any).default ?? routineStoreImport;
 const documentDb: any = (documentDbImport as any).default ?? documentDbImport;
 const AGENT_DATABASE_ID = "(default)";
 
@@ -163,6 +165,8 @@ export default async (request: Request) => {
       if (resource === "organizations") {
         return json(await contextStore.organizationList({ limit: 100 }));
       }
+      if (resource === "routine_jobs") return json(await routineStore.list());
+      if (resource === "routine_job_runs") return json(await routineStore.runs({jobId:url.searchParams.get("jobId") || undefined,limit:30}));
       if (resource === "manager_jobs") {
         return json(await contextStore.managerJobSearch({ limit: 100, scanLimit: 500 }));
       }
@@ -314,6 +318,11 @@ export default async (request: Request) => {
       if (action === "organization_graduate") {
         return json(await contextStore.organizationGraduate(body));
       }
+      if (action === "routine_job_upsert") return json(await routineStore.upsert({
+        id:body.id,title:body.title,description:body.description,instructions:body.instructions,
+        targetSystem:body.targetSystem,slots:body.slots,status:body.status,
+        maxAccountsPerRun:body.maxAccountsPerRun,expectedRevision:body.expectedRevision,
+      }));
       if (action === "manager_job_create") {
         return json(await contextStore.managerJobCreate({
           id: body.id,
