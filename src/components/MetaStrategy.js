@@ -11,7 +11,7 @@ import {
 } from '@mui/icons-material';
 
 const STATUS = {
-  new: '未判断', considering: '検討中', accepted: '採用', rejected: '見送り', done: '完了',
+  new: '未判断', considering: '気になる', accepted: '採用', rejected: '見送り', done: '試した・完了',
 };
 const PRIORITY = { now: '今やる', soon: '次にやる', explore: '探索する' };
 const LENSES = {
@@ -108,7 +108,7 @@ function ProposalCard({ proposal, onSaved }) {
       <Stack direction="row" justifyContent="flex-end" gap={1} sx={{ mt: 1.2 }}>
         <Button size="small" onClick={() => save('rejected')} disabled={saving}
           startIcon={<RejectIcon />}>見送り</Button>
-        <Button size="small" onClick={() => save('accepted')} disabled={saving}
+        <Button size="small" onClick={() => save(getLens(proposal) === 'curiosity' || getLens(proposal) === 'personal' ? 'considering' : 'accepted')} disabled={saving}
           startIcon={<AcceptIcon />}>{getLens(proposal) === 'curiosity' || getLens(proposal) === 'personal' ? '気になる' : '採用'}</Button>
         <Button size="small" variant="contained" onClick={() => save()} disabled={!dirty || saving}>評価を保存</Button>
       </Stack>
