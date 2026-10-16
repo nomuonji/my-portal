@@ -44,6 +44,10 @@ async function main() {
   const first = await store.create(sample);
   assert.equal(first.outcome, 'created');
   assert.equal(first.proposal.status, 'new');
+  assert.equal(first.proposal.lens, 'cross-cutting'); // Existing proposals remain readable.
+  const curiosity = await store.create({ ...sample, ideaKey: 'try-a-new-hobby', lens: 'curiosity',
+    title: '新しい文化体験に触れてみる', priority: 'explore' });
+  assert.equal(curiosity.proposal.lens, 'curiosity');
   const rejected = await store.feedback({
     id: first.proposal.id, status: 'rejected', expectedRevision: 1, feedback: '対象が違うのでボツ',
   });
@@ -55,8 +59,8 @@ async function main() {
   await assert.rejects(store.feedback({ id: first.proposal.id, status: 'accepted', expectedRevision: 1 }),
     /revision conflict/);
   const listed = await store.list();
-  assert.equal(listed.items.length, 1);
-  assert.equal(listed.items[0].status, 'rejected');
+  assert.equal(listed.items.length, 2);
+  assert.equal(listed.items.find(p => p.id === first.proposal.id).status, 'rejected');
   assert.equal(store.fingerprint('ＡＢ  Ｃ'), store.fingerprint('ab c'));
   console.log('meta strategy: rejection/dedupe/revision contract OK');
 }

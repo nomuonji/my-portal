@@ -11,10 +11,13 @@ import {
 } from '@mui/icons-material';
 
 const STATUS = {
-  new: '未判断', considering: '検討中', accepted: '採用', rejected: '見送り', done: '完了',
+  new: '未判断', considering: '気になる', accepted: '採用', rejected: '見送り', done: '試した・完了',
 };
 const PRIORITY = { now: '今やる', soon: '次にやる', explore: '探索する' };
-const PRIORITY_RANK = { now: 0, soon: 1, explore: 2 };
+const LENSES = {
+  all: 'すべての提案', curiosity: '興味を広げる', personal: '個人的なこと', projects: '活動・仕事', 'cross-cutting': '横断的な発見',
+};
+const getLens = item => LENSES[item.lens] ? item.lens : 'cross-cutting';
 
 async function request(path, body) {
   const user = auth.currentUser;
@@ -55,6 +58,7 @@ function ProposalCard({ proposal, onSaved }) {
     <Card variant="outlined" sx={{ borderRadius: 2.4, p: { xs: 2, sm: 2.4 }, height: '100%' }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1} sx={{ mb: 1.1 }}>
         <Stack direction="row" spacing={.75} useFlexGap flexWrap="wrap">
+          <Chip size="small" label={LENSES[getLens(proposal)]} variant="outlined" />
           <Chip size="small" label={PRIORITY[proposal.priority] || '探索する'}
             color={proposal.priority === 'now' ? 'primary' : 'default'} variant={proposal.priority === 'now' ? 'filled' : 'outlined'} />
           <Chip size="small" label={STATUS[proposal.status] || proposal.status} variant="outlined" />
@@ -68,7 +72,7 @@ function ProposalCard({ proposal, onSaved }) {
         <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 750 }}>なぜ提案するのか</Typography>
         <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.65, mt: .4 }}>{proposal.reason}</Typography>
         <Divider sx={{ my: 1.2 }} />
-        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 750 }}>最初の一手</Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 750 }}>まず試すなら</Typography>
         <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.65, mt: .4 }}>{proposal.nextStep}</Typography>
       </Paper>
       <Button onClick={() => setOpen(v => !v)} size="small" sx={{ mt: 1.1, px: 0 }}>
@@ -98,14 +102,14 @@ function ProposalCard({ proposal, onSaved }) {
           {Object.entries(STATUS).map(([key, label]) => <MenuItem value={key} key={key}>{label}</MenuItem>)}
         </Select>
         <TextField size="small" fullWidth value={feedback} onChange={e => setFeedback(e.target.value)}
-          placeholder="なぜ採用・見送りにしたか（次回の提案に反映）"
+          placeholder="面白い・興味なし・方向違いなど、率直な理由（次回に反映）"
           inputProps={{ maxLength: 1800, 'aria-label': '評価理由' }} />
       </Stack>
       <Stack direction="row" justifyContent="flex-end" gap={1} sx={{ mt: 1.2 }}>
         <Button size="small" onClick={() => save('rejected')} disabled={saving}
           startIcon={<RejectIcon />}>見送り</Button>
-        <Button size="small" onClick={() => save('accepted')} disabled={saving}
-          startIcon={<AcceptIcon />}>採用</Button>
+        <Button size="small" onClick={() => save(getLens(proposal) === 'curiosity' || getLens(proposal) === 'personal' ? 'considering' : 'accepted')} disabled={saving}
+          startIcon={<AcceptIcon />}>{getLens(proposal) === 'curiosity' || getLens(proposal) === 'personal' ? '気になる' : '採用'}</Button>
         <Button size="small" variant="contained" onClick={() => save()} disabled={!dirty || saving}>評価を保存</Button>
       </Stack>
       {error && <Alert severity="error" sx={{ mt: 1.1 }}>{error}</Alert>}
@@ -119,6 +123,7 @@ export default function MetaStrategy() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('active');
+  const [lens, setLens] = useState('all');
   const [query, setQuery] = useState('');
   const reload = useCallback(async () => {
     setLoading(true); setError('');
@@ -134,12 +139,12 @@ export default function MetaStrategy() {
   }), [items]);
   const visible = useMemo(() => items.filter(p => {
     if (filter === 'active' && !['new','considering'].includes(p.status)) return false;
+    if (lens !== 'all' && getLens(p) !== lens) return false;
     if (filter !== 'all' && filter !== 'active' && p.status !== filter) return false;
     const q = query.trim().toLocaleLowerCase();
     return !q || [p.title, p.summary, p.reason, p.category, ...(p.context || [])]
       .join(' ').toLocaleLowerCase().includes(q);
-  }).sort((a,b) => (PRIORITY_RANK[a.priority] ?? 2) - (PRIORITY_RANK[b.priority] ?? 2)
-    || Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0)), [items, filter, query]);
+  }).sort((a,b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0)), [items, filter, lens, query]);
   const updateOne = proposal => setItems(current => current.map(p => p.id === proposal.id ? proposal : p));
   return (
     <Box sx={{ maxWidth: 1480, mx: 'auto', pb: 8 }}>
@@ -149,12 +154,12 @@ export default function MetaStrategy() {
           <Box>
             <Stack direction="row" alignItems="center" spacing={1}>
               <SparkIcon color="primary" />
-              <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: '.15em', fontWeight: 800 }}>META / STRATEGY</Typography>
+              <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: '.15em', fontWeight: 800 }}>CURIOUS / PERSONAL / PROJECTS</Typography>
             </Stack>
-            <Typography variant="h4" component="h1" sx={{ fontWeight: 900, letterSpacing: '-.045em', mt: .5 }}>次に何をするべきか。</Typography>
+            <Typography variant="h4" component="h1" sx={{ fontWeight: 900, letterSpacing: '-.045em', mt: .5 }}>次、何をしてみる？</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1, maxWidth: 760, lineHeight: 1.8 }}>
-              案件やタスクを管理するのではなく、活動そのものを再評価する場所。横断的な発見、方向転換、やめるべきこと、
-              未着手の機会を提案として蓄積します。AIの提案は未採用が初期状態です。
+              既存プロジェクトの改善・新企画・事業の方向転換から、知らなかった分野、趣味、文化、遊び、日常の楽しみまで。
+              仕事の提案も、仕事と無関係な発見も、どちらも蓄積します。興味や余暇の提案には、収益化の理由は要りません。
             </Typography>
           </Box>
           <Button onClick={reload} disabled={loading} startIcon={<RefreshIcon />} variant="outlined">更新</Button>
@@ -164,6 +169,13 @@ export default function MetaStrategy() {
             <Box key={label}><Typography variant="h5" sx={{ fontWeight: 900 }}>{value}</Typography><Typography variant="caption" color="text.secondary">{label}</Typography></Box>)}
         </Stack>
       </Paper>
+      <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mt: 2 }} aria-label="提案の領域を選ぶ">
+        {Object.entries(LENSES).map(([key, label]) => <Chip key={key} clickable
+          label={label + (key === 'all' ? '' : ' · ' + items.filter(p => getLens(p) === key).length)}
+          color={lens === key ? 'primary' : 'default'}
+          variant={lens === key ? 'filled' : 'outlined'}
+          onClick={() => setLens(key)} />)}
+      </Stack>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mt: 2, mb: 2 }}>
         <TextField size="small" fullWidth placeholder="テーマ・キーワードから探す" value={query}
           onChange={e => setQuery(e.target.value)} inputProps={{ 'aria-label':'提案を検索' }} />
@@ -178,7 +190,7 @@ export default function MetaStrategy() {
         <IdeaIcon color="disabled" sx={{ fontSize: 42 }} />
         <Typography variant="h6" sx={{ mt: 1.2 }}>該当する提案はありません</Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          ここはAIが証拠付きの提案を登録するストックです。チャット履歴を無断で全件取得することはありません。
+          仕事に関係のない楽しみや発見もここに貯まります。対象に絞った提案がなければ、他の領域も見てみてください。
         </Typography>
       </Paper>}
       {!loading && visible.length > 0 && <Box sx={{ display:'grid',

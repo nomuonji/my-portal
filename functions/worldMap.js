@@ -12,9 +12,9 @@ const COLLECTION = 'portalContextAtlas';
 const DOC_ID = 'home';
 const ROUTES = Object.freeze([
   {
-    id: 'meta-strategy', title: '全活動のメタ戦略・提案ストック',
-    description: '個別Taskの進捗ではなく、チャットでの活動や仕事全体を批判的に俯瞰し、未知の可能性も含めて提案を蓄積・評価する。',
-    keywords: ['次に何をする','メタ戦略','全チャット','提案ストック','全活動','Chief of Staff'],
+    id: 'meta-strategy', title: '興味・暮らし・全活動の提案ストック',
+    description: '仕事の進捗だけではなく、趣味・文化・新しい興味・余暇や暮らしのヒント、遠い分野への発見を含む提案を蓄積・評価する。',
+    keywords: ['次に何をする','メタ戦略','全チャット','提案ストック','全活動','興味','趣味','暮らし','好奇心','Chief of Staff'],
     projectId: 'my-portal', primary: 'My Portal Meta Strategy Ledger',
     tools: ['My Portal meta_proposal_list/create/feedback', 'My Portal Contexts'],
     spaceIds: [], url: '/meta',
