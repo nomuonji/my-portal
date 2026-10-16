@@ -11,10 +11,14 @@ const COLLECTION = 'metaStrategyProposals';
 const db = () => getDocumentDb(process.env.AGENT_IDEAS_DATABASE_ID || '(default)');
 const STATES = new Set(['new', 'considering', 'accepted', 'rejected', 'done']);
 const PRIORITIES = new Set(['now', 'soon', 'explore']);
+// A proposal's lens tells us whom it serves; category remains open-ended.
+// Legacy proposals without lens are still readable as cross-cutting.
+const LENSES = new Set(['projects', 'personal', 'curiosity', 'cross-cutting']);
 const clean = (value, max = 2000) => String(value ?? '').trim().slice(0, max);
 const unique = (array, n, max) => [...new Set((Array.isArray(array) ? array : [])
   .slice(0, n).map(value => clean(value, max)).filter(Boolean))];
 const timestamp = value => value?.toDate?.()?.toISOString?.() || (typeof value === 'string' ? value : null);
+const normalizeLens = value => LENSES.has(value) ? value : 'cross-cutting';
 const fingerprint = value => createHash('sha256').update(clean(value, 200).toLocaleLowerCase('ja-JP')
   .normalize('NFKC').replace(/\s+/g, ' ')).digest('hex').slice(0, 30);
 function sources(value) {
@@ -27,7 +31,7 @@ function sources(value) {
 }
 function serialize(doc) {
   const data = typeof doc.data === 'function' ? doc.data() : doc;
-  return { ...data, id: doc.id, createdAt: timestamp(data.createdAt),
+  return { ...data, id: doc.id, lens: normalizeLens(data.lens), createdAt: timestamp(data.createdAt),
     updatedAt: timestamp(data.updatedAt), lastSeenAt: timestamp(data.lastSeenAt) };
 }
 async function list(args = {}) {
@@ -69,6 +73,7 @@ async function create(args = {}) {
     tx.set(ref, {
       title, ideaKey, summary, reason, nextStep,
       category: clean(args.category || 'cross-cutting', 70),
+      lens: normalizeLens(args.lens),
       priority: PRIORITIES.has(args.priority) ? args.priority : 'explore',
       evidence: sources(args.evidence),
       uncertainty: clean(args.uncertainty, 900),
@@ -100,4 +105,4 @@ async function feedback(args = {}) {
   });
   return get({ id });
 }
-module.exports = { COLLECTION, list, get, create, feedback, fingerprint };
+module.exports = { COLLECTION, list, get, create, feedback, fingerprint, normalizeLens };
