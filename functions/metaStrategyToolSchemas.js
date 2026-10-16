@@ -2,12 +2,13 @@
 
 const STR = (description, maxLength = 2000) => ({ type: 'string', description, maxLength });
 const PROPS = {
-  title: STR('Specific, decision-oriented Japanese proposal title.', 180),
+  title: STR('Concrete, appealing recommendation title; it may be an invitation to explore or play rather than a task or business action.', 180),
   ideaKey: STR('Stable topic identity across repeated runs. Reuse for the same underlying proposal, even if title changes.', 180),
-  summary: STR('What to change or explore, and what outcome it might create.', 2800),
+  summary: STR('Explain the new experience, topic, activity or reconsideration. Personal/curiosity suggestions need not yield income, productivity or projects.', 2800),
   reason: STR('Why this matters now; distinguish actual evidence from inference.', 2500),
-  nextStep: STR('Single concrete next action, not a general slogan.', 1200),
-  category: STR('Open-ended category such as strategy, learning, economics, product, workflow, life, or culture.', 70),
+  nextStep: STR('An optional-feeling, low-friction first experience or experiment, not a mandatory productivity task.', 1200),
+  category: STR('Open-ended topic label: film, literature, travel, history, science, business, relationships, everyday life, etc. Not limited to established interests.', 70),
+  lens: { type: 'string', enum: ['projects','personal','curiosity','cross-cutting'], description: 'projects=existing work, personal=private everyday life/leisure/habits without sensitive inferences, curiosity=new hobbies/cultural/scientific/artistic/intellectual interests, cross-cutting=meta-level reframing. Choose personal or curiosity for novel non-work suggestions; do not relabel them as work.' },
   priority: { type: 'string', enum: ['now', 'soon', 'explore'] },
   uncertainty: STR('Known gaps and uncertainties, if any.', 900),
   context: { type: 'array', maxItems: 14, items: STR('Relevant project, chat topic or decision key.', 160) },
@@ -32,7 +33,7 @@ const TOOLS = [
     inputSchema: { type: 'object', additionalProperties: false, properties: { id: STR('Proposal ID', 100) }, required: ['id'] },
     annotations: { readOnlyHint: true },
   },
-  { name: 'meta_proposal_create', description: 'Persist one new non-duplicative cross-project or life-level recommendation with an evidence trail and actionable next step. Does not execute it or override the user’s feedback. Rejected ideas are not silently revived. Read meta_proposal_list first.',
+  { name: 'meta_proposal_create', description: 'Store recommendations across projects AND hobbies, leisure, culture, entertainment, personal everyday life, new intellectual curiosities and surprising adjacent or distant interests. Do not make every recommendation a new app, monetization scheme or improvement to existing work. Avoid intrusive assumptions and sensitive inferences. Read meta_proposal_list first; rejected ideas must not be silently revived. Does not execute anything.',
     inputSchema: { type: 'object', additionalProperties: false, properties: PROPS,
       required: ['title','summary','reason','nextStep'] },
     annotations: { readOnlyHint: false, destructiveHint: false },
