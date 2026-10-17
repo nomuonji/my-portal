@@ -18,6 +18,7 @@ const TOOLS = [
       instructions: str('Execution procedure to be read by the scheduled ChatGPT agent',12000),
       targetSystem: str('Canonical specialist Operator',120),
       status: { type: 'string', enum: ['active','paused'] },
+      priority: { type: 'string', enum: ['critical','normal','background'], description: 'Within each 3-job shared wake-up, run critical first and once-daily jobs before 3-times-daily jobs.' },
       slots,
       maxAccountsPerRun: { type: 'integer', minimum: 1, maximum: 50 },
       expectedRevision: { type: 'integer', minimum: 1 },
