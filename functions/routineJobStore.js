@@ -5,7 +5,7 @@ const JOBS = 'memos/agent-control/routineJobs';
 const RUNS = 'memos/agent-control/routineJobRuns';
 const DATABASE = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const MAX_WINDOW_MINUTES = 120;
-const RUNNER_SLOTS = Object.freeze(['04:30','10:30','16:30']);
+const RUNNER_SLOTS = Object.freeze(['04:30','08:30','10:30','14:30','16:30','20:30']);
 const MAX_JOBS_PER_TICK = 3;
 const PRIORITIES = Object.freeze({critical:0,normal:1,background:2});
 

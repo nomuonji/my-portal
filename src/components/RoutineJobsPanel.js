@@ -32,7 +32,7 @@ export default function RoutineJobsPanel() {
   const [jobs, setJobs] = useState([]);
   const [runs, setRuns] = useState([]);
   const [capacity, setCapacity] = useState({});
-  const [runnerSlots, setRunnerSlots] = useState(['04:30','10:30','16:30']);
+  const [runnerSlots, setRunnerSlots] = useState(['04:30','08:30','10:30','14:30','16:30','20:30']);
   const [maxJobs, setMaxJobs] = useState(3);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -51,7 +51,7 @@ export default function RoutineJobsPanel() {
       ]);
       setJobs(registry.items || []);
       setRuns(history.items || []);
-      setRunnerSlots(registry.runnerSlots || ['04:30','10:30','16:30']);
+      setRunnerSlots(registry.runnerSlots || ['04:30','08:30','10:30','14:30','16:30','20:30']);
       setMaxJobs(registry.maxJobsPerTick || 3);
       setCapacity(registry.slotLoads || {});
       setError('');
@@ -123,9 +123,9 @@ export default function RoutineJobsPanel() {
         </Stack>
       </Stack>
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.4 }}>
-        起動枠: 毎日 04:30 / 10:30 / 16:30（日本時間）。表示時刻はジョブの実行対象枠であり、実行基盤の起動予定自体は別途設定されます。
+        起動枠: 毎日 04:30 / 08:30 / 10:30 / 14:30 / 16:30 / 20:30（日本時間）。ジョブのスロットは共有ランナーの起動枠と一致させます。
       </Typography>
-      <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'repeat(3,minmax(0,1fr))'},gap:1,mb:2}}>
+      <Box sx={{display:'grid',gridTemplateColumns:{xs:'repeat(2,minmax(0,1fr))',sm:'repeat(3,minmax(0,1fr))'},gap:1,mb:2}}>
         {runnerSlots.map(slot=>{
           const load=capacity[slot]?.active ?? jobs.filter(job=>job.status==='active' && job.slots?.includes(slot)).length;
           const full=load>=maxJobs;

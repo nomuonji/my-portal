@@ -4,8 +4,8 @@ const {test}=require('node:test');
 const {RUNNER_SLOTS,MAX_JOBS_PER_TICK,candidate,validateSlots,validateCapacity,slotLoadsFor,jst}
  =require('../functions/routineJobStore');
 
-test('three real ChatGPT wake-ups only, 3 jobs maximum each',()=>{
- assert.deepEqual(RUNNER_SLOTS,['04:30','10:30','16:30']);
+test('six real ChatGPT wake-ups, 3 jobs maximum each',()=>{
+ assert.deepEqual(RUNNER_SLOTS,['04:30','08:30','10:30','14:30','16:30','20:30']);
  assert.equal(MAX_JOBS_PER_TICK,3);
  assert.deepEqual(validateSlots(['16:30','04:30','16:30']),['04:30','16:30']);
  assert.throws(()=>validateSlots(['04:30','99:30']),/Invalid slot/);
@@ -17,9 +17,9 @@ test('existing 16:30 capacity full; other slots can still be used',()=>{
   {id:'meta-personal-strategy-discovery',status:'active',slots:['16:30']},
  ];
  const summary=slotLoadsFor(jobs);
- assert.deepEqual([summary['04:30'].active,summary['10:30'].active,summary['16:30'].active],[2,2,3]);
+ assert.deepEqual([summary['04:30'].active,summary['08:30'].active,summary['10:30'].active,summary['14:30'].active,summary['16:30'].active,summary['20:30'].active],[2,0,2,0,3,0]);
  assert.throws(()=>validateCapacity({id:'new-job',status:'active',slots:['16:30']},jobs),/16:30 is full/);
- assert.doesNotThrow(()=>validateCapacity({id:'new-job',status:'active',slots:['10:30']},jobs));
+ assert.doesNotThrow(()=>validateCapacity({id:'new-job',status:'active',slots:['08:30','14:30','20:30']},jobs));
  assert.doesNotThrow(()=>validateCapacity({id:'new-job',status:'paused',slots:['16:30']},jobs));
  assert.doesNotThrow(()=>validateCapacity({id:'meta-personal-strategy-discovery',status:'active',slots:['16:30']},jobs));
 });

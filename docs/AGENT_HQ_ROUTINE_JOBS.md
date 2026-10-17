@@ -26,7 +26,7 @@ Lightweight scheduled jobs share **one ChatGPT Scheduled Task slot**. This modul
 
 ## Clock semantics and recovery
 
-Only three ChatGPT wake-up slots (`04:30`, `10:30`, `16:30` JST) are supported. An ACTIVE configuration with any other time is rejected rather than silently never running; PAUSED drafts may retain future slots. Each slot has a **3-job hard capacity**: active upserts that would exceed the runner's actual limit are rejected with the saturated time. Changing priority changes ordering, not execution cadence. The dashboard shows occupancy for each slot, last result and stalled runs (>3 hours). No stale run is blindly replayed; investigate before any approved recovery.
+Six ChatGPT wake-up slots (`04:30`, `08:30`, `10:30`, `14:30`, `16:30`, `20:30` JST) are supported. These all use ONE existing shared ChatGPT Scheduled Task, not six additional task slots. An ACTIVE configuration with any other time is rejected rather than silently never running; PAUSED drafts may retain future slots. Each slot has a **3-job hard capacity**: active upserts that would exceed the runner's actual limit are rejected with the saturated time. Changing priority changes ordering, not execution cadence. The dashboard shows occupancy for each slot, last result and stalled runs (>3 hours). No stale run is blindly replayed; investigate before any approved recovery.
 
 Scheduling is currently locked to Asia/Tokyo HH:MM slots, with a 120-minute **start** window to allow normal scheduled runner delay. Missed windows do not backfill automatically, and a claimed slot is not retried with another idempotency key. Pending or failed work remains visible in the run ledger. Explicit recovery policies may be added later after incident evidence; never blindly replay a potentially successful Tweets Operator write.
 
@@ -39,3 +39,11 @@ The shared scheduled clock must include all configured job slots. `routine_job_r
 - Update the **existing** ChatGPT task "下書き補充" (do not create another schedule) to the Routine Job bootstrap, keeping 04:30/10:30/16:30 JST.
 - At the next eligible tick verify due -> claim -> Tweets Operator draft saves and inventory readback -> finish, and HQ UI history.
 - If any deployment/schema/runtime preflight fails, retain the old task prompt unchanged and report the unfinished cutover. Do not assert it is live.
+
+## 2026-10-17 increase to six wake-ups
+
+- ChatGPT scheduled task `Agent HQ 定期ジョブ` now runs at 04:30 / 08:30 / 10:30 / 14:30 / 16:30 / 20:30 JST; its runner continues to read due jobs and claim them once by slot.
+- SNS draft replenishment intentionally remains 04:30 / 10:30 / 16:30 JST; validated inventory processing does not need more probes.
+- Personal discovery curation shifts from 04:30 / 10:30 / 16:30 to 04:30 / 08:30 / 10:30 / 14:30 / 20:30 JST (5 opportunities, one major source review and four bounded incremental checks). The 16:30 overlapping workload is cleared for project strategy.
+- Project strategy retains the independent once-daily 16:30 JST slot and Slack notification.
+- Existing independent SEO Manager/Worker and HQ Manager/Worker scheduled tasks remain untouched. New personal-feed runs count as successful only with actual source readback; a new wake-up is not evidence of production ingestion.
