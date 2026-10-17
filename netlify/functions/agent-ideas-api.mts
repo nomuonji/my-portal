@@ -324,7 +324,7 @@ export default async (request: Request) => {
       }
       if (action === "routine_job_upsert") return json(await routineStore.upsert({
         id:body.id,title:body.title,description:body.description,instructions:body.instructions,
-        targetSystem:body.targetSystem,slots:body.slots,status:body.status,
+        targetSystem:body.targetSystem,slots:body.slots,status:body.status,priority:body.priority,
         maxAccountsPerRun:body.maxAccountsPerRun,expectedRevision:body.expectedRevision,
       }));
       if (action === "manager_job_create") {
