@@ -72,7 +72,7 @@ function view(doc){
 }
 /**
  * Prediction axes, not a generic media-quality grade.
- * TasteFit without a cited positive user reaction is allowed only at <=3.
+ * Taste inference is anchored in authored raw social posts, NOT a watch-later list.
  * Exploration lane prevents cold-start discovery from being blocked by unknown taste.
  * Source verification, freshness, legality and dedupe are independent hard checks.
  */
@@ -81,7 +81,7 @@ function validateSelfEvaluation(value,allowLegacy=false){
  if(!value||typeof value!=='object')throw Error('selfEvaluation is required on every new Discover item');
  const scores={},reasons={};
  const fitBasis=trim(value.fitBasis,30);
- if(!['user_feedback','declared_interest','hypothesis','unknown'].includes(fitBasis))throw Error('fitBasis must be user_feedback, declared_interest, hypothesis, or unknown');
+ if(!['user_feedback','expression_inference','hypothesis','unknown'].includes(fitBasis))throw Error('fitBasis must be user_feedback, expression_inference, hypothesis, or unknown');
  for(const axis of SCORE_AXES){
   const score=value.scores?.[axis];
   if(axis==='tasteFit'&&fitBasis==='unknown'&&score===null){scores[axis]=null;}
@@ -92,20 +92,33 @@ function validateSelfEvaluation(value,allowLegacy=false){
   reasons[axis]=reason;
  }
  const feedbackExampleId=trim(value.feedbackExampleId,100);
- const interestExampleId=trim(value.interestExampleId,100);
+ const evidencePostIds=unique(value.evidencePostIds,6);
+ const expressionMechanism=trim(value.expressionMechanism,850);
+ const rawReferences=(Array.isArray(value.rawReferences)?value.rawReferences:[]).slice(0,5).map(v=>({
+  dataset:trim(v?.dataset,40),id:trim(v?.id,120),mechanism:trim(v?.mechanism,500)
+ }));
+ if(rawReferences.some(v=>!['radichichi','murakami_radio'].includes(v.dataset)||!v.id||v.mechanism.length<12))
+   throw Error('rawReferences require valid dataset, document id and observed mechanism');
  if(fitBasis==='user_feedback'&&(!/^cur-[a-f0-9]{30}$/.test(feedbackExampleId)||scores.tasteFit===null))
-   throw Error('Direct user preference fit requires a real liked/saved Discover feedbackExampleId');
- if(fitBasis==='declared_interest'&&(!/^[A-Za-z0-9]{20}$/.test(interestExampleId)||scores.tasteFit===null||scores.tasteFit>4))
-   throw Error('Saved hobby taste fit requires a valid exact My Portal hobbies ID and score <=4');
+   throw Error('Explicit taste fit requires a real user-loved recommendation ID');
+ if(fitBasis==='expression_inference'){
+  if(evidencePostIds.length<2||evidencePostIds.some(id=>!/^x_[0-9]{8,22}$/.test(id)))
+   throw Error('Expression taste fit requires at least 2 distinct real X archive post IDs');
+  if(expressionMechanism.length<30)throw Error('Expression inference must explain an observable shared thought or humor mechanism');
+  if(scores.tasteFit===null||scores.tasteFit>4)throw Error('Inferred taste may score at most 4 (5 reserved for explicit loved feedback)');
+ }
+ if(fitBasis==='user_feedback'&&scores.tasteFit<4)throw Error('user_feedback requires tasteFit >=4');
  if(fitBasis==='unknown'&&scores.tasteFit!==null)throw Error('Unknown taste must use tasteFit=null');
- if(fitBasis==='hypothesis'&&scores.tasteFit>3)throw Error('A taste hypothesis cannot be scored above 3 without verified user feedback');
+ if(fitBasis==='hypothesis'&&scores.tasteFit>3)throw Error('Speculative taste cannot be scored above 3');
  const weakness=trim(value.weakness,800);
  if(weakness.length<20)throw Error('selfEvaluation.weakness must state a plausible reason user may dislike this item');
  const lane=(scores.tasteFit>=4&&scores.payoff>=4)?'familiar':
    (scores.discovery>=4&&scores.payoff>=4&&(scores.tasteFit===null||scores.tasteFit>=3))?'explore':'rejected';
  const total=(scores.tasteFit||0)+scores.discovery+scores.payoff;
- return {version:'discover-taste-v2',scores,reasons,fitBasis,feedbackExampleId:fitBasis==='user_feedback'?feedbackExampleId:null,
-   interestExampleId:fitBasis==='declared_interest'?interestExampleId:null,
+ return {version:'discover-taste-v3',scores,reasons,fitBasis,
+   feedbackExampleId:fitBasis==='user_feedback'?feedbackExampleId:null,
+   evidencePostIds:fitBasis==='expression_inference'?evidencePostIds:[],
+   expressionMechanism:fitBasis==='expression_inference'?expressionMechanism:'',rawReferences,
    weakness,total,maximum:15,lane,passed:lane!=='rejected',evaluatedAt:new Date().toISOString()};
 }
 function normalizedInput(args={}, options={}){
@@ -176,14 +189,28 @@ async function batchAdd(args={}){
    const item=normalizedInput(raw,{internalLegacySeed:args.internalLegacySeed===true});
    const dup=seen.find(old=>sameContent(old,item));
    if(dup){results.push({outcome:'already_exists',id:dup.id,storyKey:item.storyKey});continue;}
-   if(item.selfEvaluation?.fitBasis==='declared_interest'){
-    const hobby=await db().collection('hobbies').doc(item.selfEvaluation.interestExampleId).get();
-    if(!hobby.exists||!trim(hobby.data().content))throw Error('Declared interest must exist in user hobby collection');
+   if(item.selfEvaluation?.fitBasis==='expression_inference'){
+    // Two authored posts, both from the actual user archive. Listing/reading lists/likes
+    // are not evidence of personal preference. Verification only proves provenance;
+    // the editorial relevance still needs to be challenged by an independent judge.
+    const proof=await Promise.all(item.selfEvaluation.evidencePostIds.map(id=>
+     getDocumentDb('(default)').collection('social_posts').doc(id).get()));
+    if(proof.some(p=>!p.exists||p.data().type!=='post'||p.data().source?.kind!=='x-archive'||!trim(p.data().text)))
+     throw Error('Expression inference requires real authored X posts from the personal archive');
    }
    if(item.selfEvaluation?.fitBasis==='user_feedback'){
     const proof=await db().collection(COLLECTION).doc(item.selfEvaluation.feedbackExampleId).get();
-    if(!proof.exists||!['saved','loved'].includes(proof.data().feedback))
-     throw Error('Taste-fit >=4 requires an existing saved/loved user feedback record, not an AI-generated example');
+    if(!proof.exists||proof.data().feedback!=='loved')
+     throw Error('Explicit preference needs a user-loved record; watch-later/saved does not mean liked');
+   }
+   if(item.selfEvaluation?.rawReferences?.length){
+    const sourceDb=getDocumentDb('(default)');
+    for(const source of item.selfEvaluation.rawReferences){
+     const collection=source.dataset==='radichichi'?'humor_examples':'intelligence_raw_documents';
+     const proof=await sourceDb.collection(collection).doc(source.id).get();
+     if(!proof.exists||proof.data().dataset!==source.dataset)
+       throw Error('External reference corpus record not found: '+source.dataset+'/'+source.id);
+    }
    }
    if(item.selfEvaluation&&!item.selfEvaluation.passed){
     // Keep a compact rejected-candidate memory without putting weak items in the feed.
