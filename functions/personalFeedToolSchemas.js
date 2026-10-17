@@ -20,7 +20,7 @@ const add={
     description:'Predict user-specific interest, not generic quality. All new items require separate scores; known-fit lane requires verified user feedback. Exploration lane allows unknown taste. Sources, copyright, date and duplicates are binary checks, not score axes.',
     properties:{
       scores:{type:'object',additionalProperties:false,properties:{
-        tasteFit:{type:['integer','null'],minimum:1,maximum:5,description:'Personal preference prediction; only >=4 with verified saved/loved feedbackExampleId; null if unknown.'},
+        tasteFit:{type:['integer','null'],minimum:1,maximum:5,description:'Personal preference prediction; 4 with verified user hobby or saved/loved item; 5 only with saved/loved item; null if unknown.'},
         discovery:{type:'integer',minimum:1,maximum:5,description:'Does this unlock a genuinely unfamiliar but plausible interest, not another boilerplate headline?'},
         payoff:{type:'integer',minimum:1,maximum:5,description:'Specific enjoyable content/experience from opening the original item, not just the title.'},
       },required:['tasteFit','discovery','payoff']},
@@ -29,8 +29,9 @@ const add={
         discovery:str('Specific novel discovery that the original work offers',500),
         payoff:str('Specific reward/experience in the original work; acknowledge if full video not inspected',500),
       },required:['tasteFit','discovery','payoff']},
-      fitBasis:{type:'string',enum:['user_feedback','hypothesis','unknown'],description:'High fit requires a direct example from stored user feedback.'},
-      feedbackExampleId:str('Exact cur-... ID of a user-loved/saved item for fit>=4; leave blank for unknown/hypothesis',100),
+      fitBasis:{type:'string',enum:['user_feedback','declared_interest','hypothesis','unknown'],description:'High fit requires direct user-liked/saved item or exact saved user hobby reference. Browsing alone is not a like.'},
+      feedbackExampleId:str('Exact cur-... ID of a user-loved/saved item for fit 4 or 5; omit otherwise',100),
+      interestExampleId:str('Exact 20-char My Portal hobbies ID for declared_interest fit 4; omit otherwise. Hobby interest is not proof of enjoyment.',100),
       weakness:str('Most likely concrete reason THIS user would reject this recommendation',800),
     },required:['scores','reasons','fitBasis','weakness']
   },
