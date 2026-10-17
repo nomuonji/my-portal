@@ -6,6 +6,7 @@
 const { createHash }=require('node:crypto');
 const { getDocumentDb, FieldValue }=require('./documentDb');
 const SEED=require('./personalFeedSeed20261017');
+const CURATED_ISSUE=require('./personalFeedEdition20261017Taste');
 const COLLECTION='personalDiscoveryFeed';
 const TOPICS='personalDiscoveryStoryKeys';
 const SEEDS='personalDiscoverySeedEditions';
@@ -147,9 +148,13 @@ function sameContent(a,b){
 }
 async function list(args={}){
  await seedOnce();
+ await seedCuratedEdition();
  const limit=Math.min(500,Math.max(1,Number(args.limit)||160));
  const snap=await db().collection(COLLECTION).orderBy('createdAt','desc').limit(limit).get();
  let items=snap.docs.map(view);
+ // Retire the previous generic editorial issue, without altering user judgments.
+ // Explicit loved/saved records remain accessible (saved is not treated as a like).
+ items=items.filter(x=>x.editorialStatus!=='retired'||['loved','saved'].includes(x.feedback));
  // Previous records predate story keys and the URL normalization contract.
  const keys=new Set();items=items.filter(item=>{
   const k=item.storyKey?normalizeStoryKey(item.storyKey):canonicalUrl(item.url);
@@ -266,6 +271,36 @@ async function seedOnce(){
   seedVersion:'2026-10-17',createdAt:FieldValue.serverTimestamp()});
  seeded=true;
 }
+// A user-requested editorial replacement for the starter news/trailer-heavy issue.
+// This is idempotent across calls and Netlify instances. User feedback is preserved.
+let issueApplied=false;
+async function seedCuratedEdition(){
+ if(issueApplied)return;
+ const marker=db().collection(SEEDS).doc('edition-20261017-culture-taste-v2');
+ if((await marker.get()).exists){issueApplied=true;return;}
+ const outcome=await batchAdd({items:CURATED_ISSUE});
+ if(outcome.failedCount||outcome.rejectedCount||outcome.createdCount+outcome.duplicateCount!==CURATED_ISSUE.length){
+  throw Error('Curated edition incomplete: '+JSON.stringify(outcome.results).slice(0,1200));
+ }
+ // Older generic feed entries were editorial picks, not user-level dislikes.
+ // Keep records and prior feedback unchanged; just retire unreacted items in UI.
+ for(const raw of SEED){
+  const url=canonicalUrl(raw.url);
+  if(!url)continue;
+  const ref=db().collection(COLLECTION).doc('cur-'+hash(url));
+  const snap=await ref.get();
+  if(snap.exists&&snap.data().feedback==='new'&&snap.data().editorialStatus!=='retired'){
+   await ref.update({editorialStatus:'retired',updatedAt:FieldValue.serverTimestamp()});
+  }
+ }
+ await marker.set({
+  edition:'2026-10-17-taste-v2',
+  createdCount:outcome.createdCount,duplicateCount:outcome.duplicateCount,
+  appliedAt:FieldValue.serverTimestamp(),
+  editorialNote:'source-backed artist interviews and real performances; outdated teaser issue retired without negative rating'
+ });
+ issueApplied=true;
+}
 async function feedback(args={}){
  const id=trim(args.id,100),status=trim(args.status,20),expectedRevision=Number(args.expectedRevision);
  if(!STATES.has(status))throw Error('Invalid feedback status');
@@ -281,4 +316,4 @@ async function feedback(args={}){
  });
  return get({id});
 }
-module.exports={COLLECTION,REJECTIONS,SCORE_AXES,SCORE_THRESHOLD,list,rejected,get,add,batchAdd,feedback,validateSelfEvaluation,safeUrl,youtubeId,canonicalUrl,normalizeStoryKey,normalizeTitle,sameContent};
+module.exports={COLLECTION,REJECTIONS,SCORE_AXES,SCORE_THRESHOLD,list,rejected,get,add,batchAdd,feedback,validateSelfEvaluation,seedCuratedEdition,safeUrl,youtubeId,canonicalUrl,normalizeStoryKey,normalizeTitle,sameContent};
