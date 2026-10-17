@@ -112,3 +112,25 @@ test('Taste-recalibrated issue contains 6 distinct verified original sources, no
  }
  assert.ok(curated.every(x=>!seeded.some(y=>sameContent(x,y))));
 });
+
+const netIssue=require('../functions/personalFeedEdition20261017NetCulture');
+test('New Discover issue centers real internet culture and playable original video, not staged novelty',()=>{
+ assert.equal(netIssue.length,8);
+ assert.equal(netIssue.filter(x=>x.type==='video').length,2);
+ assert.ok(netIssue.every(x=>x.category==='ネット文化'));
+ assert.equal(new Set(netIssue.map(x=>canonicalUrl(x.url))).size,netIssue.length);
+ assert.equal(new Set(netIssue.map(x=>normalizeStoryKey(x.storyKey))).size,netIssue.length);
+ for(const entry of netIssue){
+  assert.ok(entry.url.startsWith('https://'),entry.title);
+  assert.ok(entry.checkedAt==='2026-10-17');
+  assert.ok(/^2026-10-(?:0[9]|1[0-7])$/.test(entry.publishedAt),entry.title);
+  const score=validateSelfEvaluation(entry.selfEvaluation);
+  assert.equal(score.version,'discover-taste-v3');
+  assert.equal(score.fitBasis,'unknown');
+  assert.equal(score.scores.tasteFit,null);
+  assert.equal(score.lane,'explore',entry.title);
+  assert.ok(score.passed);
+  assert.ok(!curated.some(old=>sameContent(old,entry)),entry.title);
+  assert.ok(!seeded.some(old=>sameContent(old,entry)),entry.title);
+ }
+});
