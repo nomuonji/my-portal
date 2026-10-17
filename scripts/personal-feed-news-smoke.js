@@ -63,3 +63,13 @@ test('Verified-positive preferences make a familiar lane possible without requir
  assert.equal(evaluation.passed,true);assert.equal(evaluation.lane,'familiar');
  assert.equal(evaluation.feedbackExampleId,likedId);
 });
+
+test('Explicit saved user hobby supports at most 4/5 taste fit and must include actual DB ID',()=>{
+ const good={scores:{tasteFit:4,discovery:3,payoff:4},fitBasis:'declared_interest',
+   interestExampleId:'oRJBxmeUwbEkW9VvxcOw',
+   reasons:{tasteFit:'User explicitly saved Evangelion to hobbies, not confirmed enjoyment of this particular video',discovery:'Explores how the related subculture works',payoff:'Actually shows distinctive creative scenes and craft'},
+   weakness:'Familiar title may still be another low-effort promotional clip'};
+ assert.equal(validateSelfEvaluation(good).lane,'familiar');
+ assert.throws(()=>validateSelfEvaluation({...good,scores:{...good.scores,tasteFit:5}}),/score <=4/);
+ assert.throws(()=>validateSelfEvaluation({...good,interestExampleId:'not-verified'}),/valid exact My Portal hobbies ID/);
+});
