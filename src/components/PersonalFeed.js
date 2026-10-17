@@ -162,7 +162,7 @@ export default function PersonalFeed(){
  const [rejected,setRejected]=useState([]);
  const [loading,setLoading]=useState(true);
  const [error,setError]=useState('');
- const [range,setRange]=useState('7d');
+ const [range,setRange]=useState('30d');
  const [media,setMedia]=useState('both');
  const [query,setQuery]=useState('');
  const [topic,setTopic]=useState('すべて');
@@ -205,7 +205,9 @@ export default function PersonalFeed(){
    // scores are transparent predictions rather than faux user-preference truth.
    const ratedA=Number(a.selfEvaluation?.version==='discover-taste-v3'&&a.selfEvaluation?.passed);
    const ratedB=Number(b.selfEvaluation?.version==='discover-taste-v3'&&b.selfEvaluation?.passed);
-   return ratedB-ratedA||(tb||0)-(ta||0)||Date.parse(b.createdAt||0)-Date.parse(a.createdAt||0);
+   // Editorial issues are explicitly ordered; not just news publication recency.
+   const priority=Number(b.editorialPriority||0)-Number(a.editorialPriority||0);
+   return priority||ratedB-ratedA||(tb||0)-(ta||0)||Date.parse(b.createdAt||0)-Date.parse(a.createdAt||0);
   });
  },[items,query,topic,range,savedOnly,showSkipped]);
  const videos=matches.filter(x=>x.type==='video');
@@ -242,7 +244,7 @@ export default function PersonalFeed(){
      <Typography sx={{color:colors.accent,fontSize:10.5,fontWeight:950,letterSpacing:'.2em'}}>YOUR PRIVATE CULTURE WIRE</Typography>
      <Stack direction="row" alignItems="baseline" flexWrap="wrap" gap={1.5} sx={{mt:.45}}>
       <Typography component="h1" sx={{fontSize:{xs:27,md:34},letterSpacing:'-.045em',fontWeight:950,lineHeight:1.25}}>寄り道速報。</Typography>
-      <Typography sx={{fontSize:12,color:colors.muted}}>AIの選書根拠と一緒に、動画と記事を発見。</Typography>
+      <Typography sx={{fontSize:12,color:colors.muted}}>ネット文化を主役に。動画・配信・界隈の実作品を先に。</Typography>
      </Stack>
     </Box>
     <Stack direction="row" gap={1.5} alignItems="center">
