@@ -66,7 +66,7 @@ export default function RoutineJobsPanel() {
 
   const edit = (job) => {
     setEditing(job || {});
-    setForm(job ? { ...job } : { ...blank });
+    setForm(job ? { ...job,priority:job.priority || (job.id === 'tweets-draft-replenishment' ? 'critical' : 'normal') } : { ...blank });
     setSlotsText((job?.slots || blank.slots).join(', '));
     setNotice('');
     setError('');
@@ -166,7 +166,7 @@ export default function RoutineJobsPanel() {
                   <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
                     <Typography fontWeight={800}>{job.title}</Typography>
                     <Chip size="small" color={job.status === 'active' ? 'success' : 'default'} label={job.status === 'active' ? '有効' : '停止中'} />
-                    <Chip size="small" variant="outlined" label={job.priority==='critical'?'優先':job.priority==='background'?'低優先':'標準'} />
+                    <Chip size="small" variant="outlined" label={(job.priority==='critical'||(!job.priority&&job.id==='tweets-draft-replenishment'))?'優先':job.priority==='background'?'低優先':'標準'} />
                   </Stack>
                   <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{job.description}</Typography>
                   <Stack direction="row" spacing={0.7} flexWrap="wrap" useFlexGap mt={1}>
