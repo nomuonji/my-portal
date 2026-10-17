@@ -180,4 +180,4 @@ async function feedback(args={}){
  });
  return get({id});
 }
-module.exports={COLLECTION,list,get,add,batchAdd,feedback,safeUrl,youtubeId,canonicalUrl,normalizeStoryKey,normalizeTitle};
+module.exports={COLLECTION,list,get,add,batchAdd,feedback,safeUrl,youtubeId,canonicalUrl,normalizeStoryKey,normalizeTitle,sameContent};
