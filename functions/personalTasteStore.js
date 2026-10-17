@@ -95,6 +95,27 @@ async function bootstrap(){
   }
   tx.set(marker,{schemaVersion:1,createdAt:now,count:STARTER.length});
  });
+ // Separate migration from the first 3 corrections: this direct user feedback
+ // arrived later, and must not be mistaken for preference for any individual artist.
+ const latest=db().collection(META).doc('explicit-corrections-20261017-netculture');
+ await database.runTransaction(async tx=>{
+  if((await tx.get(latest)).exists)return;
+  const item={
+   id:'taste-user-discover-netculture-20261017',
+   title:'Discoverではネット文化を優先、硬すぎるインタビュー偏重は避ける',
+   detail:'直前の作曲家や映画監督の長い取材に寄った選書について、本人が「硬すぎるな。ネット文化をもっと優位にして」と明示。配信・SNS・ネット音楽・ネット発の作品や界隈の出来事を主役にする編集上の嗜好。',
+   domain:'discover',evidenceKind:'explicit_user',direction:'boundary',confidence:1,
+   caveat:'ネット文化の全作品を無条件に好きという意味ではない。前に否定した狙いすぎの企画や、薄いニュースの羅列に戻さない。ネット以外の優れた映像・音楽を排除しない。',
+   sourceRefs:[{kind:'user_message',id:'2026-10-17-internet-culture-first',
+    note:'硬すぎるな。ネット文化をもっと優位にして'}],
+   topicKey:'internet-culture-editorial-priority',origin:'user_chat'
+  };
+  const {id,...data}=item,now=FieldValue.serverTimestamp(),valid=validate(data);
+  tx.set(database.collection(COLLECTION).doc(id),{...valid,revision:1,createdAt:now,updatedAt:now});
+  tx.set(database.collection(EVENTS).doc(id+'-initial'),{
+   evidenceId:id,revision:1,action:'initial_user_correction',snapshot:{...valid,id},createdAt:now});
+  tx.set(latest,{schemaVersion:1,count:1,createdAt:now});
+ });
  bootstrapped=true;
 }
 async function list(args={}){
