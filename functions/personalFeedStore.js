@@ -100,7 +100,7 @@ function validateSelfEvaluation(value,allowLegacy=false){
  if(rawReferences.some(v=>!['radichichi','murakami_radio'].includes(v.dataset)||!v.id||v.mechanism.length<12))
    throw Error('rawReferences require valid dataset, document id and observed mechanism');
  if(fitBasis==='user_feedback'&&(!/^cur-[a-f0-9]{30}$/.test(feedbackExampleId)||scores.tasteFit===null))
-   throw Error('Explicit taste fit requires a real user-loved recommendation ID');
+   throw Error('Explicit taste fit requires feedbackExampleId for a real user-loved recommendation');
  if(fitBasis==='expression_inference'){
   if(evidencePostIds.length<2||evidencePostIds.some(id=>!/^x_[0-9]{8,22}$/.test(id)))
    throw Error('Expression taste fit requires at least 2 distinct real X archive post IDs');
