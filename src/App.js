@@ -60,6 +60,7 @@ import Idea from './components/Idea';
 import AgentIdeaSpace from './components/AgentIdeaSpace';
 import MetaStrategy from './components/MetaStrategy';
 import PersonalFeed from './components/PersonalFeed';
+import PersonalTaste from './components/PersonalTaste';
 import Ogiri from './components/Ogiri';
 import SocialArchive from './components/SocialArchive';
 import PortalBoards from './components/PortalBoards';
@@ -141,6 +142,7 @@ function App() {
     if (path.startsWith('/thinking')) return '思考テーマ';
     if (path.startsWith('/agent-ideas')) return 'Agent Ideas';
     if (path.startsWith('/meta')) return 'プロジェクト提案';
+    if (path.startsWith('/taste')) return '好みの記録';
     if (path.startsWith('/discover')) return 'あなた専用の寄り道';
     if (path.startsWith('/ogiri')) return '大喜利ラボ';
     if (path.startsWith('/social-archive')) return 'X投稿アーカイブ';
@@ -169,6 +171,7 @@ function App() {
     if (path.startsWith('/thinking')) return '/thinking';
     if (path.startsWith('/agent-ideas')) return '/agent-ideas';
     if (path.startsWith('/meta')) return '/meta';
+    if (path.startsWith('/taste')) return '/discover';
     if (path.startsWith('/discover')) return '/discover';
     if (path.startsWith('/ogiri')) return '/ogiri';
     return false;
@@ -321,7 +324,11 @@ function App() {
               <ListItemIcon><ViewCompactIcon /></ListItemIcon>
               <ListItemText primary="ボード" secondary="企画・ビジネス / 興味・趣味 / ネタ・表現" />
             </ListItemButton>
-            <ListItemButton selected={location.pathname.startsWith('/discover')} component={Link} to="/discover" onClick={navClick}>
+            <ListItemButton selected={location.pathname.startsWith('/taste')} component={Link} to="/taste" onClick={navClick}>
+               <ListItemIcon><PsychologyAltIcon /></ListItemIcon>
+               <ListItemText primary="好みの記録" secondary="好き嫌い / 根拠 / 訂正履歴" />
+             </ListItemButton>
+             <ListItemButton selected={location.pathname.startsWith('/discover')} component={Link} to="/discover" onClick={navClick}>
               <ListItemIcon><DiscoveryIcon /></ListItemIcon>
               <ListItemText primary="あなた専用の寄り道" secondary="動画・記事・作品のおすすめ" />
             </ListItemButton>
@@ -538,6 +545,7 @@ function App() {
                 <Route path="/agent-ideas" element={<AgentIdeaSpace />} />
                 <Route path="/meta" element={<MetaStrategy />} />
                 <Route path="/discover" element={<PersonalFeed />} />
+                <Route path="/taste" element={<PersonalTaste />} />
                 <Route path="/ogiri" element={<Ogiri />} />
                 <Route path="/social-archive" element={<SocialArchive />} />
                 <Route path="/public-cms" element={<PublicCms />} />
