@@ -121,7 +121,7 @@ async function due(input = {}) {
   // or once-daily tasks when multiple jobs are eligible.
   const claims = await Promise.all(candidates.map(({slot})=>db().collection(RUNS).doc(slot.runId).get()));
   const items = candidates.filter((_,i)=>!claims[i].exists)
-    .sort((a,b)=>(PRIORITIES[a.job.priority]??1)-(PRIORITIES[b.job.priority]??1)
+    .sort((a,b)=>(PRIORITIES[a.job.priority??(a.job.id==='tweets-draft-replenishment'?'critical':'normal')]??1)-(PRIORITIES[b.job.priority??(b.job.id==='tweets-draft-replenishment'?'critical':'normal')]??1)
       || (a.job.slots?.length||3)-(b.job.slots?.length||3)
       || a.job.id.localeCompare(b.job.id))
     .map(({job,slot})=>({...job,...slot}));
@@ -179,4 +179,4 @@ async function runs(input = {}) {
     .map(run=>({...run,stalled:run.status==='running' && Date.now()-Date.parse(run.startedAt)>3*60*60*1000}));
   return { items, readLimit:scanLimit };
 }
-module.exports = { list, upsert, due, claim, finish, runs, RUNNER_SLOTS, MAX_JOBS_PER_TICK };
+module.exports = { list, upsert, due, claim, finish, runs, RUNNER_SLOTS, MAX_JOBS_PER_TICK, candidate, validateSlots, jst };
