@@ -7,6 +7,7 @@ const { createHash }=require('node:crypto');
 const { getDocumentDb, FieldValue }=require('./documentDb');
 const SEED=require('./personalFeedSeed20261017');
 const CURATED_ISSUE=require('./personalFeedEdition20261017Taste');
+const NET_ISSUE=require('./personalFeedEdition20261017NetCulture');
 const COLLECTION='personalDiscoveryFeed';
 const TOPICS='personalDiscoveryStoryKeys';
 const SEEDS='personalDiscoverySeedEditions';
@@ -149,6 +150,7 @@ function sameContent(a,b){
 async function list(args={}){
  await seedOnce();
  await seedCuratedEdition();
+ await seedNetCultureEdition();
  const limit=Math.min(500,Math.max(1,Number(args.limit)||160));
  const snap=await db().collection(COLLECTION).orderBy('createdAt','desc').limit(limit).get();
  let items=snap.docs.map(view);
@@ -163,8 +165,9 @@ async function list(args={}){
  });
  if(args.type&&TYPES.has(args.type))items=items.filter(x=>x.type===args.type);
  if(!args.includeSkipped)items=items.filter(x=>x.feedback!=='skipped');
- items.sort((a,b)=>Date.parse(b.publishedAt||b.createdAt||0)-Date.parse(a.publishedAt||a.createdAt||0));
- return {items,count:items.length,sourceOfTruth:COLLECTION,sortBy:'publishedAt',maxLimit:500};
+ items.sort((a,b)=>(Number(b.editorialPriority)||0)-(Number(a.editorialPriority)||0)||
+  Date.parse(b.publishedAt||b.createdAt||0)-Date.parse(a.publishedAt||a.createdAt||0));
+ return {items,count:items.length,sourceOfTruth:COLLECTION,sortBy:'editorialPriority,publishedAt',maxLimit:500};
 }
 async function rejected(args={}){
  const limit=Math.max(1,Math.min(40,Number(args.limit)||20));
@@ -301,6 +304,50 @@ async function seedCuratedEdition(){
  });
  issueApplied=true;
 }
+// User correction: net culture is the primary shelf, but no staged absurd
+// stunts. Run after old seed to preserve prior user reactions, never reset them.
+let netIssueApplied=false;
+async function seedNetCultureEdition(){
+ if(netIssueApplied)return;
+ const marker=db().collection(SEEDS).doc('edition-20261017-network-culture-v3');
+ if((await marker.get()).exists){netIssueApplied=true;return;}
+ const result=await batchAdd({items:NET_ISSUE});
+ if(result.failedCount||result.rejectedCount||result.createdCount+result.duplicateCount!==NET_ISSUE.length)
+  throw Error('Net-culture edition incomplete: '+JSON.stringify(result.results).slice(0,1400));
+ // A small amount of variety remains: the previously verified original
+ // Tiny Desk performance and internet-music dialogue are still surfaced.
+ const keep=new Set([
+  'https://www.youtube.com/watch?v=ZTcqu224vHw',
+  'https://realsound.jp/2026/10/post-2552765.html'
+ ].map(canonicalUrl));
+ for(const raw of NET_ISSUE){
+  const ref=db().collection(COLLECTION).doc('cur-'+hash(canonicalUrl(raw.url)));
+  const snap=await ref.get();
+  if(snap.exists&&snap.data().editorialPriority!==3){
+   await ref.update({editorialPriority:3,editorialEdition:'2026-10-17-net',
+     editorialStatus:'active',updatedAt:FieldValue.serverTimestamp()});
+  }
+ }
+ for(const old of CURATED_ISSUE){
+  const canon=canonicalUrl(old.url);
+  if(keep.has(canon))continue;
+  const ref=db().collection(COLLECTION).doc('cur-'+hash(canon));
+  const snap=await ref.get();
+  if(snap.exists&&snap.data().feedback==='new'&&snap.data().editorialStatus!=='retired')
+   await ref.update({editorialStatus:'retired',updatedAt:FieldValue.serverTimestamp()});
+ }
+ for(const url of keep){
+  const ref=db().collection(COLLECTION).doc('cur-'+hash(url));
+  const snap=await ref.get();
+  if(snap.exists&&snap.data().editorialPriority!==1)
+   await ref.update({editorialPriority:1,editorialStatus:'active',updatedAt:FieldValue.serverTimestamp()});
+ }
+ await marker.set({edition:'2026-10-17-net-v3',
+  createdCount:result.createdCount,duplicateCount:result.duplicateCount,
+  appliedAt:FieldValue.serverTimestamp(),
+  editorialNote:'Internet culture foregrounded, authentic creator output and communities. Direct preferences remain unknown.'});
+ netIssueApplied=true;
+}
 async function feedback(args={}){
  const id=trim(args.id,100),status=trim(args.status,20),expectedRevision=Number(args.expectedRevision);
  if(!STATES.has(status))throw Error('Invalid feedback status');
@@ -316,4 +363,4 @@ async function feedback(args={}){
  });
  return get({id});
 }
-module.exports={COLLECTION,REJECTIONS,SCORE_AXES,SCORE_THRESHOLD,list,rejected,get,add,batchAdd,feedback,validateSelfEvaluation,seedCuratedEdition,safeUrl,youtubeId,canonicalUrl,normalizeStoryKey,normalizeTitle,sameContent};
+module.exports={COLLECTION,REJECTIONS,SCORE_AXES,SCORE_THRESHOLD,list,rejected,get,add,batchAdd,feedback,validateSelfEvaluation,seedCuratedEdition,seedNetCultureEdition,safeUrl,youtubeId,canonicalUrl,normalizeStoryKey,normalizeTitle,sameContent};
