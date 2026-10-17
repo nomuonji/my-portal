@@ -9,6 +9,7 @@ import * as chatContextImport from "../../functions/chatContextRegistry.js";
 import * as contextRegistryImport from "../../functions/contextRegistry.js";
 import * as metaStoreImport from "../../functions/metaStrategyStore.js";
 import * as personalFeedImport from "../../functions/personalFeedStore.js";
+import * as personalTasteImport from "../../functions/personalTasteStore.js";
 import * as routineStoreImport from "../../functions/routineJobStore.js";
 
 const store: any = (storeImport as any).default ?? storeImport;
@@ -18,6 +19,7 @@ const chatContext: any = (chatContextImport as any).default ?? chatContextImport
 const contextRegistry: any = (contextRegistryImport as any).default ?? contextRegistryImport;
 const metaStore: any = (metaStoreImport as any).default ?? metaStoreImport;
 const personalFeed: any = (personalFeedImport as any).default ?? personalFeedImport;
+const personalTaste: any = (personalTasteImport as any).default ?? personalTasteImport;
 const routineStore: any = (routineStoreImport as any).default ?? routineStoreImport;
 const documentDb: any = (documentDbImport as any).default ?? documentDbImport;
 const AGENT_DATABASE_ID = "(default)";
@@ -124,6 +126,8 @@ export default async (request: Request) => {
           contextStore: await contextStore.healthCheck(),
         });
       }
+      if (resource === "taste_evidence") return json(await personalTaste.list({limit:Number(url.searchParams.get("limit"))||120,includeInactive:url.searchParams.get("includeInactive")==="true",domain:url.searchParams.get("domain")||undefined,evidenceKind:url.searchParams.get("evidenceKind")||undefined,direction:url.searchParams.get("direction")||undefined}));
+      if (resource === "taste_evidence_history") return json(await personalTaste.history({id:url.searchParams.get("id")||"",limit:40}));
       if (resource === "personal_feed") return json(await personalFeed.list({limit:Math.min(Math.max(Number(url.searchParams.get("limit"))||160,1),500),includeSkipped:url.searchParams.get("includeSkipped")==="true"}));
       if (resource === "personal_feed_rejected") return json(await personalFeed.rejected({limit:Math.min(Math.max(Number(url.searchParams.get("limit"))||20,1),40)}));
       if (resource === "meta_proposals") return json(await metaStore.list({limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 150, 1), 200), status: url.searchParams.get("status") || undefined}));
@@ -218,7 +222,18 @@ export default async (request: Request) => {
     if (request.method === "POST") {
       const body: any = await parseBody(request);
       const action = String(body.action || "");
-      if (action === "personal_feed_feedback") return json(await personalFeed.feedback({id:body.id,status:body.status,note:body.note,expectedRevision:body.expectedRevision}));
+      if (action === "taste_evidence_upsert") return json(await personalTaste.upsert({id:body.id,record:body.record,expectedRevision:body.expectedRevision,changeReason:body.changeReason||"Manual user interface edit"}));
+      if (action === "personal_feed_feedback") {
+        const updated=await personalFeed.feedback({id:body.id,status:body.status,note:body.note,expectedRevision:body.expectedRevision});
+        // Keep the direct-user taste ledger aligned with Discover's explicit reaction.
+        // Saved/seen/new are never positive signals; ledger entry becomes inactive.
+        try{
+          await personalTaste.fromDiscover({itemId:updated.id,feedback:updated.feedback,title:updated.title,url:updated.url,note:updated.feedbackNote});
+        }catch(error){
+          return json({error:"Discover feedback was saved, but taste ledger sync failed; reload before retrying",detail:String(error?.message||error)},503);
+        }
+        return json(updated);
+      }
       if (action === "meta_proposal_feedback") return json(await metaStore.feedback({ id:body.id, status:body.status, feedback:body.feedback, expectedRevision:body.expectedRevision }));
       if (action === "category_upsert") {
         return json(await store.categoryUpsert({
