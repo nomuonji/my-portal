@@ -1,108 +1,183 @@
 'use strict';
-/** Private personal discovery feed. Distinct from strategic ideas and Agent HQ. */
-const { createHash } = require('node:crypto');
-const { getDocumentDb, FieldValue } = require('./documentDb');
-const COLLECTION = 'personalDiscoveryFeed';
-const db = () => getDocumentDb(process.env.AGENT_IDEAS_DATABASE_ID || '(default)');
-const TYPES = new Set(['video','article','website','music','art','game','other']);
-const STATES = new Set(['new','saved','loved','skipped','seen']);
-const trim = (s,n=2000)=> String(s ?? '').trim().slice(0,n);
-const unique = (v,n=12)=>[...new Set((Array.isArray(v)?v:[]).slice(0,n).map(x=>trim(x,70)).filter(Boolean))];
+/** Private and source-backed cultural/news recommendations.
+ * A story key is independent of publisher and media format: 10 articles about
+ * one event should yield one feed entry. URL canonicalization is a second gate.
+ */
+const { createHash }=require('node:crypto');
+const { getDocumentDb, FieldValue }=require('./documentDb');
+const SEED=require('./personalFeedSeed20261017');
+const COLLECTION='personalDiscoveryFeed';
+const TOPICS='personalDiscoveryStoryKeys';
+const SEEDS='personalDiscoverySeedEditions';
+const TYPES=new Set(['video','article','website','music','art','game','other']);
+const STATES=new Set(['new','saved','loved','skipped','seen']);
+const db=()=>getDocumentDb(process.env.AGENT_IDEAS_DATABASE_ID||'(default)');
+const trim=(s,n=2000)=>String(s??'').trim().slice(0,n);
+const hash=s=>createHash('sha256').update(s).digest('hex').slice(0,30);
+const unique=(v,n=12)=>[...new Set((Array.isArray(v)?v:[]).slice(0,n).map(x=>trim(x,70)).filter(Boolean))];
+const iso=v=>v?.toDate?.()?.toISOString?.()||(typeof v==='string'?v:null);
 function safeUrl(value){
-  try {
-    const u=new URL(trim(value,1600));
-    if(u.protocol!=='https:' || !u.hostname || u.username || u.password) return '';
-    if(u.hostname==='localhost' || u.hostname.endsWith('.local')) return '';
-    if(/^(?:127|10|192\.168)\./.test(u.hostname)) return '';
-    u.hash='';
-    return u.toString();
-  } catch { return ''; }
+ try{
+  const u=new URL(trim(value,1600));
+  if(u.protocol!=='https:'||!u.hostname||u.username||u.password)return '';
+  if(u.hostname==='localhost'||u.hostname.endsWith('.local')||/^(?:127|10|192\.168|169\.254)\./.test(u.hostname))return '';
+  u.hash='';return u.toString();
+ }catch{return '';}
 }
 function youtubeId(value){
-  try {
-    const u=new URL(value);
-    const host=u.hostname.toLowerCase().replace(/^www\./,'');
-    const id= host==='youtu.be' ? u.pathname.split('/')[1] :
-      ['youtube.com','m.youtube.com','youtube-nocookie.com'].includes(host)
-        ? u.pathname.startsWith('/shorts/')||u.pathname.startsWith('/embed/')
-          ? u.pathname.split('/')[2] : u.searchParams.get('v') : '';
-    return /^[A-Za-z0-9_-]{11}$/.test(id||'') ? id : '';
-  } catch { return ''; }
+ try{
+  const u=new URL(value),host=u.hostname.toLowerCase().replace(/^www\./,'');
+  const id=host==='youtu.be'?u.pathname.split('/')[1]:
+   ['youtube.com','m.youtube.com','youtube-nocookie.com'].includes(host)
+    ?(u.pathname.startsWith('/shorts/')||u.pathname.startsWith('/embed/'))?u.pathname.split('/')[2]:u.searchParams.get('v'):'';
+  return /^[a-zA-Z0-9_-]{11}$/.test(id||'')?id:'';
+ }catch{return '';}
 }
-const idFor = url => 'cur-' + createHash('sha256').update(url).digest('hex').slice(0,30);
-const iso = v => v?.toDate?.()?.toISOString?.() || (typeof v==='string' ? v : null);
+function canonicalUrl(raw){
+ const url=safeUrl(raw);
+ if(!url)return '';
+ const video=youtubeId(url);
+ if(video)return 'https://www.youtube.com/watch?v='+video;
+ const u=new URL(url);
+ u.hostname=u.hostname.toLowerCase().replace(/^www\./,'');
+ const kept=[];
+ for(const [key,value] of u.searchParams)if(['id','p','article','story','page'].includes(key.toLowerCase()))kept.push([key,value]);
+ u.search='';kept.sort((a,b)=>a[0].localeCompare(b[0])).forEach(([k,v])=>u.searchParams.append(k,v));
+ u.pathname=u.pathname.replace(/\/+$/,'')||'/';
+ return u.toString();
+}
+function normalizeTitle(value){
+ return trim(value,250).normalize('NFKC').toLocaleLowerCase('ja-JP')
+  .replace(/[\s\p{P}\p{S}]/gu,'').slice(0,160);
+}
+function normalizeStoryKey(value){
+ return trim(value,180).normalize('NFKC').toLocaleLowerCase('ja-JP')
+  .replace(/[^a-z0-9\p{L}\p{N}-]/gu,'-').replace(/-+/g,'-').replace(/^-|-$/g,'').slice(0,140);
+}
+function validDate(value){
+ if(!value)return '';
+ const text=trim(value,40);
+ if(!/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2})?(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2}))?$/.test(text))return '';
+ const timestamp=Date.parse(text);
+ if(!Number.isFinite(timestamp)||timestamp>Date.now()+86400000)return '';
+ return text;
+}
 function view(doc){
-  const d=doc.data(); return {...d,id:doc.id,createdAt:iso(d.createdAt),updatedAt:iso(d.updatedAt)};
+ const d=doc.data();
+ return {...d,id:doc.id,publishedAt:d.publishedAt||null,storyKey:d.storyKey||null,
+  createdAt:iso(d.createdAt),updatedAt:iso(d.updatedAt)};
 }
-// Initial verified selection; later additions are sourced by the curation job.
-const STARTERS=[
- {url:'https://www.youtube.com/watch?v=3FOzD4Sfgag',title:'Edgar Wright — How to Do Visual Comedy',description:'映画の中の笑いをセリフではなくカメラワーク、編集、音や人物の出入りから解きほぐす8分の映像エッセイ。',reason:'ユーモアが言葉だけでなく画面の運動から生まれるところを楽しめる一本。',type:'video',category:'映画',creator:'Every Frame a Painting',tags:['映画','動画','ユーモア'],checkedAt:'2026-10-17'},
- {url:'https://www.youtube.com/watch?v=U_o8gerare0',title:'The Computer Chronicles — The Internet (1993)',description:'1993年のテレビ番組が紹介する当時のインターネット。今の常識がまだ当たり前ではなかった頃の温度感を味わえる。',reason:'昔のネットが未来だった時代を、当時の人々の目で見る映像タイムカプセル。',type:'video',category:'ネット文化',creator:'The Computer Chronicles',tags:['ネット文化','歴史','動画'],checkedAt:'2026-10-17'},
- {url:'https://pudding.cool/2020/12/judge-my-spotify/',title:'How Bad Is Your Streaming Music?',description:'Spotify／Apple Musicの音楽の趣味に、上から目線なAI風ボットが口を出すThe Puddingのインタラクティブ作品。',reason:'好みを勝手に審査してくる悪趣味なコンテンツ。ネットならではの体験。',type:'website',category:'音楽',creator:'The Pudding',tags:['音楽','ネット文化','Web体験'],checkedAt:'2026-10-17',uncertainty:'体験時にSpotifyまたはApple Musicのアカウント連携が必要。'},
- {url:'https://neal.fun/infinite-craft/',title:'Infinite Craft — 何でも組み合わせる無限ゲーム',description:'水・火・風・土の4つから始め、単語を組み合わせて奇妙な新しいものを発見していくブラウザゲーム。',reason:'目的を決めずに変な発見を量産できる。数分遊ぶだけでも妙な組み合わせが出る。',type:'game',category:'ゲーム',creator:'Neal Agarwal',tags:['ゲーム','ネット文化','遊び'],checkedAt:'2026-10-17'}
-];
-let seeded=false;
-async function seedIfEmpty(){
- if(seeded)return;
- const snap=await db().collection(COLLECTION).limit(1).get();
- if(!snap.empty){seeded=true;return;}
- for(const starter of STARTERS) await add(starter);
- seeded=true;
+function normalizedInput(args={}){
+ const url=canonicalUrl(args.url),title=trim(args.title,200),description=trim(args.description,1600),reason=trim(args.reason,1000);
+ if(!url)throw Error('Valid source HTTPS URL required');
+ if(title.length<5||description.length<15||reason.length<8)throw Error('Specific title, summary and recommendation reason required');
+ const videoId=youtubeId(url),type=TYPES.has(args.type)?args.type:'article';
+ if(type==='video'&&!videoId)throw Error('Videos require an actual YouTube watch/shorts URL');
+ const rawPublished=trim(args.publishedAt,40),publishedAt=validDate(rawPublished);
+ if(rawPublished&&!publishedAt)throw Error('publishedAt must be a real, nonfuture ISO date (or omitted)');
+ const storyKey=normalizeStoryKey(args.storyKey)||normalizeStoryKey(title);
+ return {
+  url,canonicalUrl:url,title,description,reason,
+  type,videoId,category:trim(args.category||'カルチャー',70),creator:trim(args.creator,140),
+  tags:unique(args.tags),thumbnail:safeUrl(args.thumbnail),
+  sourceUrl:safeUrl(args.sourceUrl)||url,checkedAt:trim(args.checkedAt,40),
+  publishedAt,storyKey,uncertainty:trim(args.uncertainty,600)
+ };
 }
-
+function sameContent(a,b){
+ return (a.canonicalUrl||canonicalUrl(a.url))===b.canonicalUrl||
+  (a.storyKey&&normalizeStoryKey(a.storyKey)===b.storyKey)||
+  (a.videoId&&a.videoId===b.videoId)||
+  normalizeTitle(a.title)===normalizeTitle(b.title);
+}
 async function list(args={}){
-  await seedIfEmpty();
-  const limit=Math.min(200,Math.max(1,Number(args.limit)||100));
-  const snap=await db().collection(COLLECTION).orderBy('createdAt','desc').limit(limit).get();
-  let items=snap.docs.map(view);
-  if(args.type && TYPES.has(args.type)) items=items.filter(x=>x.type===args.type);
-  if(!args.includeSkipped) items=items.filter(x=>x.feedback!=='skipped');
-  return {items,count:items.length,sourceOfTruth:COLLECTION};
+ await seedOnce();
+ const limit=Math.min(500,Math.max(1,Number(args.limit)||160));
+ const snap=await db().collection(COLLECTION).orderBy('createdAt','desc').limit(limit).get();
+ let items=snap.docs.map(view);
+ // Previous records predate story keys and the URL normalization contract.
+ const keys=new Set();items=items.filter(item=>{
+  const k=item.storyKey?normalizeStoryKey(item.storyKey):canonicalUrl(item.url);
+  if(keys.has(k))return false;
+  keys.add(k);return true;
+ });
+ if(args.type&&TYPES.has(args.type))items=items.filter(x=>x.type===args.type);
+ if(!args.includeSkipped)items=items.filter(x=>x.feedback!=='skipped');
+ items.sort((a,b)=>Date.parse(b.publishedAt||b.createdAt||0)-Date.parse(a.publishedAt||a.createdAt||0));
+ return {items,count:items.length,sourceOfTruth:COLLECTION,sortBy:'publishedAt',maxLimit:500};
 }
 async function get(args={}){
-  const id=trim(args.id,100);
-  if(!/^cur-[a-f0-9]{30}$/.test(id)) throw new Error('Invalid content id');
-  const doc=await db().collection(COLLECTION).doc(id).get();
-  if(!doc.exists) throw new Error('Content not found');
-  return view(doc);
+ const id=trim(args.id,100);
+ if(!/^cur-[a-f0-9]{30}$/.test(id))throw Error('Invalid content id');
+ const snap=await db().collection(COLLECTION).doc(id).get();
+ if(!snap.exists)throw Error('Content not found');
+ return view(snap);
+}
+async function batchAdd(args={}){
+ const input=Array.isArray(args.items)?args.items:[];
+ if(!input.length||input.length>35)throw Error('Supply 1 to 35 curated items');
+ // Scan once per batch; all candidates share an in-memory dedupe view.
+ const existingSnap=await db().collection(COLLECTION).orderBy('createdAt','desc').limit(500).get();
+ const seen=existingSnap.docs.map(view);
+ const results=[];
+ for(const raw of input){
+  try{
+   const item=normalizedInput(raw);
+   const dup=seen.find(old=>sameContent(old,item));
+   if(dup){results.push({outcome:'already_exists',id:dup.id,storyKey:item.storyKey});continue;}
+   const id='cur-'+hash(item.canonicalUrl),ref=db().collection(COLLECTION).doc(id);
+   const keyRef=db().collection(TOPICS).doc('story-'+hash(item.storyKey));
+   let outcome='created',existingId=null;
+   await db().runTransaction(async tx=>{
+    const [entry,key]=await Promise.all([tx.get(ref),tx.get(keyRef)]);
+    if(entry.exists){outcome='already_exists';existingId=entry.id;return;}
+    if(key.exists){outcome='already_exists';existingId=key.data().contentId||null;return;}
+    tx.set(ref,{...item,feedback:'new',feedbackNote:'',revision:1,
+      createdAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
+    tx.set(keyRef,{contentId:id,storyKey:item.storyKey,createdAt:FieldValue.serverTimestamp()});
+   });
+   const actualId=existingId||id;
+   results.push({outcome,id:actualId,storyKey:item.storyKey});
+   if(outcome==='created')seen.push({...item,id});
+  }catch(error){results.push({outcome:'failed',error:String(error?.message||error).slice(0,250),url:trim(raw?.url,300)});}
+ }
+ return {results,createdCount:results.filter(r=>r.outcome==='created').length,
+  duplicateCount:results.filter(r=>r.outcome==='already_exists').length,
+  failedCount:results.filter(r=>r.outcome==='failed').length};
 }
 async function add(args={}){
-  const url=safeUrl(args.url);
-  if(!url) throw new Error('An absolute public https URL is required');
-  const title=trim(args.title,200), description=trim(args.description,1600), reason=trim(args.reason,1000);
-  if(title.length<5 || description.length<15 || reason.length<8) throw new Error('Specific title, summary and personal recommendation reason are required');
-  const type=TYPES.has(args.type)?args.type:'website';
-  const videoId=youtubeId(url);
-  if(type==='video' && !videoId) throw new Error('video requires a valid YouTube video or short URL');
-  const sourceUrl=safeUrl(args.sourceUrl)||url;
-  const id=idFor(url), ref=db().collection(COLLECTION).doc(id);
-  let outcome='created';
-  await db().runTransaction(async tx=>{
-    const snap=await tx.get(ref);
-    if(snap.exists){outcome='already_exists';return;}
-    tx.set(ref,{
-      title,description,reason,url,sourceUrl,
-      creator:trim(args.creator,140),type,tags:unique(args.tags),category:trim(args.category||'発見',70),
-      thumbnail:safeUrl(args.thumbnail),videoId,
-      checkedAt:trim(args.checkedAt,40),uncertainty:trim(args.uncertainty,600),
-      feedback:'new',feedbackNote:'',revision:1,
-      createdAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp(),
-    });
-  });
-  return {outcome,content:await get({id})};
+ const result=await batchAdd({items:[args]});
+ const first=result.results[0];
+ if(first.outcome==='failed')throw Error(first.error);
+ return {outcome:first.outcome,content:await get({id:first.id})};
+}
+// Seed a real recent issue without overwriting the older evergreen picks.
+// This is a one-time initial edition, not a substitute for recurring fresh curation.
+let seeded=false;
+async function seedOnce(){
+ if(seeded)return;
+ const marker=db().collection(SEEDS).doc('edition-20261017');
+ const snap=await marker.get();
+ if(snap.exists){seeded=true;return;}
+ const outcome=await batchAdd({items:SEED});
+ if(outcome.failedCount)throw Error('Starter edition incomplete: '+outcome.failedCount+' records failed');
+ await marker.set({createdCount:outcome.createdCount,duplicateCount:outcome.duplicateCount,
+  seedVersion:'2026-10-17',createdAt:FieldValue.serverTimestamp()});
+ seeded=true;
 }
 async function feedback(args={}){
-  const id=trim(args.id,100), status=trim(args.status,20), expectedRevision=Number(args.expectedRevision);
-  if(!STATES.has(status)) throw new Error('Invalid feedback status');
-  if(!/^cur-[a-f0-9]{30}$/.test(id)) throw new Error('Invalid content id');
-  if(!Number.isInteger(expectedRevision)||expectedRevision<1) throw new Error('expectedRevision is required');
-  const ref=db().collection(COLLECTION).doc(id);
-  await db().runTransaction(async tx=>{
-    const snap=await tx.get(ref);
-    if(!snap.exists) throw new Error('Content not found');
-    if(snap.data().revision!==expectedRevision) throw new Error('Content revision conflict; reload');
-    tx.update(ref,{feedback:status,feedbackNote:trim(args.note,500),revision:expectedRevision+1,updatedAt:FieldValue.serverTimestamp()});
-  });
-  return get({id});
+ const id=trim(args.id,100),status=trim(args.status,20),expectedRevision=Number(args.expectedRevision);
+ if(!STATES.has(status))throw Error('Invalid feedback status');
+ if(!/^cur-[a-f0-9]{30}$/.test(id))throw Error('Invalid content id');
+ if(!Number.isInteger(expectedRevision)||expectedRevision<1)throw Error('expectedRevision required');
+ const ref=db().collection(COLLECTION).doc(id);
+ await db().runTransaction(async tx=>{
+  const snap=await tx.get(ref);
+  if(!snap.exists)throw Error('Content not found');
+  if(snap.data().revision!==expectedRevision)throw Error('Content revision conflict; refresh');
+  tx.update(ref,{feedback:status,feedbackNote:trim(args.note,500),
+   revision:expectedRevision+1,updatedAt:FieldValue.serverTimestamp()});
+ });
+ return get({id});
 }
-module.exports={COLLECTION,list,get,add,feedback,safeUrl,youtubeId,idFor};
+module.exports={COLLECTION,list,get,add,batchAdd,feedback,safeUrl,youtubeId,canonicalUrl,normalizeStoryKey,normalizeTitle,sameContent};

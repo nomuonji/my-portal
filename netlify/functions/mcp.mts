@@ -358,6 +358,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "personal_feed_list") return structured(await personalFeed.list(args));
   if (name === "personal_feed_get") return structured(await personalFeed.get(args));
   if (name === "personal_feed_add") return structured(await personalFeed.add(args));
+  if (name === "personal_feed_batch_add") return structured(await personalFeed.batchAdd(args));
   if (name === "personal_feed_feedback") return structured(await personalFeed.feedback(args));
   if (name === "meta_proposal_list") return structured(await metaStore.list(args));
   if (name === "meta_proposal_get") return structured(await metaStore.get(args));
