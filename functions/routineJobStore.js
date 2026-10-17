@@ -5,6 +5,9 @@ const JOBS = 'memos/agent-control/routineJobs';
 const RUNS = 'memos/agent-control/routineJobRuns';
 const DATABASE = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const MAX_WINDOW_MINUTES = 120;
+const RUNNER_SLOTS = Object.freeze(['04:30','10:30','16:30']);
+const MAX_JOBS_PER_TICK = 3;
+const PRIORITIES = Object.freeze({critical:0,normal:1,background:2});
 
 function db() { return getDocumentDb(DATABASE); }
 function text(value, max) { return String(value == null ? '' : value).trim().slice(0, max); }
@@ -40,7 +43,7 @@ function seedDraftJob() {
       '7. 認証情報、アクセストークン、非公開URLを報告や下書きへ出力しない。',
       '8. 実際に保存したアカウントID、件数、確認後の在庫を結果に記録する。認証失敗、世代競合、保存失敗、文字数超過、類似判定による拒否は原因と対象だけを報告する。'
     ].join('\n'),
-    maxAccountsPerRun: 20, revision: 1,
+    maxAccountsPerRun: 20, priority: 'critical', revision: 1,
   };
 }
 async function ensureSeed() {
@@ -57,7 +60,8 @@ async function list(input = {}) {
   await ensureSeed();
   const result = await db().collection(JOBS).limit(100).get();
   const items = result.docs.map((snap) => ({ id: snap.id, ...snap.data() })).sort((a, b) => a.id.localeCompare(b.id));
-  return { items, timeZone: 'Asia/Tokyo', windowMinutes: MAX_WINDOW_MINUTES };
+  const slotLoads = Object.fromEntries(RUNNER_SLOTS.map(slot => [slot, {active:items.filter(j=>j.status==='active' && j.slots?.includes(slot)).length,capacity:MAX_JOBS_PER_TICK}]));
+  return { items, slotLoads, runnerSlots:RUNNER_SLOTS, maxJobsPerTick:MAX_JOBS_PER_TICK, timeZone: 'Asia/Tokyo', windowMinutes: MAX_WINDOW_MINUTES };
 }
 async function upsert(input = {}) {
   await ensureSeed();
@@ -75,10 +79,21 @@ async function upsert(input = {}) {
     const slots = validateSlots(input.slots ?? previous?.slots);
     if (!title || !instructions) throw new Error('Title and instructions are required');
     if (!['active', 'paused'].includes(status)) throw new Error('Invalid routine job status');
+    const priority = text(input.priority ?? previous?.priority ?? (id==='tweets-draft-replenishment'?'critical':'normal'), 20);
+    if (!(priority in PRIORITIES)) throw new Error('Invalid priority; choose critical, normal, or background');
+    if (status==='active') {
+      const unsupported = slots.filter(slot=>!RUNNER_SLOTS.includes(slot));
+      if (unsupported.length) throw new Error('No ChatGPT runner is configured for '+unsupported.join(', ')+'; allowed: '+RUNNER_SLOTS.join(', '));
+      const scheduleSnap = await tx.get(database.collection(JOBS).limit(100));
+      for (const slot of slots) {
+        const competing=scheduleSnap.docs.filter(d=>d.id!==id && d.data().status==='active' && d.data().slots?.includes(slot));
+        if (competing.length>=MAX_JOBS_PER_TICK) throw new Error(slot+' is full ('+MAX_JOBS_PER_TICK+'/'+MAX_JOBS_PER_TICK+'); pause or reschedule another job before enabling this slot');
+      }
+    }
     const next = {
       id, title, description: text(input.description ?? previous?.description, 1000),
       instructions, targetSystem: text(input.targetSystem ?? previous?.targetSystem, 120),
-      status, slots, timeZone: 'Asia/Tokyo',
+      status, slots, timeZone: 'Asia/Tokyo', priority,
       maxAccountsPerRun: Math.max(1, Math.min(50, Number(input.maxAccountsPerRun ?? previous?.maxAccountsPerRun ?? 10) || 10)),
       revision: (previous?.revision || 0) + 1,
       createdAt: previous?.createdAt || new Date().toISOString(),
@@ -101,13 +116,18 @@ function candidate(job, local) {
 async function due(input = {}) {
   const now = input.at ? new Date(input.at).getTime() : Date.now();
   const local = jst(now), state = await list();
-  const candidates = state.items.map((job) => ({ job, slot: candidate(job, local) })).filter((item) => item.slot);
-  const items = [];
-  for (const { job, slot } of candidates) {
-    const existing = await db().collection(RUNS).doc(slot.runId).get();
-    if (!existing.exists) items.push({ ...job, ...slot });
-  }
-  return { generatedAt: new Date(now).toISOString(), timeZone: 'Asia/Tokyo', items, totalActive: state.items.filter((j) => j.status === 'active').length };
+  const candidates = state.items.map(job=>({job,slot:candidate(job,local)})).filter(item=>item.slot);
+  // Fetch slot claims concurrently; ordering by priority avoids starving stock refills
+  // or once-daily tasks when multiple jobs are eligible.
+  const claims = await Promise.all(candidates.map(({slot})=>db().collection(RUNS).doc(slot.runId).get()));
+  const items = candidates.filter((_,i)=>!claims[i].exists)
+    .sort((a,b)=>(PRIORITIES[a.job.priority]??1)-(PRIORITIES[b.job.priority]??1)
+      || (a.job.slots?.length||3)-(b.job.slots?.length||3)
+      || a.job.id.localeCompare(b.job.id))
+    .map(({job,slot})=>({...job,...slot}));
+  return { generatedAt:new Date(now).toISOString(),timeZone:'Asia/Tokyo',items,
+    slotLoads:state.slotLoads,capacity:MAX_JOBS_PER_TICK,
+    totalActive:state.items.filter(j=>j.status==='active').length };
 }
 async function claim(input = {}) {
   await ensureSeed();
@@ -150,10 +170,13 @@ async function finish(input = {}) {
 }
 async function runs(input = {}) {
   const limit = Math.max(1, Math.min(100, Number(input.limit) || 30));
-  const result = await db().collection(RUNS).orderBy('startedAt', 'desc').limit(300).get();
+  // A dashboard request for 30 rows must not read 300 Firestore documents.
+  const scanLimit = input.jobId ? 300 : Math.min(300,Math.max(30,limit));
+  const result = await db().collection(RUNS).orderBy('startedAt', 'desc').limit(scanLimit).get();
   const items = result.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
     .filter((run) => !input.jobId || run.jobId === input.jobId)
-    .sort((a,b) => String(b.startedAt).localeCompare(String(a.startedAt))).slice(0, limit);
-  return { items };
+    .sort((a,b) => String(b.startedAt).localeCompare(String(a.startedAt))).slice(0, limit)
+    .map(run=>({...run,stalled:run.status==='running' && Date.now()-Date.parse(run.startedAt)>3*60*60*1000}));
+  return { items, readLimit:scanLimit };
 }
-module.exports = { list, upsert, due, claim, finish, runs };
+module.exports = { list, upsert, due, claim, finish, runs, RUNNER_SLOTS, MAX_JOBS_PER_TICK };
