@@ -57,23 +57,31 @@ function CurationAction({item,onAction,busy,compact=false}){
 const SCORE_AXIS_LABELS = {tasteFit:'好みとの一致',discovery:'未知の発見',payoff:'元作品の体験'};
 function RecommendationScore({item,short=false}){
  const score=item.selfEvaluation;
- if(!score||score.version!=='discover-taste-v2'){
-  return <Typography sx={{color:'#6d7887',fontSize:10.5}}>旧掲載・自己採点なし</Typography>;
+ if(!score||score.version!=='discover-taste-v3'){
+  return <Typography sx={{color:'#6d7887',fontSize:10.5}}>旧掲載・旧採点（現在の好み予測には未使用）</Typography>;
  }
  const fit=score.scores.tasteFit==null?'未確定':score.scores.tasteFit+'/5';
  const label=score.lane==='familiar'?'好みの近傍':'探索枠';
+ const provenance=score.fitBasis==='user_feedback'?'本人の明示的な好き':score.fitBasis==='expression_inference'?'本人ツイートからの推測':score.fitBasis==='hypothesis'?'弱い仮説':'好み未確定';
  return <Box component="details" onClick={e=>e.stopPropagation()} sx={{fontSize:11,minWidth:0,pt:.35,'& summary':{cursor:'pointer',listStyle:'none',color:'#a6bfc5',fontWeight:700,'&::-webkit-details-marker':{display:'none'}}}}>
    <Box component="summary" sx={{display:'flex',alignItems:'center',gap:.8,flexWrap:'wrap'}}>
      <Box component="span" sx={{color:colors.accent}}>{label}</Box>
      <Box component="span">好み {fit} · 発見 {score.scores.discovery}/5 · 体験 {score.scores.payoff}/5</Box>
-     <Box component="span" sx={{color:colors.muted}}>採点の根拠 <Box component="span" aria-hidden>▾</Box></Box>
+     <Box component="span" sx={{color:colors.muted}}>{provenance} · 根拠 ▾</Box>
    </Box>
    <Stack gap={.55} sx={{mt:1,p:1.25,background:'#10151a',border:'1px solid #2a363d',borderRadius:1.4,lineHeight:1.5}}>
      {Object.entries(SCORE_AXIS_LABELS).map(([key,name])=><Typography key={key} sx={{fontSize:11,color:'#b6c7d3',lineHeight:1.5}}>
        <Box component="span" sx={{fontWeight:850,color:colors.accent}}>{name}: </Box>{score.reasons?.[key]||'根拠未記録'}
      </Typography>)}
+     {score.expressionMechanism&&<Typography sx={{fontSize:11,color:'#cbd5e1',lineHeight:1.5}}>本人の発想パターン（仮説）: {score.expressionMechanism}</Typography>}
+     {score.evidencePostIds?.length>0&&<Box sx={{display:'flex',gap:.8,flexWrap:'wrap'}}>
+      {score.evidencePostIds.map(id=><Box key={id} component="a" href={'https://x.com/i/status/'+id.slice(2)} target="_blank" rel="noopener noreferrer" sx={{fontSize:11,color:colors.accent}}>本人ツイート {id.slice(-6)}</Box>)}
+     </Box>}
+     {score.rawReferences?.map((reference,i)=><Typography key={reference.id+'-'+i} sx={{fontSize:11,color:'#afbac3',lineHeight:1.5}}>
+       参考作品（本人の投稿ではない）: {reference.dataset==='radichichi'?'ラジ父':'村上RADIO'} / {reference.id} — {reference.mechanism}
+     </Typography>)}
      <Typography sx={{fontSize:11,color:'#d6b3b3',lineHeight:1.5}}>弱点: {score.weakness}</Typography>
-     <Typography sx={{fontSize:10,color:'#7a8791'}}>AIによる事前予測です。あなたの実際の評価ではありません。</Typography>
+     <Typography sx={{fontSize:10,color:'#7a8791'}}>AIの推測です。ツイートは表現の痕跡、参考作品は外部データ。あなたがこの作品を好きだという証明ではありません。</Typography>
    </Stack>
  </Box>;
 }
@@ -194,8 +202,8 @@ export default function PersonalFeed(){
    // Newly scored entries lead the old unscored editorial starter batch.
    // Within each group, show genuinely recent source publications first;
    // scores are transparent predictions rather than faux user-preference truth.
-   const ratedA=Number(a.selfEvaluation?.version==='discover-taste-v2'&&a.selfEvaluation?.passed);
-   const ratedB=Number(b.selfEvaluation?.version==='discover-taste-v2'&&b.selfEvaluation?.passed);
+   const ratedA=Number(a.selfEvaluation?.version==='discover-taste-v3'&&a.selfEvaluation?.passed);
+   const ratedB=Number(b.selfEvaluation?.version==='discover-taste-v3'&&b.selfEvaluation?.passed);
    return ratedB-ratedA||(tb||0)-(ta||0)||Date.parse(b.createdAt||0)-Date.parse(a.createdAt||0);
   });
  },[items,query,topic,range,savedOnly,showSkipped]);
@@ -294,7 +302,7 @@ export default function PersonalFeed(){
     </Box>}
    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{mt:5,pt:2,borderTop:'1px solid '+colors.border}} gap={2}>
     <Typography sx={{fontSize:11.5,color:'#778392',lineHeight:1.7}}>
-     AI自己採点は予測であり、実際の好みは「好き」「興味なし」で補正します。旧掲載は未採点と表示。本文・映像は転載せず配信元へつなぎます。
+     AI自己採点は本人ツイートの発想パターンからの仮説。『後で見る』メモは好みの根拠にはしません。旧掲載・旧採点は区別します。本文・映像は転載せず配信元へつなぎます。
     </Typography>
     <Button onClick={()=>setShowSkipped(x=>!x)} size="small" sx={{color:colors.muted,whiteSpace:'nowrap',fontSize:11,textTransform:'none'}}>
      {showSkipped?'興味なしを隠す':'興味なしも表示'}

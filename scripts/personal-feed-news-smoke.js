@@ -40,7 +40,7 @@ test('Self-rating is required, concrete, and only evidence-backed user preferenc
  const score={scores:{tasteFit:5,discovery:4,payoff:4},fitBasis:'hypothesis',
   reasons:{tasteFit:'this is a guess not actual rating',discovery:'an unfamiliar real subculture',payoff:'full original piece is enjoyable'},
   weakness:'User could dislike the actual topic'};
- assert.throws(()=>validateSelfEvaluation(score),/hypothesis cannot be scored above 3/);
+ assert.throws(()=>validateSelfEvaluation(score),/Speculative taste cannot be scored above 3/);
  assert.throws(()=>validateSelfEvaluation({...score,fitBasis:'user_feedback'}),/feedbackExampleId/);
 });
 test('Cold-start exploration survives unknown taste, weak-content proposals go to rejection memory',()=>{
@@ -64,12 +64,30 @@ test('Verified-positive preferences make a familiar lane possible without requir
  assert.equal(evaluation.feedbackExampleId,likedId);
 });
 
-test('Explicit saved user hobby supports at most 4/5 taste fit and must include actual DB ID',()=>{
- const good={scores:{tasteFit:4,discovery:3,payoff:4},fitBasis:'declared_interest',
-   interestExampleId:'oRJBxmeUwbEkW9VvxcOw',
-   reasons:{tasteFit:'User explicitly saved Evangelion to hobbies, not confirmed enjoyment of this particular video',discovery:'Explores how the related subculture works',payoff:'Actually shows distinctive creative scenes and craft'},
-   weakness:'Familiar title may still be another low-effort promotional clip'};
- assert.equal(validateSelfEvaluation(good).lane,'familiar');
- assert.throws(()=>validateSelfEvaluation({...good,scores:{...good.scores,tasteFit:5}}),/score <=4/);
- assert.throws(()=>validateSelfEvaluation({...good,interestExampleId:'not-verified'}),/valid exact My Portal hobbies ID/);
+
+test('Watch-later hobbies are not taste evidence and old declared_interest basis is rejected',()=>{
+ const bad={scores:{tasteFit:4,discovery:3,payoff:4},fitBasis:'declared_interest',
+  interestExampleId:'oRJBxmeUwbEkW9VvxcOw',
+  reasons:{tasteFit:'Saved in a backlog without enjoyment judgment',discovery:'Shows a little-known filmmaking subculture',payoff:'Watch the whole short film for the creative payoff'},
+  weakness:'User may not like this specific video at all'};
+ assert.throws(()=>validateSelfEvaluation(bad),/fitBasis/);
+});
+test('Two authored raw tweets can support 4-point expression inference but not 5',()=>{
+ const raw={
+  scores:{tasteFit:4,discovery:2,payoff:4},fitBasis:'expression_inference',
+  evidencePostIds:['x_1855476278692089898','x_1835165279699321167'],
+  expressionMechanism:'Both actual original posts build an understated comic observation on a mundane social script; candidate might share that mechanism, but enjoyment is untested.',
+  rawReferences:[{dataset:'radichichi',id:'radichichi_633973095_006',mechanism:'A low-temperature humorous turn on an everyday premise'}],
+  reasons:{tasteFit:'Two original post IDs capture a repeated concrete observational turn; this is an inference only',
+   discovery:'Not necessarily new; the appeal rests on an established style',
+   payoff:'This original piece contains an actual comic set piece worth reading'},
+  weakness:'The user might enjoy writing this kind of joke but dislike watching this type of video'};
+ const assessment=validateSelfEvaluation(raw);
+ assert.equal(assessment.lane,'familiar');
+ assert.equal(assessment.version,'discover-taste-v3');
+ assert.deepEqual(assessment.evidencePostIds,raw.evidencePostIds);
+ assert.equal(assessment.rawReferences[0].dataset,'radichichi');
+ assert.throws(()=>validateSelfEvaluation({...raw,scores:{...raw.scores,tasteFit:5}}),/at most 4/);
+ assert.throws(()=>validateSelfEvaluation({...raw,evidencePostIds:[raw.evidencePostIds[0]]}),/at least 2/);
+ assert.throws(()=>validateSelfEvaluation({...raw,rawReferences:[{dataset:'hobbies',id:'foo',mechanism:'I like it'}]}),/rawReferences/);
 });
