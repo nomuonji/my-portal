@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {Link} from 'react-router-dom';
 import { auth } from '../firebase';
 import {
   Alert, Box, Button, CircularProgress, Dialog, DialogContent, IconButton,
@@ -233,6 +234,9 @@ export default function PersonalFeed(){
  return <Box sx={{minHeight:'100%',background:colors.bg,color:colors.text,fontFamily:'"Hiragino Kaku Gothic ProN", "Yu Gothic", system-ui, sans-serif',
   borderRadius:{xs:0,md:2},mx:{xs:-1,sm:-1.5,md:-3},mt:{xs:-1,sm:-1.5,md:-3},
   px:{xs:1.8,sm:2.5,md:3.3},py:{xs:2.3,md:3},'& button:focus-visible, & a:focus-visible':{outline:'2px solid '+colors.accent,outlineOffset:2}}}>
+   <Box sx={{display:'flex',justifyContent:'flex-end',mb:1}}>
+     <Button component={Link} to="/taste" sx={{textTransform:'none',color:colors.accent,fontSize:12,fontWeight:800}}>好みの記録・判断履歴を見る →</Button>
+   </Box>
    <Stack direction={{xs:'column',md:'row'}} gap={2} justifyContent="space-between" sx={{pb:2,borderBottom:'1px solid '+colors.border}}>
     <Box>
      <Typography sx={{color:colors.accent,fontSize:10.5,fontWeight:950,letterSpacing:'.2em'}}>YOUR PRIVATE CULTURE WIRE</Typography>
