@@ -54,6 +54,29 @@ function CurationAction({item,onAction,busy,compact=false}){
       onClick={()=>onAction(item,'skipped')} sx={{color:'#8f99a5',p:.8}}><VisibilityOff sx={{fontSize:17}}/></IconButton>
   </Stack>;
 }
+const SCORE_AXIS_LABELS = {tasteFit:'好みとの一致',discovery:'未知の発見',payoff:'元作品の体験'};
+function RecommendationScore({item,short=false}){
+ const score=item.selfEvaluation;
+ if(!score||score.version!=='discover-taste-v2'){
+  return <Typography sx={{color:'#6d7887',fontSize:10.5}}>旧掲載・自己採点なし</Typography>;
+ }
+ const fit=score.scores.tasteFit==null?'未確定':score.scores.tasteFit+'/5';
+ const label=score.lane==='familiar'?'好みの近傍':'探索枠';
+ return <Box component="details" onClick={e=>e.stopPropagation()} sx={{fontSize:11,minWidth:0,pt:.35,'& summary':{cursor:'pointer',listStyle:'none',color:'#a6bfc5',fontWeight:700,'&::-webkit-details-marker':{display:'none'}}}}>
+   <Box component="summary" sx={{display:'flex',alignItems:'center',gap:.8,flexWrap:'wrap'}}>
+     <Box component="span" sx={{color:colors.accent}}>{label}</Box>
+     <Box component="span">好み {fit} · 発見 {score.scores.discovery}/5 · 体験 {score.scores.payoff}/5</Box>
+     <Box component="span" sx={{color:colors.muted}}>採点の根拠 <Box component="span" aria-hidden>▾</Box></Box>
+   </Box>
+   <Stack gap={.55} sx={{mt:1,p:1.25,background:'#10151a',border:'1px solid #2a363d',borderRadius:1.4,lineHeight:1.5}}>
+     {Object.entries(SCORE_AXIS_LABELS).map(([key,name])=><Typography key={key} sx={{fontSize:11,color:'#b6c7d3',lineHeight:1.5}}>
+       <Box component="span" sx={{fontWeight:850,color:colors.accent}}>{name}: </Box>{score.reasons?.[key]||'根拠未記録'}
+     </Typography>)}
+     <Typography sx={{fontSize:11,color:'#d6b3b3',lineHeight:1.5}}>弱点: {score.weakness}</Typography>
+     <Typography sx={{fontSize:10,color:'#7a8791'}}>AIによる事前予測です。あなたの実際の評価ではありません。</Typography>
+   </Stack>
+ </Box>;
+}
 function VideoCard({item,onOpen,onAction,busy}){
   return <Box component="article" sx={{minWidth:0,background:colors.surface,border:'1px solid '+colors.border,borderRadius:2,overflow:'hidden'}}>
     <Box component="button" onClick={()=>onOpen(item)} aria-label={'動画を再生: '+item.title}
@@ -75,6 +98,7 @@ function VideoCard({item,onOpen,onAction,busy}){
         <Typography component="h3" sx={{fontSize:14.5,fontWeight:850,lineHeight:1.5,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{item.title}</Typography>
       </Box>
       <Typography sx={{fontSize:12,color:'#b5bec9',lineHeight:1.65,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{item.description}</Typography>
+      <RecommendationScore item={item} short/>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{minWidth:0,pt:.5}}>
         <CurationAction item={item} onAction={onAction} busy={busy} compact/>
         <IconButton href={item.url} target="_blank" rel="noopener noreferrer" size="small" aria-label="YouTubeで見る" sx={{color:colors.muted}}><OpenInNew sx={{fontSize:15}}/></IconButton>
@@ -105,6 +129,7 @@ function ArticleRow({item,onAction,busy}){
         <Typography sx={{color:'#8b9fb0',fontSize:11.5,lineHeight:1.5,display:'-webkit-box',WebkitLineClamp:1,WebkitBoxOrient:'vertical',overflow:'hidden',flex:1}}>編集メモ：{item.reason}</Typography>
         <CurationAction item={item} onAction={onAction} busy={busy} compact/>
       </Stack>
+      <RecommendationScore item={item} short/>
     </Box>
   </Stack>;
 }
@@ -125,6 +150,7 @@ function Empty({label}){
 }
 export default function PersonalFeed(){
  const [items,setItems]=useState([]);
+ const [rejected,setRejected]=useState([]);
  const [loading,setLoading]=useState(true);
  const [error,setError]=useState('');
  const [range,setRange]=useState('7d');
@@ -139,8 +165,12 @@ export default function PersonalFeed(){
  const load=useCallback(async()=>{
   setLoading(true);setError('');
   try{
-   const data=await request('?resource=personal_feed&limit=500'+(showSkipped?'&includeSkipped=true':''));
+   const [data,audit]=await Promise.all([
+    request('?resource=personal_feed&limit=500'+(showSkipped?'&includeSkipped=true':'')),
+    request('?resource=personal_feed_rejected&limit=20').catch(()=>({items:[]}))
+   ]);
    setItems(data.items||[]);
+   setRejected(audit.items||[]);
   }catch(e){setError(e.message);}finally{setLoading(false);}
  },[showSkipped]);
  useEffect(()=>{load();},[load]);
@@ -161,7 +191,12 @@ export default function PersonalFeed(){
    return true;
   }).sort((a,b)=>{
    const ta=Date.parse(a.publishedAt||0),tb=Date.parse(b.publishedAt||0);
-   return (tb||0)-(ta||0)||Date.parse(b.createdAt||0)-Date.parse(a.createdAt||0);
+   // Newly scored entries lead the old unscored editorial starter batch.
+   // Within each group, show genuinely recent source publications first;
+   // scores are transparent predictions rather than faux user-preference truth.
+   const ratedA=Number(a.selfEvaluation?.version==='discover-taste-v2'&&a.selfEvaluation?.passed);
+   const ratedB=Number(b.selfEvaluation?.version==='discover-taste-v2'&&b.selfEvaluation?.passed);
+   return ratedB-ratedA||(tb||0)-(ta||0)||Date.parse(b.createdAt||0)-Date.parse(a.createdAt||0);
   });
  },[items,query,topic,range,savedOnly,showSkipped]);
  const videos=matches.filter(x=>x.type==='video');
@@ -195,7 +230,7 @@ export default function PersonalFeed(){
      <Typography sx={{color:colors.accent,fontSize:10.5,fontWeight:950,letterSpacing:'.2em'}}>YOUR PRIVATE CULTURE WIRE</Typography>
      <Stack direction="row" alignItems="baseline" flexWrap="wrap" gap={1.5} sx={{mt:.45}}>
       <Typography component="h1" sx={{fontSize:{xs:27,md:34},letterSpacing:'-.045em',fontWeight:950,lineHeight:1.25}}>寄り道速報。</Typography>
-      <Typography sx={{fontSize:12,color:colors.muted}}>最近の動画と記事を、好きそうな順に発見。</Typography>
+      <Typography sx={{fontSize:12,color:colors.muted}}>AIの選書根拠と一緒に、動画と記事を発見。</Typography>
      </Stack>
     </Box>
     <Stack direction="row" gap={1.5} alignItems="center">
@@ -245,9 +280,21 @@ export default function PersonalFeed(){
        sx={{mt:2,color:colors.accent,border:'1px solid '+colors.border,textTransform:'none'}}>記事をさらに40件表示 ({articles.length-expanded.article}件残り)</Button>}
      </Box>}
     </Box>}
+   {rejected.length>0&&<Box component="details" sx={{mt:3,border:'1px solid '+colors.border,borderRadius:2,p:1.8,
+      '& summary':{color:colors.muted,fontSize:12,fontWeight:800,cursor:'pointer'}}}>
+      <Box component="summary">AIの選考で落選した候補（最新{rejected.length}件）</Box>
+      <Typography sx={{fontSize:11.5,color:colors.muted,mt:1}}>この候補はメインの推薦に配信していません。AIによる暫定採点と、弱点の記録です。</Typography>
+      {rejected.map(x=><Box key={x.id} sx={{mt:1.2,pt:1.2,borderTop:'1px solid '+colors.border}}>
+        <Typography sx={{fontSize:12,fontWeight:850}}>{x.title}</Typography>
+        <Typography sx={{fontSize:11.5,color:colors.muted}}>
+          好み {x.selfEvaluation?.scores?.tasteFit??'未確定'} · 発見 {x.selfEvaluation?.scores?.discovery??'-'}/5 · 体験 {x.selfEvaluation?.scores?.payoff??'-'}/5
+        </Typography>
+        <Typography sx={{fontSize:11.5,color:'#c8b6b4'}}>採用しなかった理由: {x.selfEvaluation?.weakness||'未記録'}</Typography>
+      </Box>)}
+    </Box>}
    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{mt:5,pt:2,borderTop:'1px solid '+colors.border}} gap={2}>
     <Typography sx={{fontSize:11.5,color:'#778392',lineHeight:1.7}}>
-     公開日を確認できた作品のみ新着期間に表示。動画・記事の本文や映像は転載せず、配信元へつなぎます。
+     AI自己採点は予測であり、実際の好みは「好き」「興味なし」で補正します。旧掲載は未採点と表示。本文・映像は転載せず配信元へつなぎます。
     </Typography>
     <Button onClick={()=>setShowSkipped(x=>!x)} size="small" sx={{color:colors.muted,whiteSpace:'nowrap',fontSize:11,textTransform:'none'}}>
      {showSkipped?'興味なしを隠す':'興味なしも表示'}

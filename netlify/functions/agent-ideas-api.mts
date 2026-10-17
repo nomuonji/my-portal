@@ -125,6 +125,7 @@ export default async (request: Request) => {
         });
       }
       if (resource === "personal_feed") return json(await personalFeed.list({limit:Math.min(Math.max(Number(url.searchParams.get("limit"))||160,1),500),includeSkipped:url.searchParams.get("includeSkipped")==="true"}));
+      if (resource === "personal_feed_rejected") return json(await personalFeed.rejected({limit:Math.min(Math.max(Number(url.searchParams.get("limit"))||20,1),40)}));
       if (resource === "meta_proposals") return json(await metaStore.list({limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 150, 1), 200), status: url.searchParams.get("status") || undefined}));
       if (resource === "meta_proposal") return json(await metaStore.get({ id: url.searchParams.get("id") || "" }));
       if (resource === "ideas") {

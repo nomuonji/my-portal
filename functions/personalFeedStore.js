@@ -9,6 +9,9 @@ const SEED=require('./personalFeedSeed20261017');
 const COLLECTION='personalDiscoveryFeed';
 const TOPICS='personalDiscoveryStoryKeys';
 const SEEDS='personalDiscoverySeedEditions';
+const REJECTIONS='personalDiscoveryRejectedCandidates';
+const SCORE_AXES=Object.freeze(['tasteFit','discovery','payoff']);
+const SCORE_THRESHOLD=4;
 const TYPES=new Set(['video','article','website','music','art','game','other']);
 const STATES=new Set(['new','saved','loved','skipped','seen']);
 const db=()=>getDocumentDb(process.env.AGENT_IDEAS_DATABASE_ID||'(default)');
@@ -67,7 +70,45 @@ function view(doc){
  return {...d,id:doc.id,publishedAt:d.publishedAt||null,storyKey:d.storyKey||null,
   createdAt:iso(d.createdAt),updatedAt:iso(d.updatedAt)};
 }
-function normalizedInput(args={}){
+/**
+ * Prediction axes, not a generic media-quality grade.
+ * TasteFit without a cited positive user reaction is allowed only at <=3.
+ * Exploration lane prevents cold-start discovery from being blocked by unknown taste.
+ * Source verification, freshness, legality and dedupe are independent hard checks.
+ */
+function validateSelfEvaluation(value,allowLegacy=false){
+ if(allowLegacy)return null;
+ if(!value||typeof value!=='object')throw Error('selfEvaluation is required on every new Discover item');
+ const scores={},reasons={};
+ const fitBasis=trim(value.fitBasis,30);
+ if(!['user_feedback','declared_interest','hypothesis','unknown'].includes(fitBasis))throw Error('fitBasis must be user_feedback, declared_interest, hypothesis, or unknown');
+ for(const axis of SCORE_AXES){
+  const score=value.scores?.[axis];
+  if(axis==='tasteFit'&&fitBasis==='unknown'&&score===null){scores[axis]=null;}
+  else if(!Number.isInteger(score)||score<1||score>5)throw Error('selfEvaluation.scores.'+axis+' must be an integer from 1 to 5 (tasteFit may be null when unknown)');
+  else scores[axis]=score;
+  const reason=trim(value.reasons?.[axis],500);
+  if(reason.length<12)throw Error('selfEvaluation.reasons.'+axis+' needs a specific reference or a stated uncertainty');
+  reasons[axis]=reason;
+ }
+ const feedbackExampleId=trim(value.feedbackExampleId,100);
+ const interestExampleId=trim(value.interestExampleId,100);
+ if(fitBasis==='user_feedback'&&(!/^cur-[a-f0-9]{30}$/.test(feedbackExampleId)||scores.tasteFit===null))
+   throw Error('Direct user preference fit requires a real liked/saved Discover feedbackExampleId');
+ if(fitBasis==='declared_interest'&&(!/^[A-Za-z0-9]{20}$/.test(interestExampleId)||scores.tasteFit===null||scores.tasteFit>4))
+   throw Error('Saved hobby taste fit requires a valid exact My Portal hobbies ID and score <=4');
+ if(fitBasis==='unknown'&&scores.tasteFit!==null)throw Error('Unknown taste must use tasteFit=null');
+ if(fitBasis==='hypothesis'&&scores.tasteFit>3)throw Error('A taste hypothesis cannot be scored above 3 without verified user feedback');
+ const weakness=trim(value.weakness,800);
+ if(weakness.length<20)throw Error('selfEvaluation.weakness must state a plausible reason user may dislike this item');
+ const lane=(scores.tasteFit>=4&&scores.payoff>=4)?'familiar':
+   (scores.discovery>=4&&scores.payoff>=4&&(scores.tasteFit===null||scores.tasteFit>=3))?'explore':'rejected';
+ const total=(scores.tasteFit||0)+scores.discovery+scores.payoff;
+ return {version:'discover-taste-v2',scores,reasons,fitBasis,feedbackExampleId:fitBasis==='user_feedback'?feedbackExampleId:null,
+   interestExampleId:fitBasis==='declared_interest'?interestExampleId:null,
+   weakness,total,maximum:15,lane,passed:lane!=='rejected',evaluatedAt:new Date().toISOString()};
+}
+function normalizedInput(args={}, options={}){
  const url=canonicalUrl(args.url),title=trim(args.title,200),description=trim(args.description,1600),reason=trim(args.reason,1000);
  if(!url)throw Error('Valid source HTTPS URL required');
  if(title.length<5||description.length<15||reason.length<8)throw Error('Specific title, summary and recommendation reason required');
@@ -76,12 +117,13 @@ function normalizedInput(args={}){
  const rawPublished=trim(args.publishedAt,40),publishedAt=validDate(rawPublished);
  if(rawPublished&&!publishedAt)throw Error('publishedAt must be a real, nonfuture ISO date (or omitted)');
  const storyKey=normalizeStoryKey(args.storyKey)||normalizeStoryKey(title);
+ const selfEvaluation=validateSelfEvaluation(args.selfEvaluation,Boolean(options.internalLegacySeed));
  return {
   url,canonicalUrl:url,title,description,reason,
   type,videoId,category:trim(args.category||'カルチャー',70),creator:trim(args.creator,140),
   tags:unique(args.tags),thumbnail:safeUrl(args.thumbnail),
   sourceUrl:safeUrl(args.sourceUrl)||url,checkedAt:trim(args.checkedAt,40),
-  publishedAt,storyKey,uncertainty:trim(args.uncertainty,600)
+  publishedAt,storyKey,uncertainty:trim(args.uncertainty,600),selfEvaluation
  };
 }
 function sameContent(a,b){
@@ -106,6 +148,14 @@ async function list(args={}){
  items.sort((a,b)=>Date.parse(b.publishedAt||b.createdAt||0)-Date.parse(a.publishedAt||a.createdAt||0));
  return {items,count:items.length,sourceOfTruth:COLLECTION,sortBy:'publishedAt',maxLimit:500};
 }
+async function rejected(args={}){
+ const limit=Math.max(1,Math.min(40,Number(args.limit)||20));
+ const snap=await db().collection(REJECTIONS).orderBy('updatedAt','desc').limit(limit).get();
+ const items=snap.docs.map(doc=>({
+  id:doc.id,...doc.data(),updatedAt:iso(doc.data().updatedAt)
+ }));
+ return {items,count:items.length};
+}
 async function get(args={}){
  const id=trim(args.id,100);
  if(!/^cur-[a-f0-9]{30}$/.test(id))throw Error('Invalid content id');
@@ -123,9 +173,30 @@ async function batchAdd(args={}){
  const results=[];
  for(const raw of input){
   try{
-   const item=normalizedInput(raw);
+   const item=normalizedInput(raw,{internalLegacySeed:args.internalLegacySeed===true});
    const dup=seen.find(old=>sameContent(old,item));
    if(dup){results.push({outcome:'already_exists',id:dup.id,storyKey:item.storyKey});continue;}
+   if(item.selfEvaluation?.fitBasis==='declared_interest'){
+    const hobby=await db().collection('hobbies').doc(item.selfEvaluation.interestExampleId).get();
+    if(!hobby.exists||!trim(hobby.data().content))throw Error('Declared interest must exist in user hobby collection');
+   }
+   if(item.selfEvaluation?.fitBasis==='user_feedback'){
+    const proof=await db().collection(COLLECTION).doc(item.selfEvaluation.feedbackExampleId).get();
+    if(!proof.exists||!['saved','loved'].includes(proof.data().feedback))
+     throw Error('Taste-fit >=4 requires an existing saved/loved user feedback record, not an AI-generated example');
+   }
+   if(item.selfEvaluation&&!item.selfEvaluation.passed){
+    // Keep a compact rejected-candidate memory without putting weak items in the feed.
+    const rejectionId='rejected-'+hash(item.canonicalUrl);
+    await db().collection(REJECTIONS).doc(rejectionId).set({
+      id:rejectionId,url:item.url,title:item.title,storyKey:item.storyKey,
+      selfEvaluation:item.selfEvaluation,reason:item.reason,
+      updatedAt:FieldValue.serverTimestamp()
+    });
+    results.push({outcome:'rejected_score',id:rejectionId,storyKey:item.storyKey,score:item.selfEvaluation.total,
+      minimum:item.selfEvaluation.minimum});
+    continue;
+   }
    const id='cur-'+hash(item.canonicalUrl),ref=db().collection(COLLECTION).doc(id);
    const keyRef=db().collection(TOPICS).doc('story-'+hash(item.storyKey));
    let outcome='created',existingId=null;
@@ -144,12 +215,14 @@ async function batchAdd(args={}){
  }
  return {results,createdCount:results.filter(r=>r.outcome==='created').length,
   duplicateCount:results.filter(r=>r.outcome==='already_exists').length,
-  failedCount:results.filter(r=>r.outcome==='failed').length};
+  failedCount:results.filter(r=>r.outcome==='failed').length,
+  rejectedCount:results.filter(r=>r.outcome==='rejected_score').length};
 }
 async function add(args={}){
  const result=await batchAdd({items:[args]});
  const first=result.results[0];
  if(first.outcome==='failed')throw Error(first.error);
+ if(first.outcome==='rejected_score')return {outcome:'rejected_score',rejectionId:first.id,score:first.score,minimum:first.minimum};
  return {outcome:first.outcome,content:await get({id:first.id})};
 }
 // Seed a real recent issue without overwriting the older evergreen picks.
@@ -160,7 +233,7 @@ async function seedOnce(){
  const marker=db().collection(SEEDS).doc('edition-20261017');
  const snap=await marker.get();
  if(snap.exists){seeded=true;return;}
- const outcome=await batchAdd({items:SEED});
+ const outcome=await batchAdd({items:SEED,internalLegacySeed:true});
  if(outcome.failedCount)throw Error('Starter edition incomplete: '+outcome.failedCount+' records failed');
  await marker.set({createdCount:outcome.createdCount,duplicateCount:outcome.duplicateCount,
   seedVersion:'2026-10-17',createdAt:FieldValue.serverTimestamp()});
@@ -181,4 +254,4 @@ async function feedback(args={}){
  });
  return get({id});
 }
-module.exports={COLLECTION,list,get,add,batchAdd,feedback,safeUrl,youtubeId,canonicalUrl,normalizeStoryKey,normalizeTitle,sameContent};
+module.exports={COLLECTION,REJECTIONS,SCORE_AXES,SCORE_THRESHOLD,list,rejected,get,add,batchAdd,feedback,validateSelfEvaluation,safeUrl,youtubeId,canonicalUrl,normalizeStoryKey,normalizeTitle,sameContent};
