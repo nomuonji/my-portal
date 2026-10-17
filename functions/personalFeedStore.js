@@ -81,7 +81,7 @@ function validateSelfEvaluation(value,allowLegacy=false){
  if(!value||typeof value!=='object')throw Error('selfEvaluation is required on every new Discover item');
  const scores={},reasons={};
  const fitBasis=trim(value.fitBasis,30);
- if(!['user_feedback','hypothesis','unknown'].includes(fitBasis))throw Error('fitBasis must be user_feedback, hypothesis, or unknown');
+ if(!['user_feedback','declared_interest','hypothesis','unknown'].includes(fitBasis))throw Error('fitBasis must be user_feedback, declared_interest, hypothesis, or unknown');
  for(const axis of SCORE_AXES){
   const score=value.scores?.[axis];
   if(axis==='tasteFit'&&fitBasis==='unknown'&&score===null){scores[axis]=null;}
@@ -92,8 +92,11 @@ function validateSelfEvaluation(value,allowLegacy=false){
   reasons[axis]=reason;
  }
  const feedbackExampleId=trim(value.feedbackExampleId,100);
+ const interestExampleId=trim(value.interestExampleId,100);
  if(fitBasis==='user_feedback'&&(!/^cur-[a-f0-9]{30}$/.test(feedbackExampleId)||scores.tasteFit===null))
    throw Error('Direct user preference fit requires a real liked/saved Discover feedbackExampleId');
+ if(fitBasis==='declared_interest'&&(!/^[A-Za-z0-9]{20}$/.test(interestExampleId)||scores.tasteFit===null||scores.tasteFit>4))
+   throw Error('Saved hobby taste fit requires a valid exact My Portal hobbies ID and score <=4');
  if(fitBasis==='unknown'&&scores.tasteFit!==null)throw Error('Unknown taste must use tasteFit=null');
  if(fitBasis==='hypothesis'&&scores.tasteFit>3)throw Error('A taste hypothesis cannot be scored above 3 without verified user feedback');
  const weakness=trim(value.weakness,800);
@@ -102,6 +105,7 @@ function validateSelfEvaluation(value,allowLegacy=false){
    (scores.discovery>=4&&scores.payoff>=4&&(scores.tasteFit===null||scores.tasteFit>=3))?'explore':'rejected';
  const total=(scores.tasteFit||0)+scores.discovery+scores.payoff;
  return {version:'discover-taste-v2',scores,reasons,fitBasis,feedbackExampleId:fitBasis==='user_feedback'?feedbackExampleId:null,
+   interestExampleId:fitBasis==='declared_interest'?interestExampleId:null,
    weakness,total,maximum:15,lane,passed:lane!=='rejected',evaluatedAt:new Date().toISOString()};
 }
 function normalizedInput(args={}, options={}){
@@ -172,6 +176,10 @@ async function batchAdd(args={}){
    const item=normalizedInput(raw,{internalLegacySeed:args.internalLegacySeed===true});
    const dup=seen.find(old=>sameContent(old,item));
    if(dup){results.push({outcome:'already_exists',id:dup.id,storyKey:item.storyKey});continue;}
+   if(item.selfEvaluation?.fitBasis==='declared_interest'){
+    const hobby=await db().collection('hobbies').doc(item.selfEvaluation.interestExampleId).get();
+    if(!hobby.exists||!trim(hobby.data().content))throw Error('Declared interest must exist in user hobby collection');
+   }
    if(item.selfEvaluation?.fitBasis==='user_feedback'){
     const proof=await db().collection(COLLECTION).doc(item.selfEvaluation.feedbackExampleId).get();
     if(!proof.exists||!['saved','loved'].includes(proof.data().feedback))
