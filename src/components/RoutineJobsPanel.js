@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
-  Divider, FormControlLabel, IconButton, Paper, Stack, Switch, TextField, Typography,
+  Divider, FormControlLabel, IconButton, MenuItem, Paper, Stack, Switch, TextField, Typography,
 } from '@mui/material';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
@@ -11,7 +11,7 @@ import { auth } from '../firebase';
 
 const blank = {
   id: '', title: '', description: '', instructions: '', targetSystem: '',
-  status: 'paused', slots: ['04:30', '10:30', '16:30'], maxAccountsPerRun: 10,
+  status: 'paused', priority: 'normal', slots: ['10:30'], maxAccountsPerRun: 10,
 };
 
 async function request(path, body) {
@@ -31,13 +31,16 @@ async function request(path, body) {
 export default function RoutineJobsPanel() {
   const [jobs, setJobs] = useState([]);
   const [runs, setRuns] = useState([]);
+  const [capacity, setCapacity] = useState({});
+  const [runnerSlots, setRunnerSlots] = useState(['04:30','10:30','16:30']);
+  const [maxJobs, setMaxJobs] = useState(3);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(blank);
-  const [slotsText, setSlotsText] = useState('04:30, 10:30, 16:30');
+  const [slotsText, setSlotsText] = useState('10:30');
 
   const load = useCallback(async () => {
     try {
@@ -48,6 +51,9 @@ export default function RoutineJobsPanel() {
       ]);
       setJobs(registry.items || []);
       setRuns(history.items || []);
+      setRunnerSlots(registry.runnerSlots || ['04:30','10:30','16:30']);
+      setMaxJobs(registry.maxJobsPerTick || 3);
+      setCapacity(registry.slotLoads || {});
       setError('');
     } catch (err) {
       setError(err.message);
@@ -119,6 +125,29 @@ export default function RoutineJobsPanel() {
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.4 }}>
         起動枠: 毎日 04:30 / 10:30 / 16:30（日本時間）。表示時刻はジョブの実行対象枠であり、実行基盤の起動予定自体は別途設定されます。
       </Typography>
+      <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'repeat(3,minmax(0,1fr))'},gap:1,mb:2}}>
+        {runnerSlots.map(slot=>{
+          const load=capacity[slot]?.active ?? jobs.filter(job=>job.status==='active' && job.slots?.includes(slot)).length;
+          const full=load>=maxJobs;
+          const slotRuns=runs.filter(run=>run.slotKey?.endsWith('@'+slot));
+          const last=slotRuns[0];
+          return <Box key={slot} sx={{p:1.35,border:'1px solid',borderColor:full?'warning.main':'divider',borderRadius:2}}>
+            <Stack direction="row" alignItems="center" justifyContent="space-between">
+              <Typography fontWeight={900} sx={{fontVariantNumeric:'tabular-nums'}}>{slot} JST</Typography>
+              <Chip size="small" color={full?'warning':'success'} label={load+' / '+maxJobs+' 枠'}/>
+            </Stack>
+            <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:.5}}>
+              {full?'満枠 — 新しいジョブを追加できません':'空き '+(maxJobs-load)+' ジョブ'}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:.4}}>
+              直近: {last?(last.status==='completed'?'成功':last.status==='failed'?'失敗':last.stalled?'停滞中':'実行中'):'履歴なし'}
+            </Typography>
+          </Box>;
+        })}
+      </Box>
+      {runs.some(run=>run.stalled)&&<Alert severity="warning" sx={{mb:1.5}}>
+        実行中のまま3時間以上経過したジョブがあります。重複実行を防ぐため自動再実行せず、結果の確認が必要です。
+      </Alert>}
       {error && <Alert severity="error" sx={{ mb: 1.5 }}>{error}</Alert>}
       {notice && <Alert severity="success" sx={{ mb: 1.5 }}>{notice}</Alert>}
       {loading && <Typography color="text.secondary" variant="body2">定期ジョブを取得中…</Typography>}
@@ -126,6 +155,10 @@ export default function RoutineJobsPanel() {
       <Stack spacing={1}>
         {jobs.map((job) => {
           const history = runs.find((run) => run.jobId === job.id);
+          const recent = runs.filter(run=>run.jobId===job.id);
+          const completed = recent.filter(run=>run.status==='completed').length;
+          const failed = recent.filter(run=>run.status==='failed').length;
+          const stalled = recent.filter(run=>run.stalled).length;
           return (
             <Box key={job.id} sx={{ p: 1.5, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
               <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ md: 'center' }}>
@@ -133,13 +166,17 @@ export default function RoutineJobsPanel() {
                   <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
                     <Typography fontWeight={800}>{job.title}</Typography>
                     <Chip size="small" color={job.status === 'active' ? 'success' : 'default'} label={job.status === 'active' ? '有効' : '停止中'} />
+                    <Chip size="small" variant="outlined" label={job.priority==='critical'?'優先':job.priority==='background'?'低優先':'標準'} />
                   </Stack>
                   <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{job.description}</Typography>
                   <Stack direction="row" spacing={0.7} flexWrap="wrap" useFlexGap mt={1}>
                     <Chip size="small" variant="outlined" label={job.targetSystem || 'Operator未指定'} />
                     {(job.slots || []).map((slot) => <Chip size="small" variant="outlined" key={slot} label={slot} />)}
                   </Stack>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.9 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:1}}>
+                    直近{recent.length}実行: 成功 {completed} / 失敗 {failed} / 停滞 {stalled}（未実行を成功として数えません）
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.35 }}>
                     {history ? ('直近: ' + history.status + ' / ' + (history.finishedAt || history.startedAt || '').replace('T', ' ').slice(0, 16)) : '実行履歴なし — まだHQ経由実行を確認していません'}
                   </Typography>
                   {history?.resultSummary && <Typography variant="caption" sx={{ display: 'block', mt: 0.3 }}>{history.resultSummary}</Typography>}
@@ -155,7 +192,7 @@ export default function RoutineJobsPanel() {
       </Stack>
       <Divider sx={{ my: 1.5 }} />
       <Typography variant="caption" color="text.secondary">
-        ジョブの保存とスケジュールの実行は別です。実行後のTweets Operator在庫確認をもって成功判定します。
+        ジョブの登録だけでは実行されません。各Operatorの保存・読み戻しが成功条件です。各枠の上限は3ジョブで、停止や失敗は成功に含めません。
       </Typography>
       <Dialog open={Boolean(editing)} onClose={() => !saving && setEditing(null)} fullWidth maxWidth="sm">
         <DialogTitle>{editing?.id ? '定期ジョブを編集' : '定期ジョブを追加'}</DialogTitle>
@@ -164,8 +201,14 @@ export default function RoutineJobsPanel() {
             <TextField label="ジョブID" value={form.id} onChange={(e) => setForm({ ...form, id: e.target.value })} disabled={Boolean(editing?.id)} helperText="英小文字・数字・ハイフン。後から変更できません。" fullWidth />
             <TextField label="表示名" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} fullWidth />
             <TextField label="担当Operator" value={form.targetSystem} onChange={(e) => setForm({ ...form, targetSystem: e.target.value })} fullWidth />
+            <TextField select label="実行優先度（同じ枠内の処理順序）" value={form.priority || 'normal'}
+              onChange={e=>setForm({...form,priority:e.target.value})} fullWidth>
+              <MenuItem value="critical">優先 — 在庫補充など継続に必要なもの</MenuItem>
+              <MenuItem value="normal">標準 — 通常ジョブ</MenuItem>
+              <MenuItem value="background">低優先 — 後回しにできるもの</MenuItem>
+            </TextField>
             <TextField label="目的・概要" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} multiline minRows={2} fullWidth />
-            <TextField label="実行枠（JST、カンマ区切り）" value={slotsText} onChange={(e) => setSlotsText(e.target.value)} helperText="共有スケジュールで起動する時刻から指定してください。" fullWidth />
+            <TextField label="実行枠（JST、カンマ区切り）" value={slotsText} onChange={(e) => setSlotsText(e.target.value)} helperText={'選択可能: '+runnerSlots.join(' / ')+'。有効ジョブは1枠最大'+maxJobs+'件です。'} fullWidth />
             <TextField label="実行指示（正本）" value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} multiline minRows={7} fullWidth />
             <FormControlLabel control={<Switch checked={form.status === 'active'} onChange={(e) => setForm({ ...form, status: e.target.checked ? 'active' : 'paused' })} />} label="有効にする" />
           </Stack>
