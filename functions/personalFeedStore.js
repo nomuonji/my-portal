@@ -144,6 +144,14 @@ async function list(args={}){
  items.sort((a,b)=>Date.parse(b.publishedAt||b.createdAt||0)-Date.parse(a.publishedAt||a.createdAt||0));
  return {items,count:items.length,sourceOfTruth:COLLECTION,sortBy:'publishedAt',maxLimit:500};
 }
+async function rejected(args={}){
+ const limit=Math.max(1,Math.min(40,Number(args.limit)||20));
+ const snap=await db().collection(REJECTIONS).orderBy('updatedAt','desc').limit(limit).get();
+ const items=snap.docs.map(doc=>({
+  id:doc.id,...doc.data(),updatedAt:iso(doc.data().updatedAt)
+ }));
+ return {items,count:items.length};
+}
 async function get(args={}){
  const id=trim(args.id,100);
  if(!/^cur-[a-f0-9]{30}$/.test(id))throw Error('Invalid content id');
@@ -238,4 +246,4 @@ async function feedback(args={}){
  });
  return get({id});
 }
-module.exports={COLLECTION,REJECTIONS,SCORE_AXES,SCORE_THRESHOLD,list,get,add,batchAdd,feedback,validateSelfEvaluation,safeUrl,youtubeId,canonicalUrl,normalizeStoryKey,normalizeTitle,sameContent};
+module.exports={COLLECTION,REJECTIONS,SCORE_AXES,SCORE_THRESHOLD,list,rejected,get,add,batchAdd,feedback,validateSelfEvaluation,safeUrl,youtubeId,canonicalUrl,normalizeStoryKey,normalizeTitle,sameContent};
