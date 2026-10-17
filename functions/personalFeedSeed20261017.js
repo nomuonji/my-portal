@@ -15,16 +15,16 @@ module.exports = [
     category:'ゲーム',type:'article',publishedAt:'2026-10-17',checkedAt:'2026-10-17',storyKey:'50years-rebirth-sengoku-release-20261016',tags:['歴史','ゲーム','シミュレーション']
   },
   {
-    url:'https://automaton-media.com/articles/newsjp/20261017-474053/',
-    title:'暴れるホースを制御する消防士ゲーム「Flame and Blame」発表',description:'最大4人でヘタクソな消火活動に挑む物理演算コメディ。最終手段はダムの決壊。',
-    reason:'協力ゲームなのに計画どおりに進まない、手段が極端な設定が面白い。',creator:'AUTOMATON',
-    category:'ゲーム',type:'article',publishedAt:'2026-10-17',checkedAt:'2026-10-17',storyKey:'flame-and-blame-announcement-20261016',tags:['ゲーム','コメディ']
+    url:'https://www.youtube.com/watch?v=e47Pj-1HhJI',
+    title:'Flame and Blame ― 公式予告編：へっぽこ消防士の消火活動',description:'物理演算で暴れるホースや無茶な消火活動が見られる、最大4人協力の消防士ゲーム公式トレーラー。',
+    reason:'協力ゲームなのに計画どおりに進まない、手段が極端な設定が面白い。',creator:'Flame and Blame / 開発チーム',
+    category:'ゲーム',type:'video',publishedAt:'2026-10-16',checkedAt:'2026-10-17',storyKey:'flame-and-blame-announcement-20261016',tags:['ゲーム','コメディ'],sourceUrl:'https://automaton-media.com/articles/newsjp/20261017-474053/'
   },
   {
-    url:'https://automaton-media.com/articles/newsjp/20261016-473760/',
-    title:'報連相だけが命綱の2人協力ホラー、10月22日発売へ',description:'一人が閉じ込められ、もう一人が監視画面を見て助ける。異なる情報を持つ二人が連携するホラー。',
-    reason:'同じ画面を見せないゲームで会話そのものが難しくなるのが気になる。',creator:'AUTOMATON',
-    category:'ゲーム',type:'article',publishedAt:'2026-10-16',checkedAt:'2026-10-17',storyKey:'beyond-the-dark-nightwatch-oct22-release',tags:['ゲーム','ホラー']
+    url:'https://www.youtube.com/watch?v=S7UAVm2GHkc',
+    title:'Beyond the Dark: ナイトウォッチ｜日本語公式トレーラー',description:'閉じ込められた探索役と監視画面から指示する役。異なる視点で協力するホラーゲームの日本語公式予告編。',
+    reason:'同じ画面を見せないゲームで会話そのものが難しくなるのが気になる。',creator:'Q-Games / Atlantis Studio',
+    category:'ゲーム',type:'video',publishedAt:'2026-10-16',checkedAt:'2026-10-17',storyKey:'beyond-the-dark-nightwatch-oct22-release',tags:['ゲーム','ホラー'],sourceUrl:'https://automaton-media.com/articles/newsjp/20261016-473760/'
   },
   {
     url:'https://automaton-media.com/articles/newsjp/steam-20261016-473831/',
@@ -39,10 +39,10 @@ module.exports = [
     category:'映画',type:'article',publishedAt:'2026-10-17',checkedAt:'2026-10-17',storyKey:'kill-bill-the-whole-bloody-affair-japan-202701',tags:['映画','タランティーノ']
   },
   {
-    url:'https://www.cinematoday.jp/news/N0157467',
-    title:'新作「ゴジラ-0.0」に向け、前作2分40秒の予習映像を公開',description:'11月3日の新作公開に先駆け、前作「ゴジラ-1.0」を短いダイジェスト映像で振り返る。',
-    reason:'映画の復習をわざわざ公式が超短編で作る、という見せ方も面白い。',creator:'シネマトゥデイ',
-    category:'映画',type:'article',publishedAt:'2026-10-17',checkedAt:'2026-10-17',storyKey:'godzilla-minus-zero-recap-video-20261016',tags:['映画','ゴジラ','動画']
+    url:'https://www.youtube.com/watch?v=-NKV2UUf5B8',
+    title:'ゴジラ-0.0｜前作の2分40秒公式予習映像',description:'11月3日公開の新作に向け、前作「ゴジラ-1.0」の見どころを約2分40秒に凝縮した東宝の公式動画。',
+    reason:'映画の復習をわざわざ公式が超短編で作る、という見せ方も面白い。',creator:'東宝MOVIEチャンネル',
+    category:'映画',type:'video',publishedAt:'2026-10-16',checkedAt:'2026-10-17',storyKey:'godzilla-minus-zero-recap-video-20261016',tags:['映画','ゴジラ','動画'],sourceUrl:'https://www.cinematoday.jp/news/N0157467'
   },
   {
     url:'https://www.cinematoday.jp/news/N0157444',
