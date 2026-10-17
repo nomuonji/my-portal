@@ -150,6 +150,7 @@ function Empty({label}){
 }
 export default function PersonalFeed(){
  const [items,setItems]=useState([]);
+ const [rejected,setRejected]=useState([]);
  const [loading,setLoading]=useState(true);
  const [error,setError]=useState('');
  const [range,setRange]=useState('7d');
@@ -164,8 +165,12 @@ export default function PersonalFeed(){
  const load=useCallback(async()=>{
   setLoading(true);setError('');
   try{
-   const data=await request('?resource=personal_feed&limit=500'+(showSkipped?'&includeSkipped=true':''));
+   const [data,audit]=await Promise.all([
+    request('?resource=personal_feed&limit=500'+(showSkipped?'&includeSkipped=true':'')),
+    request('?resource=personal_feed_rejected&limit=20').catch(()=>({items:[]}))
+   ]);
    setItems(data.items||[]);
+   setRejected(audit.items||[]);
   }catch(e){setError(e.message);}finally{setLoading(false);}
  },[showSkipped]);
  useEffect(()=>{load();},[load]);
@@ -274,6 +279,18 @@ export default function PersonalFeed(){
       {articles.length>expanded.article&&<Button fullWidth onClick={()=>setExpanded(x=>({...x,article:x.article+40}))}
        sx={{mt:2,color:colors.accent,border:'1px solid '+colors.border,textTransform:'none'}}>記事をさらに40件表示 ({articles.length-expanded.article}件残り)</Button>}
      </Box>}
+    </Box>}
+   {rejected.length>0&&<Box component="details" sx={{mt:3,border:'1px solid '+colors.border,borderRadius:2,p:1.8,
+      '& summary':{color:colors.muted,fontSize:12,fontWeight:800,cursor:'pointer'}}}>
+      <Box component="summary">AIの選考で落選した候補（最新{rejected.length}件）</Box>
+      <Typography sx={{fontSize:11.5,color:colors.muted,mt:1}}>この候補はメインの推薦に配信していません。AIによる暫定採点と、弱点の記録です。</Typography>
+      {rejected.map(x=><Box key={x.id} sx={{mt:1.2,pt:1.2,borderTop:'1px solid '+colors.border}}>
+        <Typography sx={{fontSize:12,fontWeight:850}}>{x.title}</Typography>
+        <Typography sx={{fontSize:11.5,color:colors.muted}}>
+          好み {x.selfEvaluation?.scores?.tasteFit??'未確定'} · 発見 {x.selfEvaluation?.scores?.discovery??'-'}/5 · 体験 {x.selfEvaluation?.scores?.payoff??'-'}/5
+        </Typography>
+        <Typography sx={{fontSize:11.5,color:'#c8b6b4'}}>採用しなかった理由: {x.selfEvaluation?.weakness||'未記録'}</Typography>
+      </Box>)}
     </Box>}
    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{mt:5,pt:2,borderTop:'1px solid '+colors.border}} gap={2}>
     <Typography sx={{fontSize:11.5,color:'#778392',lineHeight:1.7}}>
