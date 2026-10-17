@@ -91,3 +91,24 @@ test('Two authored raw tweets can support 4-point expression inference but not 5
  assert.throws(()=>validateSelfEvaluation({...raw,evidencePostIds:[raw.evidencePostIds[0]]}),/at least 2/);
  assert.throws(()=>validateSelfEvaluation({...raw,rawReferences:[{dataset:'hobbies',id:'foo',mechanism:'I like it'}]}),/rawReferences/);
 });
+
+const curated=require('../functions/personalFeedEdition20261017Taste');
+test('Taste-recalibrated issue contains 6 distinct verified original sources, no artificial comedy stunts',()=>{
+ assert.equal(curated.length,6);
+ assert.equal(curated.filter(x=>x.type==='video').length,1);
+ assert.equal(new Set(curated.map(x=>canonicalUrl(x.url))).size,curated.length);
+ assert.equal(new Set(curated.map(x=>normalizeStoryKey(x.storyKey))).size,curated.length);
+ assert.equal(new Set(curated.map(x=>x.creator)).size,curated.length);
+ for(const item of curated){
+  assert.ok(item.url.startsWith('https://'),item.url);
+  assert.ok(/2026-10-(?:0[9]|1[0-7])/.test(item.publishedAt),item.title);
+  assert.equal(item.checkedAt,'2026-10-17');
+  const score=validateSelfEvaluation(item.selfEvaluation);
+  assert.equal(score.version,'discover-taste-v3');
+  assert.equal(score.fitBasis,'unknown');
+  assert.equal(score.scores.tasteFit,null);
+  assert.equal(score.lane,'explore');
+  assert.ok(score.passed,item.title);
+ }
+ assert.ok(curated.every(x=>!seeded.some(y=>sameContent(x,y))));
+});
