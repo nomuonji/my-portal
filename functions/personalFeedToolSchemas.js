@@ -25,7 +25,7 @@ const add={
         payoff:{type:'integer',minimum:1,maximum:5,description:'Specific enjoyable content/experience from opening the original item, not just the title.'},
       },required:['tasteFit','discovery','payoff']},
       reasons:{type:'object',additionalProperties:false,properties:{
-        tasteFit:str('Reference to real liked/saved item, or explicitly state that fit is a guess or unknown',500),
+        tasteFit:str('Explain connection to 2+ verifiable authored tweets or a user-loved Discover item; saved and watch-later are not positive taste evidence; otherwise state uncertainty',500),
         discovery:str('Specific novel discovery that the original work offers',500),
         payoff:str('Specific reward/experience in the original work; acknowledge if full video not inspected',500),
       },required:['tasteFit','discovery','payoff']},
