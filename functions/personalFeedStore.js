@@ -34,7 +34,24 @@ const iso = v => v?.toDate?.()?.toISOString?.() || (typeof v==='string' ? v : nu
 function view(doc){
   const d=doc.data(); return {...d,id:doc.id,createdAt:iso(d.createdAt),updatedAt:iso(d.updatedAt)};
 }
+// Initial verified selection; later additions are sourced by the curation job.
+const STARTERS=[
+ {url:'https://www.youtube.com/watch?v=3FOzD4Sfgag',title:'Edgar Wright — How to Do Visual Comedy',description:'映画の中の笑いをセリフではなくカメラワーク、編集、音や人物の出入りから解きほぐす8分の映像エッセイ。',reason:'ユーモアが言葉だけでなく画面の運動から生まれるところを楽しめる一本。',type:'video',category:'映画',creator:'Every Frame a Painting',tags:['映画','動画','ユーモア'],checkedAt:'2026-10-17'},
+ {url:'https://www.youtube.com/watch?v=U_o8gerare0',title:'The Computer Chronicles — The Internet (1993)',description:'1993年のテレビ番組が紹介する当時のインターネット。今の常識がまだ当たり前ではなかった頃の温度感を味わえる。',reason:'昔のネットが未来だった時代を、当時の人々の目で見る映像タイムカプセル。',type:'video',category:'ネット文化',creator:'The Computer Chronicles',tags:['ネット文化','歴史','動画'],checkedAt:'2026-10-17'},
+ {url:'https://pudding.cool/2020/12/judge-my-spotify/',title:'How Bad Is Your Streaming Music?',description:'Spotify／Apple Musicの音楽の趣味に、上から目線なAI風ボットが口を出すThe Puddingのインタラクティブ作品。',reason:'好みを勝手に審査してくる悪趣味なコンテンツ。ネットならではの体験。',type:'website',category:'音楽',creator:'The Pudding',tags:['音楽','ネット文化','Web体験'],checkedAt:'2026-10-17',uncertainty:'体験時にSpotifyまたはApple Musicのアカウント連携が必要。'},
+ {url:'https://neal.fun/infinite-craft/',title:'Infinite Craft — 何でも組み合わせる無限ゲーム',description:'水・火・風・土の4つから始め、単語を組み合わせて奇妙な新しいものを発見していくブラウザゲーム。',reason:'目的を決めずに変な発見を量産できる。数分遊ぶだけでも妙な組み合わせが出る。',type:'game',category:'ゲーム',creator:'Neal Agarwal',tags:['ゲーム','ネット文化','遊び'],checkedAt:'2026-10-17'}
+];
+let seeded=false;
+async function seedIfEmpty(){
+ if(seeded)return;
+ const snap=await db().collection(COLLECTION).limit(1).get();
+ if(!snap.empty){seeded=true;return;}
+ for(const starter of STARTERS) await add(starter);
+ seeded=true;
+}
+
 async function list(args={}){
+  await seedIfEmpty();
   const limit=Math.min(200,Math.max(1,Number(args.limit)||100));
   const snap=await db().collection(COLLECTION).orderBy('createdAt','desc').limit(limit).get();
   let items=snap.docs.map(view);
