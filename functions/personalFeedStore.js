@@ -116,8 +116,9 @@ async function get(args={}){
 async function batchAdd(args={}){
  const input=Array.isArray(args.items)?args.items:[];
  if(!input.length||input.length>35)throw Error('Supply 1 to 35 curated items');
- // Scan once per batch; all candidates share an in-memory dedupe view.
- const existingSnap=await db().collection(COLLECTION).orderBy('createdAt','desc').limit(500).get();
+ // Only scan recent unindexed legacy records; newer items have a global atomic storyKey index.
+ // Scanning 500 existing records for every incremental update is unnecessary Firestore cost.
+ const existingSnap=await db().collection(COLLECTION).orderBy('createdAt','desc').limit(100).get();
  const seen=existingSnap.docs.map(view);
  const results=[];
  for(const raw of input){
