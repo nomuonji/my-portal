@@ -46,6 +46,18 @@ function seedDraftJob() {
     maxAccountsPerRun: 20, priority: 'critical', revision: 1,
   };
 }
+function validateCapacity(next, jobs) {
+  if (next.status !== 'active') return;
+  const unsupported=next.slots.filter(slot=>!RUNNER_SLOTS.includes(slot));
+  if(unsupported.length) throw new Error('No ChatGPT runner is configured for '+unsupported.join(', ')+'; allowed: '+RUNNER_SLOTS.join(', '));
+  for (const slot of next.slots) {
+    const competing=jobs.filter(job=>job.id!==next.id && job.status==='active' && job.slots?.includes(slot));
+    if(competing.length>=MAX_JOBS_PER_TICK) throw new Error(slot+' is full ('+MAX_JOBS_PER_TICK+'/'+MAX_JOBS_PER_TICK+'); pause or reschedule another job before enabling this slot');
+  }
+}
+function slotLoadsFor(jobs){
+  return Object.fromEntries(RUNNER_SLOTS.map(slot=>[slot, {active:jobs.filter(job=>job.status==='active' && job.slots?.includes(slot)).length,capacity:MAX_JOBS_PER_TICK}]));
+}
 async function ensureSeed() {
   const database = db();
   const ref = database.collection(JOBS).doc('tweets-draft-replenishment');
@@ -60,7 +72,7 @@ async function list(input = {}) {
   await ensureSeed();
   const result = await db().collection(JOBS).limit(100).get();
   const items = result.docs.map((snap) => ({ id: snap.id, ...snap.data() })).sort((a, b) => a.id.localeCompare(b.id));
-  const slotLoads = Object.fromEntries(RUNNER_SLOTS.map(slot => [slot, {active:items.filter(j=>j.status==='active' && j.slots?.includes(slot)).length,capacity:MAX_JOBS_PER_TICK}]));
+  const slotLoads = slotLoadsFor(items);
   return { items, slotLoads, runnerSlots:RUNNER_SLOTS, maxJobsPerTick:MAX_JOBS_PER_TICK, timeZone: 'Asia/Tokyo', windowMinutes: MAX_WINDOW_MINUTES };
 }
 async function upsert(input = {}) {
@@ -82,13 +94,8 @@ async function upsert(input = {}) {
     const priority = text(input.priority ?? previous?.priority ?? (id==='tweets-draft-replenishment'?'critical':'normal'), 20);
     if (!(priority in PRIORITIES)) throw new Error('Invalid priority; choose critical, normal, or background');
     if (status==='active') {
-      const unsupported = slots.filter(slot=>!RUNNER_SLOTS.includes(slot));
-      if (unsupported.length) throw new Error('No ChatGPT runner is configured for '+unsupported.join(', ')+'; allowed: '+RUNNER_SLOTS.join(', '));
       const scheduleSnap = await tx.get(database.collection(JOBS).limit(100));
-      for (const slot of slots) {
-        const competing=scheduleSnap.docs.filter(d=>d.id!==id && d.data().status==='active' && d.data().slots?.includes(slot));
-        if (competing.length>=MAX_JOBS_PER_TICK) throw new Error(slot+' is full ('+MAX_JOBS_PER_TICK+'/'+MAX_JOBS_PER_TICK+'); pause or reschedule another job before enabling this slot');
-      }
+      validateCapacity({id,status,slots},scheduleSnap.docs.map(doc=>({id:doc.id,...doc.data()})));
     }
     const next = {
       id, title, description: text(input.description ?? previous?.description, 1000),
@@ -179,4 +186,4 @@ async function runs(input = {}) {
     .map(run=>({...run,stalled:run.status==='running' && Date.now()-Date.parse(run.startedAt)>3*60*60*1000}));
   return { items, readLimit:scanLimit };
 }
-module.exports = { list, upsert, due, claim, finish, runs, RUNNER_SLOTS, MAX_JOBS_PER_TICK, candidate, validateSlots, jst };
+module.exports = { list, upsert, due, claim, finish, runs, RUNNER_SLOTS, MAX_JOBS_PER_TICK, candidate, validateSlots, validateCapacity, slotLoadsFor, jst };
