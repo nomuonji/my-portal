@@ -20,15 +20,17 @@ Lightweight scheduled jobs share **one ChatGPT Scheduled Task slot**. This modul
 2. For each due job, `routine_job_claim({id,slotKey,agent,runnerId})`. Do **not** mutate the target Operator if `claimed:false`. Claiming is atomic and idempotent by JST date + slot.
 3. Carry out its exact instructions using specialist tools. Keep target data in the target Operator.
 4. Validate results with target-system readback, then call `routine_job_finish({runId,agent,status,resultSummary,validation,result})`. On failure, use status `failed` and retain concrete diagnostics. Never claim success without actual readback.
-5. One job failing must not prevent other due jobs. Do not run more work than the available task runtime permits. No silent mutation of the schedule or unrelated tasks.
+5. `due` returns **priority-ordered** tasks: `critical` first, then `normal`, `background`; within the same priority, a once-per-day job takes precedence over 3x daily tasks to prevent starvation. Limit to 3 jobs per wake-up, process sequentially; if an individual job fails, still attempt other due jobs and finish accurately. No silent mutation of unrelated schedules.
 
 `routine_job_list` and `routine_job_runs` provide the Agent HQ UI and audit surface. `routine_job_upsert` changes job configuration with optimistic revision checks. The dashboard also exposes enabled/paused and editing.
 
 ## Clock semantics and recovery
 
+Only three ChatGPT wake-up slots (`04:30`, `10:30`, `16:30` JST) are supported. An ACTIVE configuration with any other time is rejected rather than silently never running; PAUSED drafts may retain future slots. Each slot has a **3-job hard capacity**: active upserts that would exceed the runner's actual limit are rejected with the saturated time. Changing priority changes ordering, not execution cadence. The dashboard shows occupancy for each slot, last result and stalled runs (>3 hours). No stale run is blindly replayed; investigate before any approved recovery.
+
 Scheduling is currently locked to Asia/Tokyo HH:MM slots, with a 120-minute **start** window to allow normal scheduled runner delay. Missed windows do not backfill automatically, and a claimed slot is not retried with another idempotency key. Pending or failed work remains visible in the run ledger. Explicit recovery policies may be added later after incident evidence; never blindly replay a potentially successful Tweets Operator write.
 
-The shared scheduled clock must include all configured job slots. Editing a job slot to another HH:MM alone does **not** alter ChatGPT's outer schedule.
+The shared scheduled clock must include all configured job slots. `routine_job_runs` without a job filter now reads only as many rows as requested (30 by default), instead of scanning 300. Filtered histories may scan a wider bounded window to locate that job. The personal feed batch importer also relies on its atomic story-key index rather than rescanning 500 historic entries. Editing a job slot to another HH:MM alone does **not** alter ChatGPT's outer schedule.
 
 ## Rollout / cutover checklist
 
