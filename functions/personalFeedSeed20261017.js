@@ -48,7 +48,7 @@ module.exports = [
     url:'https://www.cinematoday.jp/news/N0157444',
     title:'16歳の俳優、釜山映画祭の最優秀俳優賞を受賞',description:'映画「さとこはいつも」の姫野花春が国際映画祭で評価され、関係者のコメントも寄せられた。',
     reason:'ニュースの派手さより、若い俳優と新しい作品を知る入口として気になる。',creator:'シネマトゥデイ',
-    category:'映画',type:'article',publishedAt:'2026-10-16',checkedAt:'2026-10-17',storyKey:'busan-2026-himeno-koharu-best-actor',tags:['映画','映画祭']
+    category:'映画',type:'article',publishedAt:'2026-10-15',checkedAt:'2026-10-17',storyKey:'busan-2026-himeno-koharu-best-actor',tags:['映画','映画祭']
   },
   {
     url:'https://www.cinematoday.jp/news/N0157439',
@@ -66,13 +66,13 @@ module.exports = [
     url:'https://karapaia.com/archives/631036.html',
     title:'土星の衛星エンケラドゥスの氷の粒から、生命探査への新たな手がかり',description:'衛星から噴き出す水滴の凍り方に着目した研究。生命の可能性を探るための化学成分の読み方がテーマ。',
     reason:'宇宙の話なのに、入口が「氷がどう凍るか」という身近な現象であるところが良い。',creator:'カラパイア',
-    category:'科学',type:'article',publishedAt:'2026-10-10',checkedAt:'2026-10-17',storyKey:'enceladus-ice-particles-life-chemistry-oct2026',tags:['科学','宇宙','土星']
+    category:'科学',type:'article',publishedAt:'2026-10-03',checkedAt:'2026-10-17',storyKey:'enceladus-ice-particles-life-chemistry-oct2026',tags:['科学','宇宙','土星']
   },
   {
     url:'https://newsdig.tbs.co.jp/articles/-/2999515',
     title:'ネットで話題の「ドパガキ」、SNS依存と規制議論まで広がる',description:'SNS依存を表すネットスラングがニュースに。専門家による論点や家庭だけで対処する難しさも報じられた。',
     reason:'ネット内部の言葉が一般ニュースへ出ていく瞬間と、その認識のズレが気になる。',creator:'TBS NEWS DIG',
-    category:'ネット文化',type:'article',publishedAt:'2026-10-10',checkedAt:'2026-10-17',storyKey:'dopagaki-sns-dependence-mainstream-202610',tags:['ネット文化','SNS','言葉']
+    category:'ネット文化',type:'article',publishedAt:'2026-10-09',checkedAt:'2026-10-17',storyKey:'dopagaki-sns-dependence-mainstream-202610',tags:['ネット文化','SNS','言葉']
   },
   {
     url:'https://news.denfaminicogamer.jp/kikakuthetower/2609083h',
