@@ -10,7 +10,7 @@ const COLLECTION='personalDiscoveryFeed';
 const TOPICS='personalDiscoveryStoryKeys';
 const SEEDS='personalDiscoverySeedEditions';
 const REJECTIONS='personalDiscoveryRejectedCandidates';
-const SCORE_AXES=Object.freeze(['hook','originality','payoff','tasteFit','evidence']);
+const SCORE_AXES=Object.freeze(['tasteFit','discovery','payoff']);
 const SCORE_THRESHOLD=4;
 const TYPES=new Set(['video','article','website','music','art','game','other']);
 const STATES=new Set(['new','saved','loved','skipped','seen']);
@@ -70,23 +70,39 @@ function view(doc){
  return {...d,id:doc.id,publishedAt:d.publishedAt||null,storyKey:d.storyKey||null,
   createdAt:iso(d.createdAt),updatedAt:iso(d.updatedAt)};
 }
+/**
+ * Prediction axes, not a generic media-quality grade.
+ * TasteFit without a cited positive user reaction is allowed only at <=3.
+ * Exploration lane prevents cold-start discovery from being blocked by unknown taste.
+ * Source verification, freshness, legality and dedupe are independent hard checks.
+ */
 function validateSelfEvaluation(value,allowLegacy=false){
- if(allowLegacy)return null; // Preserves 2026-10-17 starter items as explicitly unscored.
- if(!value||typeof value!=='object')throw Error('selfEvaluation is mandatory for all new Discover recommendations');
+ if(allowLegacy)return null;
+ if(!value||typeof value!=='object')throw Error('selfEvaluation is required on every new Discover item');
  const scores={},reasons={};
+ const fitBasis=trim(value.fitBasis,30);
+ if(!['user_feedback','hypothesis','unknown'].includes(fitBasis))throw Error('fitBasis must be user_feedback, hypothesis, or unknown');
  for(const axis of SCORE_AXES){
   const score=value.scores?.[axis];
-  if(!Number.isInteger(score)||score<1||score>5)throw Error('selfEvaluation.scores.'+axis+' must be an integer from 1 to 5');
-  const reason=trim(value.reasons?.[axis],450);
-  if(reason.length<12)throw Error('selfEvaluation.reasons.'+axis+' needs concrete, source-backed reasoning (12+ chars)');
-  scores[axis]=score;reasons[axis]=reason;
+  if(axis==='tasteFit'&&fitBasis==='unknown'&&score===null){scores[axis]=null;}
+  else if(!Number.isInteger(score)||score<1||score>5)throw Error('selfEvaluation.scores.'+axis+' must be an integer from 1 to 5 (tasteFit may be null when unknown)');
+  else scores[axis]=score;
+  const reason=trim(value.reasons?.[axis],500);
+  if(reason.length<12)throw Error('selfEvaluation.reasons.'+axis+' needs a specific reference or a stated uncertainty');
+  reasons[axis]=reason;
  }
+ const feedbackExampleId=trim(value.feedbackExampleId,100);
+ if(fitBasis==='user_feedback'&&(!/^cur-[a-f0-9]{30}$/.test(feedbackExampleId)||scores.tasteFit===null))
+   throw Error('Direct user preference fit requires a real liked/saved Discover feedbackExampleId');
+ if(fitBasis==='unknown'&&scores.tasteFit!==null)throw Error('Unknown taste must use tasteFit=null');
+ if(fitBasis==='hypothesis'&&scores.tasteFit>3)throw Error('A taste hypothesis cannot be scored above 3 without verified user feedback');
  const weakness=trim(value.weakness,800);
- if(weakness.length<20)throw Error('selfEvaluation.weakness must describe a real counterargument (20+ chars)');
- const total=SCORE_AXES.reduce((n,axis)=>n+scores[axis],0);
- const passed=SCORE_AXES.every(axis=>scores[axis]>=SCORE_THRESHOLD);
- return {version:'discover-v1',scores,reasons,weakness,total,maximum:25,
-   minimum:Math.min(...Object.values(scores)),passed,evaluatedAt:new Date().toISOString()};
+ if(weakness.length<20)throw Error('selfEvaluation.weakness must state a plausible reason user may dislike this item');
+ const lane=(scores.tasteFit>=4&&scores.payoff>=4)?'familiar':
+   (scores.discovery>=4&&scores.payoff>=4&&(scores.tasteFit===null||scores.tasteFit>=3))?'explore':'rejected';
+ const total=(scores.tasteFit||0)+scores.discovery+scores.payoff;
+ return {version:'discover-taste-v2',scores,reasons,fitBasis,feedbackExampleId:fitBasis==='user_feedback'?feedbackExampleId:null,
+   weakness,total,maximum:15,lane,passed:lane!=='rejected',evaluatedAt:new Date().toISOString()};
 }
 function normalizedInput(args={}, options={}){
  const url=canonicalUrl(args.url),title=trim(args.title,200),description=trim(args.description,1600),reason=trim(args.reason,1000);
@@ -148,6 +164,11 @@ async function batchAdd(args={}){
    const item=normalizedInput(raw,{internalLegacySeed:args.internalLegacySeed===true});
    const dup=seen.find(old=>sameContent(old,item));
    if(dup){results.push({outcome:'already_exists',id:dup.id,storyKey:item.storyKey});continue;}
+   if(item.selfEvaluation?.fitBasis==='user_feedback'){
+    const proof=await db().collection(COLLECTION).doc(item.selfEvaluation.feedbackExampleId).get();
+    if(!proof.exists||!['saved','loved'].includes(proof.data().feedback))
+     throw Error('Taste-fit >=4 requires an existing saved/loved user feedback record, not an AI-generated example');
+   }
    if(item.selfEvaluation&&!item.selfEvaluation.passed){
     // Keep a compact rejected-candidate memory without putting weak items in the feed.
     const rejectionId='rejected-'+hash(item.canonicalUrl);
