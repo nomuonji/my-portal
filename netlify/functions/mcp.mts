@@ -6,6 +6,8 @@ import * as portalStoreImport from "../../functions/portalStore.js";
 import * as agentToolsImport from "../../functions/agentIdeasToolSchemas.js";
 import * as portalToolsImport from "../../functions/portalMcpTools.js";
 import * as metaStoreImport from "../../functions/metaStrategyStore.js";
+import * as personalFeedImport from "../../functions/personalFeedStore.js";
+import * as personalFeedToolsImport from "../../functions/personalFeedToolSchemas.js";
 import * as routineStoreImport from "../../functions/routineJobStore.js";
 import * as routineToolsImport from "../../functions/routineJobToolSchemas.js";
 import * as metaToolsImport from "../../functions/metaStrategyToolSchemas.js";
@@ -34,6 +36,8 @@ const portalStore: any = (portalStoreImport as any).default ?? portalStoreImport
 const agentToolsModule: any = (agentToolsImport as any).default ?? agentToolsImport;
 const portalToolsModule: any = (portalToolsImport as any).default ?? portalToolsImport;
 const metaStore: any = (metaStoreImport as any).default ?? metaStoreImport;
+const personalFeed: any = (personalFeedImport as any).default ?? personalFeedImport;
+const personalFeedTools: any = (personalFeedToolsImport as any).default ?? personalFeedToolsImport;
 const routineStore: any = (routineStoreImport as any).default ?? routineStoreImport;
 const routineTools: any = (routineToolsImport as any).default ?? routineToolsImport;
 const metaTools: any = (metaToolsImport as any).default ?? metaToolsImport;
@@ -56,7 +60,7 @@ const worldMapTools: any = (worldMapToolsImport as any).default ?? worldMapTools
 const contextToolsModule: any = (contextToolsImport as any).default ?? contextToolsImport;
 const linearBridge: any = (linearBridgeImport as any).default ?? linearBridgeImport;
 const migration: any = (migrationImport as any).default ?? migrationImport;
-const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...worldMapTools.TOOLS, ...chatContextTools.TOOLS, ...contextRegistryTools.TOOLS, ...portalToolsModule.TOOLS, ...metaTools.TOOLS, ...routineTools.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS, ...workspaceApp.TOOLS];
+const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...worldMapTools.TOOLS, ...chatContextTools.TOOLS, ...contextRegistryTools.TOOLS, ...portalToolsModule.TOOLS, ...metaTools.TOOLS, ...personalFeedTools.TOOLS, ...routineTools.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS, ...workspaceApp.TOOLS];
 
 const SERVER_NAME = "my-portal";
 const SERVER_VERSION = "1.18.0-netlify";
@@ -351,6 +355,10 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "routine_job_claim") return structured(await routineStore.claim(args));
   if (name === "routine_job_finish") return structured(await routineStore.finish(args));
   if (name === "routine_job_runs") return structured(await routineStore.runs(args));
+  if (name === "personal_feed_list") return structured(await personalFeed.list(args));
+  if (name === "personal_feed_get") return structured(await personalFeed.get(args));
+  if (name === "personal_feed_add") return structured(await personalFeed.add(args));
+  if (name === "personal_feed_feedback") return structured(await personalFeed.feedback(args));
   if (name === "meta_proposal_list") return structured(await metaStore.list(args));
   if (name === "meta_proposal_get") return structured(await metaStore.get(args));
   if (name === "meta_proposal_create") return structured(await metaStore.create(args));

@@ -14,9 +14,7 @@ const STATUS = {
   new: '未判断', considering: '気になる', accepted: '採用', rejected: '見送り', done: '試した・完了',
 };
 const PRIORITY = { now: '今やる', soon: '次にやる', explore: '探索する' };
-const LENSES = {
-  all: 'すべての提案', curiosity: '興味を広げる', personal: '個人的なこと', projects: '活動・仕事', 'cross-cutting': '横断的な発見',
-};
+const LENSES = { all: 'プロジェクトすべて', projects: '個別プロジェクト', 'cross-cutting': 'プロジェクト横断' };
 const getLens = item => LENSES[item.lens] ? item.lens : 'cross-cutting';
 
 async function request(path, body) {
@@ -133,11 +131,12 @@ export default function MetaStrategy() {
   }, []);
   useEffect(() => { reload(); }, [reload]);
   const counts = useMemo(() => ({
-    waiting: items.filter(p => ['new','considering'].includes(p.status)).length,
-    adopted: items.filter(p => p.status === 'accepted').length,
-    rejected: items.filter(p => p.status === 'rejected').length,
+    waiting: items.filter(p => ['projects','cross-cutting'].includes(p.lens) && ['new','considering'].includes(p.status)).length,
+    adopted: items.filter(p => ['projects','cross-cutting'].includes(p.lens) && p.status === 'accepted').length,
+    rejected: items.filter(p => ['projects','cross-cutting'].includes(p.lens) && p.status === 'rejected').length,
   }), [items]);
   const visible = useMemo(() => items.filter(p => {
+    if (!['projects','cross-cutting'].includes(p.lens)) return false;
     if (filter === 'active' && !['new','considering'].includes(p.status)) return false;
     if (lens !== 'all' && getLens(p) !== lens) return false;
     if (filter !== 'all' && filter !== 'active' && p.status !== filter) return false;
@@ -154,12 +153,12 @@ export default function MetaStrategy() {
           <Box>
             <Stack direction="row" alignItems="center" spacing={1}>
               <SparkIcon color="primary" />
-              <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: '.15em', fontWeight: 800 }}>CURIOUS / PERSONAL / PROJECTS</Typography>
+              <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: '.15em', fontWeight: 800 }}>PROJECTS / STRATEGY</Typography>
             </Stack>
-            <Typography variant="h4" component="h1" sx={{ fontWeight: 900, letterSpacing: '-.045em', mt: .5 }}>次、何をしてみる？</Typography>
+            <Typography variant="h4" component="h1" sx={{ fontWeight: 900, letterSpacing: '-.045em', mt: .5 }}>プロジェクト、次の一手。</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1, maxWidth: 760, lineHeight: 1.8 }}>
-              既存プロジェクトの改善・新企画・事業の方向転換から、知らなかった分野、趣味、文化、遊び、日常の楽しみまで。
-              仕事の提案も、仕事と無関係な発見も、どちらも蓄積します。興味や余暇の提案には、収益化の理由は要りません。
+              既存サイトや事業、制作・研究などのプロジェクトを横断し、新企画、方向転換、やめるべきこと、改善の優先順位を提案します。
+              趣味・動画・音楽・遊びの推薦は「あなた専用の寄り道」に分離しました。
             </Typography>
           </Box>
           <Button onClick={reload} disabled={loading} startIcon={<RefreshIcon />} variant="outlined">更新</Button>
@@ -190,7 +189,7 @@ export default function MetaStrategy() {
         <IdeaIcon color="disabled" sx={{ fontSize: 42 }} />
         <Typography variant="h6" sx={{ mt: 1.2 }}>該当する提案はありません</Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          仕事に関係のない楽しみや発見もここに貯まります。対象に絞った提案がなければ、他の領域も見てみてください。
+          この画面ではプロジェクト関連の提案だけを表示します。
         </Typography>
       </Paper>}
       {!loading && visible.length > 0 && <Box sx={{ display:'grid',

@@ -8,6 +8,7 @@ import * as worldMapImport from "../../functions/worldMap.js";
 import * as chatContextImport from "../../functions/chatContextRegistry.js";
 import * as contextRegistryImport from "../../functions/contextRegistry.js";
 import * as metaStoreImport from "../../functions/metaStrategyStore.js";
+import * as personalFeedImport from "../../functions/personalFeedStore.js";
 import * as routineStoreImport from "../../functions/routineJobStore.js";
 
 const store: any = (storeImport as any).default ?? storeImport;
@@ -16,6 +17,7 @@ const worldMap: any = (worldMapImport as any).default ?? worldMapImport;
 const chatContext: any = (chatContextImport as any).default ?? chatContextImport;
 const contextRegistry: any = (contextRegistryImport as any).default ?? contextRegistryImport;
 const metaStore: any = (metaStoreImport as any).default ?? metaStoreImport;
+const personalFeed: any = (personalFeedImport as any).default ?? personalFeedImport;
 const routineStore: any = (routineStoreImport as any).default ?? routineStoreImport;
 const documentDb: any = (documentDbImport as any).default ?? documentDbImport;
 const AGENT_DATABASE_ID = "(default)";
@@ -122,6 +124,7 @@ export default async (request: Request) => {
           contextStore: await contextStore.healthCheck(),
         });
       }
+      if (resource === "personal_feed") return json(await personalFeed.list({limit:Math.min(Math.max(Number(url.searchParams.get("limit"))||100,1),200),includeSkipped:url.searchParams.get("includeSkipped")==="true"}));
       if (resource === "meta_proposals") return json(await metaStore.list({limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 150, 1), 200), status: url.searchParams.get("status") || undefined}));
       if (resource === "meta_proposal") return json(await metaStore.get({ id: url.searchParams.get("id") || "" }));
       if (resource === "ideas") {
@@ -214,6 +217,7 @@ export default async (request: Request) => {
     if (request.method === "POST") {
       const body: any = await parseBody(request);
       const action = String(body.action || "");
+      if (action === "personal_feed_feedback") return json(await personalFeed.feedback({id:body.id,status:body.status,note:body.note,expectedRevision:body.expectedRevision}));
       if (action === "meta_proposal_feedback") return json(await metaStore.feedback({ id:body.id, status:body.status, feedback:body.feedback, expectedRevision:body.expectedRevision }));
       if (action === "category_upsert") {
         return json(await store.categoryUpsert({
