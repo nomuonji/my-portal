@@ -9,6 +9,9 @@ const SEED=require('./personalFeedSeed20261017');
 const COLLECTION='personalDiscoveryFeed';
 const TOPICS='personalDiscoveryStoryKeys';
 const SEEDS='personalDiscoverySeedEditions';
+const REJECTIONS='personalDiscoveryRejectedCandidates';
+const SCORE_AXES=Object.freeze(['hook','originality','payoff','tasteFit','evidence']);
+const SCORE_THRESHOLD=4;
 const TYPES=new Set(['video','article','website','music','art','game','other']);
 const STATES=new Set(['new','saved','loved','skipped','seen']);
 const db=()=>getDocumentDb(process.env.AGENT_IDEAS_DATABASE_ID||'(default)');
@@ -67,7 +70,25 @@ function view(doc){
  return {...d,id:doc.id,publishedAt:d.publishedAt||null,storyKey:d.storyKey||null,
   createdAt:iso(d.createdAt),updatedAt:iso(d.updatedAt)};
 }
-function normalizedInput(args={}){
+function validateSelfEvaluation(value,allowLegacy=false){
+ if(allowLegacy)return null; // Preserves 2026-10-17 starter items as explicitly unscored.
+ if(!value||typeof value!=='object')throw Error('selfEvaluation is mandatory for all new Discover recommendations');
+ const scores={},reasons={};
+ for(const axis of SCORE_AXES){
+  const score=value.scores?.[axis];
+  if(!Number.isInteger(score)||score<1||score>5)throw Error('selfEvaluation.scores.'+axis+' must be an integer from 1 to 5');
+  const reason=trim(value.reasons?.[axis],450);
+  if(reason.length<12)throw Error('selfEvaluation.reasons.'+axis+' needs concrete, source-backed reasoning (12+ chars)');
+  scores[axis]=score;reasons[axis]=reason;
+ }
+ const weakness=trim(value.weakness,800);
+ if(weakness.length<20)throw Error('selfEvaluation.weakness must describe a real counterargument (20+ chars)');
+ const total=SCORE_AXES.reduce((n,axis)=>n+scores[axis],0);
+ const passed=SCORE_AXES.every(axis=>scores[axis]>=SCORE_THRESHOLD);
+ return {version:'discover-v1',scores,reasons,weakness,total,maximum:25,
+   minimum:Math.min(...Object.values(scores)),passed,evaluatedAt:new Date().toISOString()};
+}
+function normalizedInput(args={}, options={}){
  const url=canonicalUrl(args.url),title=trim(args.title,200),description=trim(args.description,1600),reason=trim(args.reason,1000);
  if(!url)throw Error('Valid source HTTPS URL required');
  if(title.length<5||description.length<15||reason.length<8)throw Error('Specific title, summary and recommendation reason required');
@@ -76,12 +97,13 @@ function normalizedInput(args={}){
  const rawPublished=trim(args.publishedAt,40),publishedAt=validDate(rawPublished);
  if(rawPublished&&!publishedAt)throw Error('publishedAt must be a real, nonfuture ISO date (or omitted)');
  const storyKey=normalizeStoryKey(args.storyKey)||normalizeStoryKey(title);
+ const selfEvaluation=validateSelfEvaluation(args.selfEvaluation,Boolean(options.internalLegacySeed));
  return {
   url,canonicalUrl:url,title,description,reason,
   type,videoId,category:trim(args.category||'カルチャー',70),creator:trim(args.creator,140),
   tags:unique(args.tags),thumbnail:safeUrl(args.thumbnail),
   sourceUrl:safeUrl(args.sourceUrl)||url,checkedAt:trim(args.checkedAt,40),
-  publishedAt,storyKey,uncertainty:trim(args.uncertainty,600)
+  publishedAt,storyKey,uncertainty:trim(args.uncertainty,600),selfEvaluation
  };
 }
 function sameContent(a,b){
@@ -123,9 +145,21 @@ async function batchAdd(args={}){
  const results=[];
  for(const raw of input){
   try{
-   const item=normalizedInput(raw);
+   const item=normalizedInput(raw,{internalLegacySeed:args.internalLegacySeed===true});
    const dup=seen.find(old=>sameContent(old,item));
    if(dup){results.push({outcome:'already_exists',id:dup.id,storyKey:item.storyKey});continue;}
+   if(item.selfEvaluation&&!item.selfEvaluation.passed){
+    // Keep a compact rejected-candidate memory without putting weak items in the feed.
+    const rejectionId='rejected-'+hash(item.canonicalUrl);
+    await db().collection(REJECTIONS).doc(rejectionId).set({
+      id:rejectionId,url:item.url,title:item.title,storyKey:item.storyKey,
+      selfEvaluation:item.selfEvaluation,reason:item.reason,
+      updatedAt:FieldValue.serverTimestamp()
+    });
+    results.push({outcome:'rejected_score',id:rejectionId,storyKey:item.storyKey,score:item.selfEvaluation.total,
+      minimum:item.selfEvaluation.minimum});
+    continue;
+   }
    const id='cur-'+hash(item.canonicalUrl),ref=db().collection(COLLECTION).doc(id);
    const keyRef=db().collection(TOPICS).doc('story-'+hash(item.storyKey));
    let outcome='created',existingId=null;
@@ -144,12 +178,14 @@ async function batchAdd(args={}){
  }
  return {results,createdCount:results.filter(r=>r.outcome==='created').length,
   duplicateCount:results.filter(r=>r.outcome==='already_exists').length,
-  failedCount:results.filter(r=>r.outcome==='failed').length};
+  failedCount:results.filter(r=>r.outcome==='failed').length,
+  rejectedCount:results.filter(r=>r.outcome==='rejected_score').length};
 }
 async function add(args={}){
  const result=await batchAdd({items:[args]});
  const first=result.results[0];
  if(first.outcome==='failed')throw Error(first.error);
+ if(first.outcome==='rejected_score')return {outcome:'rejected_score',rejectionId:first.id,score:first.score,minimum:first.minimum};
  return {outcome:first.outcome,content:await get({id:first.id})};
 }
 // Seed a real recent issue without overwriting the older evergreen picks.
@@ -160,7 +196,7 @@ async function seedOnce(){
  const marker=db().collection(SEEDS).doc('edition-20261017');
  const snap=await marker.get();
  if(snap.exists){seeded=true;return;}
- const outcome=await batchAdd({items:SEED});
+ const outcome=await batchAdd({items:SEED,internalLegacySeed:true});
  if(outcome.failedCount)throw Error('Starter edition incomplete: '+outcome.failedCount+' records failed');
  await marker.set({createdCount:outcome.createdCount,duplicateCount:outcome.duplicateCount,
   seedVersion:'2026-10-17',createdAt:FieldValue.serverTimestamp()});
@@ -181,4 +217,4 @@ async function feedback(args={}){
  });
  return get({id});
 }
-module.exports={COLLECTION,list,get,add,batchAdd,feedback,safeUrl,youtubeId,canonicalUrl,normalizeStoryKey,normalizeTitle,sameContent};
+module.exports={COLLECTION,REJECTIONS,SCORE_AXES,SCORE_THRESHOLD,list,get,add,batchAdd,feedback,validateSelfEvaluation,safeUrl,youtubeId,canonicalUrl,normalizeStoryKey,normalizeTitle,sameContent};
