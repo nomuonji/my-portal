@@ -11,6 +11,7 @@ import * as metaStoreImport from "../../functions/metaStrategyStore.js";
 import * as personalFeedImport from "../../functions/personalFeedStore.js";
 import * as personalTasteImport from "../../functions/personalTasteStore.js";
 import * as personalTasteExternalImport from "../../functions/personalTasteExternalStore.js";
+import * as anilistImport from "../../functions/anilistIntegration.js";
 import * as routineStoreImport from "../../functions/routineJobStore.js";
 
 const store: any = (storeImport as any).default ?? storeImport;
@@ -22,6 +23,7 @@ const metaStore: any = (metaStoreImport as any).default ?? metaStoreImport;
 const personalFeed: any = (personalFeedImport as any).default ?? personalFeedImport;
 const personalTaste: any = (personalTasteImport as any).default ?? personalTasteImport;
 const externalTaste: any = (personalTasteExternalImport as any).default ?? personalTasteExternalImport;
+const anilist: any = (anilistImport as any).default ?? anilistImport;
 const routineStore: any = (routineStoreImport as any).default ?? routineStoreImport;
 const documentDb: any = (documentDbImport as any).default ?? documentDbImport;
 const AGENT_DATABASE_ID = "(default)";
@@ -128,6 +130,8 @@ export default async (request: Request) => {
           contextStore: await contextStore.healthCheck(),
         });
       }
+      if (resource === "anilist_connection") return json(await anilist.connection());
+      if (resource === "anilist_profile") return json(await anilist.profile({type:url.searchParams.get("type")||"ALL",limit:20}));
       if (resource === "taste_external_sources") return json(await externalTaste.list({includeItems:url.searchParams.get("includeItems")==="true"}));
       if (resource === "taste_evidence") return json(await personalTaste.list({limit:Number(url.searchParams.get("limit"))||120,includeInactive:url.searchParams.get("includeInactive")==="true",domain:url.searchParams.get("domain")||undefined,evidenceKind:url.searchParams.get("evidenceKind")||undefined,direction:url.searchParams.get("direction")||undefined}));
       if (resource === "taste_profile") return json(await personalTaste.profile({domain:url.searchParams.get("domain")||undefined}));
@@ -226,6 +230,9 @@ export default async (request: Request) => {
     if (request.method === "POST") {
       const body: any = await parseBody(request);
       const action = String(body.action || "");
+      if (action === "anilist_client_configure") return json(await anilist.configure({clientId:body.clientId}));
+      if (action === "anilist_authorize_url") return json(await anilist.authorizeUrl());
+      if (action === "anilist_authorize_token") return json(await anilist.authorize({token:body.token}));
       if (action === "taste_external_import") return json(await externalTaste.importRecords({source:body.source,rows:body.rows}));
       if (action === "taste_evidence_upsert") return json(await personalTaste.upsert({id:body.id,record:body.record,expectedRevision:body.expectedRevision,changeReason:body.changeReason||"Manual user interface edit"}));
       if (action === "personal_feed_feedback") {
