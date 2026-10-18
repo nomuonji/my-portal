@@ -370,6 +370,8 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "trakt_connection_get") return structured(await mediaConnections.traktConnection());
   if (name === "trakt_profile_get") return structured(await mediaConnections.traktProfile(args));
   if (name === "trakt_entry_add") return structured(await mediaConnections.traktAdd(args));
+  if (name === "trakt_media_search") return structured(await mediaConnections.traktMediaSearch(args));
+  if (name === "trakt_filmarks_import") return structured(await mediaConnections.traktFilmarksImport(args));
   if (name === "anilist_connection_get") return structured(await anilist.connection());
   if (name === "anilist_profile_get") return structured(await anilist.profile(args));
   if (name === "anilist_media_search") return structured(await anilist.search(args));
