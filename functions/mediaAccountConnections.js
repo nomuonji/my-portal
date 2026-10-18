@@ -251,6 +251,16 @@ async function traktFilmarksImport({items=[]}={}){
    ||!Number.isSafeInteger(id)||id<=0||year!=null&&(!Number.isInteger(year)||year<1880||year>2100)
    ||intent==='mark'&&type!=='movie'||intent==='mark'&&(rating==null||rating<0.5||rating>5||Math.round(rating*10)!==rating*10))
    throw Error('Invalid Filmarks import item');
+  if(year===null){
+   results.push({title,intent,traktId:id,complete:false,error:'Original production year required for safe matching'});
+   continue;
+  }
+  const original=filmarksList().find(f=>f.title===title&&f.year===year
+   &&f.source===(intent==='mark'?'mark':'clip')&&(f.mediaType||'movie')===type);
+  if(!original||intent==='mark'&&Number(original.score)!==rating){
+   results.push({title,intent,traktId:id,complete:false,error:'Original Filmarks title/year/score not in verified source'});
+   continue;
+  }
   const idempotencyKey=[intent,type,clean(input.filmarksId||title,150),year||''].join(':');
   if(entries[idempotencyKey]?.complete){
    results.push({title,intent,traktId:id,skipped:'already imported',complete:true});continue;
@@ -258,24 +268,25 @@ async function traktFilmarksImport({items=[]}={}){
   // Validate the Trakt ID refers to a film/show of the expected release year.
   const lookup=await traktApi('GET','/search/trakt/'+id+'?type='+type);
   const actual=(Array.isArray(lookup)?lookup[0]:null)?.[type];
-  if(!actual||actual.ids?.trakt!==id||year!=null&&actual.year!==year){
-   results.push({title,intent,traktId:id,complete:false,error:'Trakt ID/year did not verify',
+  if(!actual||actual.ids?.trakt!==id||actual.year!==year||
+   !original.aliases.some(alias=>filmSlug(alias)===filmSlug(actual.title))){
+   results.push({title,intent,traktId:id,complete:false,error:'Trakt ID/year/title did not verify',
     candidate:actual?{title:actual.title,year:actual.year}:null});continue;
   }
   const media=type==='movie'?'movies':'shows';
   const item={ids:{trakt:id}};
   try{
-   let write;
-   if(intent==='watchlist'){
-    write=await traktApi('POST','/sync/watchlist',{[media]:[item]});
-   }else{
-    // Filmarks does not provide an actual viewed-at timestamp in its list
-    // view. Trakt will assign import time; retain this limitation in log.
-    const viewed=await traktApi('POST','/sync/history',{movies:[item]});
-    if((viewed.added?.movies||0)<1)throw Error('Trakt did not accept viewed movie');
-    const traktRating=Math.max(1,Math.min(10,Math.round(rating*2)));
-    write=await traktApi('POST','/sync/ratings',{movies:[{...item,rating:traktRating}]});
-    if((write.added?.movies||0)<1)throw Error('Trakt did not accept rating');
+   // Only transfer owner-authorized data. No invented watched_at: ratings are
+   // an explicit score, but don't establish an actual viewing date.
+   const ratingValue=intent==='mark'?Math.max(1,Math.min(10,Math.round(rating*2))):null;
+   const readPath=intent==='watchlist'
+     ?'/sync/watchlist/'+media+'?limit=120&page=1'
+     :'/sync/ratings/movies?limit=120&page=1';
+   const before=await traktApi('GET',readPath);
+   const existing=(Array.isArray(before)?before:[]).find(x=>x[type]?.ids?.trakt===id);
+   if(!existing||(intent==='mark'&&existing.rating!==ratingValue)){
+    if(intent==='watchlist')await traktApi('POST','/sync/watchlist',{[media]:[item]});
+    else await traktApi('POST','/sync/ratings',{movies:[{...item,rating:ratingValue}]});
    }
    // Import might be retrying after a successful post but lost response;
    // zero-added means an existing item, not a failure.
@@ -294,9 +305,19 @@ async function traktFilmarksImport({items=[]}={}){
     traktId:id,traktTitle:actual.title,traktYear:actual.year,
     traktRating:intent==='mark'?Math.max(1,Math.min(10,Math.round(rating*2))):null,
     migratedAt:new Date().toISOString(),watchedAtNote:intent==='mark'
-     ?'Trakt added import-time history; Filmarks actual watched date is unavailable':null};
+     ?'No history event imported: source lacks watched_at':null};
    await statusDoc.set({...persisted,service:'filmarks-to-trakt',userName:'postmodern137',
      targetAccount:'__c4a362',entries,updatedAt:FieldValue.serverTimestamp()});
+   // Consolidate with the first automated batch's per-title ledger.
+   const progressSnap=await filmDoc().get();
+   const progress=progressSnap.exists?progressSnap.data():{};
+   const rows={...(progress.rows||{})};
+   rows[original.id]={status:'imported',attempts:rows[original.id]?.attempts||1,
+    traktId:id,traktTitle:actual.title,traktYear:actual.year,
+    mediaType:type,originalScore:rating,traktRating:ratingValue,verified:true,
+    importMethod:'chat-on-demand'};
+   await filmDoc().set({...progress,service:'filmarks-trakt',source:'Filmarks @postmodern137',
+    target:'Trakt',rows,updatedAt:FieldValue.serverTimestamp()});
    results.push({title,intent,traktId:id,traktTitle:actual.title,traktYear:actual.year,
     rating:entries[idempotencyKey].traktRating||null,complete:true});
   }catch(e){results.push({title,intent,traktId:id,complete:false,error:clean(e.message,180)})}
@@ -305,7 +326,7 @@ async function traktFilmarksImport({items=[]}={}){
   processed:items.length,completed:results.filter(x=>x.complete).length,
   results,notes:['Filmarks Clip is wishlisted (not liked). Filmarks Mark reflects watched + user score.',
    'Filmarks 5-point scores rounded to nearest Trakt 1–10 integer. Original score retained in migration audit.',
-   'Actual watched date was not available; Trakt history records import time.']};
+   'No watched-history event is created when the real viewing date is unknown.']};
 }
 // Incremental user-approved migration with per-item progress persisted in DB.
 const filmarksList=()=>require('./filmarksTraktSnapshot').items();
