@@ -13,7 +13,6 @@ import * as personalTasteImport from "../../functions/personalTasteStore.js";
 import * as personalTasteExternalImport from "../../functions/personalTasteExternalStore.js";
 import * as anilistImport from "../../functions/anilistIntegration.js";
 import * as mediaConnectionsImport from "../../functions/mediaAccountConnections.js";
-import * as filmMigrationImport from "../../functions/filmarksTraktMigration.js";
 import * as routineStoreImport from "../../functions/routineJobStore.js";
 
 const store: any = (storeImport as any).default ?? storeImport;
@@ -27,7 +26,6 @@ const personalTaste: any = (personalTasteImport as any).default ?? personalTaste
 const externalTaste: any = (personalTasteExternalImport as any).default ?? personalTasteExternalImport;
 const anilist: any = (anilistImport as any).default ?? anilistImport;
 const mediaConnections: any = (mediaConnectionsImport as any).default ?? mediaConnectionsImport;
-const filmMigration: any = (filmMigrationImport as any).default ?? filmMigrationImport;
 const routineStore: any = (routineStoreImport as any).default ?? routineStoreImport;
 const documentDb: any = (documentDbImport as any).default ?? documentDbImport;
 const AGENT_DATABASE_ID = "(default)";
@@ -136,7 +134,7 @@ export default async (request: Request) => {
       }
       if (resource === "lastfm_connection") return json(await mediaConnections.lastfmConnection());
       if (resource === "lastfm_profile") return json(await mediaConnections.lastfmProfile({period:url.searchParams.get("period")||"overall"}));
-      if (resource === "filmarks_trakt_migration") return json(await filmMigration.report());
+      if (resource === "filmarks_trakt_migration") return json(await mediaConnections.filmarksImportReport());
       if (resource === "trakt_connection") return json(await mediaConnections.traktConnection());
       if (resource === "trakt_profile") return json(await mediaConnections.traktProfile({limit:Math.min(120,Number(url.searchParams.get("limit"))||80)}));
       if (resource === "anilist_connection") return json(await anilist.connection());
@@ -241,7 +239,7 @@ export default async (request: Request) => {
       const action = String(body.action || "");
       if (action === "lastfm_configure") return json(await mediaConnections.lastfmConfigure({apiKey:body.apiKey}));
       if (action === "trakt_client_configure") return json(await mediaConnections.traktConfigure({clientId:body.clientId}));
-      if (action === "filmarks_trakt_migration_run") return json(await filmMigration.importBatch({limit:body.limit}));
+      if (action === "filmarks_trakt_migration_run") return json(await mediaConnections.filmarksImportBatch({limit:body.limit}));
       if (action === "trakt_authorize_start") return json(await mediaConnections.traktStart());
       if (action === "trakt_authorize_finish") return json(await mediaConnections.traktFinish({code:body.code,state:body.state}));
       if (action === "anilist_client_configure") return json(await anilist.configure({clientId:body.clientId}));
