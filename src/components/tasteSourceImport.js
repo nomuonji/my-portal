@@ -45,7 +45,7 @@ export function parseBooklog(text,{includeReviews=false}={}){
 export function parseFilmarks(text){
  const data=new Map(),input=String(text||'');
  // Accept copied HTML (including image/title dual links). No external fetch.
- const html=/<a\b[^>]*href=["']https:\/\/filmarks\.com\/movies\/(\d{1,12})[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi;
+ const html=/<a\b[^>]*href=["'](?:https:\/\/filmarks\.com)?\/movies\/(\d{1,12})[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi;
  let match;
  while((match=html.exec(input))){
   const id=match[1],inside=match[2];
