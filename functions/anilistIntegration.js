@@ -98,7 +98,7 @@ async function tokenForEdit(){
 function mapped(e){
  const m=e.media||{};
  return {mediaId:e.mediaId,listEntryId:e.id,mediaType:m.type,status:e.status,
-  score:e.score??null,progress:e.progress||0,progressVolumes:e.progressVolumes||0,
+  score:e.score>0?e.score:null,progress:e.progress||0,progressVolumes:e.progressVolumes||0,
   updatedAt:e.updatedAt,title:m.title||{},mediaTitle:m.title?.userPreferred||m.title?.native||m.title?.romaji,
   genres:m.genres||[],tags:(m.tags||[]).filter(t=>t.rank>=60).slice(0,10),
   format:m.format,siteUrl:m.siteUrl||null};
