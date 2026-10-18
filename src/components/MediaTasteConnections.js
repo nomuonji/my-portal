@@ -41,8 +41,10 @@ export default function MediaTasteConnections(){
  const [lastProfile,setLastProfile]=useState(null),[traktProfile,setTraktProfile]=useState(null);
  const [apiKey,setApiKey]=useState(''),[clientId,setClientId]=useState('');
  const [busy,setBusy]=useState(''),[errors,setErrors]=useState({}),[message,setMessage]=useState({});
+ const [filmarksImport,setFilmarksImport]=useState(null),[migrationRunning,setMigrationRunning]=useState(false);
  const refresh=useCallback(async()=>{
   const infos=await Promise.allSettled([call('lastfm_connection'),call('trakt_connection')]);
+  call('filmarks_trakt_migration').then(setFilmarksImport).catch(()=>{});
   if(infos[0].status==='fulfilled')setLastInfo(infos[0].value);else setErrors(e=>({...e,lastfm:infos[0].reason?.message}));
   if(infos[1].status==='fulfilled')setTraktInfo(infos[1].value);else setErrors(e=>({...e,trakt:infos[1].reason?.message}));
   const l=infos[0].status==='fulfilled'?infos[0].value:null;
@@ -69,6 +71,24 @@ export default function MediaTasteConnections(){
   await call('',{action:'trakt_client_configure',clientId});
   setClientId('');setMessage(m=>({...m,trakt:'Trakt Client IDを登録しました'}));
  });
+ const runFilmarks=async()=>{
+  setMigrationRunning(true);setErrors(e=>({...e,trakt:''}));
+  try{
+   let current=filmarksImport||await call('filmarks_trakt_migration');
+   for(let pass=0;pass<20&&current.pending+current.errors>0;pass++){
+    const next=await call('',{action:'filmarks_trakt_migration_run',limit:4});
+    setFilmarksImport(next);
+    current=next;
+    if(next.processedThisCall===0||next.pending===0&&next.errors===0)break;
+    if(next.errors>0&&pass>=3)break;
+   }
+   const after=await call('filmarks_trakt_migration');
+   setFilmarksImport(after);
+   await refresh();
+   if(after.pending===0&&after.errors===0)setMessage(m=>({...m,trakt:'Filmarksからの移行処理が完了しました。未照合作品は個別に確認してください。'}));
+  }catch(e){setErrors(x=>({...x,trakt:'Filmarksコピー失敗: '+e.message}))}
+  finally{setMigrationRunning(false)}
+ };
  const startTrakt=()=>act('trakt',async()=>{
   const x=await call('',{action:'trakt_authorize_start'});
   if(!x.url?.startsWith('https://auth.trakt.tv/'))throw Error('認証先URLが不正です');
@@ -93,6 +113,28 @@ export default function MediaTasteConnections(){
    <Typography sx={{fontSize:12,color:muted,lineHeight:1.8,mt:1}}>
     公式OAuth（PKCE）で一度認証すれば、ChatGPTから視聴記録を参照し、明示的な指示に基づいて「観たい」と評価を登録できます。
    </Typography>
+   {traktInfo?.connected&&<Box sx={{mt:1.5,border:'1px solid '+border,borderRadius:1.5,p:1.5}}>
+    <Typography sx={{fontSize:13,fontWeight:750}}>Filmarks → Trakt コピー</Typography>
+    <Typography sx={{fontSize:12,color:muted,lineHeight:1.7,mt:0.5}}>
+     観たい44件と本人評価8件。原題と制作年が両方一致する作品のみ登録し、登録結果を確認します。照合できない作品は保留します。
+    </Typography>
+    <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap" sx={{my:1}}>
+     <Chip size="small" label={'登録済 '+(filmarksImport?.imported??0)+'/52'}
+      sx={{color:mint,background:'#25303a'}}/>
+     <Chip size="small" label={'要照合 '+(filmarksImport?.unresolved??0)}
+      sx={{color:'#e9c89b',background:'#25303a'}}/>
+     <Chip size="small" label={'残り '+(filmarksImport?.pending??52)}
+      sx={{color:'#e0e8f0',background:'#25303a'}}/>
+    </Stack>
+    <Button variant="outlined" size="small" disabled={migrationRunning||!!busy||
+     (!filmarksImport?.pending&&!filmarksImport?.errors)}
+     onClick={runFilmarks} sx={{color:mint,borderColor:border}}>
+     {migrationRunning?'照合・移行中…':(filmarksImport?.imported?'コピーを続行':'Filmarksからコピー')}
+    </Button>
+    <Typography sx={{mt:1,fontSize:11,color:muted,lineHeight:1.7}}>
+     元のFilmarksは変更しません。5点評価をTraktの10段階に四捨五入し、元点数を履歴に保存します。鑑賞日の情報がないため、鑑賞済み8件は評価のみ先に移します。架空の視聴日を作って履歴には登録しません。
+    </Typography>
+   </Box>}
    {!traktInfo?.connected&&<Stack gap={1.2} sx={{mt:1.5}}>
     <Typography sx={{fontSize:12,color:muted,lineHeight:1.7}}>
      <a href="https://developer.trakt.tv/apps" target="_blank" rel="noreferrer" style={{color:mint}}>TraktのMy Apps <OpenInNew sx={{fontSize:12}}/></a>
