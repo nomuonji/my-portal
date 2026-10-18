@@ -73,10 +73,11 @@ export default function PersonalTaste(){
   }catch(e){setError(e.message)}finally{setLoading(false)}
  },[includeInactive]);
  useEffect(()=>{load()},[load]);
+ const visibleFacets=(profile.facets||[]).filter(x=>domain==='all'||x.domains.includes(domain));
  const filtered=useMemo(()=>items.filter(x=>
   (domain==='all'||(x.appliesTo||[x.domain]).includes(domain))&&(kind==='all'||x.evidenceKind===kind)&&
   (facet==='all'||(x.facets||[]).some(t=>t.normalize('NFKC').toLocaleLowerCase()===facet))&&
-  (!search||[x.title,x.detail,x.caveat,x.domain].join(' ').toLowerCase().includes(search.toLowerCase()))
+  (!search||[x.title,x.detail,x.caveat,x.domain,x.target?.label,...(x.facets||[])].join(' ').toLowerCase().includes(search.toLowerCase()))
  ),[items,domain,kind,facet,search]);
  const edit=(entry=null)=>{
   setHistory(null);setError('');
@@ -158,15 +159,15 @@ export default function PersonalTaste(){
    <Typography sx={{fontSize:11.5,lineHeight:1.8,color:C.muted,mt:.6}}>
     本人が明示した評価のタグだけを集計。単発・繰り返し・相反する評価を分けます。AIの推測や後で見るメモは計算に入れません。
    </Typography>
-   {profile.facets?.length?<Stack direction="row" flexWrap="wrap" gap={.9} sx={{mt:1.5}}>
-    {profile.facets.slice(0,24).map(x=><Button key={x.key} size="small" variant={facet===x.key?'contained':'outlined'}
+   {visibleFacets.length?<Stack direction="row" flexWrap="wrap" gap={.9} sx={{mt:1.5}}>
+    {visibleFacets.slice(0,24).map(x=><Button key={x.key} size="small" variant={facet===x.key?'contained':'outlined'}
      onClick={()=>setFacet(f=>f===x.key?'all':x.key)}
      sx={{borderColor:x.state==='mixed'?'#af815b':C.border,color:facet===x.key?C.bg:C.white,
       background:facet===x.key?C.mint:'transparent',textTransform:'none',fontSize:11.5}}>
-     {x.label} · {x.evidenceCount}件 {x.state==='mixed'?'（賛否あり）':x.state==='single'?'（単発）':''}
+     {x.label} · {x.like?'好'+x.like+' ':''}{x.dislike?'嫌'+x.dislike+' ':''}{x.boundary?'方針'+x.boundary:''} {x.state==='mixed'?'（賛否あり）':x.state==='single'?'（単発）':''}
     </Button>)}
    </Stack>:<Typography sx={{mt:1.5,fontSize:12,color:C.muted}}>
-    まだ理由タグがありません。既存評価を「訂正」する際に具体的な理由をタグとして追加できます。
+    この分野に登録された理由タグはありません。既存評価を「訂正」する際に具体的な理由を追加できます。
    </Typography>}
    <Typography sx={{mt:1.25,fontSize:11,color:C.muted}}>
     明示評価 {profile.explicitCount||0}件 · 理由未分類 {profile.uncategorized||0}件
