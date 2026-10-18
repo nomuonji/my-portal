@@ -360,6 +360,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "routine_job_finish") return structured(await routineStore.finish(args));
   if (name === "routine_job_runs") return structured(await routineStore.runs(args));
   if (name === "taste_evidence_list") return structured(await personalTaste.list(args));
+  if (name === "taste_profile_get") return structured(await personalTaste.profile(args));
   if (name === "taste_evidence_get") return structured(await personalTaste.get(args));
   if (name === "taste_evidence_upsert") return structured(await personalTaste.upsert(args));
   if (name === "taste_evidence_history") return structured(await personalTaste.history(args));

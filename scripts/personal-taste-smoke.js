@@ -1,7 +1,7 @@
 'use strict';
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
-const {validate,STARTER,KINDS}=require('../functions/personalTasteStore');
+const {validate,STARTER,KINDS,summarizeProfile}=require('../functions/personalTasteStore');
 const user={title:'狙いすぎの変な動画は嫌い',detail:'本人が過剰に作為的な企画を否定した',domain:'discover',
  evidenceKind:'explicit_user',direction:'dislike',sourceRefs:[{kind:'user_message',id:'chat-20261017'}]};
 test('Explicit user judgment has source and retains its scope',()=>{
@@ -45,4 +45,39 @@ test('Initial ledger contains only confirmed user judgments/boundaries',()=>{
   assert.ok(validate(entry).sourceRefs.some(x=>x.kind==='user_message'));
  }
  assert.ok(KINDS.has('expression_inference'));
+});
+
+test('One-off preferences never become a global rule and duplicate source references do not count as repetitions',()=>{
+ const base={id:'taste-case-a',status:'active',evidenceKind:'explicit_user',direction:'dislike',domain:'discover',
+  facets:['作為的な企画'],sourceRefs:[{kind:'user_message',id:'chat-1'}]};
+ const duplicated={...base,id:'taste-case-b'};
+ const result=summarizeProfile([base,duplicated]);
+ assert.equal(result.facets[0].evidenceCount,2);
+ assert.equal(result.facets[0].independentSources,1);
+ assert.equal(result.facets[0].state,'single');
+ assert.deepEqual(result.facets[0].evidenceIds,['taste-case-a','taste-case-b']);
+});
+test('Read model excludes AI guesses and bookmarks; contradictory explicit judgments remain visible',()=>{
+ const source=(id,direction,evidenceKind='explicit_user')=>({
+  id,status:'active',evidenceKind,direction,domain:'design',facets:['余白'],sourceRefs:[{kind:'user_message',id}]
+ });
+ const all=[source('one','like'),source('two','dislike'),source('three','unknown','watch_later'),
+  {...source('four','like'),status:'superseded'}];
+ const result=summarizeProfile(all);
+ assert.equal(result.explicitCount,2);
+ assert.equal(result.facets[0].state,'mixed');
+ assert.equal(result.facets[0].like,1);
+ assert.equal(result.facets[0].dislike,1);
+ assert.equal(result.facets[0].evidenceCount,2);
+ assert.equal(summarizeProfile(all,{domain:'humor'}).facets.length,0);
+});
+test('Structured data supports concrete target scope and tags without overwriting evidence type',()=>{
+ const valid=validate({...user,target:{kind:'pattern',key:'contrived-joke',label:'わざとらしい演出'},
+  facets:['過剰な演出','薄いアイデア'],appliesTo:['discover','humor']});
+ assert.equal(valid.target.kind,'pattern');
+ assert.deepEqual(valid.appliesTo,['discover','humor']);
+ assert.deepEqual(valid.facets,['過剰な演出','薄いアイデア']);
+ assert.throws(()=>validate({...user,target:{kind:'personality',label:'性格'}}),/Invalid target kind/);
+ assert.throws(()=>validate({...user,facets:['a']}),/at least two/);
+ assert.throws(()=>validate({...user,appliesTo:['all']}),/Invalid applicable domains/);
 });
