@@ -18,6 +18,7 @@ function fixture(){
   }
   if(method==='GET'&&u.pathname==='/sync/watchlist/movies')return watch;
   if(method==='GET'&&u.pathname==='/sync/ratings/movies')return [];
+  if(method==='GET'&&u.pathname==='/sync/watchlist/shows')return [];
   if(method==='POST'&&u.pathname==='/sync/watchlist'){
    for(const v of payload.movies)watch.push({movie:{ids:v.ids}});
    return {added:{movies:payload.movies.length}};
@@ -49,7 +50,8 @@ function fixture(){
 }
 test('Source snapshot contains 44 Clips, 8 Marks, and distinct film years',()=>{
  assert.equal(snapshot.clips.length,44);assert.equal(snapshot.marks.length,8);
- assert.equal(snapshot.items().length,52);
+ assert.equal(snapshot.items().length,55);
+ assert.equal(snapshot.shows.length,3);
  assert.equal(snapshot.items().find(v=>v.title==='浮雲').year,1955);
  assert.equal(snapshot.items().find(v=>v.title==='浮き雲').year,1996);
 });
@@ -57,7 +59,7 @@ test('Importer transfers only exact canonical title and year with readback',asyn
  const f=fixture();
  const first=await f.api.filmarksImportBatch({limit:2});
  assert.equal(first.imported,2);
- assert.equal(first.pending,50);
+ assert.equal(first.pending,53);
  assert.deepEqual(f.watch.map(v=>v.movie.ids.trakt),[111,333]);
  assert.equal(f.calls.filter(v=>v.method==='POST').length,2);
  assert.equal(f.db.get('filmarks-trakt-20261018').rows['clip-01'].verified,true);
