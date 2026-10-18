@@ -10,6 +10,7 @@ import * as personalFeedImport from "../../functions/personalFeedStore.js";
 import * as personalFeedToolsImport from "../../functions/personalFeedToolSchemas.js";
 import * as personalTasteImport from "../../functions/personalTasteStore.js";
 import * as personalTasteExternalImport from "../../functions/personalTasteExternalStore.js";
+import * as anilistImport from "../../functions/anilistIntegration.js";
 import * as personalTasteToolsImport from "../../functions/personalTasteToolSchemas.js";
 import * as routineStoreImport from "../../functions/routineJobStore.js";
 import * as routineToolsImport from "../../functions/routineJobToolSchemas.js";
@@ -43,6 +44,7 @@ const personalFeed: any = (personalFeedImport as any).default ?? personalFeedImp
 const personalFeedTools: any = (personalFeedToolsImport as any).default ?? personalFeedToolsImport;
 const personalTaste: any = (personalTasteImport as any).default ?? personalTasteImport;
 const externalTaste: any = (personalTasteExternalImport as any).default ?? personalTasteExternalImport;
+const anilist: any = (anilistImport as any).default ?? anilistImport;
 const personalTasteTools: any = (personalTasteToolsImport as any).default ?? personalTasteToolsImport;
 const routineStore: any = (routineStoreImport as any).default ?? routineStoreImport;
 const routineTools: any = (routineToolsImport as any).default ?? routineToolsImport;
@@ -361,6 +363,11 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "routine_job_claim") return structured(await routineStore.claim(args));
   if (name === "routine_job_finish") return structured(await routineStore.finish(args));
   if (name === "routine_job_runs") return structured(await routineStore.runs(args));
+  if (name === "anilist_connection_get") return structured(await anilist.connection());
+  if (name === "anilist_profile_get") return structured(await anilist.profile(args));
+  if (name === "anilist_media_search") return structured(await anilist.search(args));
+  if (name === "anilist_entry_get") return structured(await anilist.entry(args));
+  if (name === "anilist_entry_save") return structured(await anilist.save(args));
   if (name === "taste_external_sources_list") return structured(await externalTaste.list(args));
   if (name === "taste_evidence_list") return structured(await personalTaste.list(args));
   if (name === "taste_profile_get") return structured(await personalTaste.profile(args));
