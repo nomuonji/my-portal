@@ -127,6 +127,7 @@ export default async (request: Request) => {
         });
       }
       if (resource === "taste_evidence") return json(await personalTaste.list({limit:Number(url.searchParams.get("limit"))||120,includeInactive:url.searchParams.get("includeInactive")==="true",domain:url.searchParams.get("domain")||undefined,evidenceKind:url.searchParams.get("evidenceKind")||undefined,direction:url.searchParams.get("direction")||undefined}));
+      if (resource === "taste_profile") return json(await personalTaste.profile({domain:url.searchParams.get("domain")||undefined}));
       if (resource === "taste_evidence_history") return json(await personalTaste.history({id:url.searchParams.get("id")||"",limit:40}));
       if (resource === "personal_feed") return json(await personalFeed.list({limit:Math.min(Math.max(Number(url.searchParams.get("limit"))||160,1),500),includeSkipped:url.searchParams.get("includeSkipped")==="true"}));
       if (resource === "personal_feed_rejected") return json(await personalFeed.rejected({limit:Math.min(Math.max(Number(url.searchParams.get("limit"))||20,1),40)}));
