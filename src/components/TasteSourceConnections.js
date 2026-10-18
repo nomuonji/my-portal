@@ -3,6 +3,7 @@ import {Alert,Box,Button,Checkbox,Chip,FormControlLabel,Stack,TextField,Typograp
 import {CloudUpload,OpenInNew,Refresh} from '@mui/icons-material';
 import {auth} from '../firebase';
 import {parseBooklog,parseFilmarks} from './tasteSourceImport';
+import AniListConnectPanel from './AniListConnectPanel';
 
 const border='#303842',muted='#a0b0bd',mint='#92e0c4';
 const sources=[
@@ -67,6 +68,7 @@ export default function TasteSourceConnections(){
   </Stack>
   {error&&<Alert severity="error" onClose={()=>setError('')} sx={{mt:1.5}}>{error}</Alert>}
   {message&&<Alert severity="success" onClose={()=>setMessage('')} sx={{mt:1.5}}>{message}</Alert>}
+  <AniListConnectPanel/>
   <Stack gap={2} sx={{mt:2}}>
    {sources.map(source=>{
     const data=items.find(x=>x.service===source.service);
