@@ -311,4 +311,4 @@ module.exports={TRAKT_CALLBACK,LASTFM_USER,TRAKT_EXPECTED,
  lastfmConnection,lastfmConfigure,lastfmProfile,
  traktConnection,traktConfigure,traktStart,traktFinish,traktProfile,traktAdd,
  traktMediaSearch,traktFilmarksImport,
- encrypt,decrypt,secretKey};
+ encrypt,decrypt,secretKey,traktApi,authData};
