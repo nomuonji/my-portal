@@ -325,8 +325,13 @@ async function traktMediaSearch({queries}={}){
 async function traktFilmarksImport({items}={}){
  return require('./filmarksTraktMigration').importVerified({items});
 }
+// Lazy import keeps the authenticated Trakt code path in the existing stable
+// Netlify function module instead of adding a second static function import.
+async function filmarksImportReport(){return require('./filmarksTraktMigration').report()}
+async function filmarksImportBatch(args){return require('./filmarksTraktMigration').importBatch(args)}
 module.exports={TRAKT_CALLBACK,LASTFM_USER,TRAKT_EXPECTED,
  lastfmConnection,lastfmConfigure,lastfmProfile,
  traktConnection,traktConfigure,traktStart,traktFinish,traktProfile,traktAdd,
  traktMediaSearch,traktFilmarksImport,
- encrypt,decrypt,secretKey,traktApi,authData,traktMediaSearch,traktFilmarksImport};
+ filmarksImportReport,filmarksImportBatch,
+ encrypt,decrypt,secretKey,traktApi,authData};
