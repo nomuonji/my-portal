@@ -14,26 +14,36 @@ async function call(resource='',body){
  if(!r.ok)throw Error(data.error||'AniList連携に失敗しました');
  return data;
 }
+// React StrictMode mounts effects twice in development. Reuse exactly one
+// OAuth exchange for this document and remove the JWT from browser history
+// before doing any asynchronous work. Never put tokens into localStorage.
+let oauthCallbackJob=null;
+function finishAniListOAuthRedirect(){
+ if(oauthCallbackJob)return oauthCallbackJob;
+ const fragment=new URLSearchParams(window.location.hash.replace(/^#/,''));
+ const token=fragment.get('access_token'),error=fragment.get('error');
+ window.history.replaceState(window.history.state,'',window.location.pathname+window.location.search);
+ if(error||!token){
+  oauthCallbackJob=Promise.resolve({ok:false,message:'AniListから認証情報が返されませんでした。もう一度連携を許可してください。'});
+ }else{
+  oauthCallbackJob=call('',{action:'anilist_authorize_token',token})
+   .then(result=>result.connected?
+    {ok:true,message:'AniList @topgear の操作連携が完了しました。'}:
+    {ok:false,message:'AniListからの認可を確認できませんでした。'})
+   .catch(e=>({ok:false,message:'連携できませんでした: '+e.message}));
+ }
+ return oauthCallbackJob;
+}
 export function AniListOAuthCallback(){
- const [state,setState]=useState('AniListの連携を確認しています…');
+ const [state,setState]=useState({ok:null,message:'AniListの認証結果を確認しています…'});
  useEffect(()=>{
-  const params=new URLSearchParams(window.location.hash.replace(/^#/,''));
-  const token=params.get('access_token'),error=params.get('error');
-  window.history.replaceState(null,'',window.location.pathname);
-  if(error||!token){setState('認証がキャンセルされたか、有効なトークンを取得できませんでした');return}
-  let cancelled=false;
-  const save=async()=>{
-   try{
-    // App's route only renders after Firebase has finished its login restoration.
-    const data=await call('',{action:'anilist_authorize_token',token});
-    if(!cancelled)setState(data.connected?'AniList topgearの操作が可能になりました。':'AniList連携を確認できませんでした');
-   }catch(e){if(!cancelled)setState('連携できませんでした: '+e.message)}
-  };
-  save();return ()=>{cancelled=true};
+  let live=true;
+  finishAniListOAuthRedirect().then(result=>{if(live)setState(result)});
+  return ()=>{live=false};
  },[]);
  return <Box sx={{maxWidth:620,mx:'auto',p:3}}>
   <Typography variant="h6" sx={{mb:2}}>AniListアカウントの認証</Typography>
-  <Alert severity={state.includes('可能')?'success':'info'}>{state}</Alert>
+  <Alert severity={state.ok===null?'info':state.ok?'success':'error'}>{state.message}</Alert>
   <Button href="/taste" sx={{color:mint,mt:2}}>好みの記録に戻る</Button>
  </Box>;
 }
