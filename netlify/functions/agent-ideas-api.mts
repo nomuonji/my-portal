@@ -12,6 +12,7 @@ import * as personalFeedImport from "../../functions/personalFeedStore.js";
 import * as personalTasteImport from "../../functions/personalTasteStore.js";
 import * as personalTasteExternalImport from "../../functions/personalTasteExternalStore.js";
 import * as anilistImport from "../../functions/anilistIntegration.js";
+import * as mediaConnectionsImport from "../../functions/mediaAccountConnections.js";
 import * as routineStoreImport from "../../functions/routineJobStore.js";
 
 const store: any = (storeImport as any).default ?? storeImport;
@@ -24,6 +25,7 @@ const personalFeed: any = (personalFeedImport as any).default ?? personalFeedImp
 const personalTaste: any = (personalTasteImport as any).default ?? personalTasteImport;
 const externalTaste: any = (personalTasteExternalImport as any).default ?? personalTasteExternalImport;
 const anilist: any = (anilistImport as any).default ?? anilistImport;
+const mediaConnections: any = (mediaConnectionsImport as any).default ?? mediaConnectionsImport;
 const routineStore: any = (routineStoreImport as any).default ?? routineStoreImport;
 const documentDb: any = (documentDbImport as any).default ?? documentDbImport;
 const AGENT_DATABASE_ID = "(default)";
@@ -130,6 +132,10 @@ export default async (request: Request) => {
           contextStore: await contextStore.healthCheck(),
         });
       }
+      if (resource === "lastfm_connection") return json(await mediaConnections.lastfmConnection());
+      if (resource === "lastfm_profile") return json(await mediaConnections.lastfmProfile({period:url.searchParams.get("period")||"overall"}));
+      if (resource === "trakt_connection") return json(await mediaConnections.traktConnection());
+      if (resource === "trakt_profile") return json(await mediaConnections.traktProfile({limit:Math.min(120,Number(url.searchParams.get("limit"))||80)}));
       if (resource === "anilist_connection") return json(await anilist.connection());
       if (resource === "anilist_profile") return json(await anilist.profile({type:url.searchParams.get("type")||"ALL",limit:20}));
       if (resource === "taste_external_sources") return json(await externalTaste.list({includeItems:url.searchParams.get("includeItems")==="true"}));
@@ -230,6 +236,10 @@ export default async (request: Request) => {
     if (request.method === "POST") {
       const body: any = await parseBody(request);
       const action = String(body.action || "");
+      if (action === "lastfm_configure") return json(await mediaConnections.lastfmConfigure({apiKey:body.apiKey}));
+      if (action === "trakt_client_configure") return json(await mediaConnections.traktConfigure({clientId:body.clientId}));
+      if (action === "trakt_authorize_start") return json(await mediaConnections.traktStart());
+      if (action === "trakt_authorize_finish") return json(await mediaConnections.traktFinish({code:body.code,state:body.state}));
       if (action === "anilist_client_configure") return json(await anilist.configure({clientId:body.clientId}));
       if (action === "anilist_authorize_url") return json(await anilist.authorizeUrl());
       if (action === "anilist_authorize_token") return json(await anilist.authorize({token:body.token}));
