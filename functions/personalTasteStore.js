@@ -14,6 +14,7 @@ const KINDS=new Set(['explicit_user','expression_inference','external_reference'
 const DIRECTIONS=new Set(['like','dislike','boundary','unknown']);
 const DOMAINS=new Set(['discover','humor','writing','design','ideas','media','general']);
 const STATUSES=new Set(['active','superseded','archived']);
+const TARGET_KINDS=new Set(['item','creator','genre','pattern','format','editorial_policy','unspecified']);
 const SOURCE_KINDS=new Set(['user_message','user_post','discover_item','external_raw','bookmark','other']);
 const db=()=>getDocumentDb('(default)');
 const trim=(v,n=800)=>String(v??'').trim().slice(0,n);
@@ -44,6 +45,25 @@ function validate(raw){
  if(!Number.isFinite(confidence)||confidence<0||confidence>1)throw Error('confidence must be between 0 and 1');
  if(evidenceKind!=='explicit_user'&&confidence>0.75)throw Error('Unconfirmed inference/reference cannot exceed .75 confidence');
  const sourceRefs=normalizeRefs(raw.sourceRefs);
+ // Target identifies what was judged, not what the person is assumed to like.
+ // Omitted fields preserve compatibility with evidence saved before v2.
+ const targetKind=trim(raw.target?.kind||'unspecified',40);
+ if(!TARGET_KINDS.has(targetKind))throw Error('Invalid target kind');
+ const target={kind:targetKind,key:trim(raw.target?.key,160),
+   label:trim(raw.target?.label||title,180)};
+ if(!target.label)throw Error('Target label required');
+ if(raw.facets!==undefined&&!Array.isArray(raw.facets))throw Error('facets must be an array');
+ const facets=[...new Set((raw.facets||[]).slice(0,12).map(x=>{
+   if(typeof x!=='string')throw Error('Facet must be a string');
+   const label=trim(x.normalize('NFKC'),64);
+   if(label.length<2)throw Error('Facet labels need at least two characters');
+   return label;
+ }))];
+ if(raw.facets?.length>12)throw Error('Too many facets');
+ if(raw.appliesTo!==undefined&&!Array.isArray(raw.appliesTo))throw Error('appliesTo must be an array');
+ const appliesTo=[...new Set((raw.appliesTo||[domain]).map(x=>trim(x,40)))];
+ if(!appliesTo.length||appliesTo.length>7||appliesTo.some(x=>!DOMAINS.has(x)))
+   throw Error('Invalid applicable domains');
  if(evidenceKind==='explicit_user'&&!sourceRefs.some(x=>x.kind==='user_message'||x.kind==='discover_item'))
   throw Error('Explicit user verdict must cite an actual user message or Discover item');
  if(evidenceKind==='expression_inference'&&sourceRefs.filter(x=>x.kind==='user_post').length<2)
@@ -52,7 +72,7 @@ function validate(raw){
   throw Error('External references need original corpus document IDs');
  if(evidenceKind==='watch_later'&&!sourceRefs.some(x=>x.kind==='bookmark'))
   throw Error('Watch-later is a separate bookmark, never a positive rating');
- return {title,detail,domain,evidenceKind,direction,status,confidence,
+ return {title,detail,domain,evidenceKind,direction,status,confidence,target,facets,appliesTo,
   caveat:trim(raw.caveat,1200),sourceRefs,origin:trim(raw.origin||'manual',100),
   topicKey:trim(raw.topicKey,140)};
 }
@@ -130,12 +150,49 @@ async function list(args={}){
    (!args.direction||x.direction===args.direction)
  ).slice(0,limit);
  const all=snapshot.docs.map(view);
- return {items,count:items.length,scanned:all.length,sourceOfTruth:COLLECTION,
+ return {items,count:items.length,scanned:all.length,sourceOfTruth:COLLECTION,profile:summarizeProfile(all),
    summary:{explicit:all.filter(x=>x.evidenceKind==='explicit_user'&&x.status==='active').length,
    hypotheses:all.filter(x=>x.evidenceKind==='expression_inference'&&x.status==='active').length,
    referenceOnly:all.filter(x=>x.evidenceKind==='external_reference'&&x.status==='active').length,
    watchLater:all.filter(x=>x.evidenceKind==='watch_later'&&x.status==='active').length}};
 }
+
+/**
+ * Derived read model. It is NOT another editable preference DB.
+ * A facet with one source is a one-off signal, not a global preference.
+ * Inferred posts, external corpora, and bookmarks are excluded entirely.
+ */
+function summarizeProfile(all,{domain}={}){
+ const active=all.filter(x=>x.status==='active'&&x.evidenceKind==='explicit_user'&&
+   (!domain||(x.appliesTo||[x.domain]).includes(domain)));
+ const facetMap=new Map();
+ let uncategorized=0;
+ for(const entry of active){
+  if(!entry.facets?.length){uncategorized++;continue}
+  for(const label of new Set(entry.facets)){
+   const key=label.normalize('NFKC').trim().toLocaleLowerCase();
+   if(!key)continue;
+   let row=facetMap.get(key);
+   if(!row){row={key,label,like:0,dislike:0,boundary:0,evidenceIds:[],domains:[]};facetMap.set(key,row)}
+   row[entry.direction]=(row[entry.direction]||0)+1;
+   row.evidenceIds.push(entry.id);
+   for(const d of (entry.appliesTo||[entry.domain]))if(!row.domains.includes(d))row.domains.push(d);
+  }
+ }
+ const facets=[...facetMap.values()].map(x=>({...x,
+  evidenceCount:x.evidenceIds.length,
+  state:x.like&&x.dislike?'mixed':x.evidenceIds.length>=2?'repeated':'single'
+ })).sort((a,b)=>b.evidenceCount-a.evidenceCount||a.label.localeCompare(b.label,'ja'));
+ return {facets,explicitCount:active.length,uncategorized,scanned:all.length,
+  scanCap:450,mayBeIncomplete:all.length===450,
+  policy:'Facets count only active direct user judgments. Counts describe evidence, not a computed personality score.'};
+}
+async function profile(args={}){
+ await bootstrap();
+ const snapshot=await db().collection(COLLECTION).orderBy('updatedAt','desc').limit(450).get();
+ return summarizeProfile(snapshot.docs.map(view),args);
+}
+
 async function get(args={}){
  await bootstrap();const id=trim(args.id,120);if(!safeId(id))throw Error('Invalid taste ID');
  const snap=await db().collection(COLLECTION).doc(id).get();
@@ -197,4 +254,4 @@ async function fromDiscover(args={}){
  return upsert({id,record,expectedRevision:prior.exists?prior.data().revision:undefined,
     changeReason:'Discover feedback='+feedback});
 }
-module.exports={COLLECTION,EVENTS,KINDS,DIRECTIONS,STARTER,validate,list,get,upsert,history,fromDiscover,bootstrap};
+module.exports={COLLECTION,EVENTS,KINDS,DIRECTIONS,TARGET_KINDS,STARTER,validate,summarizeProfile,profile,list,get,upsert,history,fromDiscover,bootstrap};
