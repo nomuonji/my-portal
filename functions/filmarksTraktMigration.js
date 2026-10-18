@@ -123,4 +123,36 @@ async function importBatch({limit=4}={}){
   return {...rep,processedThisCall:chosen.length};
  }finally{active=false}
 }
-module.exports={report,importBatch,normalize,searchOne};
+async function importVerified({items:incoming}={}){
+ if(!Array.isArray(incoming)||incoming.length<1||incoming.length>8)
+  throw Error('Pass 1 to 8 verified Filmarks entries');
+ await authData();
+ const stateBefore=await state(),results={...stateBefore.items},responses=[];
+ for(const requested of incoming){
+  const film=items().find(x=>x.title===requested.title
+   &&x.source===(requested.intent==='mark'?'mark':'clip')
+   &&(requested.year===undefined||x.year===requested.year));
+  const id=Number(requested.traktId);
+  if(!film||!Number.isSafeInteger(id)||id<1||
+   (requested.mediaType&&requested.mediaType!=='movie'))
+   {responses.push({title:requested.title,state:'unresolved',reason:'No matching FilmMarks source movie'});continue}
+  if(film.source==='mark'&&requested.filmarksRating!==undefined
+   &&Number(requested.filmarksRating)!==film.score)
+   {responses.push({title:requested.title,state:'unresolved',reason:'Filmarks source rating differs'});continue}
+  try{
+   const movie=await traktApi('GET','/movies/'+id+'?extended=full');
+   if(movie.year!==film.year||!film.aliases.some(a=>normalize(a)===normalize(movie.title))){
+    responses.push({title:film.title,state:'unresolved',
+     reason:'Trakt film title/year not an independently verified match'});continue
+   }
+   const result=await transferSingle(film,{id,title:movie.title,year:movie.year});
+   results[film.id]={...result,attempts:(results[film.id]?.attempts||0)+1};
+   await doc().set({sourceVersion:1,sourceOwner:'postmodern137',destination:'trakt',
+    startedAt:stateBefore.startedAt||new Date().toISOString(),
+    updatedAt:FieldValue.serverTimestamp(),items:results});
+   responses.push({title:film.title,...result});
+  }catch(error){responses.push({title:film.title,state:'error',error:safeError(error)});}
+ }
+ return {responses,summary:statusSummary(results)};
+}
+module.exports={report,importBatch,importVerified,normalize,searchOne};
