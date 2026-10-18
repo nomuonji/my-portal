@@ -128,3 +128,76 @@ test('Trakt refresh sends required app headers and writes only encrypted new tok
  assert.equal(refreshed,true);
  assert.equal(api.decrypt(stored.get('trakt').refreshToken),'new_mock_refresh');
 });
+
+
+test('Filmarks movie search is read-only and returns Trakt ID and release year',async()=>{
+ const {api,stored}=createHarness(async(url,opts)=>{
+  if(url.pathname==='/search/movie'){
+   assert.equal(url.searchParams.get('query'),'時計じかけのオレンジ');
+   return {body:[{type:'movie',score:7.2,movie:{title:'A Clockwork Orange',year:1971,
+    ids:{trakt:17,tmdb:185,imdb:'tt0066921'}}}]};
+  }
+  throw Error('Unexpected '+url.pathname);
+ });
+ stored.set('trakt',{clientId:'c'.repeat(64),token:api.encrypt('token'),refreshToken:api.encrypt('refresh'),
+  expiresAt:Date.now()+500000});
+ const result=await api.traktMediaSearch({queries:[{title:'時計じかけのオレンジ',mediaType:'movie',year:1971}]});
+ assert.equal(result.results[0].candidates[0].traktId,17);
+ assert.equal(result.results[0].candidates[0].year,1971);
+});
+test('Filmarks clips import with Trakt ID/year verification, watchlist readback and idempotency',async()=>{
+ let writes=0;
+ const {api,stored}=createHarness(async(url,opts)=>{
+  if(url.pathname==='/search/trakt/17')return {body:[{movie:{title:'A Clockwork Orange',year:1971,ids:{trakt:17}}}]};
+  if(url.pathname==='/sync/watchlist'&&opts.method==='POST'){
+   writes++;const data=JSON.parse(opts.body);assert.equal(data.movies[0].ids.trakt,17);
+   return {body:{added:{movies:1}}};
+  }
+  if(url.pathname==='/sync/watchlist/movies')return {body:[{movie:{ids:{trakt:17}}}]};
+  throw Error('Unexpected '+url.pathname);
+ });
+ stored.set('trakt',{clientId:'c'.repeat(64),token:api.encrypt('token'),refreshToken:api.encrypt('refresh'),
+  expiresAt:Date.now()+500000});
+ const entry={title:'時計じかけのオレンジ',intent:'watchlist',traktId:17,mediaType:'movie',year:1971};
+ const imported=await api.traktFilmarksImport({items:[entry]});
+ assert.equal(imported.completed,1);
+ assert.equal(writes,1);
+ assert.equal((await api.traktFilmarksImport({items:[entry]})).results[0].skipped,'already imported');
+ assert.equal(writes,1);
+ assert.equal(stored.get('filmarks-trakt-transfer').entries['watchlist:movie:時計じかけのオレンジ:1971'].complete,true);
+});
+test('Filmarks Mark maps original five-point owner rating without inventing watched date',async()=>{
+ let history=0;
+ const {api,stored}=createHarness(async(url,opts)=>{
+  if(url.pathname==='/search/trakt/18')return {body:[{movie:{title:'Taxi Driver',year:1976,ids:{trakt:18}}}]};
+  if(url.pathname==='/sync/history'&&opts.method==='POST'){
+   history++;assert.equal(JSON.parse(opts.body).movies[0].watched_at,undefined);
+   return {body:{added:{movies:1}}};
+  }
+  if(url.pathname==='/sync/ratings'&&opts.method==='POST'){
+   assert.equal(JSON.parse(opts.body).movies[0].rating,7);
+   return {body:{added:{movies:1}}};
+  }
+  if(url.pathname==='/sync/ratings/movies')return {body:[{rating:7,movie:{ids:{trakt:18}}}]};
+  throw Error('Unexpected '+url.pathname);
+ });
+ stored.set('trakt',{clientId:'c'.repeat(64),token:api.encrypt('token'),refreshToken:api.encrypt('refresh'),
+  expiresAt:Date.now()+500000});
+ const imported=await api.traktFilmarksImport({items:[{title:'タクシードライバー',intent:'mark',
+  mediaType:'movie',traktId:18,year:1976,filmarksRating:3.5}]});
+ assert.equal(imported.completed,1);assert.equal(history,1);
+ const records=Object.values(stored.get('filmarks-trakt-transfer').entries);
+ assert.equal(records[0].sourceRating,3.5);assert.equal(records[0].traktRating,7);
+});
+test('Filmarks migration never writes if canonical Trakt year mismatches',async()=>{
+ const {api,stored}=createHarness(async(url,opts)=>{
+  assert.equal(opts.method,'GET');
+  return {body:[{movie:{title:'Naked Gun remake',year:2025,ids:{trakt:222}}}]};
+ });
+ stored.set('trakt',{clientId:'c'.repeat(64),token:api.encrypt('token'),refreshToken:api.encrypt('refresh'),
+  expiresAt:Date.now()+500000});
+ const result=await api.traktFilmarksImport({items:[{title:'裸の銃を持つ男',intent:'watchlist',
+  traktId:222,year:1988}]});
+ assert.equal(result.completed,0);
+ assert.equal(result.results[0].error,'Trakt ID/year did not verify');
+});

@@ -213,7 +213,102 @@ async function traktAdd({kind,mediaType,traktId,rating,changeReason}={}){
   added:count,visibleInFirstPage:matches.length>0,changeReason:reason,
   readback:matches[0]||null};
 }
+
+/** Strict live lookup. The client must explicitly inspect title/year/ID
+ * before using a result for migration; no first-result auto-accept.
+ */
+async function traktMediaSearch({queries=[]}={}){
+ if(!Array.isArray(queries)||queries.length<1||queries.length>10)
+  throw Error('Supply 1..10 Trakt title queries');
+ const output=[];
+ for(const q of queries){
+  const title=clean(q.title,160),type=clean(q.mediaType||'movie',10),year=q.year==null?null:Number(q.year);
+  if(title.length<2||!['movie','show'].includes(type)||year!=null&&(!Number.isInteger(year)||year<1880||year>2100))
+   throw Error('Valid media title/type/year required');
+  const url='/search/'+type+'?query='+encodeURIComponent(title)+'&limit=8&page=1';
+  const matches=await traktApi('GET',url);
+  output.push({requested:{title,mediaType:type,year},candidates:
+   (Array.isArray(matches)?matches:[]).slice(0,8).map(hit=>{
+    const m=hit[type]||{};
+    return {title:m.title,year:m.year,traktId:m.ids?.trakt,imdb:m.ids?.imdb||null,
+     tmdb:m.ids?.tmdb||null,score:hit.score};
+   }).filter(x=>Number.isSafeInteger(x.traktId))});
+ }
+ return {source:'Trakt official search API',results:output,
+  warning:'A search hit is not proof of the same work. Check release year and original/translated title before writing. Reissues/remakes can collide.'};
+}
+async function traktFilmarksImport({items=[]}={}){
+ if(!Array.isArray(items)||items.length<1||items.length>8)
+  throw Error('Import 1..8 independently verified records per batch');
+ const statusDoc=doc('filmarks-trakt-transfer'),snap=await statusDoc.get();
+ let persisted=snap.exists?snap.data():{},entries={...(persisted.entries||{})};
+ const results=[];
+ for(const input of items){
+  const title=clean(input.title,170),intent=clean(input.intent,15),
+   type=clean(input.mediaType||'movie',10),id=Number(input.traktId),
+   year=input.year==null?null:Number(input.year),rating=input.filmarksRating==null?null:Number(input.filmarksRating);
+  if(title.length<2||!['watchlist','mark'].includes(intent)||!['movie','show'].includes(type)
+   ||!Number.isSafeInteger(id)||id<=0||year!=null&&(!Number.isInteger(year)||year<1880||year>2100)
+   ||intent==='mark'&&type!=='movie'||intent==='mark'&&(rating==null||rating<0.5||rating>5||Math.round(rating*10)!==rating*10))
+   throw Error('Invalid Filmarks import item');
+  const idempotencyKey=[intent,type,clean(input.filmarksId||title,150),year||''].join(':');
+  if(entries[idempotencyKey]?.complete){
+   results.push({title,intent,traktId:id,skipped:'already imported',complete:true});continue;
+  }
+  // Validate the Trakt ID refers to a film/show of the expected release year.
+  const lookup=await traktApi('GET','/search/trakt/'+id+'?type='+type);
+  const actual=(Array.isArray(lookup)?lookup[0]:null)?.[type];
+  if(!actual||actual.ids?.trakt!==id||year!=null&&actual.year!==year){
+   results.push({title,intent,traktId:id,complete:false,error:'Trakt ID/year did not verify',
+    candidate:actual?{title:actual.title,year:actual.year}:null});continue;
+  }
+  const media=type==='movie'?'movies':'shows';
+  const item={ids:{trakt:id}};
+  try{
+   let write;
+   if(intent==='watchlist'){
+    write=await traktApi('POST','/sync/watchlist',{[media]:[item]});
+   }else{
+    // Filmarks does not provide an actual viewed-at timestamp in its list
+    // view. Trakt will assign import time; retain this limitation in log.
+    const viewed=await traktApi('POST','/sync/history',{movies:[item]});
+    if((viewed.added?.movies||0)<1)throw Error('Trakt did not accept viewed movie');
+    const traktRating=Math.max(1,Math.min(10,Math.round(rating*2)));
+    write=await traktApi('POST','/sync/ratings',{movies:[{...item,rating:traktRating}]});
+    if((write.added?.movies||0)<1)throw Error('Trakt did not accept rating');
+   }
+   // Import might be retrying after a successful post but lost response;
+   // zero-added means an existing item, not a failure.
+   const all=await traktApi('GET',intent==='watchlist'
+     ?'/sync/watchlist/'+media+'?limit=120&page=1'
+     :'/sync/ratings/movies?limit=120&page=1');
+   const record=(Array.isArray(all)?all:[]).find(x=>x[type]?.ids?.trakt===id);
+   if(!record)throw Error('Trakt readback did not locate imported record');
+   if(intent==='mark'){
+    const wanted=Math.max(1,Math.min(10,Math.round(rating*2)));
+    if(record.rating!==wanted)throw Error('Rating readback mismatch');
+   }
+   entries[idempotencyKey]={complete:true,intent,mediaType:type,title,
+    source:'Filmarks @postmodern137',sourceId:clean(input.filmarksId||'',90),
+    sourceYear:year,sourceRating:rating,
+    traktId:id,traktTitle:actual.title,traktYear:actual.year,
+    traktRating:intent==='mark'?Math.max(1,Math.min(10,Math.round(rating*2))):null,
+    migratedAt:new Date().toISOString(),watchedAtNote:intent==='mark'
+     ?'Trakt added import-time history; Filmarks actual watched date is unavailable':null};
+   await statusDoc.set({...persisted,service:'filmarks-to-trakt',userName:'postmodern137',
+     targetAccount:'__c4a362',entries,updatedAt:FieldValue.serverTimestamp()});
+   results.push({title,intent,traktId:id,traktTitle:actual.title,traktYear:actual.year,
+    rating:entries[idempotencyKey].traktRating||null,complete:true});
+  }catch(e){results.push({title,intent,traktId:id,complete:false,error:clean(e.message,180)})}
+ }
+ return {source:'Filmarks @postmodern137',destination:'Trakt __c4a362',
+  processed:items.length,completed:results.filter(x=>x.complete).length,
+  results,notes:['Filmarks Clip is wishlisted (not liked). Filmarks Mark reflects watched + user score.',
+   'Filmarks 5-point scores rounded to nearest Trakt 1–10 integer. Original score retained in migration audit.',
+   'Actual watched date was not available; Trakt history records import time.']};
+}
 module.exports={TRAKT_CALLBACK,LASTFM_USER,TRAKT_EXPECTED,
  lastfmConnection,lastfmConfigure,lastfmProfile,
  traktConnection,traktConfigure,traktStart,traktFinish,traktProfile,traktAdd,
+ traktMediaSearch,traktFilmarksImport,
  encrypt,decrypt,secretKey};
