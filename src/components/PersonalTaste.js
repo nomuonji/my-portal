@@ -24,7 +24,7 @@ async function api(path='',body=null){
  if(!response.ok)throw Error(data.error||'通信に失敗しました ('+response.status+')');
  return data;
 }
-const initial={title:'',detail:'',domain:'discover',direction:'dislike',caveat:'',targetKind:'pattern',facetsText:''};
+const initial={title:'',detail:'',domain:'discover',direction:'dislike',caveat:'',targetKind:'pattern',facetsText:'',appliesTo:['discover']};
 function Evidence({entry}){
  const color=TYPES[entry.evidenceKind]?.color||C.muted;
  return <Box sx={{p:{xs:1.8,md:2.2},background:C.surface,border:'1px solid '+C.border,borderRadius:2}}>
@@ -82,11 +82,12 @@ export default function PersonalTaste(){
   setHistory(null);setError('');
   if(entry&&entry.evidenceKind==='explicit_user'){
    setForm({title:entry.title,detail:entry.detail,domain:entry.domain,direction:entry.direction,
-    caveat:entry.caveat||'',targetKind:entry.target?.kind||'unspecified',facetsText:(entry.facets||[]).join('、')});
+    caveat:entry.caveat||'',targetKind:entry.target?.kind||'unspecified',facetsText:(entry.facets||[]).join('、'),
+    appliesTo:entry.appliesTo||[entry.domain]});
    setDialog({type:'edit',entry});
   }else{
    setForm(entry?{title:entry.title,detail:'この仮説・参考資料に対する本人の判断：',domain:entry.domain,
-    direction:'dislike',caveat:'',targetKind:entry.target?.kind||'item',facetsText:''}:initial);
+    direction:'dislike',caveat:'',targetKind:entry.target?.kind||'item',facetsText:'',appliesTo:[entry.domain]}:initial);
    setDialog({type:'new',entry});
   }
  };
@@ -104,7 +105,7 @@ export default function PersonalTaste(){
    const {facetsText,targetKind,...main}=form;
    const facets=[...new Set(facetsText.split(/[、,\n]/).map(x=>x.trim()).filter(Boolean))];
    const record={...main,facets,target:{kind:targetKind,label:form.title.trim(),
-     key:isEdit?(original.target?.key||''):''},appliesTo:isEdit?(original.appliesTo||[form.domain]):[form.domain],
+     key:isEdit?(original.target?.key||''):''}},
     evidenceKind:'explicit_user',confidence:1,status:'active',
     origin:'direct_user_ui',topicKey:isEdit?(original.topicKey||''):'',
     sourceRefs:refs};
@@ -224,7 +225,10 @@ export default function PersonalTaste(){
        <MenuItem value="like">好き</MenuItem><MenuItem value="dislike">嫌い</MenuItem><MenuItem value="boundary">判断・境界</MenuItem>
       </Select></FormControl>
      <FormControl fullWidth><InputLabel>分野</InputLabel>
-      <Select label="分野" value={form.domain} onChange={e=>setForm(f=>({...f,domain:e.target.value}))}>
+      <Select label="分野" value={form.domain} onChange={e=>setForm(f=>({
+       ...f,domain:e.target.value,
+       appliesTo:f.appliesTo.length===1&&f.appliesTo[0]===f.domain?[e.target.value]:f.appliesTo
+      }))}>
        {Object.entries(DOMAINS).map(([key,label])=><MenuItem key={key} value={key}>{label}</MenuItem>)}
       </Select></FormControl>
     </Stack>
@@ -233,6 +237,16 @@ export default function PersonalTaste(){
       {Object.entries(TARGETS).map(([key,label])=><MenuItem key={key} value={key}>{label}</MenuItem>)}
      </Select>
     </FormControl>
+    <Box component="details" sx={{'& summary':{cursor:'pointer',fontSize:12,color:'#456f69'}}}>
+     <Box component="summary">他の分野への適用範囲（任意）</Box>
+     <FormControl fullWidth sx={{mt:1.5}}><InputLabel>この判断を参照する分野</InputLabel>
+      <Select multiple label="この判断を参照する分野" value={form.appliesTo}
+       renderValue={values=>values.map(v=>DOMAINS[v]).join('、')}
+       onChange={e=>setForm(f=>({...f,appliesTo:e.target.value}))}>
+       {Object.entries(DOMAINS).map(([key,label])=><MenuItem key={key} value={key}>{label}</MenuItem>)}
+      </Select>
+     </FormControl>
+    </Box>
     <TextField label="判断理由のタグ（任意・読点区切り）" value={form.facetsText}
      onChange={e=>setForm(f=>({...f,facetsText:e.target.value}))} fullWidth
      helperText="例：作為的な奇抜さ、薄い公式速報。具体的な特徴だけを記録し、性格全体を決めつけません。"/>
