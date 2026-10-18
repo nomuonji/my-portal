@@ -10,8 +10,8 @@ function makeDb(){
  })};
  return {collection:()=>col};
 }
-function load(fetch){
- const process={env:{ANILIST_TOKEN_ENCRYPTION_KEY:'a'.repeat(64)}};
+function load(fetch,vars={ANILIST_TOKEN_ENCRYPTION_KEY:'a'.repeat(64)}){
+ const process={env:vars};
  const module={exports:{}},db=makeDb();
  const sandbox={module,exports:module.exports,process,Buffer,fetch,URL,AbortController,Date,Number,
   setTimeout,clearTimeout,globalThis:{Netlify:null},
@@ -62,4 +62,24 @@ test('Mutations reject missing user reason and invalid score before any write',a
  await assert.rejects(api.save({mediaId:7,status:'COMPLETED',changeReason:''}),/explicit user instruction/);
  await assert.rejects(api.save({mediaId:7,score:105,changeReason:'Set my score'}),/0..100/);
  await assert.rejects(api.save({mediaId:7,status:'UNKNOWN',changeReason:'Change my status'}),/Invalid status/);
+});
+
+test('Production server credential can derive a separate AES key without dedicated env',async()=>{
+ const privateKey='-----BEGIN PRIVATE KEY-----\\n'+'A'.repeat(600)+'\\n-----END PRIVATE KEY-----';
+ const vars={FIREBASE_SERVICE_ACCOUNT_JSON:JSON.stringify({private_key:privateKey})};
+ const api=load(async()=>{throw Error('No API call necessary')},vars);
+ const conn=await api.connection();
+ assert.equal(conn.encryptionConfigured,true);
+ const ciphertext=api.encrypt('sensitive-fake-oauth-token');
+ assert.equal(api.decrypt(ciphertext),'sensitive-fake-oauth-token');
+ assert.equal(Object.prototype.hasOwnProperty.call(conn,'tokenEncrypted'),false);
+ assert.equal(JSON.stringify(conn).includes('PRIVATE KEY'),false);
+ const changed=load(async()=>{throw Error('No API call necessary')},{
+  FIREBASE_SERVICE_ACCOUNT_JSON:JSON.stringify({private_key:privateKey.replace('A'.repeat(600),'B'.repeat(600))})});
+ assert.throws(()=>changed.decrypt(ciphertext));
+});
+test('UI reports disabled when no server-side credential is available',async()=>{
+ const api=load(async()=>{throw Error('No network required')},{});
+ assert.equal((await api.connection()).encryptionConfigured,false);
+ assert.throws(()=>api.encrypt('x'),/not configured/);
 });
