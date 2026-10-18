@@ -50,6 +50,13 @@ const clips=[
  ['HOW TO HAVE SEX',2023,['How to Have Sex']],
  ['大いなる不在',2023,['Great Absence']]
 ];
+// Filmarks drama Clips, source profile /clips/dramas; all are to-watch,
+// not viewed or explicitly liked. 2018 / 2020 / 2024 from Filmarks works.
+const shows=[
+ ['メディア王～華麗なる一族～',2018,['Succession']],
+ ['ノーマル・ピープル',2020,['Normal People']],
+ ['地面師たち',2024,['Tokyo Swindlers']]
+];
 const marks=[
  ['浮き雲',1996,['Drifting Clouds'],5.0],
  ['西部戦線異状なし',1930,['All Quiet on the Western Front'],3.8],
@@ -64,9 +71,12 @@ function items(){
  return [
   ...clips.map(([title,year,aliases],i)=>({id:'clip-'+String(i+1).padStart(2,'0'),source:'clip',title,year,aliases,
     url:'https://filmarks.com/users/postmodern137/clips?page='+(i>=36?'2':'1')})),
+  ...shows.map(([title,year,aliases],i)=>({id:'show-'+String(i+1).padStart(2,'0'),
+    source:'clip',mediaType:'show',title,year,aliases,
+    url:'https://filmarks.com/users/postmodern137/clips/dramas'})),
   ...marks.map(([title,year,aliases,score],i)=>({id:'mark-'+String(i+1).padStart(2,'0'),source:'mark',title,year,aliases,score,sourceScoreMax:5,
     url:'https://filmarks.com/users/postmodern137'}))
  ];
 }
-if(clips.length!==44||marks.length!==8)throw Error('Filmarks snapshot unexpectedly incomplete');
-module.exports={items,clips,marks};
+if(clips.length!==44||marks.length!==8||shows.length!==3)throw Error('Filmarks snapshot unexpectedly incomplete');
+module.exports={items,clips,marks,shows};
