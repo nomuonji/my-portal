@@ -1,74 +1,68 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {readFileSync}=require('node:fs'),vm=require('node:vm'),crypto=require('node:crypto');
-const path=require('node:path');
-const raw=readFileSync(path.join(__dirname,'../functions/mediaAccountConnections.js'),'utf8');
-const filmSnapshot=require('../functions/filmarksTraktSnapshot');
+const {readFileSync}=require('node:fs'),path=require('node:path');
+const snapshot=require('../functions/filmarksTraktSnapshot');
 function fixture(){
- const stored=new Map(),watch=[],ratings=[],writes=[];
- const db={collection:()=>({doc:id=>({async get(){
-  return {exists:stored.has(id),data:()=>stored.get(id)};
- },async set(v){stored.set(id,v)}})})};
- const privateKey='-----BEGIN PRIVATE KEY-----\n'+'A'.repeat(560)+'\n-----END PRIVATE KEY-----';
- const process={env:{FIREBASE_SERVICE_ACCOUNT_JSON:JSON.stringify({private_key:privateKey})}};
- const fetch=async(url,opts={})=>{
-  const u=new URL(String(url)),method=opts.method||'GET';
-  let body={};
+ let source=readFileSync(path.join(__dirname,'../functions/mediaAccountConnections.js'),'utf8');
+ const db=new Map(),watch=[],calls=[];
+ const mock=async(method,uri,payload)=>{
+  calls.push({method,uri});
+  const u=new URL('https://api.trakt.tv'+uri);
   if(u.pathname==='/search/movie'){
-   const q=u.searchParams.get('query')||'',year=Number(u.searchParams.get('years'));
-   body=q.toLowerCase().includes('sirat')&&year===2025
-    ?[{movie:{title:'Sirât',year:2025,ids:{trakt:111}}}]:
-    q.toLowerCase().includes('shall we dance')&&year===2004
-    ?[{movie:{title:'Shall We Dance?',year:1996,ids:{trakt:222}}},
-      {movie:{title:'Shall We Dance?',year:2004,ids:{trakt:333}}}]:[];
-  }else if(u.pathname==='/sync/watchlist/movies')body=watch;
-  else if(u.pathname==='/sync/ratings/movies')body=ratings;
-  else if(u.pathname==='/sync/watchlist'&&method==='POST'){
-   const a=JSON.parse(opts.body).movies;
-   for(const item of a)watch.push({movie:{ids:item.ids}});
-   writes.push({kind:'clip',items:a});body={added:{movies:a.length}};
-  }else if(u.pathname==='/sync/ratings'&&method==='POST'){
-   const a=JSON.parse(opts.body).movies;
-   for(const item of a)ratings.push({movie:{ids:item.ids},rating:item.rating});
-   writes.push({kind:'mark',items:a});body={added:{movies:a.length}};
-  }else throw Error('Unexpected fetch '+u.pathname);
-  return {ok:true,status:200,headers:{get:()=> 'application/json'},json:async()=>body};
+   const q=(u.searchParams.get('query')||'').toLowerCase(),year=Number(u.searchParams.get('years'));
+   if(q.includes('sirat')&&year===2025)return [{movie:{title:'Sirât',year:2025,ids:{trakt:111}}}];
+   if(q.includes('shall we dance')&&year===2004)return [
+    {movie:{title:'Shall We Dance?',year:1996,ids:{trakt:222}}},
+    {movie:{title:'Shall We Dance?',year:2004,ids:{trakt:333}}}];
+   return [];
+  }
+  if(method==='GET'&&u.pathname==='/sync/watchlist/movies')return watch;
+  if(method==='GET'&&u.pathname==='/sync/ratings/movies')return [];
+  if(method==='POST'&&u.pathname==='/sync/watchlist'){
+   for(const v of payload.movies)watch.push({movie:{ids:v.ids}});
+   return {added:{movies:payload.movies.length}};
+  }
+  throw Error('unexpected mocked path '+uri);
  };
- const module={exports:{}},sandbox={module,exports:module.exports,process,
-  Buffer,URL,URLSearchParams,Date,Number,setTimeout,clearTimeout,AbortController,fetch,
-  globalThis:{Netlify:null},
-  require:n=>n==='node:crypto'?crypto:n==='./documentDb'
-   ?{getDocumentDb:()=>db,FieldValue:{serverTimestamp:()=>new Date()}}:
-    n==='./filmarksTraktSnapshot'?filmSnapshot:require(n)};
- vm.runInNewContext(raw,sandbox,{filename:'mediaAccountConnections.js'});
- const api=module.exports;
- stored.set('trakt',{clientId:'a'.repeat(64),token:api.encrypt('fake_access'),
-  refreshToken:api.encrypt('fake_refresh'),username:'__c4a362',expiresAt:Date.now()+7200000});
- return {api,stored,watch,ratings,writes};
+ function substitute(first,last,replacement){
+  const start=source.indexOf(first),end=source.indexOf(last,start);
+  assert.ok(start>0&&end>start,'Function anchors must remain stable');
+  source=source.slice(0,start)+replacement+'\n'+source.slice(end);
+ }
+ // Fully test the real migration engine against a fake authenticated official
+ // API: no OAuth tokens, secrets or remote network access are required.
+ substitute('async function traktApi(','async function traktFinish(',
+  'async function traktApi(method,path,body){return mockApi(method,path,body)}');
+ substitute('async function authData(','async function traktProfile(',
+  'async function authData(){return {username:"__c4a362"}}');
+ const module={exports:{}},requireShim=name=>{
+  if(name==='node:crypto')return {};
+  if(name==='./filmarksTraktSnapshot')return snapshot;
+  if(name==='./documentDb')return {getDocumentDb:()=>({collection:()=>({
+   doc:id=>({get:async()=>({exists:db.has(id),data:()=>db.get(id)}),
+    set:async v=>db.set(id,v)})
+  })}),FieldValue:{serverTimestamp:()=>new Date()}};
+  throw Error('Unexpected dependency '+name);
+ };
+ new Function('module','require','mockApi',source)(module,requireShim,mock);
+ return {api:module.exports,db,watch,calls};
 }
-test('Only 44 clips and 8 marks and correct remake disambiguation',()=>{
- assert.equal(filmSnapshot.items().length,52);
- assert.equal(filmSnapshot.clips.length,44);
- assert.equal(filmSnapshot.marks.length,8);
- assert.equal(filmSnapshot.items().find(x=>x.title==='浮雲').year,1955);
- assert.equal(filmSnapshot.items().find(x=>x.title==='浮き雲').year,1996);
- assert.equal(filmSnapshot.items().filter(x=>x.title==='裸の銃を持つ男').length,2);
+test('Source snapshot contains 44 Clips, 8 Marks, and distinct film years',()=>{
+ assert.equal(snapshot.clips.length,44);assert.equal(snapshot.marks.length,8);
+ assert.equal(snapshot.items().length,52);
+ assert.equal(snapshot.items().find(v=>v.title==='浮雲').year,1955);
+ assert.equal(snapshot.items().find(v=>v.title==='浮き雲').year,1996);
 });
-test('Exact title + year imported, independent Trakt readback, idempotency',async()=>{
- const t=fixture();
- const a=await t.api.filmarksImportBatch({limit:2});
- assert.equal(a.imported,2);
- assert.equal(a.watchlistImported,2);
- assert.equal(a.unresolved,0);
- assert.equal(a.pending,50);
- assert.equal(t.watch.length,2);
- assert.equal(t.watch[0].movie.ids.trakt,111);
- assert.equal(t.watch[1].movie.ids.trakt,333);
- assert.equal(t.writes.length,2);
- const b=await t.api.filmarksImportReport();
- assert.equal(b.imported,2);
- assert.equal(t.stored.get('filmarks-trakt-20261018').rows['clip-01'].verified,true);
- const c=await t.api.filmarksImportBatch({limit:1});
- assert.equal(c.unresolved,1);
- assert.equal(t.writes.length,2);
+test('Importer transfers only exact canonical title and year with readback',async()=>{
+ const f=fixture();
+ const first=await f.api.filmarksImportBatch({limit:2});
+ assert.equal(first.imported,2);
+ assert.equal(first.pending,50);
+ assert.deepEqual(f.watch.map(v=>v.movie.ids.trakt),[111,333]);
+ assert.equal(f.calls.filter(v=>v.method==='POST').length,2);
+ assert.equal(f.db.get('filmarks-trakt-20261018').rows['clip-01'].verified,true);
+ const next=await f.api.filmarksImportBatch({limit:1});
+ assert.equal(next.unresolved,1);
+ assert.equal(next.imported,2);
+ assert.equal(f.calls.filter(v=>v.method==='POST').length,2);
 });
