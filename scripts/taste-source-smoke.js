@@ -31,7 +31,7 @@ test('Filmarks Clip URLs produce interest only; site community score does not be
  assert.equal(normalized[0].signal,'want_to_watch');
  assert.equal(normalized[0].rating,undefined);
  assert.equal(summarise(normalized,'filmarks').wantToWatch,1);
- assert.throws(()=>normalizeRows('filmarks',[{title:'他サービス',movieId:'99',url:'https://other.example/movie/99'}]),/movie ID required|Conflicting Filmarks ID/);
+ assert.throws(()=>normalizeRows('filmarks',[{title:'他サービス',movieId:'99',url:'https://other.example/movie/99'}]),/official movie URL|movie ID required|Conflicting Filmarks ID/);
 });
 test('A CSV without quotes supports 0 as unrated rather than a negative judgment',async()=>{
  const {parseBooklog}=await import(parserUrl);
