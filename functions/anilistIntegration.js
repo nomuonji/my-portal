@@ -2,7 +2,7 @@
 /* AniList public recommendation signals and optional owner-approved editing.
  * Public lists are query-only; a server-encrypted OAuth token is needed for writes.
  */
-const {createCipheriv,createDecipheriv,randomBytes}=require('node:crypto');
+const {createCipheriv,createDecipheriv,randomBytes,hkdfSync}=require('node:crypto');
 const {getDocumentDb,FieldValue}=require('./documentDb');
 const USERNAME='topgear',PROFILE='https://anilist.co/user/topgear/';
 const CALLBACK='https://my-portal-agent.netlify.app/anilist/callback';
@@ -16,11 +16,28 @@ const QUERY_VIEWER='query{Viewer{id name}}';
 const QUERY_LIST='query($name:String,$type:MediaType!){MediaListCollection(userName:$name,type:$type){lists{name isCustomList entries{id mediaId status score(format:POINT_100) progress progressVolumes updatedAt media{id type format title{romaji english native userPreferred} genres tags{name rank} averageScore siteUrl}}}}}';
 const QUERY_SEARCH='query($search:String,$type:MediaType!){Page(page:1,perPage:12){media(search:$search,type:$type,sort:SEARCH_MATCH){id type format title{romaji english native userPreferred} siteUrl isAdult}}}';
 const QUERY_ENTRY='query($id:Int!,$user:Int!){Media(id:$id){id type title{romaji native} siteUrl} MediaList(mediaId:$id,userId:$user){id mediaId status score(format:POINT_100) progress progressVolumes updatedAt}}';
+// Derive a purpose-separated encryption key from an EXISTING production-only
+// server credential when a dedicated Netlify variable is not exposed. Never
+// send the source secret, derived key or OAuth token to clients or MCP tools.
 function key(){
+ const root=env('FIREBASE_SERVICE_ACCOUNT_JSON');
+ if(root){
+  let credential;
+  try{credential=JSON.parse(root)}catch{throw Error('Firebase service account JSON is malformed')}
+  const privateKey=credential?.private_key;
+  if(typeof privateKey==='string'&&privateKey.includes('PRIVATE KEY')&&privateKey.length>500){
+   return Buffer.from(hkdfSync('sha256',Buffer.from(privateKey,'utf8'),
+    Buffer.from('my-portal:anilist:token:v1','utf8'),
+    Buffer.from('AES-256-GCM:OAuth-token-storage','utf8'),32));
+  }
+ }
  const raw=clean(env('ANILIST_TOKEN_ENCRYPTION_KEY'),160);
  const bytes=/^[a-f0-9]{64}$/i.test(raw)?Buffer.from(raw,'hex'):Buffer.from(raw,'base64');
  if(bytes.length!==32)throw Error('AniList token encryption is not configured');
  return bytes;
+}
+function isEncryptionConfigured(){
+ try{return key().length===32}catch{return false}
 }
 function encrypt(t){
  const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',key(),iv);
@@ -59,7 +76,7 @@ async function connection(){
  return {service:'anilist',userName:USERNAME,url:PROFILE,clientConfigured:!!d.clientId,
   connected:!!d.tokenEncrypted&&!!d.expiresAt&&new Date(d.expiresAt)>new Date(),
   expiresAt:d.expiresAt||null, authorizedUser:d.authorizedUser||null,
-  encryptionConfigured:!!env('ANILIST_TOKEN_ENCRYPTION_KEY'),
+  encryptionConfigured:isEncryptionConfigured(),
   note:'Public data is readable without OAuth; writes need AniList approval'};
 }
 async function configure({clientId}={}){
