@@ -154,7 +154,7 @@ test('Filmarks clips import with Trakt ID/year verification, watchlist readback 
    writes++;const data=JSON.parse(opts.body);assert.equal(data.movies[0].ids.trakt,17);
    return {body:{added:{movies:1}}};
   }
-  if(url.pathname==='/sync/watchlist/movies')return {body:[{movie:{ids:{trakt:17}}}]};
+  if(url.pathname==='/sync/watchlist/movies')return {body:writes?[{movie:{ids:{trakt:17}}}]:[]};
   throw Error('Unexpected '+url.pathname);
  });
  stored.set('trakt',{clientId:'c'.repeat(64),token:api.encrypt('token'),refreshToken:api.encrypt('refresh'),
