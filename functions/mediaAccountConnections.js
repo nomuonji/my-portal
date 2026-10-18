@@ -326,7 +326,7 @@ async function traktFilmarksImport({items}={}){
  return require('./filmarksTraktMigration').importVerified({items});
 }
 // Incremental user-approved migration with per-item progress persisted in DB.
-const filmarksList=()=>[]; // temporary build isolation
+const filmarksList=()=>require('./filmarksTraktSnapshot').items();
 const filmDoc=()=>doc('filmarks-trakt-20261018');
 function filmSlug(value){return String(value||'').normalize('NFKD').toLowerCase().replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'')}
 async function filmarksImportReport(){
