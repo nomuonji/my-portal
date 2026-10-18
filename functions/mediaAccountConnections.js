@@ -322,9 +322,6 @@ async function traktMediaSearch({queries}={}){
  }
  return {queries:out,interpretation:'Verify exact title/year before importing'};
 }
-async function traktFilmarksImport({items}={}){
- return require('./filmarksTraktMigration').importVerified({items});
-}
 // Incremental user-approved migration with per-item progress persisted in DB.
 const filmarksList=()=>require('./filmarksTraktSnapshot').items();
 const filmDoc=()=>doc('filmarks-trakt-20261018');
