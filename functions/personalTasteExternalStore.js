@@ -27,6 +27,7 @@ function normalize(source,raw){
   const match=String(raw.url||'').match(/^https:\/\/filmarks\.com\/movies\/(\d{1,12})(?:[/?#].*)?$/);
   const movieId=clean(raw.movieId||match?.[1],20);
   if(!/^\d{1,12}$/.test(movieId))throw Error('Filmarks movie ID required');
+  if(raw.url&&!match)throw Error('Filmarks URL must be an official movie URL');
   if(match&&match[1]!==movieId)throw Error('Conflicting Filmarks ID');
   return {id:'movie:'+movieId,title,medium:'movie',signal:'want_to_watch',
    url:'https://filmarks.com/movies/'+movieId,sourceType:'filmarks_clip'};
