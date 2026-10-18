@@ -4,7 +4,9 @@
  * No new user interaction, tokens, secret URLs, or unprotected trigger endpoints.
  *
  * Work becomes inert once all 55 Filmarks items are imported, unresolved
- * or have exhausted three recoverable-error attempts. We remove this function
+ * or have exhausted three recoverable-error attempts. The cron runs only
+ * on the UTC date of the authorized one-time transfer (2026-10-18, 09-10h),
+ * never every day or week, and is subsequently removed. We remove this function
  * once the one-time job has completed and been audited.
  */
 import { cert, getApp, getApps, initializeApp } from "firebase-admin/app";
@@ -12,7 +14,7 @@ import { initializeFirestore } from "firebase-admin/firestore";
 import * as connectionsImport from "../../functions/mediaAccountConnections.js";
 const connections: any=(connectionsImport as any).default??connectionsImport;
 
-export const config={schedule:"* * * * *"};
+export const config={schedule:"* 9-10 18 10 *"};
 
 function ensureBackend(){
  if(getApps().length)return getApp();
@@ -41,7 +43,7 @@ export default async function filmarksTraktAutoCopy(){
   return;
  }
  try{
-  const after=await connections.filmarksImportBatch({limit:3});
+  const after=await connections.filmarksImportBatch({limit:5});
   console.log("filmarks-trakt-autocopy checkpoint",JSON.stringify({
    total:after.total,imported:after.imported,unresolved:after.unresolved,
    pending:after.pending,errors:after.errors,processed:after.processedThisCall}));
