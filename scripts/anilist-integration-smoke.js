@@ -83,3 +83,8 @@ test('UI reports disabled when no server-side credential is available',async()=>
  assert.equal((await api.connection()).encryptionConfigured,false);
  assert.throws(()=>api.encrypt('x'),/not configured/);
 });
+
+test('Production asset base is absolute for nested OAuth redirect routes',()=>{
+ const p=JSON.parse(readFileSync(require('node:path').join(__dirname,'../package.json'),'utf8'));
+ assert.equal(p.homepage,'/','CRA must emit /static/js/..., not /anilist/static/js/...');
+});
