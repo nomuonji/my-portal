@@ -307,8 +307,27 @@ async function traktFilmarksImport({items=[]}={}){
    'Filmarks 5-point scores rounded to nearest Trakt 1–10 integer. Original score retained in migration audit.',
    'Actual watched date was not available; Trakt history records import time.']};
 }
+async function traktMediaSearch({queries}={}){
+ if(!Array.isArray(queries)||queries.length<1||queries.length>10)
+  throw Error('Pass 1..10 movie or TV queries');
+ const output=[];
+ for(const q of queries){
+  const type=q.mediaType||'movie',title=clean(q.title,160),year=Number(q.year)||null;
+  if(!['movie','show'].includes(type)||title.length<2)throw Error('Valid title and mediaType required');
+  const path='/search/'+type+'?query='+encodeURIComponent(title)+
+   (year?'&years='+year:'')+'&limit=12';
+  const data=await traktApi('GET',path);
+  output.push({query:q,results:(Array.isArray(data)?data:[]).map(x=>({
+    title:x[type]?.title,year:x[type]?.year,type,traktId:x[type]?.ids?.trakt,
+    imdbId:x[type]?.ids?.imdb||null,tmdbId:x[type]?.ids?.tmdb||null})).filter(x=>x.traktId)});
+ }
+ return {queries:output,interpretation:'No automatic match without comparing original Filmarks title and production year'};
+}
+async function traktFilmarksImport({items}={}){
+ return require('./filmarksTraktMigration').importVerified({items});
+}
 module.exports={TRAKT_CALLBACK,LASTFM_USER,TRAKT_EXPECTED,
  lastfmConnection,lastfmConfigure,lastfmProfile,
  traktConnection,traktConfigure,traktStart,traktFinish,traktProfile,traktAdd,
  traktMediaSearch,traktFilmarksImport,
- encrypt,decrypt,secretKey,traktApi,authData};
+ encrypt,decrypt,secretKey,traktApi,authData,traktMediaSearch,traktFilmarksImport};
