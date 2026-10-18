@@ -33,7 +33,7 @@
     "migrate:turso": "node scripts/migrate-firestore-to-turso.js",
     "test:intelligence-corpus": "node scripts/intelligence-corpus-smoke.js",
     "test:curation-sources": "node --test scripts/curation-source-smoke.js",
-    "prebuild": "npm run test:filmarks-trakt-migration",
+    "prebuild": "npm run test:media-accounts && npm run test:filmarks-trakt-migration",
     "test:hq-dispatch": "node scripts/hq-dispatch-smoke.js",
     "test:organization-lifecycle": "node scripts/organization-lifecycle-smoke.js",
     "test:public-cms": "node scripts/public-cms-smoke.js",
