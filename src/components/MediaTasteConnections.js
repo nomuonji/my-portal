@@ -41,7 +41,7 @@ export default function MediaTasteConnections(){
  const [lastProfile,setLastProfile]=useState(null),[traktProfile,setTraktProfile]=useState(null);
  const [apiKey,setApiKey]=useState(''),[clientId,setClientId]=useState('');
  const [busy,setBusy]=useState(''),[errors,setErrors]=useState({}),[message,setMessage]=useState({});
- const [transfer,setTransfer]=useState(null),[transferring,setTransferring]=useState(false);
+ const [transfer,setTransfer]=useState(null);
  const refresh=useCallback(async()=>{
   const infos=await Promise.allSettled([call('lastfm_connection'),call('trakt_connection')]);
   call('filmarks_trakt_migration').then(setTransfer).catch(()=>{});
@@ -71,20 +71,6 @@ export default function MediaTasteConnections(){
   await call('',{action:'trakt_client_configure',clientId});
   setClientId('');setMessage(m=>({...m,trakt:'Trakt Client IDを登録しました'}));
  });
- const runTransfer=async()=>{
-  setTransferring(true);setErrors(e=>({...e,trakt:''}));
-  try{
-   // Bounded local work loop, checkpointed and idempotent on the server.
-   let summary=transfer||await call('filmarks_trakt_migration');
-   for(let i=0;i<18&&summary.pending+summary.errors>0;i++){
-    const next=await call('',{action:'filmarks_trakt_migration_run',limit:4});
-    setTransfer(next);summary=next;
-    if(next.processedThisCall===0||next.pending===0&&next.errors===0)break;
-   }
-   setTransfer(await call('filmarks_trakt_migration'));await refresh();
-  }catch(e){setErrors(x=>({...x,trakt:'Filmarksコピー失敗: '+e.message}))}
-  finally{setTransferring(false)}
- };
  const startTrakt=()=>act('trakt',async()=>{
   const x=await call('',{action:'trakt_authorize_start'});
   if(!x.url?.startsWith('https://auth.trakt.tv/'))throw Error('認証先URLが不正です');
@@ -110,19 +96,16 @@ export default function MediaTasteConnections(){
     公式OAuth（PKCE）で一度認証すれば、ChatGPTから視聴記録を参照し、明示的な指示に基づいて「観たい」と評価を登録できます。
    </Typography>
    {traktInfo?.connected&&<Box sx={{mt:1.5,p:1.5,border:'1px solid '+border,borderRadius:2}}>
-    <Typography sx={{fontSize:13,fontWeight:800}}>Filmarks → Trakt コピー</Typography>
+    <Typography sx={{fontSize:13,fontWeight:800}}>Filmarks → Trakt 移行状況</Typography>
     <Typography sx={{fontSize:12,color:muted,lineHeight:1.7,mt:0.7}}>
-     観たい44件と本人評価8件を対象に、原題と製作年が一致した作品だけ登録します。曖昧な作品は保留し、Filmarks側は変更しません。
+     本人の依頼に応じてChatGPTから作品を照合・登録します。定期実行はしません。Filmarks側の記録は変更しません。
     </Typography>
     <Stack direction="row" gap={1} flexWrap="wrap" sx={{my:1}}>
-     <Chip size="small" label={'移行済 '+(transfer?.imported??0)+'/52'} sx={{background:'#25303a',color:mint}}/>
+     <Chip size="small" label={'移行済 '+(transfer?.imported??0)+'/'+(transfer?.total??55)} sx={{background:'#25303a',color:mint}}/>
      <Chip size="small" label={'要照合 '+(transfer?.unresolved??0)} sx={{background:'#25303a',color:'#e9c89b'}}/>
-     <Chip size="small" label={'残り '+(transfer?.pending??52)} sx={{background:'#25303a',color:'#e0e8f0'}}/>
+     <Chip size="small" label={'残り '+(transfer?.pending??55)} sx={{background:'#25303a',color:'#e0e8f0'}}/>
     </Stack>
-    <Button variant="outlined" size="small" disabled={transferring||!!busy||(!transfer?.pending&&!transfer?.errors)}
-     onClick={runTransfer} sx={{borderColor:border,color:mint}}>
-     {transferring?'コピー中…':transfer?.imported?'コピーを再開':'Filmarksからコピーを実行'}
-    </Button>
+
     <Typography sx={{fontSize:11,color:muted,lineHeight:1.7,mt:1}}>
      鑑賞日の記録が見当たらないため、鑑賞済み8件は評価を先に移します。実際と異なる視聴日時は作成しません。Filmarksの5点評価はTraktの10点評価に丸め、元評価は移行記録に残します。
     </Typography>
