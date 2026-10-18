@@ -28,6 +28,7 @@ const record={type:'object',additionalProperties:false,properties:{
  sourceRefs:{type:'array',maxItems:12,items:sourceRef}
 },required:['title','detail','domain','evidenceKind','direction','sourceRefs']};
 const TOOLS=[
+ {name:'taste_external_sources_list',description:'Read user-imported Filmarks Clips and Booklog bookshelf snapshots. These are distinct from direct like/dislike verdicts. No third-party scraping.',inputSchema:{type:'object',additionalProperties:false,properties:{includeItems:{type:'boolean'}}},annotations:{readOnlyHint:true}},
  {name:'taste_evidence_list',description:'Canonical personal-taste evidence ledger. Always distinguish direct verdicts, X-expression hypotheses, Radichichi/Murakami references and watch-later. Use for Discover and other creative work.',inputSchema:{type:'object',additionalProperties:false,properties:{
   limit:{type:'integer',minimum:1,maximum:300},scanLimit:{type:'integer',minimum:1,maximum:450},
   includeInactive:{type:'boolean'},domain:{type:'string',enum:['discover','humor','writing','design','ideas','media','general']},

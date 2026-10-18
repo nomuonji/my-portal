@@ -33,7 +33,7 @@
     "migrate:turso": "node scripts/migrate-firestore-to-turso.js",
     "test:intelligence-corpus": "node scripts/intelligence-corpus-smoke.js",
     "test:curation-sources": "node --test scripts/curation-source-smoke.js",
-    "prebuild": "npm run test:curation-sources && npm run test:personal-feed && npm run test:personal-taste && npm run test:intelligence-corpus && npm run test:public-cms && npm run test:organization-lifecycle && npm run test:hq-dispatch && npm run test:hq-outcome && npm run test:character-image && npm run test:world-home && npm run test:meta-strategy && npm run test:routine-jobs",
+    "prebuild": "npm run test:curation-sources && npm run test:personal-feed && npm run test:personal-taste && npm run test:taste-sources && npm run test:intelligence-corpus && npm run test:public-cms && npm run test:organization-lifecycle && npm run test:hq-dispatch && npm run test:hq-outcome && npm run test:character-image && npm run test:world-home && npm run test:meta-strategy && npm run test:routine-jobs",
     "test:hq-dispatch": "node scripts/hq-dispatch-smoke.js",
     "test:organization-lifecycle": "node scripts/organization-lifecycle-smoke.js",
     "test:public-cms": "node scripts/public-cms-smoke.js",
@@ -43,7 +43,8 @@
     "test:meta-strategy": "node scripts/meta-strategy-smoke.js",
     "test:personal-feed": "node --test scripts/personal-feed-news-smoke.js",
     "test:personal-taste": "node --test scripts/personal-taste-smoke.js",
-    "test:routine-jobs": "node --test scripts/routine-jobs-smoke.js"
+    "test:routine-jobs": "node --test scripts/routine-jobs-smoke.js",
+    "test:taste-sources": "node --test scripts/taste-source-smoke.js"
   },
   "eslintConfig": {
     "extends": [

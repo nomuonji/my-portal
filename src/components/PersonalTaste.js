@@ -1,5 +1,6 @@
 import React,{useCallback,useEffect,useMemo,useState} from 'react';
 import {Link} from 'react-router-dom';
+import TasteSourceConnections from './TasteSourceConnections';
 import {auth} from '../firebase';
 import {Alert,Box,Button,Chip,CircularProgress,Dialog,DialogActions,DialogContent,DialogTitle,
   Divider,FormControl,InputLabel,MenuItem,Select,Stack,TextField,Typography} from '@mui/material';
@@ -144,6 +145,7 @@ export default function PersonalTaste(){
     <Button variant="contained" onClick={()=>edit()} startIcon={<Add/>} sx={{background:C.mint,color:C.bg,textTransform:'none',fontWeight:850}}>好みを記録</Button>
    </Stack>
   </Stack>
+  <TasteSourceConnections/>
   <Stack direction="row" gap={1} flexWrap="wrap" sx={{mt:2.5}}>
    {[['明示評価',summary.explicit||0],['表現からの仮説',summary.hypotheses||0],['外部参考',summary.referenceOnly||0],['後で見る',summary.watchLater||0]].map(([label,count])=>
     <Box key={label} sx={{px:1.5,py:1,border:'1px solid '+C.border,borderRadius:1.5,minWidth:125}}>
