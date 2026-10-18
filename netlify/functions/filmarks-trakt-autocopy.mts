@@ -7,12 +7,25 @@
  * or have exhausted three recoverable-error attempts. We remove this function
  * once the one-time job has completed and been audited.
  */
+import { cert, getApp, getApps, initializeApp } from "firebase-admin/app";
+import { initializeFirestore } from "firebase-admin/firestore";
 import * as connectionsImport from "../../functions/mediaAccountConnections.js";
 const connections: any=(connectionsImport as any).default??connectionsImport;
 
 export const config={schedule:"* * * * *"};
 
+function ensureBackend(){
+ if(getApps().length)return getApp();
+ const raw=process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+  ||(globalThis as any).Netlify?.env?.get?.("FIREBASE_SERVICE_ACCOUNT_JSON");
+ if(!raw)throw Error("FIREBASE_SERVICE_ACCOUNT_JSON not configured");
+ const account=JSON.parse(raw);
+ const app=initializeApp({credential:cert(account),projectId:account.project_id||"my-portal-d05fd"});
+ initializeFirestore(app,{preferRest:true});
+ return app;
+}
 export default async function filmarksTraktAutoCopy(){
+ ensureBackend();
  const before=await connections.filmarksImportReport();
  const work=(before.rows||[]).filter((r: any)=>
   r.status==="pending"||(r.status==="error"&&(r.attempts||0)<3));
