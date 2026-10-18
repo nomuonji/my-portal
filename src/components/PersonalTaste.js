@@ -105,7 +105,7 @@ export default function PersonalTaste(){
    const {facetsText,targetKind,...main}=form;
    const facets=[...new Set(facetsText.split(/[、,\n]/).map(x=>x.trim()).filter(Boolean))];
    const record={...main,facets,target:{kind:targetKind,label:form.title.trim(),
-     key:isEdit?(original.target?.key||''):''}},
+     key:isEdit?(original.target?.key||''):''},
     evidenceKind:'explicit_user',confidence:1,status:'active',
     origin:'direct_user_ui',topicKey:isEdit?(original.topicKey||''):'',
     sourceRefs:refs};
