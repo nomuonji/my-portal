@@ -62,6 +62,7 @@ import MetaStrategy from './components/MetaStrategy';
 import PersonalFeed from './components/PersonalFeed';
 import PersonalTaste from './components/PersonalTaste';
 import {AniListOAuthCallback} from './components/AniListConnectPanel';
+import {TraktOAuthCallback} from './components/MediaTasteConnections';
 import Ogiri from './components/Ogiri';
 import SocialArchive from './components/SocialArchive';
 import PortalBoards from './components/PortalBoards';
@@ -548,6 +549,7 @@ function App() {
                 <Route path="/discover" element={<PersonalFeed />} />
                 <Route path="/taste" element={<PersonalTaste />} />
                 <Route path="/anilist/callback" element={<AniListOAuthCallback />} />
+                <Route path="/trakt/callback" element={<TraktOAuthCallback />} />
                 <Route path="/ogiri" element={<Ogiri />} />
                 <Route path="/social-archive" element={<SocialArchive />} />
                 <Route path="/public-cms" element={<PublicCms />} />
