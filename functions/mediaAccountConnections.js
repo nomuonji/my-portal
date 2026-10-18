@@ -307,8 +307,78 @@ async function traktFilmarksImport({items=[]}={}){
    'Filmarks 5-point scores rounded to nearest Trakt 1–10 integer. Original score retained in migration audit.',
    'Actual watched date was not available; Trakt history records import time.']};
 }
+// Incremental user-approved migration with per-item progress persisted in DB.
+const filmarksList=()=>require('./filmarksTraktSnapshot').items();
+const filmDoc=()=>doc('filmarks-trakt-20261018');
+function filmSlug(value){return String(value||'').normalize('NFKD').toLowerCase().replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'')}
+async function filmarksImportReport(){
+ const snap=await filmDoc().get(),rows=snap.exists?snap.data()?.rows||{}:{},source=filmarksList();
+ const num=(state,kind)=>source.filter(v=>!kind||v.source===kind).filter(v=>(rows[v.id]?.status||'pending')===state).length;
+ return {total:source.length,clips:44,marks:8,
+  imported:num('imported'),unresolved:num('unresolved'),pending:num('pending'),errors:num('error'),
+  watchlistImported:num('imported','clip'),ratingsImported:num('imported','mark'),
+  rows:source.map(f=>({id:f.id,title:f.title,year:f.year,kind:f.source,originalScore:f.score??null,
+   ...(rows[f.id]||{status:'pending'})})),
+  note:'Filmarks is not changed. Marks transfer as ratings only: no guessed watched date.'};
+}
+async function filmResolve(f){
+ const possible=new Map();
+ for(const alias of f.aliases.slice(0,3)){
+  const candidates=await traktApi('GET','/search/movie?query='+encodeURIComponent(alias)+'&years='+f.year+'&limit=12');
+  for(const r of Array.isArray(candidates)?candidates:[]){
+   const m=r.movie;
+   if(m?.year!==f.year||!Number.isSafeInteger(m.ids?.trakt))continue;
+   if(f.aliases.some(a=>filmSlug(a)===filmSlug(m.title)))
+    possible.set(m.ids.trakt,{id:m.ids.trakt,title:m.title,year:m.year});
+  }
+  if(possible.size)break;
+ }
+ return possible.size===1?[...possible.values()][0]:null;
+}
+async function filmCheck(kind,id,rating){
+ const key=kind==='clip'?'watchlist':'ratings';
+ const result=await traktApi('GET','/sync/'+key+'/movies?limit=120&page=1');
+ const record=(Array.isArray(result)?result:[]).find(x=>x.movie?.ids?.trakt===id);
+ return !!record&&(rating==null||record.rating===rating);
+}
+let filmBatchBusy=false;
+async function filmarksImportBatch({limit=3}={}){
+ if(filmBatchBusy)throw Error('Migration already running');
+ filmBatchBusy=true;
+ try{
+  await authData();
+  const max=Math.min(5,Math.max(1,Number(limit)||3));
+  const snap=await filmDoc().get(),rows=snap.exists?{...snap.data().rows}:{};
+  const selection=filmarksList().filter(f=>!['imported','unresolved'].includes(rows[f.id]?.status)
+   &&(rows[f.id]?.attempts||0)<3).slice(0,max);
+  let processed=0;
+  for(const f of selection){
+   const attempts=(rows[f.id]?.attempts||0)+1;
+   let result;
+   try{
+    const m=await filmResolve(f);
+    if(!m)result={status:'unresolved',attempts,reason:'No unique exact title+year match'};
+    else{
+     const rating=f.source==='mark'?Math.round(f.score*2):null;
+     const exists=await filmCheck(f.source,m.id,rating);
+     if(!exists)await traktApi('POST',f.source==='mark'?'/sync/ratings':'/sync/watchlist',
+      {movies:[{ids:{trakt:m.id},...(rating==null?{}:{rating})}]});
+     if(!await filmCheck(f.source,m.id,rating))throw Error('Trakt readback failed');
+     result={status:'imported',attempts,traktId:m.id,traktTitle:m.title,
+      traktYear:m.year,originalScore:f.score??null,traktRating:rating,verified:true};
+    }
+   }catch(e){result={status:'error',attempts,reason:clean(e?.message,140)}}
+   rows[f.id]=result;processed++;
+   await filmDoc().set({service:'filmarks-trakt',source:'Filmarks @postmodern137',
+     target:'Trakt',rows,updatedAt:FieldValue.serverTimestamp()});
+   if(result.status==='error'&&/401|403|429|token|rate limit/i.test(result.reason))break;
+  }
+  return {...await filmarksImportReport(),processedThisCall:processed};
+ }finally{filmBatchBusy=false}
+}
 module.exports={TRAKT_CALLBACK,LASTFM_USER,TRAKT_EXPECTED,
  lastfmConnection,lastfmConfigure,lastfmProfile,
  traktConnection,traktConfigure,traktStart,traktFinish,traktProfile,traktAdd,
  traktMediaSearch,traktFilmarksImport,
- encrypt,decrypt,secretKey};
+ filmarksImportReport,filmarksImportBatch,
+ encrypt,decrypt,secretKey,traktApi,authData};
