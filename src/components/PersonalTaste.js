@@ -14,6 +14,7 @@ const TYPES={
 };
 const DIRECTIONS={like:'好き',dislike:'嫌い',boundary:'判断・境界',unknown:'未確定'};
 const DOMAINS={discover:'Discover',humor:'ユーモア',writing:'文章・文体',design:'デザイン',ideas:'企画',media:'作品・文化',general:'全般'};
+const TARGETS={item:'個別作品・提案',creator:'制作者',genre:'ジャンル',pattern:'表現・特徴',format:'形式',editorial_policy:'編集方針',unspecified:'未分類'};
 async function api(path='',body=null){
  const user=auth.currentUser;if(!user)throw Error('My Portalにログインしてください');
  const response=await fetch('/api/agent-ideas'+path,{method:body?'POST':'GET',
@@ -23,7 +24,7 @@ async function api(path='',body=null){
  if(!response.ok)throw Error(data.error||'通信に失敗しました ('+response.status+')');
  return data;
 }
-const initial={title:'',detail:'',domain:'discover',direction:'dislike',caveat:''};
+const initial={title:'',detail:'',domain:'discover',direction:'dislike',caveat:'',targetKind:'pattern',facetsText:''};
 function Evidence({entry}){
  const color=TYPES[entry.evidenceKind]?.color||C.muted;
  return <Box sx={{p:{xs:1.8,md:2.2},background:C.surface,border:'1px solid '+C.border,borderRadius:2}}>
@@ -33,10 +34,14 @@ function Evidence({entry}){
      <Chip size="small" label={TYPES[entry.evidenceKind]?.label||entry.evidenceKind} sx={{background:'#222b33',color,fontSize:11}}/>
      <Chip size="small" label={DIRECTIONS[entry.direction]||'未確定'} sx={{background:'#273039',color:C.white,fontSize:11}}/>
      <Typography sx={{color:C.muted,fontSize:11}}>{DOMAINS[entry.domain]||entry.domain}</Typography>
+     <Chip size="small" label={TARGETS[entry.target?.kind]||'未分類'} sx={{background:'#242c36',color:C.muted,fontSize:10}}/>
      {entry.status!=='active'&&<Chip label="過去の判断" size="small"/>}
     </Stack>
     <Typography sx={{fontWeight:850,fontSize:16,lineHeight:1.5}}>{entry.title}</Typography>
     <Typography sx={{mt:.5,fontSize:12.7,lineHeight:1.9,color:'#ccd4da'}}>{entry.detail}</Typography>
+    {!!entry.facets?.length&&<Stack direction="row" gap={.6} flexWrap="wrap" sx={{mt:1}}>{entry.facets.map(tag=>
+     <Chip size="small" key={tag} variant="outlined" label={tag} sx={{color:C.mint,borderColor:'#3b6259',fontSize:11}}/>
+    )}</Stack>}
     {entry.caveat&&<Typography sx={{fontSize:12.5,lineHeight:1.75,mt:.7,color:'#aebcca'}}>例外・留保：{entry.caveat}</Typography>}
    </Box>
   </Stack>
@@ -54,9 +59,9 @@ function Evidence({entry}){
  </Box>;
 }
 export default function PersonalTaste(){
- const [items,setItems]=useState([]),[summary,setSummary]=useState({});
+ const [items,setItems]=useState([]),[summary,setSummary]=useState({}),[profile,setProfile]=useState({facets:[]});
  const [loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState('');
- const [domain,setDomain]=useState('all'),[kind,setKind]=useState('all'),[search,setSearch]=useState('');
+ const [domain,setDomain]=useState('all'),[kind,setKind]=useState('all'),[search,setSearch]=useState(''),[facet,setFacet]=useState('all');
  const [includeInactive,setIncludeInactive]=useState(false);
  const [dialog,setDialog]=useState(null),[form,setForm]=useState(initial);
  const [history,setHistory]=useState(null);
@@ -64,21 +69,24 @@ export default function PersonalTaste(){
   setLoading(true);setError('');
   try{
    const data=await api('?resource=taste_evidence&limit=300&includeInactive='+includeInactive);
-   setItems(data.items||[]);setSummary(data.summary||{});
+   setItems(data.items||[]);setSummary(data.summary||{});setProfile(data.profile||{facets:[]});
   }catch(e){setError(e.message)}finally{setLoading(false)}
  },[includeInactive]);
  useEffect(()=>{load()},[load]);
  const filtered=useMemo(()=>items.filter(x=>
-  (domain==='all'||x.domain===domain)&&(kind==='all'||x.evidenceKind===kind)&&
+  (domain==='all'||(x.appliesTo||[x.domain]).includes(domain))&&(kind==='all'||x.evidenceKind===kind)&&
+  (facet==='all'||(x.facets||[]).some(t=>t.normalize('NFKC').toLocaleLowerCase()===facet))&&
   (!search||[x.title,x.detail,x.caveat,x.domain].join(' ').toLowerCase().includes(search.toLowerCase()))
- ),[items,domain,kind,search]);
+ ),[items,domain,kind,facet,search]);
  const edit=(entry=null)=>{
   setHistory(null);setError('');
   if(entry&&entry.evidenceKind==='explicit_user'){
-   setForm({title:entry.title,detail:entry.detail,domain:entry.domain,direction:entry.direction,caveat:entry.caveat||''});
+   setForm({title:entry.title,detail:entry.detail,domain:entry.domain,direction:entry.direction,
+    caveat:entry.caveat||'',targetKind:entry.target?.kind||'unspecified',facetsText:(entry.facets||[]).join('、')});
    setDialog({type:'edit',entry});
   }else{
-   setForm(entry?{title:entry.title,detail:'この仮説・参考資料に対する本人の判断：',domain:entry.domain,direction:'dislike',caveat:''}:initial);
+   setForm(entry?{title:entry.title,detail:'この仮説・参考資料に対する本人の判断：',domain:entry.domain,
+    direction:'dislike',caveat:'',targetKind:entry.target?.kind||'item',facetsText:''}:initial);
    setDialog({type:'new',entry});
   }
  };
@@ -93,7 +101,11 @@ export default function PersonalTaste(){
     {kind:'user_message',id:'my-portal-user-ui-'+time,note:'本人がこの画面で直接入力した評価'},
     ...(original?[{kind:'other',id:original.id,note:'この候補や仮説についての本人の評価'}]:[])
    ];
-   const record={...form,evidenceKind:'explicit_user',confidence:1,status:'active',
+   const {facetsText,targetKind,...main}=form;
+   const facets=[...new Set(facetsText.split(/[、,\n]/).map(x=>x.trim()).filter(Boolean))];
+   const record={...main,facets,target:{kind:targetKind,label:form.title.trim(),
+     key:isEdit?(original.target?.key||''):''},appliesTo:isEdit?(original.appliesTo||[form.domain]):[form.domain],
+    evidenceKind:'explicit_user',confidence:1,status:'active',
     origin:'direct_user_ui',topicKey:isEdit?(original.topicKey||''):'',
     sourceRefs:refs};
    await api('',{action:'taste_evidence_upsert',id:isEdit?original.id:undefined,
@@ -137,7 +149,30 @@ export default function PersonalTaste(){
      <Typography sx={{fontWeight:900,fontSize:21,fontVariantNumeric:'tabular-nums'}}>{count}</Typography>
     </Box>)}
   </Stack>
-  <Box sx={{mt:2.5,p:1.65,border:'1px solid '+C.border,borderRadius:1.5,background:'#101923'}}>
+  <Box sx={{mt:2.5,p:1.8,border:'1px solid '+C.border,borderRadius:1.5,background:'#101923'}}>
+   <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1} flexWrap="wrap">
+    <Typography sx={{fontSize:15,fontWeight:850}}>判断理由の傾向</Typography>
+    {facet!=='all'&&<Button onClick={()=>setFacet('all')} size="small" sx={{color:C.mint}}>理由フィルタを解除</Button>}
+   </Stack>
+   <Typography sx={{fontSize:11.5,lineHeight:1.8,color:C.muted,mt:.6}}>
+    本人が明示した評価のタグだけを集計。単発・繰り返し・相反する評価を分けます。AIの推測や後で見るメモは計算に入れません。
+   </Typography>
+   {profile.facets?.length?<Stack direction="row" flexWrap="wrap" gap={.9} sx={{mt:1.5}}>
+    {profile.facets.slice(0,24).map(x=><Button key={x.key} size="small" variant={facet===x.key?'contained':'outlined'}
+     onClick={()=>setFacet(f=>f===x.key?'all':x.key)}
+     sx={{borderColor:x.state==='mixed'?'#af815b':C.border,color:facet===x.key?C.bg:C.white,
+      background:facet===x.key?C.mint:'transparent',textTransform:'none',fontSize:11.5}}>
+     {x.label} · {x.evidenceCount}件 {x.state==='mixed'?'（賛否あり）':x.state==='single'?'（単発）':''}
+    </Button>)}
+   </Stack>:<Typography sx={{mt:1.5,fontSize:12,color:C.muted}}>
+    まだ理由タグがありません。既存評価を「訂正」する際に具体的な理由をタグとして追加できます。
+   </Typography>}
+   <Typography sx={{mt:1.25,fontSize:11,color:C.muted}}>
+    明示評価 {profile.explicitCount||0}件 · 理由未分類 {profile.uncategorized||0}件
+    {profile.mayBeIncomplete?' · 集計上限に達しているため一部のみ':''}
+   </Typography>
+  </Box>
+  <Box sx={{mt:1.5,p:1.65,border:'1px solid '+C.border,borderRadius:1.5,background:'#101923'}}>
    <Typography sx={{fontSize:12,color:'#bfd5df',lineHeight:1.85}}>
     **正しい解釈**：ツイートは「本人が書いた表現」であり、同じタイプの動画を好きとは限りません。
     ラジ父・村上RADIOは外部参考作品。「保存」は後で見る予定。明示的な「好き／嫌い」とは別に保持します。
@@ -193,6 +228,14 @@ export default function PersonalTaste(){
        {Object.entries(DOMAINS).map(([key,label])=><MenuItem key={key} value={key}>{label}</MenuItem>)}
       </Select></FormControl>
     </Stack>
+    <FormControl fullWidth><InputLabel>評価した対象の範囲</InputLabel>
+     <Select label="評価した対象の範囲" value={form.targetKind} onChange={e=>setForm(f=>({...f,targetKind:e.target.value}))}>
+      {Object.entries(TARGETS).map(([key,label])=><MenuItem key={key} value={key}>{label}</MenuItem>)}
+     </Select>
+    </FormControl>
+    <TextField label="判断理由のタグ（任意・読点区切り）" value={form.facetsText}
+     onChange={e=>setForm(f=>({...f,facetsText:e.target.value}))} fullWidth
+     helperText="例：作為的な奇抜さ、薄い公式速報。具体的な特徴だけを記録し、性格全体を決めつけません。"/>
     <TextField label="例外・誤解してほしくないこと（任意）" value={form.caveat} multiline minRows={2}
      onChange={e=>setForm(f=>({...f,caveat:e.target.value}))} fullWidth/>
     <Typography sx={{fontSize:12,color:'#637587'}}>ここで入力した内容だけを「本人の明示評価」として記録します。過去の参考資料や閲覧メモは自動で昇格させません。</Typography>
