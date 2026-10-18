@@ -136,6 +136,33 @@ async function bootstrap(){
    evidenceId:id,revision:1,action:'initial_user_correction',snapshot:{...valid,id},createdAt:now});
   tx.set(latest,{schemaVersion:1,count:1,createdAt:now});
  });
+ // Categorize four source-backed corrections already present in the old ledger.
+ // This is a literal annotation of the user's own wording, NOT a new like/dislike.
+ const seedTags=[
+  ['taste-user-discover-contrived-20261017','pattern','contrived-humor','狙いすぎた企画',['狙いすぎた企画']],
+  ['taste-user-discover-news-20261017','editorial_policy','generic-entertainment-news','画一的な公式速報中心の選書',['公式速報の羅列']],
+  ['taste-user-watchlater-rule-20261017','pattern','bookmark-not-preference','後で見るメモの解釈',['後で見るメモと好評価の区別']],
+  ['taste-user-discover-netculture-20261017','editorial_policy','internet-culture-editorial-priority','Discoverの選書配分',['ネット文化の優先','硬すぎる選書']]
+ ];
+ const migrationMarker=database.collection(META).doc('taste-v2-structured-labels-20261018');
+ await database.runTransaction(async tx=>{
+  if((await tx.get(migrationMarker)).exists)return;
+  const refs=seedTags.map(x=>database.collection(COLLECTION).doc(x[0]));
+  const snapshots=await Promise.all(refs.map(ref=>tx.get(ref)));
+  const now=FieldValue.serverTimestamp();
+  for(let i=0;i<refs.length;i++){
+   const prior=snapshots[i];if(!prior.exists||prior.data().facets?.length)continue;
+   const [id,kind,key,label,facets]=seedTags[i];
+   const revised={...prior.data(),target:{kind,key,label},facets,
+    appliesTo:[prior.data().domain],revision:(prior.data().revision||1)+1,updatedAt:now};
+   tx.set(refs[i],revised);
+   tx.set(database.collection(EVENTS).doc(id+'-taxonomy-v2'),{
+    evidenceId:id,revision:revised.revision,action:'structural_annotation',
+    changeReason:'既存の本人発言の表現を分類。評価方向・対象範囲は変更しない',
+    prior:prior.data(),snapshot:{...revised,id},createdAt:now});
+  }
+  tx.set(migrationMarker,{schemaVersion:2,createdAt:now,count:seedTags.length});
+ });
  bootstrapped=true;
 }
 async function list(args={}){
@@ -150,7 +177,7 @@ async function list(args={}){
    (!args.direction||x.direction===args.direction)
  ).slice(0,limit);
  const all=snapshot.docs.map(view);
- return {items,count:items.length,scanned:all.length,sourceOfTruth:COLLECTION,profile:summarizeProfile(all),
+ return {items,count:items.length,scanned:all.length,sourceOfTruth:COLLECTION,profile:summarizeProfile(all,{scanLimit:scan}),
    summary:{explicit:all.filter(x=>x.evidenceKind==='explicit_user'&&x.status==='active').length,
    hypotheses:all.filter(x=>x.evidenceKind==='expression_inference'&&x.status==='active').length,
    referenceOnly:all.filter(x=>x.evidenceKind==='external_reference'&&x.status==='active').length,
@@ -162,7 +189,7 @@ async function list(args={}){
  * A facet with one source is a one-off signal, not a global preference.
  * Inferred posts, external corpora, and bookmarks are excluded entirely.
  */
-function summarizeProfile(all,{domain}={}){
+function summarizeProfile(all,{domain,scanLimit=450}={}){
  const active=all.filter(x=>x.status==='active'&&x.evidenceKind==='explicit_user'&&
    (!domain||(x.appliesTo||[x.domain]).includes(domain)));
  const facetMap=new Map();
@@ -173,18 +200,20 @@ function summarizeProfile(all,{domain}={}){
    const key=label.normalize('NFKC').trim().toLocaleLowerCase();
    if(!key)continue;
    let row=facetMap.get(key);
-   if(!row){row={key,label,like:0,dislike:0,boundary:0,evidenceIds:[],domains:[]};facetMap.set(key,row)}
+   if(!row){row={key,label,like:0,dislike:0,boundary:0,evidenceIds:[],sourceKeys:[],domains:[]};facetMap.set(key,row)}
    row[entry.direction]=(row[entry.direction]||0)+1;
    row.evidenceIds.push(entry.id);
+   const sourceKey=(entry.sourceRefs||[]).map(x=>x.kind+':'+(x.id||x.url)).sort().join('|')||entry.id;
+   if(!row.sourceKeys.includes(sourceKey))row.sourceKeys.push(sourceKey);
    for(const d of (entry.appliesTo||[entry.domain]))if(!row.domains.includes(d))row.domains.push(d);
   }
  }
  const facets=[...facetMap.values()].map(x=>({...x,
-  evidenceCount:x.evidenceIds.length,
-  state:x.like&&x.dislike?'mixed':x.evidenceIds.length>=2?'repeated':'single'
- })).sort((a,b)=>b.evidenceCount-a.evidenceCount||a.label.localeCompare(b.label,'ja'));
+  evidenceCount:x.evidenceIds.length,independentSources:x.sourceKeys.length,
+  state:x.like&&x.dislike?'mixed':x.sourceKeys.length>=2?'repeated':'single'
+ })).map(({sourceKeys,...facet})=>facet).sort((a,b)=>b.evidenceCount-a.evidenceCount||a.label.localeCompare(b.label,'ja'));
  return {facets,explicitCount:active.length,uncategorized,scanned:all.length,
-  scanCap:450,mayBeIncomplete:all.length===450,
+  scanCap:scanLimit,mayBeIncomplete:all.length>=scanLimit,
   policy:'Facets count only active direct user judgments. Counts describe evidence, not a computed personality score.'};
 }
 async function profile(args={}){
@@ -241,12 +270,14 @@ async function fromDiscover(args={}){
   title:trim(args.title||'Discover item',170),detail:'Discoverで「'+feedback+'」になった。これは好意や嫌悪の確定判断ではない。',
   domain:'discover',evidenceKind:'watch_later',direction:'unknown',status:'superseded',confidence:0.1,
   sourceRefs:[{kind:'bookmark',id:itemId}],origin:'discover_feedback',topicKey:itemId,
+  target:{kind:'item',key:itemId,label:trim(args.title||'Discover item',170)},facets:[],
  }:{
   title:trim(args.title||'Discover item',170),detail:'Discoverの本人評価: '+(direction==='like'?'好き':'興味なし')+'。'+trim(args.note,450),
   domain:'discover',evidenceKind:'explicit_user',direction,status:'active',confidence:1,
   caveat:'特定コンテンツへの個別評価。他のジャンルや作者全体の評価に拡張しない。',
   sourceRefs:[{kind:'discover_item',id:itemId,url:trim(args.url,1000),note:trim(args.note,350)}],
   origin:'discover_feedback',topicKey:itemId,
+  target:{kind:'item',key:itemId,label:trim(args.title||'Discover item',170)},facets:[],
  };
  const ref=db().collection(COLLECTION).doc(id);
  const prior=await ref.get();
