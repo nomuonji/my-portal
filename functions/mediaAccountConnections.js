@@ -314,7 +314,7 @@ function filmSlug(value){return String(value||'').normalize('NFKD').toLowerCase(
 async function filmarksImportReport(){
  const snap=await filmDoc().get(),rows=snap.exists?snap.data()?.rows||{}:{},source=filmarksList();
  const num=(state,kind)=>source.filter(v=>!kind||v.source===kind).filter(v=>(rows[v.id]?.status||'pending')===state).length;
- return {total:source.length,clips:44,marks:8,
+ return {total:source.length,movieClips:44,showClips:3,clips:47,marks:8,
   imported:num('imported'),unresolved:num('unresolved'),pending:num('pending'),errors:num('error'),
   watchlistImported:num('imported','clip'),ratingsImported:num('imported','mark'),
   rows:source.map(f=>({id:f.id,title:f.title,year:f.year,kind:f.source,originalScore:f.score??null,
@@ -324,9 +324,10 @@ async function filmarksImportReport(){
 async function filmResolve(f){
  const possible=new Map();
  for(const alias of f.aliases.slice(0,3)){
-  const candidates=await traktApi('GET','/search/movie?query='+encodeURIComponent(alias)+'&years='+f.year+'&limit=12');
+  const kind=f.mediaType==='show'?'show':'movie';
+  const candidates=await traktApi('GET','/search/'+kind+'?query='+encodeURIComponent(alias)+'&years='+f.year+'&limit=12');
   for(const r of Array.isArray(candidates)?candidates:[]){
-   const m=r.movie;
+   const m=r[kind];
    if(m?.year!==f.year||!Number.isSafeInteger(m.ids?.trakt))continue;
    if(f.aliases.some(a=>filmSlug(a)===filmSlug(m.title)))
     possible.set(m.ids.trakt,{id:m.ids.trakt,title:m.title,year:m.year});
@@ -335,10 +336,11 @@ async function filmResolve(f){
  }
  return possible.size===1?[...possible.values()][0]:null;
 }
-async function filmCheck(kind,id,rating){
+async function filmCheck(kind,id,rating,mediaType='movie'){
  const key=kind==='clip'?'watchlist':'ratings';
- const result=await traktApi('GET','/sync/'+key+'/movies?limit=120&page=1');
- const record=(Array.isArray(result)?result:[]).find(x=>x.movie?.ids?.trakt===id);
+ const resource=mediaType==='show'?'shows':'movies';
+ const result=await traktApi('GET','/sync/'+key+'/'+resource+'?limit=120&page=1');
+ const record=(Array.isArray(result)?result:[]).find(x=>x[mediaType]?.ids?.trakt===id);
  return !!record&&(rating==null||record.rating===rating);
 }
 let filmBatchBusy=false;
@@ -360,12 +362,14 @@ async function filmarksImportBatch({limit=3}={}){
     if(!m)result={status:'unresolved',attempts,reason:'No unique exact title+year match'};
     else{
      const rating=f.source==='mark'?Math.round(f.score*2):null;
-     const exists=await filmCheck(f.source,m.id,rating);
+     const mediaType=f.mediaType==='show'?'show':'movie';
+     const resource=mediaType==='show'?'shows':'movies';
+     const exists=await filmCheck(f.source,m.id,rating,mediaType);
      if(!exists)await traktApi('POST',f.source==='mark'?'/sync/ratings':'/sync/watchlist',
-      {movies:[{ids:{trakt:m.id},...(rating==null?{}:{rating})}]});
-     if(!await filmCheck(f.source,m.id,rating))throw Error('Trakt readback failed');
+      {[resource]:[{ids:{trakt:m.id},...(rating==null?{}:{rating})}]});
+     if(!await filmCheck(f.source,m.id,rating,mediaType))throw Error('Trakt readback failed');
      result={status:'imported',attempts,traktId:m.id,traktTitle:m.title,
-      traktYear:m.year,originalScore:f.score??null,traktRating:rating,verified:true};
+      traktYear:m.year,mediaType,originalScore:f.score??null,traktRating:rating,verified:true};
     }
    }catch(e){result={status:'error',attempts,reason:clean(e?.message,140)}}
    rows[f.id]=result;processed++;
