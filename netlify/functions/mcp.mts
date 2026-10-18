@@ -11,6 +11,7 @@ import * as personalFeedToolsImport from "../../functions/personalFeedToolSchema
 import * as personalTasteImport from "../../functions/personalTasteStore.js";
 import * as personalTasteExternalImport from "../../functions/personalTasteExternalStore.js";
 import * as anilistImport from "../../functions/anilistIntegration.js";
+import * as mediaConnectionsImport from "../../functions/mediaAccountConnections.js";
 import * as personalTasteToolsImport from "../../functions/personalTasteToolSchemas.js";
 import * as routineStoreImport from "../../functions/routineJobStore.js";
 import * as routineToolsImport from "../../functions/routineJobToolSchemas.js";
@@ -45,6 +46,7 @@ const personalFeedTools: any = (personalFeedToolsImport as any).default ?? perso
 const personalTaste: any = (personalTasteImport as any).default ?? personalTasteImport;
 const externalTaste: any = (personalTasteExternalImport as any).default ?? personalTasteExternalImport;
 const anilist: any = (anilistImport as any).default ?? anilistImport;
+const mediaConnections: any = (mediaConnectionsImport as any).default ?? mediaConnectionsImport;
 const personalTasteTools: any = (personalTasteToolsImport as any).default ?? personalTasteToolsImport;
 const routineStore: any = (routineStoreImport as any).default ?? routineStoreImport;
 const routineTools: any = (routineToolsImport as any).default ?? routineToolsImport;
@@ -363,6 +365,11 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "routine_job_claim") return structured(await routineStore.claim(args));
   if (name === "routine_job_finish") return structured(await routineStore.finish(args));
   if (name === "routine_job_runs") return structured(await routineStore.runs(args));
+  if (name === "lastfm_connection_get") return structured(await mediaConnections.lastfmConnection());
+  if (name === "lastfm_profile_get") return structured(await mediaConnections.lastfmProfile(args));
+  if (name === "trakt_connection_get") return structured(await mediaConnections.traktConnection());
+  if (name === "trakt_profile_get") return structured(await mediaConnections.traktProfile(args));
+  if (name === "trakt_entry_add") return structured(await mediaConnections.traktAdd(args));
   if (name === "anilist_connection_get") return structured(await anilist.connection());
   if (name === "anilist_profile_get") return structured(await anilist.profile(args));
   if (name === "anilist_media_search") return structured(await anilist.search(args));
