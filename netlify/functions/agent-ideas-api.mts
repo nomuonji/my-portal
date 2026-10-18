@@ -134,7 +134,6 @@ export default async (request: Request) => {
       }
       if (resource === "lastfm_connection") return json(await mediaConnections.lastfmConnection());
       if (resource === "lastfm_profile") return json(await mediaConnections.lastfmProfile({period:url.searchParams.get("period")||"overall"}));
-      if (resource === "filmarks_trakt_migration") return json(await mediaConnections.filmarksImportReport());
       if (resource === "trakt_connection") return json(await mediaConnections.traktConnection());
       if (resource === "trakt_profile") return json(await mediaConnections.traktProfile({limit:Math.min(120,Number(url.searchParams.get("limit"))||80)}));
       if (resource === "anilist_connection") return json(await anilist.connection());
@@ -239,7 +238,6 @@ export default async (request: Request) => {
       const action = String(body.action || "");
       if (action === "lastfm_configure") return json(await mediaConnections.lastfmConfigure({apiKey:body.apiKey}));
       if (action === "trakt_client_configure") return json(await mediaConnections.traktConfigure({clientId:body.clientId}));
-      if (action === "filmarks_trakt_migration_run") return json(await mediaConnections.filmarksImportBatch({limit:body.limit}));
       if (action === "trakt_authorize_start") return json(await mediaConnections.traktStart());
       if (action === "trakt_authorize_finish") return json(await mediaConnections.traktFinish({code:body.code,state:body.state}));
       if (action === "anilist_client_configure") return json(await anilist.configure({clientId:body.clientId}));
