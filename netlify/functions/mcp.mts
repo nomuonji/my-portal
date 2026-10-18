@@ -367,6 +367,8 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "routine_job_runs") return structured(await routineStore.runs(args));
   if (name === "lastfm_connection_get") return structured(await mediaConnections.lastfmConnection());
   if (name === "lastfm_profile_get") return structured(await mediaConnections.lastfmProfile(args));
+  if (name === "trakt_filmarks_migration_status") return structured(await mediaConnections.filmarksImportReport());
+  if (name === "trakt_filmarks_migration_run") return structured(await mediaConnections.filmarksImportBatch(args));
   if (name === "trakt_connection_get") return structured(await mediaConnections.traktConnection());
   if (name === "trakt_profile_get") return structured(await mediaConnections.traktProfile(args));
   if (name === "trakt_entry_add") return structured(await mediaConnections.traktAdd(args));
