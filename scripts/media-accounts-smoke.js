@@ -14,6 +14,7 @@ function createHarness(reply){
  const fetch=async(url,options={})=>{
   const result=await reply(new URL(String(url)),options);
   return {ok:result.status===undefined||result.status<400,status:result.status||200,
+   headers:{get:name=>name.toLowerCase()==='content-type'?(result.contentType||'application/json'):null},
    json:async()=>result.body||{}};
  };
  const ctx={module,exports:module.exports,process,Buffer,URL,URLSearchParams,
@@ -47,11 +48,19 @@ test('Trakt generates S256 PKCE, checks state, exchanges authorized tokens and h
  let captured;
  const {api,stored}=createHarness(async(url,options)=>{
   if(url.pathname==='/oauth/token'){
+   assert.equal(options.headers['trakt-api-key'],'a'.repeat(64));
+   assert.equal(options.headers['trakt-api-version'],'2');
+   assert.equal(options.headers.Accept,'application/json');
+   assert.match(options.headers['User-Agent'],/^MyPortal\/1\.0 /);
    captured=JSON.parse(options.body);
    return {body:{access_token:'mock_access',refresh_token:'mock_refresh',
     expires_in:604800,created_at:Math.floor(Date.now()/1000)}};
   }
-  if(url.pathname==='/users/settings')return {body:{user:{username:'__c4a362'}}};
+  if(url.pathname==='/users/settings'){
+   assert.equal(options.headers['trakt-api-key'],'a'.repeat(64));
+   assert.match(options.headers['User-Agent'],/^MyPortal\/1\.0 /);
+   return {body:{user:{username:'__c4a362'}}};
+  }
   return {body:[]};
  });
  await api.traktConfigure({clientId:'a'.repeat(64)});
@@ -79,4 +88,43 @@ test('Trakt writes validate exact instruction and 1..10 rating before API call',
 test('SPA nested Trakt redirect uses absolute assets',()=>{
  const manifest=JSON.parse(readFileSync(require('node:path').join(__dirname,'../package.json'),'utf8'));
  assert.equal(manifest.homepage,'/');
+});
+
+test('HTML 403 from Trakt OAuth identifies upstream rejection without leaking credentials',async()=>{
+ const {api}=createHarness(async(url,opts)=>{
+  assert.equal(url.pathname,'/oauth/token');
+  assert.equal(opts.headers['trakt-api-key'],'b'.repeat(64));
+  return {status:403,contentType:'text/html',body:{}};
+ });
+ await api.traktConfigure({clientId:'b'.repeat(64)});
+ const auth=await api.traktStart();
+ const state=new URL(auth.url).searchParams.get('state');
+ await assert.rejects(api.traktFinish({state,code:'valid_but_mock_authorization_code'}),
+  e=>e.message.includes('HTTP 403')&&e.message.includes('Non-JSON upstream rejection')
+    &&!e.message.includes('valid_but_mock_authorization_code'));
+});
+test('Trakt refresh sends required app headers and writes only encrypted new tokens',async()=>{
+ let refreshed=false;
+ const {api,stored}=createHarness(async(url,opts)=>{
+  if(url.pathname==='/oauth/token'){
+   assert.equal(opts.headers['trakt-api-key'],'c'.repeat(64));
+   assert.match(opts.headers['User-Agent'],/^MyPortal\/1\.0 /);
+   assert.equal(JSON.parse(opts.body).grant_type,'refresh_token');
+   refreshed=true;
+   return {body:{access_token:'new_mock_access',refresh_token:'new_mock_refresh',
+    created_at:Math.floor(Date.now()/1000),expires_in:604800}};
+  }
+  if(url.pathname==='/sync/watchlist'||url.pathname==='/sync/ratings'||url.pathname==='/sync/history'){
+   assert.equal(opts.headers.Authorization,'Bearer new_mock_access');
+   return {body:[]};
+  }
+  throw Error('Unexpected '+url.pathname);
+ });
+ stored.set('trakt',{clientId:'c'.repeat(64),username:'__c4a362',
+  token:api.encrypt('old_mock_access'),refreshToken:api.encrypt('old_mock_refresh'),
+  expiresAt:Date.now()-10000});
+ const result=await api.traktProfile({limit:5});
+ assert.equal(result.username,'__c4a362');
+ assert.equal(refreshed,true);
+ assert.equal(api.decrypt(stored.get('trakt').refreshToken),'new_mock_refresh');
 });

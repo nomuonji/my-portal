@@ -9,6 +9,7 @@ const {getDocumentDb,FieldValue}=require('./documentDb');
 const COLLECTION='personalTasteConnections';
 const TRAKT_CALLBACK='https://my-portal-agent.netlify.app/trakt/callback';
 const LASTFM_USER='goodhangedman',TRAKT_EXPECTED='__c4a362';
+const TRAKT_USER_AGENT='MyPortal/1.0 (https://my-portal-agent.netlify.app; personal Trakt integration)';
 const db=()=>getDocumentDb('(default)').collection(COLLECTION);
 const doc=id=>db().doc(id);
 const env=n=>process.env[n]||(globalThis.Netlify?.env?.get?.(n))||'';
@@ -69,8 +70,17 @@ async function request(method,url,opts={}){
  try{
   const r=await fetch(url,{method,signal:controller.signal,headers:opts.headers||{},
    ...(opts.body?{body:JSON.stringify(opts.body)}:{})});
+  const contentType=r.headers?.get?.('content-type')||'';
   const data=await r.json().catch(()=>({}));
-  if(!r.ok)throw Error((opts.provider||'External API')+' HTTP '+r.status+': '+clean(data?.error_description||data?.error||data?.message||'unavailable',140));
+  if(!r.ok){
+   // Trakt/Cloudflare sometimes returns an HTML 403, not JSON. Don't
+   // echo HTML, OAuth codes, token values or request bodies to the UI.
+   const isHtml=/text\/html/i.test(contentType);
+   const detail=isHtml
+    ?'Non-JSON upstream rejection; inspect Trakt API key, User-Agent or upstream access policy'
+    :clean(data?.error_description||data?.error||data?.message||'upstream rejected request',140);
+   throw Error((opts.provider||'External API')+' HTTP '+r.status+': '+detail);
+  }
   return data;
  }finally{clearTimeout(timer)}
 }
@@ -115,10 +125,15 @@ async function traktStart(){
 async function traktToken(body){
  return request('POST','https://api.trakt.tv/oauth/token',{
   provider:'Trakt OAuth',
-  headers:{'Content-Type':'application/json','trakt-api-version':'2'},
+  // Trakt expects the same required application identity headers for OAuth
+  // exchange/refresh as for ordinary API calls, not just Content-Type.
+  headers:{'Content-Type':'application/json','Accept':'application/json',
+   'User-Agent':TRAKT_USER_AGENT,'trakt-api-version':'2',
+   'trakt-api-key':body.client_id},
   body});
 }
-function traktHeaders(d,token){return {'Content-Type':'application/json','trakt-api-version':'2',
+function traktHeaders(d,token){return {'Content-Type':'application/json','Accept':'application/json',
+ 'User-Agent':TRAKT_USER_AGENT,'trakt-api-version':'2',
  'trakt-api-key':d.clientId,Authorization:'Bearer '+token};}
 async function traktApi(method,path,body,override){
  const d=override?.data||await authData(),token=override?.token||decrypt(d.token);
