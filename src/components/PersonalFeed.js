@@ -15,10 +15,6 @@ const dateText = value => {
   if (!value || Number.isNaN(Date.parse(value))) return '公開日未確認';
   return new Intl.DateTimeFormat('ja-JP', { month: 'numeric', day: 'numeric', timeZone: 'Asia/Tokyo' }).format(new Date(value));
 };
-const absoluteDate = value => {
-  if (!value || Number.isNaN(Date.parse(value))) return '公開日未確認';
-  return new Intl.DateTimeFormat('ja-JP',{year:'numeric',month:'long',day:'numeric',timeZone:'Asia/Tokyo'}).format(new Date(value));
-};
 const sourceDate = item => item.publishedAt || null;
 const youtubeThumb = item => item.videoId ? 'https://i.ytimg.com/vi/' + item.videoId + '/hqdefault.jpg' : item.thumbnail || '';
 const cleanText = value => String(value||'').toLocaleLowerCase('ja-JP');
