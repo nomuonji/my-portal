@@ -484,7 +484,7 @@ function App() {
           </Tooltip>
         )}
         <Typography sx={{ ml: 'auto', fontFamily: fonts.mono, fontSize: 10.5, color: tokens.faint }}>
-          {process.env.REACT_APP_VERSION ? `v${process.env.REACT_APP_VERSION}` : ''}
+          {/^[\w.-]+$/.test(process.env.REACT_APP_VERSION || '') ? `v${process.env.REACT_APP_VERSION}` : ''}
         </Typography>
       </Box>
     </Box>
