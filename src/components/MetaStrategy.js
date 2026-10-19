@@ -148,7 +148,7 @@ export default function MetaStrategy() {
   return (
     <Box sx={{ maxWidth: 1480, mx: 'auto', pb: 8 }}>
       <Paper elevation={0} sx={{ borderRadius: 3, p: { xs: 2.4, md: 4 }, border: '1px solid', borderColor: 'divider',
-        bgcolor: theme.palette.mode === 'dark' ? 'background.paper' : '#f1f6f7' }}>
+        bgcolor: 'background.paper' }}>
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={2}>
           <Box>
             <Stack direction="row" alignItems="center" spacing={1}>
