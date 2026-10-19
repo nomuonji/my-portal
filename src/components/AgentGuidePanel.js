@@ -40,10 +40,10 @@ export default function AgentGuidePanel({guide,metadataRevision,storage,updatedA
   };
   if(!guide)return null;
   return (
-    <Paper variant="outlined" sx={{p:{xs:1.8,md:2.5},mt:2,borderRadius:2.5}}>
+    <Paper variant="outlined" sx={{p:{xs:1.8,md:2.5},mt:3,borderRadius:1.5}}>
       <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" alignItems={{sm:'center'}} spacing={1.3}>
         <Box>
-          <Typography variant="overline" color="text.secondary" fontWeight={850} sx={{letterSpacing:'.14em'}}>00 / AGENT ENTRY</Typography>
+          <Typography variant="overline" sx={{color:'text.disabled'}}>00 — Agent entry</Typography>
           <Stack direction="row" alignItems="center" flexWrap="wrap" useFlexGap gap={1}>
             <BookIcon color="primary"/>
             <Typography variant="h6" fontWeight={900}>{guide.title||'Agent Guide'}</Typography>

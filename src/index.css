@@ -9,7 +9,7 @@ body,
 
 html {
   height: 100%;
-  background: #edf4f8;
+  background: #f4f2ed;
   text-size-adjust: 100%;
   -webkit-text-size-adjust: 100%;
 }
@@ -17,7 +17,7 @@ html {
 body {
   min-height: 100dvh;
   margin: 0;
-  font-family: 'M PLUS Rounded 1c', 'Zen Maru Gothic', 'Nunito', 'Noto Sans JP', 'Roboto', 'Hiragino Kaku Gothic ProN', 'Meiryo', 'Yu Gothic', 'YuGothic', Arial, sans-serif;
+  font-family: 'Noto Sans JP', 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, 'Yu Gothic', YuGothic, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overscroll-behavior-x: none;
@@ -33,7 +33,7 @@ select {
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 @media (max-width: 899px) {

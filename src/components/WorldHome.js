@@ -18,11 +18,17 @@ import {
   Refresh as RefreshIcon,
   OpenInNew as ExternalIcon,
   InfoOutlined as InfoIcon,
+  OndemandVideo as DiscoveryIcon,
+  ViewCompact as BoardIcon,
+  FavoriteBorder as TasteIcon,
+  PsychologyAlt as ThinkingIcon,
+  Dashboard as HqIcon,
 } from '@mui/icons-material';
 import { Link as RouterLink } from 'react-router-dom';
 import ContextPanel from './ContextPanel';
 import AgentGuidePanel from './AgentGuidePanel';
 import { auth } from '../firebase';
+import { fonts } from '../theme';
 import { onAuthStateChanged } from 'firebase/auth';
 
 async function fetchPortalWorld(path = '?resource=world_map', options = {}) {
@@ -58,30 +64,63 @@ function searchable(item) {
 function routeMatches(route, q) {
   return !q || searchable(route).includes(q);
 }
-function SummaryNumber({ label, number, caption }) {
+const LAUNCH = [
+  { to: '/discover', label: 'あなた専用の寄り道', note: '今日の動画・記事・作品', icon: <DiscoveryIcon /> },
+  { to: '/boards', label: 'ボード', note: '企画・興味・ネタのストック', icon: <BoardIcon /> },
+  { to: '/thinking', label: '思考テーマ', note: '長期テーマとContext', icon: <ThinkingIcon /> },
+  { to: '/taste', label: '好みの記録', note: '好き嫌いと訂正の履歴', icon: <TasteIcon /> },
+  { to: '/dashboard', label: 'Agent HQ', note: '実行キューと定期ジョブ', icon: <HqIcon /> },
+  { to: '/meta', label: 'プロジェクト提案', note: '戦略・次の一手', icon: <SparkIcon /> },
+];
+function greeting() {
+  const hour = Number(new Intl.DateTimeFormat('en-US', { hour: 'numeric', hourCycle: 'h23', timeZone: 'Asia/Tokyo' }).format(new Date()));
+  if (hour >= 4 && hour < 11) return 'おはようございます';
+  if (hour >= 11 && hour < 18) return 'こんにちは';
+  return 'こんばんは';
+}
+function dateLine() {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'long', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .formatToParts(new Date()).reduce((acc, part) => ({ ...acc, [part.type]: part.value }), {});
+  return `${parts.year}.${parts.month}.${parts.day} — ${String(parts.weekday).toUpperCase()} ${parts.hour}:${parts.minute} JST`;
+}
+function Launcher({ rule }) {
   return (
-    <Box sx={{ minWidth: 0 }}>
-      <Typography variant="h4" sx={{ fontWeight: 850, lineHeight: 1.12, letterSpacing: '-0.04em', fontVariantNumeric: 'tabular-nums' }}>
-        {number}
-      </Typography>
-      <Typography variant="body2" sx={{ fontWeight: 750, mt: 0.3 }}>{label}</Typography>
-      <Typography variant="caption" color="text.secondary">{caption}</Typography>
+    <Box component="nav" aria-label="よく開く場所" sx={{
+      display: 'grid', gridTemplateColumns: { xs: 'repeat(2,minmax(0,1fr))', md: 'repeat(3,minmax(0,1fr))' },
+      borderTop: `1px solid ${rule}`, borderLeft: `1px solid ${rule}`, mt: { xs: 2.5, md: 3.5 }, bgcolor: 'background.paper', borderRadius: 1.5, overflow: 'hidden',
+    }}>
+      {LAUNCH.map((item, i) => (
+        <Box key={item.to} component={RouterLink} to={item.to} sx={{
+          position: 'relative', display: 'flex', alignItems: 'flex-start', gap: 1.4, minWidth: 0,
+          px: { xs: 1.5, md: 2.2 }, py: { xs: 1.5, md: 2 }, color: 'text.primary', textDecoration: 'none',
+          borderRight: `1px solid ${rule}`, borderBottom: `1px solid ${rule}`, transition: 'background-color 120ms ease',
+          '&:hover': { bgcolor: 'action.hover' }, '&:hover .launch-arrow': { transform: 'translateX(3px)', color: 'primary.main' },
+        }}>
+          <Box sx={{ color: 'text.secondary', display: 'flex', pt: .2, '& svg': { fontSize: 20 } }}>{item.icon}</Box>
+          <Box sx={{ minWidth: 0, flexGrow: 1 }}>
+            <Typography sx={{ fontWeight: 800, fontSize: { xs: 14, md: 15 }, lineHeight: 1.35 }}>{item.label}</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: 12, md: 13 }, lineHeight: 1.5, mt: .25 }}>{item.note}</Typography>
+          </Box>
+          <Typography aria-hidden sx={{ display: { xs: 'none', sm: 'block' }, fontFamily: fonts.mono, fontSize: 11, color: 'text.disabled', position: 'absolute', top: 10, right: 12 }}>
+            {String(i + 1).padStart(2, '0')}
+          </Typography>
+          <ArrowIcon className="launch-arrow" sx={{ display: { xs: 'none', sm: 'block' }, alignSelf: 'flex-end', fontSize: 17, color: 'text.disabled', transition: 'transform 120ms ease, color 120ms ease' }} />
+        </Box>
+      ))}
     </Box>
   );
 }
 function SectionHeading({ eyebrow, title, subtitle, count, icon }) {
   return (
-    <Stack direction="row" spacing={1.2} justifyContent="space-between" alignItems="flex-end" sx={{ mb: 1.55, mt: 3.2 }}>
-      <Box>
-        <Typography variant="overline" sx={{ letterSpacing: '0.16em', color: 'text.secondary', fontWeight: 850 }}>{eyebrow}</Typography>
-        <Stack direction="row" spacing={1} alignItems="center">
-          {icon}
-          <Typography variant="h6" sx={{ fontWeight: 850, letterSpacing: '-0.02em' }}>{title}</Typography>
-          {count !== undefined && <Chip size="small" label={count} variant="outlined" />}
-        </Stack>
-        {subtitle && <Typography variant="body2" sx={{ mt: 0.35, color: 'text.secondary' }}>{subtitle}</Typography>}
-      </Box>
-    </Stack>
+    <Box sx={{ mb: 1.6, mt: { xs: 4, md: 5 }, pt: 1.6, borderTop: theme => `1px solid ${theme.palette.divider}` }}>
+      <Typography variant="overline" sx={{ color: 'text.disabled', display: 'block' }}>{eyebrow}</Typography>
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: .2 }}>
+        {icon}
+        <Typography component="h2" variant="h6">{title}</Typography>
+        {count !== undefined && <Typography component="span" sx={{ fontFamily: fonts.mono, fontSize: 12, color: 'text.secondary' }}>{count}</Typography>}
+      </Stack>
+      {subtitle && <Typography variant="body2" sx={{ mt: .4, color: 'text.secondary', maxWidth: 760 }}>{subtitle}</Typography>}
+    </Box>
   );
 }
 function StateChip({ value }) {
@@ -181,69 +220,61 @@ export default function WorldHome() {
     } catch(err){setSkillError(err.message||'更新に失敗しました');}
     finally{setSkillSaving(false);}
   };
-  const line = dark ? alpha(theme.palette.common.white, 0.13) : 'rgba(31,57,80,0.13)';
-  const surface = dark ? alpha(theme.palette.background.paper, 0.8) : '#fff';
+  const line = theme.palette.divider;
+  const surface = theme.palette.background.paper;
   const linkedProjects = new Map((data.projects || []).map(item => [item.id, item]));
 
   return (
     <Box sx={{ maxWidth: 1460, mx: 'auto', minHeight: '100%', pb: 7 }}>
-      <Paper elevation={0} sx={{
-        px: { xs: 2, sm: 3.5, md: 4.5 }, py: { xs: 2.8, md: 4.5 },
-        background: dark ? 'linear-gradient(130deg,#15293c,#1b3448)' : 'linear-gradient(130deg,#eaf3f1 0%,#f2f6fa 55%,#fff9f0 100%)',
-        border: `1px solid ${line}`, borderRadius: 3, position: 'relative', overflow: 'hidden',
-      }}>
-        <Box sx={{ position: 'absolute', top: -110, right: -70, width: 300, height: 300, borderRadius: '50%', border: `1px solid ${line}`, boxShadow: `0 0 0 38px ${alpha(theme.palette.primary.main, .04)}, 0 0 0 83px ${alpha(theme.palette.primary.main, .025)}`, pointerEvents: 'none' }} />
-        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.5} sx={{ position: 'relative' }}>
-          <Box>
-            <Typography variant="overline" sx={{ fontWeight: 850, letterSpacing: '0.19em', color: 'text.secondary' }}>
-              MY PORTAL / START HERE
+      <Box component="header" sx={{ pt: { xs: 1, md: 1.5 } }}>
+        <Typography sx={{ fontFamily: fonts.mono, fontSize: { xs: 11, md: 12 }, letterSpacing: '0.06em', color: 'text.secondary' }}>
+          {dateLine()}
+        </Typography>
+        <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'flex-end' }} gap={2} sx={{ mt: 1 }}>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography component="h1" sx={{ fontSize: { xs: 28, md: 40 }, fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.12 }}>
+              {greeting()}。
             </Typography>
-            <Typography variant="h3" component="h1" sx={{ fontSize: { xs: '2.15rem', md: '3rem' }, fontWeight: 900, letterSpacing: '-0.045em', mt: .4 }}>
-              World Home<span style={{ opacity: .45 }}>.</span>
-            </Typography>
-            <Typography variant="body1" sx={{ maxWidth: 680, mt: 1, lineHeight: 1.75, color: 'text.secondary' }}>
-              何をしていて、何を知っていて、それぞれどこにあるのか。
-              チャット用Skill、Project・Domain別のContexts、担当Operatorを一つの地図で探せます。
+            <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 640, mt: 1 }}>
+              何をしていて、何を知っていて、それぞれどこにあるのか。今日開く場所と、Skill・Context・担当Operatorの地図です。
             </Typography>
           </Box>
-          <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
+          <Stack direction="row" gap={1} alignItems="center" sx={{ flexShrink: 0 }}>
             <Button component={RouterLink} to="/meta" variant="contained" startIcon={<SparkIcon />}>次に何をする？</Button>
-          <Tooltip title="最新のディレクトリを読み直す">
-            <Button onClick={reload} disabled={loading} variant="outlined" startIcon={<RefreshIcon />}
-              sx={{ flexShrink: 0, bgcolor: dark ? 'transparent' : alpha('#ffffff', 0.6) }}>
-              更新
-            </Button>
-          </Tooltip>
+            <Tooltip title="最新のディレクトリを読み直す">
+              <span>
+                <Button onClick={reload} disabled={loading} variant="outlined" startIcon={<RefreshIcon />}>更新</Button>
+              </span>
+            </Tooltip>
           </Stack>
         </Stack>
-
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(3,minmax(0,1fr))', sm: 'repeat(4,minmax(0,1fr))' }, gap: { xs: 1.2, sm: 3 }, mt: 3.8, position: 'relative' }}>
-          <SummaryNumber label="Projects" number={data.projects?.length ?? '—'} caption="実装・運用単位" />
-          <SummaryNumber label="Chat Skills" number={data.chatSkills?.length ?? '—'} caption="My Portal DBが正本" />
-          <SummaryNumber label="Contexts" number={data.contexts?.length ?? '—'} caption="Project・Domain別" />
-          <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
-            <SummaryNumber label="Tools" number={tools.length} caption="Projectから検出" />
-          </Box>
-        </Box>
-      </Paper>
+        <Launcher rule={line} />
+        <Typography component="p" sx={{ fontFamily: fonts.mono, fontSize: 11.5, color: 'text.secondary', mt: 1.4, letterSpacing: '0.03em' }}>
+          INDEX — {data.projects?.length ?? '—'} projects · {data.chatSkills?.length ?? '—'} chat skills · {data.contexts?.length ?? '—'} contexts · {tools.length} tools
+          {data.metadataRevision ? ` · map rev ${data.metadataRevision}` : ''}
+        </Typography>
+      </Box>
 
       {error && <Alert severity="error" sx={{ mt: 2 }}>{error}<Button onClick={reload}>再試行</Button></Alert>}
       {(data.warnings || []).length > 0 && <Alert severity="warning" sx={{ mt: 1.6 }}>
         一部の正本が読み取れていません: {(data.warnings || []).join(' / ')}。表示されないものを「存在しない」とは扱わないでください。
       </Alert>}
 
-      <Paper variant="outlined" sx={{ p: { xs: 1.35, sm: 1.7 }, mt: 2, borderRadius: 2.5, borderColor: line, background: surface }}>
+      <Box sx={{
+        position: { xs: 'static', md: 'sticky' }, top: { md: -24 }, zIndex: 3, mt: { xs: 3, md: 4 }, mx: { xs: -1, sm: -1.5, md: -3 }, px: { xs: 1, sm: 1.5, md: 3 },
+        pt: { xs: 1, md: 1.5 }, bgcolor: 'background.default', borderBottom: `1px solid ${line}`,
+      }}>
         <TextField
           value={query} onChange={e => setQuery(e.target.value)} fullWidth size="small"
-          placeholder="SEO、Culture、Skill名、Context、repo名から探す"
+          placeholder="地図を検索 — SEO、Culture、Skill名、Context、repo名"
           inputProps={{ 'aria-label': 'World Home内を検索' }}
           InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon color="action" /></InputAdornment> }}
         />
         <Tabs value={tab} onChange={(e, value) => setTab(value)} variant="scrollable" scrollButtons="auto"
-          sx={{ mt: 1, minHeight: 39, '& .MuiTab-root': { minHeight: 39, minWidth: 'auto', fontWeight: 750, px: { xs: 1.3, md: 2 } } }}>
+          sx={{ mt: .5, minHeight: 40, '& .MuiTab-root': { minHeight: 40, minWidth: 'auto', px: { xs: 1.2, md: 1.8 } } }}>
           {SEARCH_TABS.map(item => <Tab value={item.id} label={item.label} key={item.id} />)}
         </Tabs>
-      </Paper>
+      </Box>
 
       {loading && <Box sx={{ py: 7, display: 'flex', justifyContent: 'center' }}><CircularProgress /></Box>}
 
@@ -255,29 +286,30 @@ export default function WorldHome() {
 
       {!loading && show('routes') && (
         <section aria-label="参照先の地図">
-          <SectionHeading eyebrow="01 / FIND THE OWNER" title="まず、どこを見るか" subtitle="話題から担当システムを選択。ここは案内図であり、各システムの正本ではありません。" count={routes.length} icon={<RouteIcon color="primary" />} />
+          <SectionHeading eyebrow="01 — Find the owner" title="まず、どこを見るか" subtitle="話題から担当システムを選択。ここは案内図であり、各システムの正本ではありません。" count={routes.length} icon={<RouteIcon color="primary" />} />
           {routes.length === 0 && <Typography color="text.secondary">該当する入口が見つかりません。</Typography>}
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))', lg: 'repeat(3,minmax(0,1fr))' }, gap: 1.45 }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))', lg: 'repeat(3,minmax(0,1fr))' }, gap: 1.2 }}>
             {routes.map((route, i) => {
               const active = expanded === route.id;
               const project = linkedProjects.get(route.projectId);
               return (
                 <Card key={route.id} variant="outlined" sx={{
-                  borderRadius: 2.4, borderColor: active ? 'primary.main' : line, background: surface,
-                  transition: 'border-color .16s ease, box-shadow .16s ease',
-                  boxShadow: active ? `0 7px 25px ${alpha(theme.palette.primary.main,.1)}` : 'none',
+                  borderColor: active ? 'text.primary' : line, background: surface,
+                  transition: 'border-color .12s ease',
                 }}>
                   <CardActionArea onClick={() => setExpanded(active ? null : route.id)}
-                    aria-expanded={active} sx={{ p: 2, alignItems: 'stretch', display: 'block', minHeight: 156 }}>
+                    aria-expanded={active} sx={{ p: 2, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'stretch', height: active ? 'auto' : '100%' }}>
                     <Stack direction="row" justifyContent="space-between" spacing={1}>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, letterSpacing: '.12em' }}>
-                        {String(i + 1).padStart(2, '0')} / DOMAIN
+                      <Typography sx={{ fontFamily: fonts.mono, fontSize: 11, color: 'text.disabled', letterSpacing: '.06em' }}>
+                        {String(i + 1).padStart(2, '0')}
                       </Typography>
                       <ArrowIcon fontSize="small" color={active ? 'primary' : 'disabled'} sx={{ transform: active ? 'rotate(90deg)' : 'none', transition: '.2s' }} />
                     </Stack>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 850, mt: .55 }}>{route.title}</Typography>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 800, mt: .3 }}>{route.title}</Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mt: .65, lineHeight: 1.65 }}>{route.description}</Typography>
-                    <Chip size="small" label={route.primary || '参照先未設定'} variant="outlined" sx={{ mt: 1.15, maxWidth: '100%' }} />
+                    <Typography sx={{ mt: 1.1, fontFamily: fonts.mono, fontSize: 11.5, color: active ? 'primary.main' : 'text.secondary', overflowWrap: 'anywhere' }}>
+                      → {route.primary || '参照先未設定'}
+                    </Typography>
                   </CardActionArea>
                   {active && (
                     <Box sx={{ px: 2, pb: 2, pt: .2 }}>
@@ -305,13 +337,13 @@ export default function WorldHome() {
 
       {!loading && show('projects') && (
         <section aria-label="プロジェクト一覧">
-          <SectionHeading eyebrow="02 / EXECUTION" title="Projects" subtitle="実装の単位。GitHubとMCPの所在地を確認できます。" count={projects.length} icon={<FolderIcon color="primary" />} />
+          <SectionHeading eyebrow="02 — Execution" title="Projects" subtitle="実装の単位。GitHubとMCPの所在地を確認できます。" count={projects.length} icon={<FolderIcon color="primary" />} />
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2,minmax(0,1fr))' }, gap: 1.25 }}>
             {projects.map(project => (
               <Paper key={project.id} variant="outlined" sx={{ p: 2, borderRadius: 2.3, borderColor: line }}>
                 <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={1}>
                   <Box sx={{ minWidth: 0 }}>
-                    <Typography variant="subtitle1" fontWeight={850}>{project.name}</Typography>
+                    <Typography variant="subtitle1" fontWeight={800}>{project.name}</Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mt: .55, lineHeight: 1.6 }}>{project.description}</Typography>
                   </Box>
                   <StateChip value={project.status} />
@@ -321,11 +353,11 @@ export default function WorldHome() {
                 </Stack>
                 {(project.repositories || []).length > 0 && (
                   <Box sx={{ mt: 1.4 }}>
-                    <Typography variant="caption" color="text.secondary" fontWeight={850}>REPOSITORIES · {project.repositories.length}</Typography>
+                    <Typography variant="caption" color="text.secondary" fontWeight={800}>REPOSITORIES · {project.repositories.length}</Typography>
                     <Stack direction="row" flexWrap="wrap" useFlexGap gap={.9} sx={{ mt: .45 }}>
                       {project.repositories.slice(0, 4).map(repo => (
                         <MuiLink key={repo.fullName} href={repo.url || `https://github.com/${repo.fullName}`} target="_blank" rel="noreferrer"
-                          sx={{ fontSize: 12.5, textDecoration: 'none', overflowWrap: 'anywhere' }}>{repo.fullName}</MuiLink>
+                          sx={{ fontFamily: fonts.mono, fontSize: 12, overflowWrap: 'anywhere' }}>{repo.fullName}</MuiLink>
                       ))}
                       {project.repositories.length > 4 && <Typography variant="caption" color="text.secondary">+{project.repositories.length - 4}</Typography>}
                     </Stack>
@@ -343,7 +375,7 @@ export default function WorldHome() {
 
       {!loading && show('skills') && (
         <section aria-label="チャット専用Skills">
-          <SectionHeading eyebrow="03 / CHATGPT SKILLS" title="Skills"
+          <SectionHeading eyebrow="03 — Chat skills" title="Skills"
             subtitle="チャット用スキルはMy PortalのDBで本文と履歴を管理。Agent HQ Manager / WorkerのMethodとは別です。"
             count={skills.length} icon={<SparkIcon color="primary" />} />
           <Alert severity="info" sx={{ mb: 1.5, '& .MuiAlert-message':{fontSize:13} }}>
@@ -353,7 +385,7 @@ export default function WorldHome() {
             {skills.map(skill=>(
               <Paper key={skill.id} variant="outlined" sx={{ p:2,borderRadius:2.3,borderColor:line }}>
                 <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
-                  <Typography variant="subtitle1" fontWeight={850}>{skill.title}</Typography>
+                  <Typography variant="subtitle1" fontWeight={800}>{skill.title}</Typography>
                   <Chip size="small" variant="outlined" color="success" label="My Portal DB" />
                 </Stack>
                 <Typography variant="body2" color="text.secondary" sx={{mt:.6,lineHeight:1.65}}>{skill.summary}</Typography>
@@ -381,7 +413,7 @@ export default function WorldHome() {
       {!loading && tab === 'all' && (
         <Paper variant="outlined" sx={{ p: 2.3, mt: 3.4, borderRadius: 2.5, borderColor: line }}>
           <Stack direction="row" alignItems="center" spacing={1}>
-            <HubIcon color="primary" /><Typography variant="subtitle1" fontWeight={850}>接続先について</Typography>
+            <HubIcon color="primary" /><Typography variant="subtitle1" fontWeight={800}>接続先について</Typography>
           </Stack>
           <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7, mt: .8 }}>
             現在のProjectsには {tools.length} 種類のMCP/外部ツール名が登録されています。

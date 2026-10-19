@@ -25,6 +25,7 @@ import {
   BottomNavigation,
   BottomNavigationAction,
   Collapse,
+  Tooltip,
 } from '@mui/material';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { ThemeProvider } from '@mui/material/styles';
@@ -51,6 +52,11 @@ import {
   FaceRetouchingNatural as CharacterIcon,
   BookmarksOutlined as SourcesIcon,
   OndemandVideo as DiscoveryIcon,
+  FavoriteBorder as TasteIcon,
+  Logout as LogoutIcon,
+  ArticleOutlined as ReadLaterIcon,
+  SmartDisplayOutlined as WatchLaterIcon,
+  StyleOutlined as CardsIcon,
 } from '@mui/icons-material';
 
 import Memo from './components/Memo';
@@ -85,10 +91,30 @@ import PublicCms from './components/PublicCms';
 import CharacterLibrary from './components/CharacterLibrary';
 import CurationSources from './components/CurationSources';
 
-import getAppTheme from './theme';
+import getAppTheme, { fonts } from './theme';
 
 const YOUTUBE_API_KEY = 'YOUR_YOUTUBE_API_KEY';
-const drawerWidth = 240;
+const drawerWidth = 244;
+const BOARD_PATHS = ['/boards', '/ideaboard', '/hobbyboard', '/stockboard', '/idea', '/hobby', '/stock'];
+
+function BrandMark({ color }) {
+  // A small ledger mark: a ruled page with one marked line.
+  return (
+    <Box component="svg" viewBox="0 0 28 28" aria-hidden="true" sx={{ width: 28, height: 28, flexShrink: 0 }}>
+      <rect x="1.5" y="1.5" width="25" height="25" rx="4" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <line x1="7" y1="9" x2="21" y2="9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" opacity=".45" />
+      <line x1="7" y1="14" x2="21" y2="14" stroke={color} strokeWidth="2.4" strokeLinecap="round" />
+      <line x1="7" y1="19" x2="16" y2="19" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" opacity=".45" />
+    </Box>
+  );
+}
+
+const todayLabel = () => {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' })
+    .formatToParts(now).reduce((acc, part) => ({ ...acc, [part.type]: part.value }), {});
+  return `${parts.year}.${parts.month}.${parts.day} ${String(parts.weekday || '').toUpperCase()}`;
+};
 
 const getYouTubeVideoId = (url) => {
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
@@ -178,6 +204,12 @@ function App() {
     if (path.startsWith('/ogiri')) return '/ogiri';
     return false;
   }, [location.pathname]);
+
+  useEffect(() => {
+    const t = appTheme.palette.portal;
+    document.documentElement.style.background = t.bg;
+    document.documentElement.style.colorScheme = mode;
+  }, [appTheme, mode]);
 
   const handleDrawerToggle = () => {
     setMobileOpen((open) => !open);
@@ -303,6 +335,87 @@ function App() {
     if (isMobile) closeMobileDrawer();
   };
 
+  const isActive = (item) => (item.match || [item.to]).some((prefix) => (
+    prefix === '/' ? location.pathname === '/' : location.pathname.startsWith(prefix)
+  ));
+  const tokens = appTheme.palette.portal;
+
+  const navRow = (item, nested = false) => (
+    <ListItemButton
+      key={item.to}
+      selected={isActive(item)}
+      component={Link}
+      to={item.to}
+      onClick={navClick}
+      title={item.hint}
+      sx={nested ? { pl: 2.2 } : undefined}
+    >
+      <ListItemIcon>{item.icon}</ListItemIcon>
+      <ListItemText
+        primary={item.label}
+        primaryTypographyProps={{ noWrap: true, sx: { fontSize: 14, fontWeight: 500 } }}
+      />
+      {item.badge > 0 && (
+        <Box component="span" sx={{ fontFamily: fonts.mono, fontSize: 11, fontWeight: 600, color: tokens.accent, ml: 1 }}>
+          {item.badge}
+        </Box>
+      )}
+    </ListItemButton>
+  );
+
+  const navGroups = [
+    {
+      label: '入口',
+      items: [{ to: '/', label: 'ホーム', hint: '全体像 / 参照先 / Skills', icon: <HomeIcon /> }],
+    },
+    {
+      label: '自分',
+      items: [
+        { to: '/discover', label: 'あなた専用の寄り道', hint: '動画・記事・作品のおすすめ', icon: <DiscoveryIcon /> },
+        { to: '/boards', match: BOARD_PATHS, label: 'ボード', hint: '企画・ビジネス / 興味・趣味 / ネタ・表現', icon: <ViewCompactIcon /> },
+        { to: '/taste', label: '好みの記録', hint: '好き嫌い / 根拠 / 訂正履歴', icon: <TasteIcon /> },
+        { to: '/thinking', label: '思考テーマ', hint: '長期テーマ / Context Store', icon: <PsychologyAltIcon /> },
+        { to: '/social-archive', label: 'X投稿アーカイブ', hint: '過去投稿の検索・分類・見返し', icon: <ArchiveIcon /> },
+      ],
+    },
+    {
+      label: 'エージェント',
+      items: [
+        { to: '/dashboard', label: 'Agent HQ', hint: '実行キュー / Agents / 再開地点', icon: <DashboardIcon /> },
+        { to: '/meta', label: 'プロジェクト提案', hint: '戦略・次の一手', icon: <MetaIcon /> },
+        { to: '/agent-ideas', label: 'Agent Ideas', hint: 'Portalと同じ構造でAIが補充', icon: <SmartToyIcon /> },
+        { to: '/curation-sources', label: '情報源ライブラリ', hint: '人間の選考で発掘した情報源', icon: <SourcesIcon /> },
+      ],
+    },
+    {
+      label: '制作・公開',
+      items: [
+        { to: '/ogiri', label: '大喜利ラボ', hint: '発想の拡散・センス蓄積', icon: <EmojiObjectsIcon /> },
+        { to: '/public-cms', label: 'Public CMS', hint: '思考 → 公開 / 複数サイト', icon: <PublicIcon /> },
+        { to: '/characters', label: 'キャラクターDB', hint: 'キャラクター設定 / 画像ライブラリ', icon: <CharacterIcon /> },
+        { to: '/project', label: 'プロジェクトボード', hint: 'Project一覧', icon: <Folder /> },
+      ],
+    },
+  ];
+
+  const otherItems = [
+    { to: '/reading-list-urls', label: '後で読む', icon: <ReadLaterIcon />, badge: unreadUrlsCount },
+    { to: '/reading-list-youtube', label: '後で見る', icon: <WatchLaterIcon />, badge: unreadYoutubeCount },
+    { to: '/news', label: 'ニュース', icon: <Newspaper /> },
+    { to: '/decks', match: ['/deck', '/flashcards'], label: '暗記カード', icon: <CardsIcon /> },
+    { to: '/feature-requests', label: '機能改善', icon: <BuildIcon /> },
+    { to: '/drive', label: 'Google Drive', icon: <Folder /> },
+  ];
+
+  const groupLabel = (label) => (
+    <Typography
+      component="div"
+      sx={{ fontFamily: fonts.mono, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.14em', color: tokens.faint, px: 2.5, pt: 2, pb: 0.6 }}
+    >
+      {label}
+    </Typography>
+  );
+
   const drawer = (
     <Box
       sx={{
@@ -314,122 +427,64 @@ function App() {
         pb: { xs: 'env(safe-area-inset-bottom)', md: 0 },
       }}
     >
-      <Toolbar sx={{ flexShrink: 0 }} />
-      <List sx={{ flexGrow: 1, overflowY: 'auto', overscrollBehavior: 'contain', py: 1 }}>
+      <Box
+        component={Link}
+        to="/"
+        onClick={navClick}
+        sx={{
+          flexShrink: 0, height: { xs: 56, sm: 64 }, px: 2.5, display: 'flex', alignItems: 'center', gap: 1.2,
+          color: 'text.primary', textDecoration: 'none', borderBottom: `1px solid ${tokens.rule}`,
+        }}
+      >
+        <BrandMark color={tokens.accent} />
+        <Box sx={{ minWidth: 0 }}>
+          <Typography sx={{ fontWeight: 900, fontSize: 16, letterSpacing: '-0.02em', lineHeight: 1.1 }}>My Portal</Typography>
+          <Typography sx={{ fontFamily: fonts.mono, fontSize: 10, color: tokens.faint, letterSpacing: '0.06em', lineHeight: 1.4 }}>
+            personal operations
+          </Typography>
+        </Box>
+      </Box>
+      <Box component="nav" aria-label="ポータルのページ" sx={{ flexGrow: 1, overflowY: 'auto', overscrollBehavior: 'contain', pb: 1.5 }}>
+        {user && navGroups.map((group) => (
+          <Box key={group.label}>
+            {groupLabel(group.label)}
+            <List disablePadding>{group.items.map((item) => navRow(item))}</List>
+          </Box>
+        ))}
         {user && (
           <>
-            <ListItemButton selected={location.pathname === '/'} component={Link} to="/" onClick={navClick}>
-              <ListItemIcon><HomeIcon /></ListItemIcon>
-              <ListItemText primary="ホーム" secondary="全体像 / 参照先 / Skills" />
-            </ListItemButton>
-            <ListItemButton selected={location.pathname.startsWith('/boards') || location.pathname.startsWith('/ideaboard') || location.pathname.startsWith('/hobbyboard') || location.pathname.startsWith('/stockboard') || location.pathname === '/idea' || location.pathname === '/hobby' || location.pathname === '/stock'} component={Link} to="/boards" onClick={navClick}>
-              <ListItemIcon><ViewCompactIcon /></ListItemIcon>
-              <ListItemText primary="ボード" secondary="企画・ビジネス / 興味・趣味 / ネタ・表現" />
-            </ListItemButton>
-            <ListItemButton selected={location.pathname.startsWith('/taste')} component={Link} to="/taste" onClick={navClick}>
-               <ListItemIcon><PsychologyAltIcon /></ListItemIcon>
-               <ListItemText primary="好みの記録" secondary="好き嫌い / 根拠 / 訂正履歴" />
-             </ListItemButton>
-             <ListItemButton selected={location.pathname.startsWith('/discover')} component={Link} to="/discover" onClick={navClick}>
-              <ListItemIcon><DiscoveryIcon /></ListItemIcon>
-              <ListItemText primary="あなた専用の寄り道" secondary="動画・記事・作品のおすすめ" />
-            </ListItemButton>
-            <ListItemButton selected={location.pathname.startsWith('/meta')} component={Link} to="/meta" onClick={navClick}>
-              <ListItemIcon><MetaIcon /></ListItemIcon>
-              <ListItemText primary="プロジェクト提案" secondary="戦略・次の一手" />
-            </ListItemButton>
-            <ListItemButton selected={location.pathname.startsWith('/dashboard')} component={Link} to="/dashboard" onClick={navClick}>
-              <ListItemIcon><DashboardIcon /></ListItemIcon>
-              <ListItemText primary="Agent HQ" secondary="実行キュー / Agents / 再開地点" />
-            </ListItemButton>
-            <ListItemButton selected={location.pathname.startsWith('/thinking')} component={Link} to="/thinking" onClick={navClick}>
-              <ListItemIcon><PsychologyAltIcon /></ListItemIcon>
-              <ListItemText primary="思考テーマ" secondary="長期テーマ / Context Store" />
-            </ListItemButton>
-            <ListItemButton selected={location.pathname.startsWith('/agent-ideas')} component={Link} to="/agent-ideas" onClick={navClick}>
-
-              <ListItemIcon><SmartToyIcon /></ListItemIcon>
-              <ListItemText primary="Agent Ideas" secondary="Portalと同じ構造でAIが補充" />
-            </ListItemButton>
-            <ListItemButton selected={location.pathname.startsWith('/curation-sources')} component={Link} to="/curation-sources" onClick={navClick}>
-              <ListItemIcon><SourcesIcon /></ListItemIcon>
-              <ListItemText primary="情報源ライブラリ" secondary="人間の選考で発掘した情報源" />
-            </ListItemButton>
-            <ListItemButton selected={location.pathname.startsWith('/ogiri')} component={Link} to="/ogiri" onClick={navClick}>
-              <ListItemIcon><EmojiObjectsIcon /></ListItemIcon>
-              <ListItemText primary="大喜利ラボ" secondary="発想の拡散・センス蓄積" />
-            </ListItemButton>
-            <ListItemButton selected={location.pathname.startsWith('/social-archive')} component={Link} to="/social-archive" onClick={navClick}>
-              <ListItemIcon><ArchiveIcon /></ListItemIcon>
-              <ListItemText primary="X投稿アーカイブ" secondary="過去投稿の検索・分類・見返し" />
-            </ListItemButton>
-            <ListItemButton selected={location.pathname.startsWith('/public-cms')} component={Link} to="/public-cms" onClick={navClick}>
-              <ListItemIcon><PublicIcon /></ListItemIcon>
-              <ListItemText primary="Public CMS" secondary="思考 → 公開 / 複数サイト" />
-            </ListItemButton>
-            <ListItemButton selected={location.pathname.startsWith('/characters')} component={Link} to="/characters" onClick={navClick}>
-              <ListItemIcon><CharacterIcon /></ListItemIcon>
-              <ListItemText primary="キャラクターDB" secondary="キャラクター設定 / 画像ライブラリ" />
-            </ListItemButton>
-            <ListItemButton selected={location.pathname.startsWith('/project')} component={Link} to="/project" onClick={navClick}>
-              <ListItemIcon><Folder /></ListItemIcon>
-              <ListItemText primary="プロジェクトボード" />
-            </ListItemButton>
-            <ListItemButton onClick={() => setOpenOthers((open) => !open)}>
-              <ListItemIcon><MoreHorizIcon /></ListItemIcon>
-              <ListItemText primary="その他" />
-              {openOthers ? <ExpandLess /> : <ExpandMore />}
-            </ListItemButton>
-            <Collapse in={openOthers} timeout="auto" unmountOnExit>
-              <List component="div" disablePadding>
-                <ListItemButton sx={{ pl: 4 }} component={Link} to="/news" onClick={navClick}>
-                  <ListItemIcon><Newspaper /></ListItemIcon>
-                  <ListItemText primary="ニュース" />
-                </ListItemButton>
-                <ListItemButton sx={{ pl: 4 }} component={Link} to="/feature-requests" onClick={navClick}>
-                  <ListItemIcon><BuildIcon /></ListItemIcon>
-                  <ListItemText primary="機能改善" />
-                </ListItemButton>
-                <ListItemButton sx={{ pl: 4 }} component={Link} to="/reading-list-urls" onClick={navClick}>
-                  <ListItemIcon><Newspaper /></ListItemIcon>
-                  <ListItemText primary="後で読む (Web)" />
-                </ListItemButton>
-                <ListItemButton sx={{ pl: 4 }} component={Link} to="/reading-list-youtube" onClick={navClick}>
-                  <ListItemIcon><Newspaper /></ListItemIcon>
-                  <ListItemText primary="後で見る (YouTube)" />
-                  {unreadYoutubeCount > 0 && <Badge badgeContent={unreadYoutubeCount} color="error" sx={{ ml: 1 }} />}
-                </ListItemButton>
-                <ListItemButton sx={{ pl: 4 }} component={Link} to="/drive" onClick={navClick}>
-                  <ListItemIcon><Folder /></ListItemIcon>
-                  <ListItemText primary="Google Drive" />
-                </ListItemButton>
-                <ListItemButton sx={{ pl: 4 }} component={Link} to="/decks" onClick={navClick}>
-                  <ListItemIcon><i className="fas fa-layer-group"></i></ListItemIcon>
-                  <ListItemText primary="暗記カード" />
-                </ListItemButton>
-              </List>
-            </Collapse>
+            {groupLabel('ほか')}
+            <List disablePadding>
+              <ListItemButton onClick={() => setOpenOthers((open) => !open)} aria-expanded={openOthers}>
+                <ListItemIcon><MoreHorizIcon /></ListItemIcon>
+                <ListItemText primary="その他" primaryTypographyProps={{ sx: { fontSize: 14, fontWeight: 500 } }} />
+                {unreadUrlsCount + unreadYoutubeCount > 0 && !openOthers && (
+                  <Box component="span" sx={{ fontFamily: fonts.mono, fontSize: 11, fontWeight: 600, color: tokens.accent, mr: 0.5 }}>
+                    {unreadUrlsCount + unreadYoutubeCount}
+                  </Box>
+                )}
+                {openOthers ? <ExpandLess fontSize="small" /> : <ExpandMore fontSize="small" />}
+              </ListItemButton>
+              <Collapse in={openOthers} timeout="auto" unmountOnExit>
+                <List component="div" disablePadding>{otherItems.map((item) => navRow(item, true))}</List>
+              </Collapse>
+            </List>
           </>
         )}
-        <ListItemButton onClick={handleModeChange}>
-          <ListItemIcon>{mode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}</ListItemIcon>
-          <ListItemText primary={mode === 'dark' ? 'ライトモード' : 'ダークモード'} />
-        </ListItemButton>
-        {user ? (
-          <ListItemButton onClick={handleLogout}>
-            <ListItemIcon><i className="fas fa-sign-out-alt"></i></ListItemIcon>
-            <ListItemText primary="ログアウト" />
-          </ListItemButton>
-        ) : (
-          <ListItemButton onClick={handleLogin}>
-            <ListItemIcon><i className="fas fa-sign-in-alt"></i></ListItemIcon>
-            <ListItemText primary="Googleでログイン" />
-          </ListItemButton>
+      </Box>
+      <Box sx={{ flexShrink: 0, borderTop: `1px solid ${tokens.rule}`, px: 1.5, py: 1, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        <Tooltip title={mode === 'dark' ? 'ライトモードにする' : 'ダークモードにする'}>
+          <IconButton size="small" onClick={handleModeChange} aria-label={mode === 'dark' ? 'ライトモードにする' : 'ダークモードにする'}>
+            {mode === 'dark' ? <Brightness7Icon fontSize="small" /> : <Brightness4Icon fontSize="small" />}
+          </IconButton>
+        </Tooltip>
+        {user && (
+          <Tooltip title="ログアウト">
+            <IconButton size="small" onClick={handleLogout} aria-label="ログアウト"><LogoutIcon fontSize="small" /></IconButton>
+          </Tooltip>
         )}
-      </List>
-      <Box sx={{ flexShrink: 0, p: 1.5, textAlign: 'center' }}>
-        <Typography variant="caption" color="textSecondary">
-          Version: {process.env.REACT_APP_VERSION}
+        <Typography sx={{ ml: 'auto', fontFamily: fonts.mono, fontSize: 10.5, color: tokens.faint }}>
+          {/^[\w.-]+$/.test(process.env.REACT_APP_VERSION || '') ? `v${process.env.REACT_APP_VERSION}` : ''}
         </Typography>
       </Box>
     </Box>
@@ -447,7 +502,7 @@ function App() {
             pt: { xs: 'env(safe-area-inset-top)', md: 0 },
           }}
         >
-          <Toolbar sx={{ minHeight: { xs: 56, sm: 64 }, px: { xs: 1, sm: 2 } }}>
+          <Toolbar sx={{ minHeight: { xs: 56, sm: 64 }, px: { xs: 1, sm: 2.5 }, gap: 0.5 }}>
             <IconButton
               color="inherit"
               aria-label="メニューを開く"
@@ -457,17 +512,31 @@ function App() {
             >
               <MenuIcon />
             </IconButton>
-            <Typography noWrap component="div" sx={{ flexGrow: 1, fontWeight: 850, typography: { xs: 'subtitle1', md: 'h6' } }}>
-              {isMobile ? pageTitle : 'My Portal'}
+            <Box sx={{ flexGrow: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 1.2 }}>
+              <Typography
+                component="span"
+                sx={{ display: { xs: 'none', md: 'inline' }, fontFamily: fonts.mono, fontSize: 11, fontWeight: 600, letterSpacing: '0.12em', color: 'text.disabled' }}
+              >
+                MY PORTAL /
+              </Typography>
+              <Typography noWrap component="h1" sx={{ fontWeight: 800, fontSize: { xs: 16, md: 17 }, letterSpacing: '-0.01em', m: 0 }}>
+                {pageTitle === 'My Portal' ? 'My Portal' : pageTitle}
+              </Typography>
+            </Box>
+            <Typography
+              component="span"
+              sx={{ display: { xs: 'none', sm: 'inline' }, fontFamily: fonts.mono, fontSize: 11.5, color: 'text.secondary', mr: 1, letterSpacing: '0.04em' }}
+            >
+              {todayLabel()}
             </Typography>
             <IconButton
               color="inherit"
-              aria-label="通知"
+              aria-label="未読アイテム"
               onClick={() => setNotificationModalOpen(true)}
-              sx={{ width: 44, height: 44 }}
+              sx={{ width: 40, height: 40, display: user ? 'inline-flex' : 'none' }}
             >
-              <Badge badgeContent={unreadUrlsCount + unreadYoutubeCount} color="error">
-                <NotificationsIcon />
+              <Badge badgeContent={unreadUrlsCount + unreadYoutubeCount} color="primary">
+                <NotificationsIcon fontSize="small" />
               </Badge>
             </IconButton>
           </Toolbar>
@@ -571,7 +640,7 @@ function App() {
                 <Route path="/drive" element={<Typography variant="h4">Google Drive機能はまだ実装されていません。</Typography>} />
               </Routes>
             ) : (
-              <Typography variant="h5">ポータルを利用するにはログインしてください。</Typography>
+              <SignIn onLogin={handleLogin} />
             )}
           </Box>
         </Box>
@@ -586,22 +655,25 @@ function App() {
               position: 'fixed',
               bottom: 0,
               left: 0,
-              boxShadow: '0 -5px 18px rgba(30, 62, 82, 0.10)',
               zIndex: 1200,
               '& .MuiBottomNavigationAction-root': {
+                position: 'relative',
                 minWidth: 0,
                 px: 0.25,
                 pt: 0.65,
               },
               '& .MuiBottomNavigationAction-label': {
-                fontSize: '0.68rem',
+                fontSize: '0.66rem',
                 lineHeight: 1.1,
                 mt: 0.2,
               },
               '& .MuiBottomNavigationAction-label.Mui-selected': {
-                fontSize: '0.68rem',
+                fontSize: '0.66rem',
               },
-              '& .MuiSvgIcon-root': { fontSize: 23 },
+              '& .MuiBottomNavigationAction-root.Mui-selected::before': {
+                content: '""', position: 'absolute', top: 0, left: '30%', right: '30%', height: 2, bgcolor: 'primary.main',
+              },
+              '& .MuiSvgIcon-root': { fontSize: 22 },
             }}
             value={mobileNavValue}
           >
@@ -620,8 +692,18 @@ function App() {
         >
           <DialogTitle>未読アイテム</DialogTitle>
           <DialogContent>
-            <Typography>Web記事: {unreadUrlsCount}件</Typography>
-            <Typography>YouTube動画: {unreadYoutubeCount}件</Typography>
+            <List disablePadding sx={{ minWidth: { sm: 320 } }}>
+              <ListItemButton component={Link} to="/reading-list-urls" onClick={() => setNotificationModalOpen(false)} sx={{ mx: 0 }}>
+                <ListItemIcon><ReadLaterIcon /></ListItemIcon>
+                <ListItemText primary="後で読む（Web記事）" />
+                <Typography sx={{ fontFamily: fonts.mono, fontWeight: 600 }}>{unreadUrlsCount}</Typography>
+              </ListItemButton>
+              <ListItemButton component={Link} to="/reading-list-youtube" onClick={() => setNotificationModalOpen(false)} sx={{ mx: 0 }}>
+                <ListItemIcon><WatchLaterIcon /></ListItemIcon>
+                <ListItemText primary="後で見る（YouTube）" />
+                <Typography sx={{ fontFamily: fonts.mono, fontWeight: 600 }}>{unreadYoutubeCount}</Typography>
+              </ListItemButton>
+            </List>
           </DialogContent>
           <DialogActions sx={{ pb: { xs: 'calc(8px + env(safe-area-inset-bottom))', md: 1 } }}>
             <Button onClick={() => setNotificationModalOpen(false)}>閉じる</Button>
@@ -629,6 +711,27 @@ function App() {
         </Dialog>
       </Box>
     </ThemeProvider>
+  );
+}
+
+function SignIn({ onLogin }) {
+  return (
+    <Box sx={{ minHeight: '70vh', display: 'grid', placeItems: 'center', px: 2 }}>
+      <Box sx={{ width: '100%', maxWidth: 420 }}>
+        <Typography sx={{ fontFamily: fonts.mono, fontSize: 11, letterSpacing: '0.14em', color: 'text.disabled' }}>
+          {todayLabel()}
+        </Typography>
+        <Typography component="h2" sx={{ fontWeight: 900, fontSize: { xs: 30, sm: 36 }, letterSpacing: '-0.03em', lineHeight: 1.15, mt: 1 }}>
+          My Portal
+        </Typography>
+        <Typography color="text.secondary" sx={{ mt: 1.5 }}>
+          プロジェクト、思考テーマ、エージェントの仕事、寄り道の記録をまとめた個人用の作業台です。続けるにはログインしてください。
+        </Typography>
+        <Button variant="contained" size="large" onClick={onLogin} sx={{ mt: 3, minHeight: 44 }}>
+          Googleでログイン
+        </Button>
+      </Box>
+    </Box>
   );
 }
 

@@ -355,8 +355,8 @@ export default function ThinkingWorkspace() {
                     p: { xs: 1.75, md: 2.5 },
                     borderRadius: 3.5,
                     border: '1px solid',
-                    borderColor: 'primary.light',
-                    background: (theme) => `linear-gradient(135deg, ${theme.palette.primary.main}14, ${theme.palette.background.paper} 52%, ${theme.palette.info.main}0d)`,
+                    borderColor: 'text.primary',
+                    background: (theme) => theme.palette.background.paper,
                   }}
                 >
                   <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} alignItems={{ md: 'center' }}>

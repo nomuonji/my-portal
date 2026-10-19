@@ -85,9 +85,9 @@ export default function ContextPanel({contexts=[],projects=[],query='',api,after
  const toggleProject=id=>setDraft(d=>({...d,projectIds:d.projectIds.includes(id)?
      d.projectIds.filter(x=>x!==id):[...d.projectIds,id]}));
  return <>
-  <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" alignItems={{sm:'center'}} spacing={1.25} sx={{mt:3.2,mb:1.4}}>
+  <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" alignItems={{sm:'center'}} spacing={1.25} sx={{mt:{xs:4,md:5},pt:1.6,mb:1.4,borderTop:theme=>`1px solid ${theme.palette.divider}`}}>
     <Box>
-      <Typography variant="overline" sx={{letterSpacing:'.15em',fontWeight:850,color:'text.secondary'}}>04 / CONTINUITY</Typography>
+      <Typography variant="overline" sx={{color:'text.disabled'}}>04 — Continuity</Typography>
       <Stack direction="row" spacing={1} alignItems="center">
         <TreeIcon color="primary"/><Typography variant="h6" fontWeight={850}>Contexts</Typography>
         <Chip size="small" label={contexts.length} variant="outlined" />
