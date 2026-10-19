@@ -8,7 +8,7 @@ import {
 import {
   ArrowBack, ArrowForward, BookmarkBorder, Bookmark, FavoriteBorder,
   Favorite, Close, PlayArrow, OpenInNew, VisibilityOff, Refresh, Search,
-  Newspaper, OndemandVideo, Schedule, Tune, Check,
+  Check,
 } from '@mui/icons-material';
 
 const dateText = value => {
@@ -23,10 +23,12 @@ const sourceDate = item => item.publishedAt || null;
 const youtubeThumb = item => item.videoId ? 'https://i.ytimg.com/vi/' + item.videoId + '/hqdefault.jpg' : item.thumbnail || '';
 const cleanText = value => String(value||'').toLocaleLowerCase('ja-JP');
 const ranges = [{key:'3d',label:'72時間'},{key:'7d',label:'7日間'},{key:'30d',label:'30日間'},{key:'all',label:'すべて'}];
-const colors = {
-  bg:'#0b0d11',surface:'#171a20',border:'#292e36',muted:'#99a3b3',
-  text:'#f2f5f7',accent:'#a5efda',bright:'#ebfff8',soft:'#203b36',
+const V = {
+  bg:'var(--p-bg)',surface:'var(--p-surface)',sunken:'var(--p-sunken)',ink:'var(--p-ink)',muted:'var(--p-muted)',
+  faint:'var(--p-faint)',rule:'var(--p-rule)',ruleStrong:'var(--p-rule-strong)',accent:'var(--p-accent)',
+  accentSoft:'var(--p-accent-soft)',teal:'var(--p-teal)',amber:'var(--p-amber)',pink:'var(--p-pink)',
 };
+const MONO = '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
 async function request(path='',body=null){
   const user=auth.currentUser;
   if(!user)throw new Error('My Portal にログインしてください');
@@ -39,122 +41,138 @@ async function request(path='',body=null){
   if(!response.ok)throw new Error(data.error||'読み込みに失敗しました ('+response.status+')');
   return data;
 }
+const clamp = lines => ({display:'-webkit-box',WebkitLineClamp:lines,WebkitBoxOrient:'vertical',overflow:'hidden'});
+function Meta({item,fallback}){
+  return <Stack direction="row" alignItems="baseline" gap={.8} sx={{minWidth:0,flexWrap:'wrap'}}>
+    <Typography component="span" sx={{fontSize:11.5,fontWeight:700,color:V.accent}}>{item.category||fallback}</Typography>
+    <Typography component="span" sx={{fontSize:11.5,color:V.muted,minWidth:0}} noWrap>{item.creator||'配信元'}</Typography>
+    <Typography component="span" sx={{fontFamily:MONO,fontSize:10.5,color:V.faint}}>{dateText(sourceDate(item))}</Typography>
+  </Stack>;
+}
 function CurationAction({item,onAction,busy,compact=false}){
   const liked=item.feedback==='loved',saved=item.feedback==='saved';
-  const common={fontSize:compact?11:12,fontWeight:750,minWidth:0,color:'#c9d0d8',
-    borderRadius:1.4,px:compact?.9:1.3,py:.15,whiteSpace:'nowrap',
-    '&:hover':{background:'#303840'}};
-  return <Stack direction="row" alignItems="center" gap={.2} sx={{flexWrap:'nowrap'}} onClick={e=>e.stopPropagation()}>
-    <Button title="この題材が好き" size="small" disabled={Boolean(busy)} aria-label={liked?'好きの評価を解除':'好きと評価する'}
-      startIcon={liked?<Favorite sx={{color:'#ff9cac'}}/>:<FavoriteBorder/>}
-      onClick={()=>onAction(item,liked?'new':'loved')} sx={common}>{compact?'':'好き'}</Button>
-    <Button title="後で見返す" size="small" disabled={Boolean(busy)} aria-label={saved?'保存を解除':'あとで見る'}
-      startIcon={saved?<Bookmark sx={{color:colors.accent}}/>:<BookmarkBorder/>}
-      onClick={()=>onAction(item,saved?'new':'saved')} sx={common}>{compact?'':'保存'}</Button>
+  const btn={fontSize:12,fontWeight:600,minWidth:0,color:V.muted,borderRadius:1,px:compact?.6:1.1,py:.1,minHeight:30,whiteSpace:'nowrap',
+    '&:hover':{background:V.sunken,color:V.ink},'& .MuiButton-startIcon':{mr:compact?0:.6}};
+  return <Stack direction="row" alignItems="center" gap={.1} sx={{flexWrap:'nowrap'}} onClick={e=>e.stopPropagation()}>
+    <Button title="この題材が好き" size="small" disabled={Boolean(busy)} aria-label={liked?'好きの評価を解除':'好きと評価する'} aria-pressed={liked}
+      startIcon={liked?<Favorite sx={{color:V.pink}}/>:<FavoriteBorder/>}
+      onClick={()=>onAction(item,liked?'new':'loved')} sx={{...btn,...(liked&&{color:V.ink})}}>{compact?'':'好き'}</Button>
+    <Button title="後で見返す" size="small" disabled={Boolean(busy)} aria-label={saved?'保存を解除':'あとで見る'} aria-pressed={saved}
+      startIcon={saved?<Bookmark sx={{color:V.accent}}/>:<BookmarkBorder/>}
+      onClick={()=>onAction(item,saved?'new':'saved')} sx={{...btn,...(saved&&{color:V.ink})}}>{compact?'':'保存'}</Button>
     <IconButton title="興味なし" aria-label="興味なしとして非表示" size="small" disabled={Boolean(busy)}
-      onClick={()=>onAction(item,'skipped')} sx={{color:'#8f99a5',p:.8}}><VisibilityOff sx={{fontSize:17}}/></IconButton>
+      onClick={()=>onAction(item,'skipped')} sx={{color:V.faint,p:.7,'&:hover':{color:V.ink}}}><VisibilityOff sx={{fontSize:16}}/></IconButton>
   </Stack>;
 }
 const SCORE_AXIS_LABELS = {tasteFit:'好みとの一致',discovery:'未知の発見',payoff:'元作品の体験'};
-function RecommendationScore({item,short=false}){
+function RecommendationScore({item}){
  const score=item.selfEvaluation;
  if(!score||score.version!=='discover-taste-v3'){
-  return <Typography sx={{color:'#6d7887',fontSize:10.5}}>旧掲載・旧採点（現在の好み予測には未使用）</Typography>;
+  return <Typography sx={{color:V.faint,fontSize:10.5,fontFamily:MONO}}>旧掲載・旧採点</Typography>;
  }
- const fit=score.scores.tasteFit==null?'未確定':score.scores.tasteFit+'/5';
+ const fit=score.scores.tasteFit==null?'—':score.scores.tasteFit;
  const label=score.lane==='familiar'?'好みの近傍':'探索枠';
  const provenance=score.fitBasis==='user_feedback'?'本人の明示的な好き':score.fitBasis==='expression_inference'?'本人ツイートからの推測':score.fitBasis==='hypothesis'?'弱い仮説':'好み未確定';
- return <Box component="details" onClick={e=>e.stopPropagation()} sx={{fontSize:11,minWidth:0,pt:.35,'& summary':{cursor:'pointer',listStyle:'none',color:'#a6bfc5',fontWeight:700,'&::-webkit-details-marker':{display:'none'}}}}>
-   <Box component="summary" sx={{display:'flex',alignItems:'center',gap:.8,flexWrap:'wrap'}}>
-     <Box component="span" sx={{color:colors.accent}}>{label}</Box>
-     <Box component="span">好み {fit} · 発見 {score.scores.discovery}/5 · 体験 {score.scores.payoff}/5</Box>
-     <Box component="span" sx={{color:colors.muted}}>{provenance} · 根拠 ▾</Box>
+ return <Box component="details" onClick={e=>e.stopPropagation()} sx={{fontSize:11,minWidth:0,
+   '& summary':{cursor:'pointer',listStyle:'none',color:V.muted,'&::-webkit-details-marker':{display:'none'},'&:hover':{color:V.ink}}}}>
+   <Box component="summary" sx={{display:'flex',alignItems:'center',gap:.9,flexWrap:'wrap'}}>
+     <Box component="span" sx={{fontWeight:700,color:score.lane==='familiar'?V.teal:V.amber}}>{label}</Box>
+     <Box component="span" sx={{fontFamily:MONO,fontSize:10.5}}>好み {fit} · 発見 {score.scores.discovery} · 体験 {score.scores.payoff}</Box>
+     <Box component="span" sx={{color:V.faint}}>根拠 ▾</Box>
    </Box>
-   <Stack gap={.55} sx={{mt:1,p:1.25,background:'#10151a',border:'1px solid #2a363d',borderRadius:1.4,lineHeight:1.5}}>
-     {Object.entries(SCORE_AXIS_LABELS).map(([key,name])=><Typography key={key} sx={{fontSize:11,color:'#b6c7d3',lineHeight:1.5}}>
-       <Box component="span" sx={{fontWeight:850,color:colors.accent}}>{name}: </Box>{score.reasons?.[key]||'根拠未記録'}
+   <Stack gap={.6} sx={{mt:1,p:1.3,background:V.sunken,borderRadius:1,lineHeight:1.55}}>
+     <Typography sx={{fontSize:11,color:V.muted}}>{provenance}</Typography>
+     {Object.entries(SCORE_AXIS_LABELS).map(([key,name])=><Typography key={key} sx={{fontSize:11.5,color:V.ink,lineHeight:1.55}}>
+       <Box component="span" sx={{fontWeight:700}}>{name}：</Box>{score.reasons?.[key]||'根拠未記録'}
      </Typography>)}
-     {score.expressionMechanism&&<Typography sx={{fontSize:11,color:'#cbd5e1',lineHeight:1.5}}>本人の発想パターン（仮説）: {score.expressionMechanism}</Typography>}
-     {score.evidencePostIds?.length>0&&<Box sx={{display:'flex',gap:.8,flexWrap:'wrap'}}>
-      {score.evidencePostIds.map(id=><Box key={id} component="a" href={'https://x.com/i/status/'+id.slice(2)} target="_blank" rel="noopener noreferrer" sx={{fontSize:11,color:colors.accent}}>本人ツイート {id.slice(-6)}</Box>)}
+     {score.expressionMechanism&&<Typography sx={{fontSize:11.5,color:V.ink,lineHeight:1.55}}>本人の発想パターン（仮説）：{score.expressionMechanism}</Typography>}
+     {score.evidencePostIds?.length>0&&<Box sx={{display:'flex',gap:1,flexWrap:'wrap'}}>
+      {score.evidencePostIds.map(id=><Box key={id} component="a" href={'https://x.com/i/status/'+id.slice(2)} target="_blank" rel="noopener noreferrer"
+        sx={{fontSize:11,color:V.accent,fontFamily:MONO}}>tweet {id.slice(-6)}</Box>)}
      </Box>}
-     {score.rawReferences?.map((reference,i)=><Typography key={reference.id+'-'+i} sx={{fontSize:11,color:'#afbac3',lineHeight:1.5}}>
-       参考作品（本人の投稿ではない）: {reference.dataset==='radichichi'?'ラジ父':'村上RADIO'} / {reference.id} — {reference.mechanism}
+     {score.rawReferences?.map((reference,i)=><Typography key={reference.id+'-'+i} sx={{fontSize:11,color:V.muted,lineHeight:1.5}}>
+       参考作品（本人の投稿ではない）：{reference.dataset==='radichichi'?'ラジ父':'村上RADIO'} / {reference.id} — {reference.mechanism}
      </Typography>)}
-     <Typography sx={{fontSize:11,color:'#d6b3b3',lineHeight:1.5}}>弱点: {score.weakness}</Typography>
-     <Typography sx={{fontSize:10,color:'#7a8791'}}>AIの推測です。ツイートは表現の痕跡、参考作品は外部データ。あなたがこの作品を好きだという証明ではありません。</Typography>
+     <Typography sx={{fontSize:11.5,color:V.ink,lineHeight:1.55}}><Box component="span" sx={{fontWeight:700}}>弱点：</Box>{score.weakness}</Typography>
+     <Typography sx={{fontSize:10.5,color:V.faint}}>AIの推測です。ツイートは表現の痕跡、参考作品は外部データ。好きだという証明ではありません。</Typography>
    </Stack>
  </Box>;
 }
 function VideoCard({item,onOpen,onAction,busy}){
-  return <Box component="article" sx={{minWidth:0,background:colors.surface,border:'1px solid '+colors.border,borderRadius:2,overflow:'hidden'}}>
+  const thumb=youtubeThumb(item);
+  return <Box component="article" sx={{minWidth:0,display:'flex',flexDirection:'column'}}>
     <Box component="button" onClick={()=>onOpen(item)} aria-label={'動画を再生: '+item.title}
-      sx={{border:0,p:0,cursor:'pointer',display:'block',width:'100%',aspectRatio:'16 / 9',position:'relative',
-        background:'#232b37',color:'#fff','&:hover .video-play':{transform:'translate(-50%,-50%) scale(1.08)'}}}>
-      {youtubeThumb(item) ? <Box component="img" loading="lazy" src={youtubeThumb(item)} alt="" sx={{width:'100%',height:'100%',objectFit:'cover',display:'block'}}/> :
-        <Box sx={{height:'100%',display:'grid',placeItems:'center',fontSize:38}}>▶</Box>}
-      <Box className="video-play" sx={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',
-        display:'grid',placeItems:'center',borderRadius:'50%',width:42,height:42,background:'rgba(0,0,0,.68)',
-        border:'1px solid rgba(255,255,255,.4)',transition:'transform .14s'}}><PlayArrow/></Box>
-      <Box sx={{position:'absolute',bottom:6,left:8,fontSize:10,fontWeight:850,background:'rgba(0,0,0,.75)',borderRadius:.8,px:.8,py:.3}}>動画</Box>
-    </Box>
-    <Stack sx={{p:1.5}} gap={.7}>
-      <Stack direction="row" alignItems="center" gap={.65} flexWrap="wrap">
-        <Typography sx={{fontSize:11,color:colors.accent,fontWeight:850}}>{item.category||'映像'}</Typography>
-        <Typography sx={{fontSize:11,color:colors.muted}}>{item.creator||'配信元'} · {dateText(sourceDate(item))}</Typography>
-      </Stack>
-      <Box component="button" onClick={()=>onOpen(item)} sx={{border:0,background:'transparent',color:'inherit',p:0,cursor:'pointer',textAlign:'left'}}>
-        <Typography component="h3" sx={{fontSize:14.5,fontWeight:850,lineHeight:1.5,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{item.title}</Typography>
+      sx={{border:0,p:0,cursor:'pointer',display:'block',width:'100%',aspectRatio:'16 / 9',position:'relative',borderRadius:1.2,overflow:'hidden',
+        background:V.sunken,color:'#fff','&:hover img':{transform:'scale(1.03)'},'&:hover .video-play':{opacity:1}}}>
+      {thumb ? <Box component="img" loading="lazy" src={thumb} alt="" sx={{width:'100%',height:'100%',objectFit:'cover',display:'block',transition:'transform .3s ease'}}/> :
+        <Box sx={{height:'100%',display:'grid',placeItems:'center',color:V.faint}}><PlayArrow sx={{fontSize:40}}/></Box>}
+      <Box className="video-play" sx={{position:'absolute',inset:0,display:'grid',placeItems:'center',background:'rgba(0,0,0,.28)',opacity:0,transition:'opacity .15s'}}>
+        <Box sx={{display:'grid',placeItems:'center',borderRadius:'50%',width:48,height:48,background:'rgba(255,255,255,.92)',color:'#111'}}><PlayArrow/></Box>
       </Box>
-      <Typography sx={{fontSize:12,color:'#b5bec9',lineHeight:1.65,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{item.description}</Typography>
-      <RecommendationScore item={item} short/>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{minWidth:0,pt:.5}}>
+    </Box>
+    <Stack sx={{pt:1.1,flex:1}} gap={.5}>
+      <Meta item={item} fallback="映像"/>
+      <Box component="button" onClick={()=>onOpen(item)} sx={{border:0,background:'transparent',color:'inherit',p:0,cursor:'pointer',textAlign:'left','&:hover h3':{color:V.accent}}}>
+        <Typography component="h3" sx={{fontSize:14.5,fontWeight:700,lineHeight:1.5,...clamp(2)}}>{item.title}</Typography>
+      </Box>
+      {item.description&&<Typography sx={{fontSize:12.5,color:V.muted,lineHeight:1.6,...clamp(2)}}>{item.description}</Typography>}
+      <Box sx={{flex:1}}/>
+      <RecommendationScore item={item}/>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{minWidth:0,ml:-.6}}>
         <CurationAction item={item} onAction={onAction} busy={busy} compact/>
-        <IconButton href={item.url} target="_blank" rel="noopener noreferrer" size="small" aria-label="YouTubeで見る" sx={{color:colors.muted}}><OpenInNew sx={{fontSize:15}}/></IconButton>
+        <IconButton href={item.url} target="_blank" rel="noopener noreferrer" size="small" aria-label="YouTubeで見る" sx={{color:V.faint,'&:hover':{color:V.ink}}}><OpenInNew sx={{fontSize:15}}/></IconButton>
       </Stack>
     </Stack>
   </Box>;
 }
 function ArticleRow({item,onAction,busy}){
-  return <Stack component="article" direction="row" gap={1.4} alignItems="flex-start"
-    sx={{py:1.8,borderBottom:'1px solid '+colors.border,minWidth:0,'&:hover':{background:'#181d24'}}}>
-    <Box sx={{width:37,flexShrink:0,textAlign:'center',pt:.2}}>
-      <Typography sx={{color:colors.accent,fontSize:19,fontWeight:950,fontVariantNumeric:'tabular-nums',lineHeight:1}}>
-        {sourceDate(item)?new Date(item.publishedAt).toLocaleDateString('ja-JP',{day:'2-digit',timeZone:'Asia/Tokyo'}):'–'}
+  const has=sourceDate(item);
+  const d=has?new Date(item.publishedAt):null;
+  return <Stack component="article" direction="row" gap={{xs:1.4,md:2}} alignItems="flex-start"
+    sx={{py:1.8,borderBottom:'1px solid '+V.rule,minWidth:0}}>
+    <Box sx={{width:38,flexShrink:0,pt:.3,fontFamily:MONO,textAlign:'right'}}>
+      <Typography sx={{fontFamily:MONO,fontSize:17,fontWeight:600,lineHeight:1,color:V.ink}}>
+        {has?d.toLocaleDateString('ja-JP',{day:'2-digit',timeZone:'Asia/Tokyo'}).replace('日',''):'–'}
       </Typography>
-      <Typography sx={{color:'#77818e',fontSize:10,mt:.2}}>{sourceDate(item)?new Date(item.publishedAt).toLocaleDateString('ja-JP',{month:'numeric',timeZone:'Asia/Tokyo'})+'月':'日付'}</Typography>
+      <Typography sx={{fontFamily:MONO,fontSize:10,color:V.faint,mt:.4}}>
+        {has?d.toLocaleDateString('en-US',{month:'short',timeZone:'Asia/Tokyo'}).toUpperCase():''}
+      </Typography>
     </Box>
     <Box sx={{flex:1,minWidth:0}}>
-      <Stack direction="row" gap={.8} flexWrap="wrap" sx={{mb:.5}}>
-        <Typography sx={{fontSize:10.5,color:colors.accent,fontWeight:850}}>{item.category||'記事'}</Typography>
-        <Typography sx={{fontSize:10.5,color:colors.muted}}>{item.creator||'配信元'} · {dateText(sourceDate(item))}</Typography>
-      </Stack>
+      <Meta item={item} fallback="記事"/>
       <Box component="a" href={item.url} target="_blank" rel="noopener noreferrer"
-        sx={{textDecoration:'none',color:'inherit','&:hover':{color:colors.accent}}}>
-        <Typography component="h3" sx={{fontSize:14,fontWeight:850,lineHeight:1.55}}>{item.title}</Typography>
+        sx={{display:'block',textDecoration:'none',color:'inherit',mt:.4,'&:hover h3':{color:V.accent}}}>
+        <Typography component="h3" sx={{fontSize:15,fontWeight:700,lineHeight:1.55}}>{item.title}</Typography>
       </Box>
-      <Typography sx={{fontSize:12.5,lineHeight:1.65,color:'#b2bcc9',mt:.45,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{item.description}</Typography>
-      <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" alignItems={{xs:'flex-start',sm:'center'}} gap={.5} sx={{mt:.75}}>
-        <Typography sx={{color:'#8b9fb0',fontSize:11.5,lineHeight:1.5,display:'-webkit-box',WebkitLineClamp:1,WebkitBoxOrient:'vertical',overflow:'hidden',flex:1}}>編集メモ：{item.reason}</Typography>
-        <CurationAction item={item} onAction={onAction} busy={busy} compact/>
+      {item.description&&<Typography sx={{fontSize:12.5,lineHeight:1.65,color:V.muted,mt:.4,...clamp(2)}}>{item.description}</Typography>}
+      {item.reason&&<Typography sx={{fontSize:12,lineHeight:1.6,color:V.ink,mt:.7,pl:1.2,borderLeft:'2px solid '+V.rule,...clamp(2)}}>{item.reason}</Typography>}
+      <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" alignItems={{xs:'flex-start',sm:'center'}} gap={.5} sx={{mt:.8}}>
+        <RecommendationScore item={item}/>
+        <Box sx={{ml:{xs:-.6,sm:0}}}><CurationAction item={item} onAction={onAction} busy={busy} compact/></Box>
       </Stack>
-      <RecommendationScore item={item} short/>
     </Box>
   </Stack>;
 }
-function SectionHeading({icon:Icon,title,count,subtitle,highlight}){
-  return <Stack direction="row" alignItems="center" gap={1} sx={{mb:1.8,borderBottom:'1px solid '+colors.border,pb:1.3}}>
-    <Box sx={{width:30,height:30,borderRadius:1.4,display:'grid',placeItems:'center',
-      background:highlight?'#1d4139':'#222b36',color:highlight?colors.accent:'#b9c8d9'}}><Icon sx={{fontSize:18}}/></Box>
-    <Box sx={{flex:1,minWidth:0}}>
-      <Typography component="h2" sx={{fontSize:18,fontWeight:950,lineHeight:1.2}}>{title} <Box component="span" sx={{fontSize:12,color:colors.muted,fontWeight:700,ml:.4}}>{count}件</Box></Typography>
-      {subtitle&&<Typography sx={{fontSize:11,color:colors.muted,mt:.4}}>{subtitle}</Typography>}
-    </Box>
-  </Stack>;
+function SectionHeading({title,count,subtitle}){
+  return <Box sx={{mb:2,pb:1.2,borderBottom:'1px solid '+V.ink}}>
+    <Stack direction="row" alignItems="baseline" gap={1}>
+      <Typography component="h2" sx={{fontSize:18,fontWeight:800,lineHeight:1.3}}>{title}</Typography>
+      <Typography component="span" sx={{fontFamily:MONO,fontSize:12,color:V.muted}}>{count}</Typography>
+    </Stack>
+    {subtitle&&<Typography sx={{fontSize:12,color:V.muted,mt:.3}}>{subtitle}</Typography>}
+  </Box>;
 }
 function Empty({label}){
-  return <Box sx={{border:'1px dashed #38404b',borderRadius:2,px:2,py:6,textAlign:'center',color:colors.muted,fontSize:13,lineHeight:1.75}}>
-    {label}の新着はまだありません。<br/>古いコンテンツは期間「すべて」で確認できます。
+  return <Box sx={{border:'1px dashed '+V.ruleStrong,borderRadius:1.5,px:2,py:6,textAlign:'center',color:V.muted,fontSize:13,lineHeight:1.75}}>
+    この期間の{label}はまだありません。<br/>期間を「すべて」にすると過去の分も見られます。
+  </Box>;
+}
+function Segmented({value,onChange,options,label}){
+  return <Box role="group" aria-label={label} sx={{display:'inline-flex',border:'1px solid '+V.ruleStrong,borderRadius:1.2,overflow:'hidden',flexShrink:0}}>
+    {options.map(([key,text],i)=><Box key={key} component="button" type="button" onClick={()=>onChange(key)} aria-pressed={value===key}
+      sx={{border:0,borderLeft:i?'1px solid '+V.ruleStrong:0,background:value===key?V.ink:'transparent',color:value===key?V.bg:V.muted,
+        font:'inherit',fontSize:12.5,fontWeight:700,px:1.5,py:.7,cursor:'pointer',whiteSpace:'nowrap',
+        '&:hover':{color:value===key?V.bg:V.ink}}}>{text}</Box>)}
   </Box>;
 }
 export default function PersonalFeed(){
@@ -225,102 +243,98 @@ export default function PersonalFeed(){
   const i=pool.findIndex(x=>x.id===active?.id);
   if(i>=0&&pool.length>1)setActive(pool[(i+delta+pool.length)%pool.length]);
  };
- const tab=(key,label)=> <Button onClick={()=>setMedia(key)} key={key}
-   sx={{textTransform:'none',fontWeight:850,fontSize:13,color:media===key?'#0c1818':colors.muted,
-    background:media===key?colors.accent:'transparent',borderRadius:1.4,minWidth:0,px:1.6,
-    '&:hover':{background:media===key?'#bfffe8':'#1d242b'}}}>{label}</Button>;
- const controlBtn=(isActive)=>({minWidth:0,whiteSpace:'nowrap',textTransform:'none',
-  color:isActive?colors.bg:colors.muted,background:isActive?colors.bright:'transparent',
-  borderRadius:1.2,fontWeight:800,fontSize:11.5,px:1.3,'&:hover':{background:isActive?colors.bright:'#26313a'}});
  const showVideo=media!=='article',showArticle=media!=='video';
- return <Box sx={{minHeight:'100%',background:colors.bg,color:colors.text,fontFamily:'"Hiragino Kaku Gothic ProN", "Yu Gothic", system-ui, sans-serif',
-  borderRadius:{xs:0,md:2},mx:{xs:-1,sm:-1.5,md:-3},mt:{xs:-1,sm:-1.5,md:-3},
-  px:{xs:1.8,sm:2.5,md:3.3},py:{xs:2.3,md:3},'& button:focus-visible, & a:focus-visible':{outline:'2px solid '+colors.accent,outlineOffset:2}}}>
-   <Box sx={{display:'flex',justifyContent:'flex-end',mb:1}}>
-     <Button component={Link} to="/taste" sx={{textTransform:'none',color:colors.accent,fontSize:12,fontWeight:800}}>好みの記録・判断履歴を見る →</Button>
+ const rangeLabel=(ranges.find(r=>r.key===range)||{}).label;
+ return <Box sx={{maxWidth:1460,mx:'auto',pb:6,color:V.ink}}>
+   <Box component="header" sx={{pt:{xs:1,md:1.5}}}>
+    <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
+     <Typography sx={{fontFamily:MONO,fontSize:{xs:11,md:12},letterSpacing:'.06em',color:V.muted}}>
+      DISCOVER — {savedOnly?'保存したもの':rangeLabel} · {matches.length} items
+     </Typography>
+     <Button component={Link} to="/taste" size="small" endIcon={<ArrowForward sx={{fontSize:15}}/>} sx={{color:V.muted,'&:hover':{color:V.ink}}}>好みの記録</Button>
+    </Stack>
+    <Stack direction={{xs:'column',md:'row'}} justifyContent="space-between" alignItems={{xs:'flex-start',md:'flex-end'}} gap={1.5} sx={{mt:.6}}>
+     <Box>
+      <Typography component="h1" sx={{fontSize:{xs:30,md:40},fontWeight:900,letterSpacing:'-.035em',lineHeight:1.1}}>Discover</Typography>
+      <Typography sx={{fontSize:{xs:13.5,md:14.5},color:V.muted,mt:.9,maxWidth:620,lineHeight:1.7}}>
+       ネット文化を主役に、動画・配信・界隈の実作品を拾ってきた棚。気になったら「好き」か「保存」、違ったら非表示に。
+      </Typography>
+     </Box>
+     <Button onClick={load} disabled={loading} variant="outlined" startIcon={<Refresh/>} sx={{flexShrink:0}}>更新</Button>
+    </Stack>
    </Box>
-   <Stack direction={{xs:'column',md:'row'}} gap={2} justifyContent="space-between" sx={{pb:2,borderBottom:'1px solid '+colors.border}}>
-    <Box>
-     <Typography sx={{color:colors.accent,fontSize:10.5,fontWeight:950,letterSpacing:'.2em'}}>YOUR PRIVATE CULTURE WIRE</Typography>
-     <Stack direction="row" alignItems="baseline" flexWrap="wrap" gap={1.5} sx={{mt:.45}}>
-      <Typography component="h1" sx={{fontSize:{xs:27,md:34},letterSpacing:'-.045em',fontWeight:950,lineHeight:1.25}}>寄り道速報。</Typography>
-      <Typography sx={{fontSize:12,color:colors.muted}}>ネット文化を主役に。動画・配信・界隈の実作品を先に。</Typography>
-     </Stack>
-    </Box>
-    <Stack direction="row" gap={1.5} alignItems="center">
-     <Box sx={{textAlign:'right'}}>
-      <Typography sx={{fontSize:19,fontWeight:950,fontVariantNumeric:'tabular-nums'}}>{matches.length}<Box component="span" sx={{fontSize:11,color:colors.muted,ml:.5}}>件</Box></Typography>
-      <Typography sx={{fontSize:10.5,color:colors.muted}}>表示中の発見</Typography>
-     </Box>
-     <IconButton onClick={load} title="最新を読み込む" aria-label="最新を読み込む" disabled={loading} sx={{border:'1px solid '+colors.border,color:colors.accent,width:40,height:40}}><Refresh/></IconButton>
-    </Stack>
-   </Stack>
-   <Stack direction={{xs:'column',lg:'row'}} gap={1.3} justifyContent="space-between" alignItems={{xs:'stretch',lg:'center'}} sx={{py:1.5}}>
-    <Stack direction="row" gap={.4} sx={{background:'#171d23',p:.5,borderRadius:2,alignSelf:'flex-start'}}>{tab('both','全部')}{tab('video','動画')}{tab('article','記事・読みもの')}</Stack>
-    <Stack direction="row" flexWrap="wrap" alignItems="center" gap={1}>
-     <Stack direction="row" gap={.2} sx={{p:.4,background:'#171d23',borderRadius:1.6}}>{ranges.map(r=>
-      <Button key={r.key} onClick={()=>setRange(r.key)} sx={controlBtn(range===r.key)}>{r.label}</Button>)}</Stack>
-     <Box sx={{display:'flex',alignItems:'center',gap:.5,background:'#171d23',border:'1px solid '+colors.border,borderRadius:1.5,px:1.2,height:36,flex:{xs:'1 1 160px',lg:'0 0 220px'}}}>
-      <Search sx={{fontSize:17,color:colors.muted}}/><InputBase aria-label="ニュースを検索" placeholder="話題を検索" value={query}
-       onChange={e=>setQuery(e.target.value)} sx={{color:colors.text,fontSize:12.5,flex:1,minWidth:0}}/>
-      {query&&<IconButton onClick={()=>setQuery('')} size="small" aria-label="検索を消去" sx={{color:colors.muted}}><Close sx={{fontSize:14}}/></IconButton>}
+
+   <Box sx={{position:{md:'sticky'},top:{md:-24},zIndex:3,mt:{xs:2.5,md:3.5},mx:{xs:-1,sm:-1.5,md:-3},px:{xs:1,sm:1.5,md:3},
+     py:1.3,background:V.bg,borderTop:'1px solid '+V.rule,borderBottom:'1px solid '+V.rule}}>
+    <Stack direction="row" gap={1} alignItems="center" sx={{flexWrap:'wrap'}}>
+     <Segmented label="種類" value={media} onChange={setMedia} options={[['both','全部'],['video','動画'],['article','記事']]}/>
+     <Segmented label="期間" value={range} onChange={setRange} options={ranges.map(r=>[r.key,r.label])}/>
+     <Box sx={{display:'flex',alignItems:'center',gap:.6,border:'1px solid '+V.ruleStrong,borderRadius:1.2,background:V.surface,px:1.1,height:34,
+       flex:{xs:'1 1 100%',sm:'1 1 200px'},maxWidth:{sm:320},ml:{sm:'auto'},'&:focus-within':{borderColor:V.accent}}}>
+      <Search sx={{fontSize:17,color:V.faint}}/>
+      <InputBase inputProps={{'aria-label':'話題を検索'}} placeholder="話題を検索" value={query}
+       onChange={e=>setQuery(e.target.value)} sx={{color:V.ink,fontSize:13,flex:1,minWidth:0}}/>
+      {query&&<IconButton onClick={()=>setQuery('')} size="small" aria-label="検索を消去" sx={{color:V.muted,p:.3}}><Close sx={{fontSize:15}}/></IconButton>}
      </Box>
     </Stack>
-   </Stack>
-   <Stack direction="row" alignItems="center" gap={.6} sx={{overflowX:'auto',pb:1.5,mb:1.6}} aria-label="ニュースのジャンル">
-    <Tune sx={{fontSize:16,color:'#6d8d8a',mr:.3,flexShrink:0}}/>
-    {topics.map(value=><Button key={value} onClick={()=>setTopic(value)} size="small" sx={{minWidth:0,flexShrink:0,
-     textTransform:'none',border:'1px solid '+(topic===value?'#80c5b1':colors.border),
-     borderRadius:9,color:topic===value?colors.accent:'#a9b2be',background:topic===value?colors.soft:'transparent',
-     fontSize:11.5,fontWeight:750,px:1.3,whiteSpace:'nowrap'}}>{value}</Button>)}
-    <Button onClick={()=>setSavedOnly(x=>!x)} startIcon={savedOnly?<Bookmark/>:<BookmarkBorder/>} size="small"
-     sx={{flexShrink:0,color:savedOnly?colors.accent:colors.muted,textTransform:'none',ml:.5,fontSize:11.5}}>保存したもの</Button>
-   </Stack>
-   {error&&<Alert severity="error" sx={{mb:2}}>{error} <Button onClick={load} size="small">再試行</Button></Alert>}
-   {loading?<Stack alignItems="center" sx={{py:10}}><CircularProgress sx={{color:colors.accent}}/></Stack>:
-    <Box sx={{display:'grid',gridTemplateColumns:{xs:'minmax(0,1fr)',lg:media==='both'?'minmax(0,1.15fr) minmax(0,1fr)':'minmax(0,1fr)'},gap:{xs:4,lg:3},alignItems:'start'}}>
-     {showVideo&&<Box component="section" aria-label="動画ニュース" sx={{minWidth:0}}>
-      <SectionHeading icon={OndemandVideo} title="動画" count={videos.length} subtitle="サムネイルでざっと選んで、ここで再生" highlight/>
-      {videos.length?<Box sx={{display:'grid',gridTemplateColumns:{xs:'repeat(2,minmax(0,1fr))',sm:'repeat(3,minmax(0,1fr))',lg:media==='both'?'repeat(2,minmax(0,1fr))':'repeat(4,minmax(0,1fr))'},gap:1.3}}>
+    <Stack direction="row" alignItems="center" gap={.5} sx={{overflowX:'auto',mt:1.1,pb:.2,scrollbarWidth:'none','&::-webkit-scrollbar':{display:'none'}}} aria-label="ジャンル">
+     {topics.map(value=><Box key={value} component="button" type="button" onClick={()=>setTopic(value)} aria-pressed={topic===value}
+      sx={{flexShrink:0,border:'1px solid '+(topic===value?V.ink:'transparent'),background:topic===value?V.surface:'transparent',
+       color:topic===value?V.ink:V.muted,font:'inherit',fontSize:12.5,fontWeight:topic===value?700:500,borderRadius:5,px:1.2,py:.35,cursor:'pointer',whiteSpace:'nowrap',
+       '&:hover':{color:V.ink}}}>{value}</Box>)}
+     <Box sx={{width:'1px',height:18,background:V.rule,mx:.6,flexShrink:0}}/>
+     <Button onClick={()=>setSavedOnly(x=>!x)} startIcon={savedOnly?<Bookmark/>:<BookmarkBorder/>} size="small" aria-pressed={savedOnly}
+      sx={{flexShrink:0,color:savedOnly?V.accent:V.muted,fontSize:12.5,fontWeight:savedOnly?700:500,minHeight:28}}>保存したもの</Button>
+    </Stack>
+   </Box>
+
+   {error&&<Alert severity="error" sx={{mt:2}}>{error} <Button onClick={load} size="small">再試行</Button></Alert>}
+   {loading?<Stack alignItems="center" sx={{py:10}}><CircularProgress size={28}/></Stack>:
+    <Box sx={{mt:3,display:'grid',gridTemplateColumns:{xs:'minmax(0,1fr)',lg:media==='both'?'minmax(0,1.2fr) minmax(0,1fr)':'minmax(0,1fr)'},gap:{xs:5,lg:5},alignItems:'start'}}>
+     {showVideo&&<Box component="section" aria-label="動画" sx={{minWidth:0}}>
+      <SectionHeading title="動画" count={videos.length} subtitle="サムネイルで選んで、その場で再生"/>
+      {videos.length?<Box sx={{display:'grid',gridTemplateColumns:{xs:'minmax(0,1fr)',sm:'repeat(2,minmax(0,1fr))',lg:media==='both'?'repeat(2,minmax(0,1fr))':'repeat(4,minmax(0,1fr))'},columnGap:2,rowGap:3.2}}>
         {videos.slice(0,expanded.video).map(item=><VideoCard key={item.id} item={item} onOpen={setActive} onAction={update} busy={busy}/>)}
        </Box>:<Empty label="動画"/>}
-      {videos.length>expanded.video&&<Button fullWidth onClick={()=>setExpanded(x=>({...x,video:x.video+18}))}
-       sx={{mt:2,color:colors.accent,border:'1px solid '+colors.border,textTransform:'none'}}>動画をさらに18件表示 ({videos.length-expanded.video}件残り)</Button>}
+      {videos.length>expanded.video&&<Button fullWidth variant="outlined" onClick={()=>setExpanded(x=>({...x,video:x.video+18}))} sx={{mt:3}}>
+       動画をさらに表示 <Box component="span" sx={{fontFamily:MONO,fontSize:11.5,color:V.muted,ml:1}}>残り {videos.length-expanded.video}</Box></Button>}
      </Box>}
-     {showArticle&&<Box component="section" aria-label="記事ニュース" sx={{minWidth:0}}>
-      <SectionHeading icon={Newspaper} title="記事・読みもの" count={articles.length} subtitle="見出しと要点を同じ画面でまとめてチェック"/>
-      {articles.length?<Box sx={{minWidth:0}}>{articles.slice(0,expanded.article).map(item=><ArticleRow key={item.id} item={item} onAction={update} busy={busy}/>)}</Box>:<Empty label="記事"/>}
-      {articles.length>expanded.article&&<Button fullWidth onClick={()=>setExpanded(x=>({...x,article:x.article+40}))}
-       sx={{mt:2,color:colors.accent,border:'1px solid '+colors.border,textTransform:'none'}}>記事をさらに40件表示 ({articles.length-expanded.article}件残り)</Button>}
+     {showArticle&&<Box component="section" aria-label="記事・読みもの" sx={{minWidth:0}}>
+      <SectionHeading title="記事・読みもの" count={articles.length} subtitle="見出しと要点、選んだ理由を一列で"/>
+      {articles.length?<Box sx={{minWidth:0,mt:-1.8}}>{articles.slice(0,expanded.article).map(item=><ArticleRow key={item.id} item={item} onAction={update} busy={busy}/>)}</Box>:<Empty label="記事"/>}
+      {articles.length>expanded.article&&<Button fullWidth variant="outlined" onClick={()=>setExpanded(x=>({...x,article:x.article+40}))} sx={{mt:3}}>
+       記事をさらに表示 <Box component="span" sx={{fontFamily:MONO,fontSize:11.5,color:V.muted,ml:1}}>残り {articles.length-expanded.article}</Box></Button>}
      </Box>}
     </Box>}
-   {rejected.length>0&&<Box component="details" sx={{mt:3,border:'1px solid '+colors.border,borderRadius:2,p:1.8,
-      '& summary':{color:colors.muted,fontSize:12,fontWeight:800,cursor:'pointer'}}}>
-      <Box component="summary">AIの選考で落選した候補（最新{rejected.length}件）</Box>
-      <Typography sx={{fontSize:11.5,color:colors.muted,mt:1}}>この候補はメインの推薦に配信していません。AIによる暫定採点と、弱点の記録です。</Typography>
-      {rejected.map(x=><Box key={x.id} sx={{mt:1.2,pt:1.2,borderTop:'1px solid '+colors.border}}>
-        <Typography sx={{fontSize:12,fontWeight:850}}>{x.title}</Typography>
-        <Typography sx={{fontSize:11.5,color:colors.muted}}>
-          好み {x.selfEvaluation?.scores?.tasteFit??'未確定'} · 発見 {x.selfEvaluation?.scores?.discovery??'-'}/5 · 体験 {x.selfEvaluation?.scores?.payoff??'-'}/5
+   {rejected.length>0&&<Box component="details" sx={{mt:5,borderTop:'1px solid '+V.rule,pt:2,
+      '& summary':{color:V.muted,fontSize:12.5,fontWeight:700,cursor:'pointer','&:hover':{color:V.ink}}}}>
+      <Box component="summary">AIの選考で落とした候補 <Box component="span" sx={{fontFamily:MONO,fontWeight:500}}>{rejected.length}</Box></Box>
+      <Typography sx={{fontSize:12,color:V.muted,mt:1}}>メインには出していない候補です。AIの暫定採点と、落とした理由の記録。</Typography>
+      <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',md:'repeat(2,minmax(0,1fr))'},columnGap:3}}>
+      {rejected.map(x=><Box key={x.id} sx={{mt:1.4,pt:1.4,borderTop:'1px solid '+V.rule}}>
+        <Typography sx={{fontSize:13,fontWeight:700}}>{x.title}</Typography>
+        <Typography sx={{fontSize:11,color:V.muted,fontFamily:MONO,mt:.3}}>
+          好み {x.selfEvaluation?.scores?.tasteFit??'—'} · 発見 {x.selfEvaluation?.scores?.discovery??'—'} · 体験 {x.selfEvaluation?.scores?.payoff??'—'}
         </Typography>
-        <Typography sx={{fontSize:11.5,color:'#c8b6b4'}}>採用しなかった理由: {x.selfEvaluation?.weakness||'未記録'}</Typography>
+        <Typography sx={{fontSize:12,color:V.muted,mt:.3}}>落とした理由：{x.selfEvaluation?.weakness||'未記録'}</Typography>
       </Box>)}
+      </Box>
     </Box>}
-   <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{mt:5,pt:2,borderTop:'1px solid '+colors.border}} gap={2}>
-    <Typography sx={{fontSize:11.5,color:'#778392',lineHeight:1.7}}>
-     AI自己採点は本人ツイートの発想パターンからの仮説。『後で見る』メモは好みの根拠にはしません。旧掲載・旧採点は区別します。本文・映像は転載せず配信元へつなぎます。
+   <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" alignItems={{sm:'center'}} sx={{mt:5,pt:2,borderTop:'1px solid '+V.rule}} gap={1.5}>
+    <Typography sx={{fontSize:11.5,color:V.faint,lineHeight:1.7,maxWidth:760}}>
+     AIの採点は本人ツイートの発想パターンからの仮説です。「保存」は好みの根拠にしません。本文・映像は転載せず、配信元へリンクします。
     </Typography>
-    <Button onClick={()=>setShowSkipped(x=>!x)} size="small" sx={{color:colors.muted,whiteSpace:'nowrap',fontSize:11,textTransform:'none'}}>
-     {showSkipped?'興味なしを隠す':'興味なしも表示'}
+    <Button onClick={()=>setShowSkipped(x=>!x)} size="small" sx={{color:V.muted,whiteSpace:'nowrap',alignSelf:'flex-start'}}>
+     {showSkipped?'非表示にしたものを隠す':'非表示にしたものも表示'}
     </Button>
    </Stack>
    <Dialog open={Boolean(active)} onClose={()=>setActive(null)} fullWidth maxWidth="lg"
-    PaperProps={{sx:{background:colors.bg,color:'#fff',border:'1px solid '+colors.border}}}>
-    <Stack direction="row" alignItems="center" gap={.6} sx={{p:1.5}}>
-     <Typography sx={{flex:1,minWidth:0,fontWeight:900,fontSize:14}} noWrap>{active?.title}</Typography>
-     <IconButton aria-label="前の動画" onClick={()=>switchVideo(-1)} sx={{color:'#fff'}}><ArrowBack/></IconButton>
-     <IconButton aria-label="次の動画" onClick={()=>switchVideo(1)} sx={{color:'#fff'}}><ArrowForward/></IconButton>
-     <IconButton aria-label="閉じる" onClick={()=>setActive(null)} sx={{color:'#fff'}}><Close/></IconButton>
+    PaperProps={{sx:{background:'#0f1012',color:'#f2f1ec',border:'1px solid #2a2b2e','--p-ink':'#f2f1ec','--p-muted':'#a8a69f','--p-faint':'#7b7972','--p-sunken':'#1c1d20','--p-accent':'#ff7d5c','--p-pink':'#ff8fb0','--p-rule':'rgba(255,255,255,.12)'}}}>
+    <Stack direction="row" alignItems="center" gap={.4} sx={{px:2,py:1.2}}>
+     <Typography sx={{flex:1,minWidth:0,fontWeight:700,fontSize:14}} noWrap>{active?.title}</Typography>
+     <IconButton aria-label="前の動画" onClick={()=>switchVideo(-1)} sx={{color:'inherit'}}><ArrowBack/></IconButton>
+     <IconButton aria-label="次の動画" onClick={()=>switchVideo(1)} sx={{color:'inherit'}}><ArrowForward/></IconButton>
+     <IconButton aria-label="閉じる" onClick={()=>setActive(null)} sx={{color:'inherit'}}><Close/></IconButton>
     </Stack>
     <DialogContent sx={{pt:0,px:{xs:1,md:2}}}>
      {active?.videoId&&<Box sx={{aspectRatio:'16/9',width:'100%'}}>
@@ -330,15 +344,14 @@ export default function PersonalFeed(){
        allowFullScreen referrerPolicy="strict-origin-when-cross-origin"
        sx={{width:'100%',height:'100%',border:0,borderRadius:1}}/>
      </Box>}
-     {active&&<Stack gap={1} sx={{pt:1.5}}>
-      <Typography sx={{color:'#a9bcc7',fontSize:13}}>{active.description}</Typography>
-      <Typography sx={{color:colors.accent,fontSize:12}}>なぜおすすめ：{active.reason}</Typography>
-      <Stack direction="row" alignItems="center" flexWrap="wrap" gap={1}>
-       <Button href={active.url} target="_blank" rel="noopener noreferrer" startIcon={<OpenInNew/>}
-        sx={{textTransform:'none',color:colors.accent}}>元の動画を開く</Button>
+     {active&&<Stack gap={1.1} sx={{pt:1.6}}>
+      <Meta item={active} fallback="映像"/>
+      {active.description&&<Typography sx={{color:'#c9c7c0',fontSize:13,lineHeight:1.7}}>{active.description}</Typography>}
+      {active.reason&&<Typography sx={{fontSize:12.5,lineHeight:1.6,pl:1.2,borderLeft:'2px solid rgba(255,255,255,.2)'}}>{active.reason}</Typography>}
+      <Stack direction="row" alignItems="center" flexWrap="wrap" gap={.6} sx={{ml:-.6}}>
        <CurationAction item={active} onAction={update} busy={busy}/>
-       <Button onClick={()=>update(active,'seen')} disabled={Boolean(busy)} startIcon={<Check/>}
-        sx={{textTransform:'none',fontSize:12,color:colors.muted}}>視聴済み</Button>
+       <Button onClick={()=>update(active,'seen')} disabled={Boolean(busy)} startIcon={<Check/>} size="small" sx={{fontSize:12,color:'#a8a69f'}}>視聴済み</Button>
+       <Button href={active.url} target="_blank" rel="noopener noreferrer" endIcon={<OpenInNew sx={{fontSize:14}}/>} size="small" sx={{color:'#ff7d5c',ml:'auto'}}>元の動画を開く</Button>
       </Stack>
      </Stack>}
     </DialogContent>

@@ -2,7 +2,7 @@ import React,{useCallback,useEffect,useState} from 'react';
 import {Alert,Box,Button,Chip,Stack,TextField,Typography} from '@mui/material';
 import {OpenInNew,Refresh,Link as LinkIcon} from '@mui/icons-material';
 import {auth} from '../firebase';
-const border='#303842',mint='#92e0c4',muted='#a0b0bd';
+const border='var(--p-rule)',muted='var(--p-muted)',mint='var(--p-ink)';
 async function call(resource,body){
  const user=auth.currentUser;if(!user)throw Error('My Portalにログインしてください');
  const r=await fetch('/api/agent-ideas'+(body?'':'?resource='+resource),{
@@ -76,34 +76,34 @@ export default function MediaTasteConnections(){
   if(!x.url?.startsWith('https://auth.trakt.tv/'))throw Error('認証先URLが不正です');
   window.location.assign(x.url);
  });
- return <Stack gap={2} sx={{mt:2}}>
-  <Box sx={{p:2,border:'1px solid '+border,borderRadius:2,background:'#101923'}}>
+ return <Box sx={{display:'contents'}}>
+  <Box sx={{border:'1px solid var(--p-rule)',borderRadius:1.5,p:2,background:'var(--p-surface)',minWidth:0}}>
    <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1} flexWrap="wrap">
     <Box>
-     <Typography sx={{fontSize:16,fontWeight:800}}>Trakt / 映画・ドラマ</Typography>
+     <Typography sx={{fontSize:15,fontWeight:800}}>Trakt / 映画・ドラマ</Typography>
      <Typography sx={{fontSize:12,color:muted}}>ログインアカウント候補: __c4a362</Typography>
     </Box>
     <Button href="https://app.trakt.tv/profile/me" target="_blank" size="small"
      endIcon={<OpenInNew/>} sx={{color:mint}}>プロフィール</Button>
    </Stack>
    <Stack direction="row" gap={1} sx={{mt:1.5}} flexWrap="wrap" alignItems="center">
-    <Chip size="small" label={traktInfo?.connected?'アカウント接続済':'認証待ち'} sx={{color:traktInfo?.connected?mint:'#ecd0a0',background:'#25303a'}}/>
-    {traktInfo?.connected&&<Chip size="small" label={'@'+traktInfo.username} sx={{color:'#dce5eb',background:'#26313c'}}/>}
-    {!!traktProfile&&<Chip size="small" label={'観たい '+(traktProfile.watchlist?.length||0)+'件 · 評価 '+(traktProfile.ratings?.length||0)+'件'} sx={{color:'#dce5eb',background:'#26313c'}}/>}
+    <Chip size="small" label={traktInfo?.connected?'アカウント接続済':'認証待ち'} sx={{color:traktInfo?.connected?mint:'var(--p-amber)',background:'var(--p-sunken)'}}/>
+    {traktInfo?.connected&&<Chip size="small" label={'@'+traktInfo.username} sx={{color:'var(--p-ink)',background:'var(--p-sunken)'}}/>}
+    {!!traktProfile&&<Chip size="small" label={'観たい '+(traktProfile.watchlist?.length||0)+'件 · 評価 '+(traktProfile.ratings?.length||0)+'件'} sx={{color:'var(--p-ink)',background:'var(--p-sunken)'}}/>}
     <Button size="small" startIcon={<Refresh/>} onClick={refresh} sx={{color:mint}}>更新</Button>
    </Stack>
    <Typography sx={{fontSize:12,color:muted,lineHeight:1.8,mt:1}}>
     公式OAuth（PKCE）で一度認証すれば、ChatGPTから視聴記録を参照し、明示的な指示に基づいて「観たい」と評価を登録できます。
    </Typography>
-   {traktInfo?.connected&&<Box sx={{mt:1.5,p:1.5,border:'1px solid '+border,borderRadius:2}}>
+   {traktInfo?.connected&&<Box sx={{mt:1.5,p:1.5,background:'var(--p-sunken)',borderRadius:1.2}}>
     <Typography sx={{fontSize:13,fontWeight:800}}>Filmarks → Trakt 移行状況</Typography>
     <Typography sx={{fontSize:12,color:muted,lineHeight:1.7,mt:0.7}}>
      本人の依頼に応じてChatGPTから作品を照合・登録します。定期実行はしません。Filmarks側の記録は変更しません。
     </Typography>
     <Stack direction="row" gap={1} flexWrap="wrap" sx={{my:1}}>
-     <Chip size="small" label={'移行済 '+(transfer?.imported??0)+'/'+(transfer?.total??55)} sx={{background:'#25303a',color:mint}}/>
-     <Chip size="small" label={'要照合 '+(transfer?.unresolved??0)} sx={{background:'#25303a',color:'#e9c89b'}}/>
-     <Chip size="small" label={'残り '+(transfer?.pending??55)} sx={{background:'#25303a',color:'#e0e8f0'}}/>
+     <Chip size="small" label={'移行済 '+(transfer?.imported??0)+'/'+(transfer?.total??55)} sx={{background:'var(--p-sunken)',color:mint}}/>
+     <Chip size="small" label={'要照合 '+(transfer?.unresolved??0)} sx={{background:'var(--p-sunken)',color:'var(--p-amber)'}}/>
+     <Chip size="small" label={'残り '+(transfer?.pending??55)} sx={{background:'var(--p-sunken)',color:'var(--p-ink)'}}/>
     </Stack>
 
     <Typography sx={{fontSize:11,color:muted,lineHeight:1.7,mt:1}}>
@@ -116,26 +116,26 @@ export default function MediaTasteConnections(){
      でAPIアプリを作成してください。GitHubアカウントの本人確認が必要な場合があります。
      名前: <strong>My Portal</strong>、Redirect URI:
     </Typography>
-    <Typography component="code" sx={{fontSize:11,p:1.2,background:'#202b36',color:mint,wordBreak:'break-all'}}>
+    <Typography component="code" sx={{fontSize:11,p:1.2,background:'var(--p-sunken)',color:'var(--p-ink)',borderRadius:1,fontFamily:'"JetBrains Mono", monospace',wordBreak:'break-all'}}>
      https://my-portal-agent.netlify.app/trakt/callback
     </Typography>
     <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
      <TextField size="small" label="Trakt Client ID" value={clientId} onChange={e=>setClientId(e.target.value)}
-      sx={{minWidth:190,'& input':{color:'#fff'}}}/>
+      sx={{minWidth:190,'& input':{color:'var(--p-ink)'}}}/>
      <Button variant="outlined" size="small" disabled={!!busy||!clientId.trim()} onClick={saveTrakt}
       sx={{borderColor:border,color:mint}}>IDを保存</Button>
      <Button variant="contained" size="small" disabled={!!busy||!traktInfo?.clientConfigured||!traktInfo?.encryptionConfigured}
-      onClick={startTrakt} startIcon={<LinkIcon/>} sx={{background:mint,color:'#10201c'}}>Traktで認可</Button>
+      onClick={startTrakt} startIcon={<LinkIcon/>}>Traktで認可</Button>
     </Stack>
     <Typography sx={{fontSize:11,color:muted}}>Client Secretは不要です。トークンはMy Portalのサーバーで暗号化保存します。</Typography>
    </Stack>}
    {errors.trakt&&<Alert severity="error" sx={{mt:1.2}}>{errors.trakt}</Alert>}
    {message.trakt&&<Alert severity="success" sx={{mt:1.2}}>{message.trakt}</Alert>}
   </Box>
-  <Box sx={{p:2,border:'1px solid '+border,borderRadius:2,background:'#101923'}}>
+  <Box sx={{border:'1px solid var(--p-rule)',borderRadius:1.5,p:2,background:'var(--p-surface)',minWidth:0}}>
    <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1}>
     <Box>
-     <Typography sx={{fontSize:16,fontWeight:800}}>Last.fm / @goodhangedman</Typography>
+     <Typography sx={{fontSize:15,fontWeight:800}}>Last.fm / @goodhangedman</Typography>
      <Typography sx={{fontSize:12,color:muted}}>曲の再生履歴・アーティスト・お気に入り曲</Typography>
     </Box>
     <Button href="https://www.last.fm/user/goodhangedman" target="_blank"
@@ -143,9 +143,9 @@ export default function MediaTasteConnections(){
    </Stack>
    <Stack direction="row" gap={1} sx={{mt:1.5}} flexWrap="wrap" alignItems="center">
     <Chip size="small" label={lastInfo?.apiConfigured?'公式API設定済み':'APIキー設定待ち'}
-     sx={{color:lastInfo?.apiConfigured?mint:'#ecd0a0',background:'#25303a'}}/>
+     sx={{color:lastInfo?.apiConfigured?mint:'var(--p-amber)',background:'var(--p-sunken)'}}/>
     {!!lastProfile&&<Chip size="small" label={'Scrobble '+lastProfile.playcount+'件'}
-     sx={{color:'#dce5eb',background:'#26313c'}}/>}
+     sx={{color:'var(--p-ink)',background:'var(--p-sunken)'}}/>}
     <Button size="small" onClick={refresh} startIcon={<Refresh/>} sx={{color:mint}}>更新</Button>
    </Stack>
    <Typography sx={{fontSize:12,color:muted,lineHeight:1.8,mt:1}}>
@@ -158,7 +158,7 @@ export default function MediaTasteConnections(){
     </Typography>
     <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
      <TextField size="small" label="Last.fm API Key" value={apiKey} onChange={e=>setApiKey(e.target.value)}
-      sx={{minWidth:230,'& input':{color:'#fff'}}}/>
+      sx={{minWidth:230,'& input':{color:'var(--p-ink)'}}}/>
      <Button variant="outlined" size="small" disabled={!!busy||!apiKey.trim()} onClick={saveLast}
       sx={{color:mint,borderColor:border}}>キーを保存</Button>
     </Stack>
@@ -169,5 +169,5 @@ export default function MediaTasteConnections(){
    {errors.lastfm&&<Alert severity="error" sx={{mt:1.2}}>{errors.lastfm}</Alert>}
    {message.lastfm&&<Alert severity="success" sx={{mt:1.2}}>{message.lastfm}</Alert>}
   </Box>
- </Stack>;
+ </Box>;
 }

@@ -171,7 +171,7 @@ function App() {
     if (path.startsWith('/agent-ideas')) return 'Agent Ideas';
     if (path.startsWith('/meta')) return 'プロジェクト提案';
     if (path.startsWith('/taste')) return '好みの記録';
-    if (path.startsWith('/discover')) return 'あなた専用の寄り道';
+    if (path.startsWith('/discover')) return 'Discover';
     if (path.startsWith('/ogiri')) return '大喜利ラボ';
     if (path.startsWith('/social-archive')) return 'X投稿アーカイブ';
     if (path.startsWith('/public-cms')) return 'Public CMS';
@@ -371,7 +371,7 @@ function App() {
     {
       label: '自分',
       items: [
-        { to: '/discover', label: 'あなた専用の寄り道', hint: '動画・記事・作品のおすすめ', icon: <DiscoveryIcon /> },
+        { to: '/discover', label: 'Discover', hint: '動画・記事・作品のおすすめ', icon: <DiscoveryIcon /> },
         { to: '/boards', match: BOARD_PATHS, label: 'ボード', hint: '企画・ビジネス / 興味・趣味 / ネタ・表現', icon: <ViewCompactIcon /> },
         { to: '/taste', label: '好みの記録', hint: '好き嫌い / 根拠 / 訂正履歴', icon: <TasteIcon /> },
         { to: '/thinking', label: '思考テーマ', hint: '長期テーマ / Context Store', icon: <PsychologyAltIcon /> },
@@ -679,7 +679,7 @@ function App() {
           >
             <BottomNavigationAction value="/" label="ホーム" icon={<HomeIcon />} component={Link} to="/" />
             <BottomNavigationAction value="/thinking" label="思考" icon={<PsychologyAltIcon />} component={Link} to="/thinking" />
-            <BottomNavigationAction value="/discover" label="寄り道" icon={<DiscoveryIcon />} component={Link} to="/discover" />
+            <BottomNavigationAction value="/discover" label="Discover" icon={<DiscoveryIcon />} component={Link} to="/discover" />
             <BottomNavigationAction value="/boards" label="ボード" icon={<ViewCompactIcon />} component={Link} to="/boards" />
             <BottomNavigationAction value="/dashboard" label="Agent HQ" icon={<DashboardIcon />} component={Link} to="/dashboard" />
           </BottomNavigation>
@@ -725,7 +725,7 @@ function SignIn({ onLogin }) {
           My Portal
         </Typography>
         <Typography color="text.secondary" sx={{ mt: 1.5 }}>
-          プロジェクト、思考テーマ、エージェントの仕事、寄り道の記録をまとめた個人用の作業台です。続けるにはログインしてください。
+          プロジェクト、思考テーマ、エージェントの仕事、Discoverの記録をまとめた個人用の作業台です。続けるにはログインしてください。
         </Typography>
         <Button variant="contained" size="large" onClick={onLogin} sx={{ mt: 3, minHeight: 44 }}>
           Googleでログイン

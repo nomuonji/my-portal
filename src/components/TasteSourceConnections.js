@@ -6,7 +6,7 @@ import {parseBooklog,parseFilmarks} from './tasteSourceImport';
 import AniListConnectPanel from './AniListConnectPanel';
 import MediaTasteConnections from './MediaTasteConnections';
 
-const border='#303842',muted='#a0b0bd',mint='#92e0c4';
+const border='var(--p-rule)',muted='var(--p-muted)',mint='var(--p-ink)';
 const sources=[
  {service:'filmarks',label:'Filmarks · 観たい映画',url:'https://filmarks.com/users/postmodern137/clips',
   help:'Clip! は観たい作品の記録です。鑑賞済み・好きの証拠にはしません。'},
@@ -57,27 +57,21 @@ export default function TasteSourceConnections(){
    setPreview(null);await refresh();
   }catch(e){setError(e.message)}finally{setWorking('')}
  };
- return <Box sx={{mt:3,p:{xs:1.6,md:2},border:'1px solid '+border,borderRadius:2,background:'#101923'}}>
-  <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
-   <Box>
-    <Typography sx={{fontWeight:850,fontSize:17}}>外部の映画・読書記録</Typography>
-    <Typography sx={{fontSize:12,color:muted,lineHeight:1.8,mt:.5}}>
-     元サービスを正本として、手元の記録を任意のタイミングで同期します。サイトを自動巡回したり、パスワードを預かったりしません。
-    </Typography>
-   </Box>
-   <Button size="small" startIcon={<Refresh/>} onClick={refresh} sx={{color:mint}}>更新</Button>
+ return <Box sx={{mt:1.8}}>
+  <Stack direction="row" justifyContent="flex-end" sx={{mb:1}}>
+   <Button size="small" startIcon={<Refresh/>} onClick={refresh} sx={{color:muted}}>取込状況を更新</Button>
   </Stack>
-  {error&&<Alert severity="error" onClose={()=>setError('')} sx={{mt:1.5}}>{error}</Alert>}
-  {message&&<Alert severity="success" onClose={()=>setMessage('')} sx={{mt:1.5}}>{message}</Alert>}
+  {error&&<Alert severity="error" onClose={()=>setError('')} sx={{mb:1.5}}>{error}</Alert>}
+  {message&&<Alert severity="success" onClose={()=>setMessage('')} sx={{mb:1.5}}>{message}</Alert>}
+  <Box sx={{display:'grid',gridTemplateColumns:{xs:'minmax(0,1fr)',md:'repeat(2,minmax(0,1fr))'},gap:1.5,alignItems:'start'}}>
   <AniListConnectPanel/>
   <MediaTasteConnections/>
-  <Stack gap={2} sx={{mt:2}}>
    {sources.map(source=>{
     const data=items.find(x=>x.service===source.service);
-    return <Box key={source.service} sx={{border:'1px solid '+border,borderRadius:1.5,p:1.7}}>
+    return <Box key={source.service} sx={{border:'1px solid var(--p-rule)',borderRadius:1.5,p:2,background:'var(--p-surface)',minWidth:0}}>
      <Stack direction="row" justifyContent="space-between" flexWrap="wrap" gap={1}>
       <Box>
-       <Typography sx={{fontSize:14,fontWeight:750}}>{source.label}</Typography>
+       <Typography sx={{fontSize:15,fontWeight:800}}>{source.label}</Typography>
        <Typography sx={{fontSize:11,color:muted,lineHeight:1.75,mt:.3}}>{source.help}</Typography>
       </Box>
       <Button size="small" component="a" href={source.url} target="_blank" rel="noreferrer"
@@ -85,7 +79,7 @@ export default function TasteSourceConnections(){
      </Stack>
      <Stack direction="row" flexWrap="wrap" gap={.75} alignItems="center" sx={{mt:1}}>
       <Chip size="small" label={data?.connected?'取込済 '+data.stats.count+'件':'未取り込み'}
-       sx={{background:'#273039',color:'#d5e0e6',fontSize:11}}/>
+       sx={{background:'var(--p-sunken)',color:'var(--p-ink)',fontSize:11}}/>
       {data?.connected&&<Typography sx={{fontSize:11,color:muted}}>
        {source.service==='booklog'?'評価付き '+(data.stats.ratings||0)+'件 · 読了 '+(data.stats.read||0)+'件':'観たい作品の関心シグナル'}
        {' · '}{data.lastImportedAt?new Date(data.lastImportedAt).toLocaleDateString('ja-JP'):''}
@@ -109,7 +103,7 @@ export default function TasteSourceConnections(){
       <TextField multiline minRows={2} maxRows={6} size="small" value={clipText}
        onChange={e=>{setClipText(e.target.value);setPreview(null)}}
        placeholder={'時計じかけのオレンジ | https://filmarks.com/movies/25464'}
-       sx={{'& textarea':{fontSize:12,color:'#f0f2f5'},'& fieldset':{borderColor:border}}}/>
+       sx={{'& textarea':{fontSize:12,color:'var(--p-ink)'},'& fieldset':{borderColor:border}}}/>
       <Button variant="outlined" size="small" onClick={()=>prepare('filmarks')} disabled={!clipText.trim()||!!working}
        sx={{alignSelf:'flex-start',color:mint,borderColor:border}}>一覧を確認</Button>
      </Stack>}
@@ -117,13 +111,13 @@ export default function TasteSourceConnections(){
       <Typography sx={{fontSize:11,color:muted}}>保存済みの例</Typography>
       <Stack direction="row" flexWrap="wrap" gap={.6} sx={{mt:.7}}>
        {data.samples.slice(0,8).map(x=><Chip key={x.id} size="small" label={x.title}
-        sx={{maxWidth:180,background:'#232e38',color:'#d3dce4',fontSize:10.5,'& .MuiChip-label':{overflow:'hidden',textOverflow:'ellipsis'}}}/>)}
+        sx={{maxWidth:180,background:'var(--p-sunken)',color:'var(--p-ink)',fontSize:10.5,'& .MuiChip-label':{overflow:'hidden',textOverflow:'ellipsis'}}}/>)}
       </Stack>
      </Box>}
     </Box>
    })}
-  </Stack>
-  {preview&&<Box sx={{mt:2,border:'1px solid '+mint,borderRadius:1.3,p:1.6}}>
+  </Box>
+  {preview&&<Box sx={{mt:2,border:'1px solid var(--p-ink)',borderRadius:1.5,p:2,background:'var(--p-surface)'}}>
    <Typography sx={{fontSize:13,fontWeight:850}}>取り込みプレビュー：{preview.rows.length}件</Typography>
    <Typography sx={{mt:.6,fontSize:12,color:muted}}>
     {preview.rows.slice(0,5).map(x=>x.title).join(' ／ ')}{preview.rows.length>5?' ほか':''}
@@ -133,7 +127,7 @@ export default function TasteSourceConnections(){
    </Typography>
    <Stack direction="row" gap={1} sx={{mt:1.4}}>
     <Button size="small" variant="contained" onClick={commit} disabled={!!working}
-     sx={{background:mint,color:'#0d1117'}}>この{preview.rows.length}件を保存</Button>
+    >この{preview.rows.length}件を保存</Button>
     <Button size="small" onClick={()=>setPreview(null)} sx={{color:muted}}>やめる</Button>
    </Stack>
   </Box>}

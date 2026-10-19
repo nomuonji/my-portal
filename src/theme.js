@@ -19,6 +19,10 @@ export const tokens = {
     accent: '#c4422a',
     accentSoft: 'rgba(196, 66, 42, 0.09)',
     teal: '#2e6b66',
+    amber: '#9a5b08',
+    blue: '#2f5f8f',
+    green: '#2f7d4a',
+    pink: '#b4235a',
   },
   dark: {
     bg: '#121315',
@@ -32,8 +36,18 @@ export const tokens = {
     accent: '#ff7d5c',
     accentSoft: 'rgba(255, 125, 92, 0.12)',
     teal: '#7cc4bc',
+    amber: '#e8b44f',
+    blue: '#8cb4e0',
+    green: '#7fc98f',
+    pink: '#ff8fb0',
   },
 };
+
+// Same tokens as CSS custom properties, so components can write
+// `color: 'var(--p-muted)'` and follow light/dark mode automatically.
+const cssVars = (t) => Object.fromEntries(Object.entries(t).map(([key, value]) => [
+  `--p-${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`, value,
+]));
 
 export const fonts = {
   sans: ['"Noto Sans JP"', '"Hiragino Kaku Gothic ProN"', '"Hiragino Sans"', 'Meiryo', '"Yu Gothic"', 'YuGothic', 'system-ui', 'sans-serif'].join(','),
@@ -106,6 +120,7 @@ const getAppTheme = (mode) => {
     components: {
       MuiCssBaseline: {
         styleOverrides: {
+          ':root': cssVars(t),
           body: {
             backgroundColor: t.bg,
             color: t.ink,
