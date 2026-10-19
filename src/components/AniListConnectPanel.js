@@ -3,7 +3,7 @@ import {Alert,Box,Button,Chip,Stack,TextField,Typography} from '@mui/material';
 import {OpenInNew,Refresh,Link as LinkIcon} from '@mui/icons-material';
 import {auth} from '../firebase';
 
-const muted='#a0b0bd',mint='#92e0c4',border='#303842';
+const border='var(--p-rule)',muted='var(--p-muted)',mint='var(--p-ink)';
 async function call(resource='',body){
  const user=auth.currentUser;if(!user)throw Error('My Portalにログインしてください');
  const path=body?'':'?resource='+resource;
@@ -70,20 +70,20 @@ export default function AniListConnectPanel(){
   catch(e){setError(e.message);setBusy(false)}
  };
  const anime=profile?.sources?.find(x=>x.type==='ANIME'),manga=profile?.sources?.find(x=>x.type==='MANGA');
- return <Box sx={{border:'1px solid '+border,borderRadius:2,p:2,background:'#101923',mt:2}}>
+ return <Box sx={{border:'1px solid var(--p-rule)',borderRadius:1.5,p:2,background:'var(--p-surface)',minWidth:0}}>
   <Stack direction="row" justifyContent="space-between" flexWrap="wrap" gap={1}>
    <Box>
-    <Typography sx={{fontSize:16,fontWeight:800}}>AniList / @topgear</Typography>
+    <Typography sx={{fontSize:15,fontWeight:800}}>AniList / @topgear</Typography>
     <Typography sx={{fontSize:12,color:muted}}>漫画・アニメの記録を、AIの推薦とアカウント操作に使います</Typography>
    </Box>
    <Button href="https://anilist.co/user/topgear/" target="_blank" rel="noreferrer" size="small"
     sx={{color:mint}} endIcon={<OpenInNew/>}>プロフィール</Button>
   </Stack>
   <Stack direction="row" gap={1} flexWrap="wrap" sx={{my:1.5}}>
-   <Chip size="small" label={'アニメ '+(anime?.count??'—')+'件'} sx={{color:'#e0e8f0',background:'#25303a'}}/>
-   <Chip size="small" label={'漫画 '+(manga?.count??'—')+'件'} sx={{color:'#e0e8f0',background:'#25303a'}}/>
+   <Chip size="small" label={'アニメ '+(anime?.count??'—')+'件'} sx={{color:'var(--p-ink)',background:'var(--p-sunken)'}}/>
+   <Chip size="small" label={'漫画 '+(manga?.count??'—')+'件'} sx={{color:'var(--p-ink)',background:'var(--p-sunken)'}}/>
    <Chip size="small" label={info?.connected?'操作連携済み':'公開リスト参照のみ'}
-    sx={{color:info?.connected?mint:'#e9c89b',background:'#25303a'}}/>
+    sx={{color:info?.connected?mint:'var(--p-amber)',background:'var(--p-sunken)'}}/>
    <Button size="small" onClick={load} startIcon={<Refresh/>} sx={{color:mint}}>再取得</Button>
   </Stack>
   <Typography sx={{fontSize:12,color:muted,lineHeight:1.8}}>
@@ -91,7 +91,7 @@ export default function AniListConnectPanel(){
   </Typography>
   {error&&<Alert severity="error" sx={{mt:1.5}}>{error}</Alert>}
   {message&&<Alert severity="info" sx={{mt:1.5}}>{message}</Alert>}
-  {!info?.connected&&<Box sx={{mt:2,p:1.7,border:'1px solid '+border,borderRadius:1.5}}>
+  {!info?.connected&&<Box sx={{mt:2,p:1.7,background:'var(--p-sunken)',borderRadius:1.2}}>
    <Typography sx={{fontWeight:750,fontSize:13}}>操作権限を接続する（初回のみ）</Typography>
    <Typography sx={{fontSize:12,color:muted,mt:1,lineHeight:1.8}}>
     <a href="https://anilist.co/settings/developer" target="_blank" rel="noreferrer" style={{color:mint}}>AniListのAPI Client設定 <OpenInNew sx={{fontSize:12}}/></a>
@@ -99,18 +99,18 @@ export default function AniListConnectPanel(){
     Name は <strong>My Portal</strong>、Redirect URL は下記をそのまま登録します。
    </Typography>
    <Typography component="code" sx={{mt:1,p:1.2,display:'block',wordBreak:'break-all',fontSize:11,
-    background:'#202b36',borderRadius:1,color:mint,userSelect:'all'}}>
+    background:'var(--p-bg)',borderRadius:1,color:'var(--p-ink)',fontFamily:'"JetBrains Mono", monospace',userSelect:'all'}}>
     https://my-portal-agent.netlify.app/anilist/callback
    </Typography>
    <Stack direction="row" gap={1} flexWrap="wrap" sx={{mt:1.5}}>
     <TextField size="small" value={clientId} onChange={e=>setClientId(e.target.value)}
-     label="AniList Client ID" placeholder="数字のみ" sx={{minWidth:160,'& input':{color:'#fff'}}}/>
+     label="AniList Client ID" placeholder="数字のみ" sx={{minWidth:160,'& input':{color:'var(--p-ink)'}}}/>
     <Button variant="outlined" size="small" onClick={configure} disabled={busy||!/^\d{1,15}$/.test(clientId)}
      sx={{color:mint,borderColor:border}}>IDを設定</Button>
     <Button size="small" variant="contained" onClick={authorize} disabled={busy||!info?.clientConfigured||!info?.encryptionConfigured}
-     startIcon={<LinkIcon/>} sx={{color:'#10201c',background:mint}}>AniListの連携を許可</Button>
+     startIcon={<LinkIcon/>}>AniListの連携を許可</Button>
    </Stack>
-   {!info?.encryptionConfigured&&<Typography sx={{mt:1,fontSize:11,color:'#e9c89b'}}>
+   {!info?.encryptionConfigured&&<Typography sx={{mt:1,fontSize:11,color:'var(--p-amber)'}}>
     サーバー側の暗号鍵が未設定のため、編集用の認証は利用できません。
    </Typography>}
    <Typography sx={{fontSize:11,color:muted,lineHeight:1.6,mt:1.2}}>

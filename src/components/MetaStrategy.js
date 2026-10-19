@@ -158,7 +158,7 @@ export default function MetaStrategy() {
             <Typography variant="h4" component="h1" sx={{ fontWeight: 900, letterSpacing: '-.045em', mt: .5 }}>プロジェクト、次の一手。</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1, maxWidth: 760, lineHeight: 1.8 }}>
               既存サイトや事業、制作・研究などのプロジェクトを横断し、新企画、方向転換、やめるべきこと、改善の優先順位を提案します。
-              趣味・動画・音楽・遊びの推薦は「あなた専用の寄り道」に分離しました。
+              趣味・動画・音楽・遊びの推薦は「Discover」に分離しました。
             </Typography>
           </Box>
           <Button onClick={reload} disabled={loading} startIcon={<RefreshIcon />} variant="outlined">更新</Button>

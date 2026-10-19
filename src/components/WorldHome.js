@@ -65,7 +65,7 @@ function routeMatches(route, q) {
   return !q || searchable(route).includes(q);
 }
 const LAUNCH = [
-  { to: '/discover', label: 'あなた専用の寄り道', note: '今日の動画・記事・作品', icon: <DiscoveryIcon /> },
+  { to: '/discover', label: 'Discover', note: '今日の動画・記事・作品', icon: <DiscoveryIcon /> },
   { to: '/boards', label: 'ボード', note: '企画・興味・ネタのストック', icon: <BoardIcon /> },
   { to: '/thinking', label: '思考テーマ', note: '長期テーマとContext', icon: <ThinkingIcon /> },
   { to: '/taste', label: '好みの記録', note: '好き嫌いと訂正の履歴', icon: <TasteIcon /> },
