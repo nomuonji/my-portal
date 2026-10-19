@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { auth } from '../firebase';
 import {
   Alert, Box, Button, Card, Chip, CircularProgress, Divider, Link,
-  MenuItem, Paper, Select, Stack, TextField, Typography, useTheme,
+  MenuItem, Paper, Select, Stack, TextField, Typography,
 } from '@mui/material';
 import {
   AutoAwesomeOutlined as SparkIcon, CheckCircleOutline as AcceptIcon,
@@ -116,7 +116,6 @@ function ProposalCard({ proposal, onSaved }) {
 }
 
 export default function MetaStrategy() {
-  const theme = useTheme();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
