@@ -53,6 +53,21 @@ const BOARDS = [
     emptyMessage: '上の欄に書いて追加してください。タグは入力しながら付けられます。',
     deleteConfirmMessage: '本当にこのストックを削除しますか？',
   },
+  {
+    id: 'memos',
+    label: 'メモ',
+    database: db,
+    // Kept under memos/board/ so it never mixes with the legacy /memo action memos
+    // or memos/agent-control (and is covered by the existing memos/** rule).
+    collectionName: 'memos/board/items',
+    tagsCollectionName: 'memos/board/tags',
+    eyebrow: 'MEMO',
+    title: 'メモボード',
+    description: '分類に迷うもの、ちょっとした覚え書き、あとで使うかもしれない断片を気軽に置いておく場所です。',
+    placeholder: 'メモを書く',
+    emptyMessage: '上の欄に書いて追加してください。タグは入力しながら付けられます。',
+    deleteConfirmMessage: '本当にこのメモを削除しますか？',
+  },
 ];
 
 // Open on ネタ・表現 unless ?board= says otherwise.
@@ -89,14 +104,14 @@ export default function PortalBoards() {
               {board.description}
             </Typography>
           </Box>
-          <Box role="tablist" aria-label="ボードの種類" sx={{ display: 'inline-flex', border: '1px solid var(--p-rule-strong)', borderRadius: 1.2, overflow: 'hidden', flexShrink: 0, maxWidth: '100%' }}>
+          <Box role="tablist" aria-label="ボードの種類" sx={{ display: 'inline-flex', border: '1px solid var(--p-rule-strong)', borderRadius: 1.2, overflowX: 'auto', flexShrink: 0, maxWidth: '100%', scrollbarWidth: 'none', '&::-webkit-scrollbar': { display: 'none' } }}>
             {BOARDS.map((item, i) => {
               const on = item.id === selected;
               return (
                 <Box key={item.id} component="button" type="button" role="tab" aria-selected={on} onClick={() => changeBoard(null, item.id)}
                   sx={{
                     border: 0, borderLeft: i ? '1px solid var(--p-rule-strong)' : 0, background: on ? 'var(--p-ink)' : 'transparent',
-                    color: on ? 'var(--p-bg)' : 'var(--p-muted)', font: 'inherit', fontSize: 13, fontWeight: 700, px: { xs: 1.3, sm: 1.8 }, py: 0.8,
+                    color: on ? 'var(--p-bg)' : 'var(--p-muted)', font: 'inherit', fontSize: 13, fontWeight: 700, px: { xs: 1.1, sm: 1.8 }, py: 0.8, flexShrink: 0,
                     cursor: 'pointer', whiteSpace: 'nowrap', '&:hover': { color: on ? 'var(--p-bg)' : 'var(--p-ink)' },
                   }}>
                   {item.label}
