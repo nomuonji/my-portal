@@ -268,41 +268,156 @@ export function writeBatch(database) {
   return batch;
 }
 
-export function onSnapshot(target, next, error) {
-  if (!USE_TURSO) return firestore.onSnapshot(target, next, error);
+/*
+ * Shared, cached subscriptions.
+ *
+ * Pages subscribe on mount and unsubscribe on unmount, so every route change
+ * used to tear the listener down and read the whole collection again when the
+ * page came back. Subscriptions to the same query/document are now shared and
+ * kept alive for a while after the last subscriber leaves: a returning page is
+ * served the last snapshot immediately and only changes are fetched.
+ *   - Firestore: the realtime listener stays attached for KEEPALIVE_MS, so
+ *     re-entering a page costs no full re-read.
+ *   - Turso: polling stops while nobody listens or the tab is hidden; the cached
+ *     snapshot is reused and refreshed only when it is older than POLL_MS.
+ */
+const KEEPALIVE_MS = Math.max(Number(process.env.REACT_APP_PORTAL_DB_KEEPALIVE_MS) || 10 * 60 * 1000, 0);
+const sharedEntries = [];
 
-  let stopped = false;
+function sameTarget(a, b) {
+  if (USE_TURSO) return a.key === b.key;
+  if (a.target === b.target) return true;
+  try {
+    const aDoc = a.target?.type === 'document';
+    const bDoc = b.target?.type === 'document';
+    if (aDoc !== bDoc) return false;
+    return aDoc ? firestore.refEqual(a.target, b.target) : firestore.queryEqual(a.target, b.target);
+  } catch (_) {
+    return false;
+  }
+}
+
+function tursoKey(target) {
+  if (target.__portalDbKind === 'document') return 'doc:' + target.path;
+  return 'query:' + target.path + ':' + JSON.stringify(queryPayload(target));
+}
+
+function deliver(entry, snapshot) {
+  entry.snapshot = snapshot;
+  entry.error = null;
+  entry.subscribers.forEach((sub) => { try { sub.next(snapshot); } catch (cause) { console.error(cause); } });
+}
+
+function fail(entry, cause) {
+  entry.error = cause;
+  entry.subscribers.forEach((sub) => {
+    if (sub.error) sub.error(cause);
+    else console.error(cause);
+  });
+}
+
+function startFirestore(entry) {
+  entry.stop = firestore.onSnapshot(entry.target, (snapshot) => deliver(entry, snapshot), (cause) => {
+    fail(entry, cause);
+    // A failed listener is dead; drop it so the next subscriber re-attaches.
+    removeEntry(entry);
+  });
+}
+
+function startTurso(entry) {
   let busy = false;
   let signature = null;
-
-  const refresh = async (force = false) => {
-    if (stopped || busy) return;
+  entry.refresh = async (force = false) => {
+    if (entry.closed || busy) return;
+    if (entry.subscribers.size === 0) {
+      // Nobody is looking: mark stale and refetch when someone comes back.
+      entry.fetchedAt = 0;
+      return;
+    }
     busy = true;
     try {
+      const target = entry.target;
       const snapshot = target.__portalDbKind === 'document' ? await getDoc(target) : await getDocs(target);
       const raw = target.__portalDbKind === 'document'
         ? JSON.stringify({ exists: snapshot.exists(), id: snapshot.id, data: snapshot.data() })
         : JSON.stringify(snapshot.docs.map((item) => ({ id: item.id, data: item.data() })));
-      if (force || raw !== signature) {
+      entry.fetchedAt = Date.now();
+      if (force || raw !== signature || !entry.snapshot) {
         signature = raw;
-        next(snapshot);
+        deliver(entry, snapshot);
       }
     } catch (cause) {
-      if (error) error(cause);
-      else console.error(cause);
+      fail(entry, cause);
     } finally {
       busy = false;
     }
   };
+  listeners.add(entry.refresh);
+  entry.stop = () => listeners.delete(entry.refresh);
+}
 
-  listeners.add(refresh);
-  refresh(true);
-  const timer = window.setInterval(() => refresh(false), POLL_MS);
+function syncTursoPolling(entry) {
+  if (!USE_TURSO || entry.closed) return;
+  const active = entry.subscribers.size > 0 && !(typeof document !== 'undefined' && document.hidden);
+  if (active && !entry.timer) {
+    entry.timer = window.setInterval(() => entry.refresh(false), POLL_MS);
+    if (!entry.fetchedAt || Date.now() - entry.fetchedAt >= POLL_MS) entry.refresh(false);
+  } else if (!active && entry.timer) {
+    window.clearInterval(entry.timer);
+    entry.timer = null;
+  }
+}
 
+if (USE_TURSO && typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => sharedEntries.forEach(syncTursoPolling));
+}
+
+function removeEntry(entry) {
+  if (entry.closed) return;
+  entry.closed = true;
+  if (entry.idleTimer) window.clearTimeout(entry.idleTimer);
+  if (entry.timer) window.clearInterval(entry.timer);
+  if (entry.stop) entry.stop();
+  const index = sharedEntries.indexOf(entry);
+  if (index >= 0) sharedEntries.splice(index, 1);
+}
+
+export function onSnapshot(target, next, error) {
+  const probe = USE_TURSO ? { key: tursoKey(target) } : { target };
+  let entry = sharedEntries.find((item) => !item.closed && sameTarget(item, probe));
+  if (!entry) {
+    entry = { ...probe, target, subscribers: new Set(), snapshot: null, error: null, closed: false, timer: null, idleTimer: null, fetchedAt: 0 };
+    sharedEntries.push(entry);
+    if (USE_TURSO) startTurso(entry);
+    else startFirestore(entry);
+  }
+  if (entry.idleTimer) {
+    window.clearTimeout(entry.idleTimer);
+    entry.idleTimer = null;
+  }
+
+  const sub = { next, error };
+  entry.subscribers.add(sub);
+  const current = entry;
+  if (current.snapshot) {
+    // Serve the cached snapshot right away (async, like a real listener).
+    const cached = current.snapshot;
+    Promise.resolve().then(() => { if (current.subscribers.has(sub)) next(cached); });
+  }
+  syncTursoPolling(current);
+
+  let unsubscribed = false;
   return () => {
-    stopped = true;
-    listeners.delete(refresh);
-    window.clearInterval(timer);
+    if (unsubscribed) return;
+    unsubscribed = true;
+    current.subscribers.delete(sub);
+    syncTursoPolling(current);
+    if (current.subscribers.size === 0 && !current.closed) {
+      if (KEEPALIVE_MS === 0) removeEntry(current);
+      else current.idleTimer = window.setTimeout(() => {
+        if (current.subscribers.size === 0) removeEntry(current);
+      }, KEEPALIVE_MS);
+    }
   };
 }
 

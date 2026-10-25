@@ -251,6 +251,8 @@ function Dashboard() {
       const token = await currentUser.getIdToken();
       const response = await fetch('/api/agent-ideas?resource=control_plane&limit=100', {
         headers: { Authorization: `Bearer ${token}` },
+        // Background polling must see current state, not the page-transition cache.
+        ...(quiet ? { cache: 'no-store' } : {}),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Control Planeの取得に失敗しました。');
