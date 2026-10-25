@@ -55,10 +55,13 @@ const BOARDS = [
   },
 ];
 
+// Open on ネタ・表現 unless ?board= says otherwise.
+const DEFAULT_BOARD = 'stocks';
+
 export default function PortalBoards() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const requested = searchParams.get('board') || 'ideas';
-  const selected = BOARDS.some((board) => board.id === requested) ? requested : 'ideas';
+  const requested = searchParams.get('board') || DEFAULT_BOARD;
+  const selected = BOARDS.some((board) => board.id === requested) ? requested : DEFAULT_BOARD;
   const board = useMemo(() => BOARDS.find((item) => item.id === selected) || BOARDS[0], [selected]);
 
   const [count, setCount] = useState(null);
@@ -116,6 +119,7 @@ export default function PortalBoards() {
           itemFilter={board.itemFilter}
           extraFields={board.extraFields}
           onCount={handleCount}
+          draftKey="portal-boards:draft"
         />
       </Box>
     </Box>

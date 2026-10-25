@@ -5,6 +5,18 @@ import App from './App';
 import reportWebVitals from './reportWebVitals';
 import * as serviceWorkerRegistration from './serviceWorkerRegistration';
 import { BrowserRouter } from 'react-router-dom';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from './firebase';
+import { clearApiCache, installApiCache } from './apiCache';
+
+// Reuse GET /api responses across page transitions (see apiCache.js).
+installApiCache();
+let cachedUid;
+onAuthStateChanged(auth, (user) => {
+  const uid = user?.uid || null;
+  if (cachedUid !== undefined && uid !== cachedUid) clearApiCache();
+  cachedUid = uid;
+});
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(

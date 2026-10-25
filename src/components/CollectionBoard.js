@@ -48,6 +48,25 @@ const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigat
 const tagLabel = (tag) => (tag === UNTAGGED ? '未分類' : tag === ALL ? 'すべて' : tag);
 const normalizeTag = (value) => String(value || '').replace(/^#+/, '').trim();
 
+// Drafts survive tag switches, board tab switches, page navigation and reloads.
+const readDraft = (key, fallback) => {
+  if (!key) return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw === null ? fallback : JSON.parse(raw);
+  } catch (_) {
+    return fallback;
+  }
+};
+const writeDraft = (key, value) => {
+  if (!key) return;
+  try {
+    if (value === null || value === '' || (Array.isArray(value) && !value.length)) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, JSON.stringify(value));
+  } catch (_) { /* storage unavailable: keep the in-memory draft */ }
+};
+const sameTags = (a, b) => a.length === b.length && a.every((tag, i) => tag === b[i]);
+
 const tagHue = (tag) => {
   let hash = 0;
   for (let i = 0; i < tag.length; i += 1) hash = tag.charCodeAt(i) + ((hash << 5) - hash);
@@ -73,9 +92,10 @@ function TagDot({ tag, size = 7 }) {
 function Composer({
   placeholder, knownTags, initialContent = '', initialTags = [], onSave, onCancel, autoFocus = false,
   inputRef: externalRef, submitLabel = '追加', compactUntilFocus = false,
+  contentStorageKey, tagsStorageKey,
 }) {
-  const [content, setContent] = useState(initialContent);
-  const [tags, setTags] = useState(initialTags);
+  const [content, setContent] = useState(() => readDraft(contentStorageKey, initialContent));
+  const [tags, setTags] = useState(() => readDraft(tagsStorageKey, null) || initialTags);
   const [tagDraft, setTagDraft] = useState('');
   const [tagOpen, setTagOpen] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -96,6 +116,22 @@ function Composer({
   const options = canCreate ? [...suggestions, { create: draft }] : suggestions;
 
   useEffect(() => { setHighlight(0); }, [tagDraft]);
+
+  useEffect(() => { writeDraft(contentStorageKey, content); }, [contentStorageKey, content]);
+  useEffect(() => { writeDraft(tagsStorageKey, tags); }, [tagsStorageKey, tags]);
+
+  // When the tag filter changes, swap only the tag that came from the filter;
+  // the text being typed and tags added by hand are kept.
+  const autoTagsRef = useRef(initialTags);
+  useEffect(() => {
+    const previous = autoTagsRef.current;
+    if (sameTags(previous, initialTags)) return;
+    autoTagsRef.current = initialTags;
+    setTags((current) => {
+      const kept = current.filter((tag) => !previous.includes(tag));
+      return [...kept, ...initialTags.filter((tag) => !kept.includes(tag))];
+    });
+  }, [initialTags]);
 
   const addTag = (tag) => {
     const value = normalizeTag(tag);
@@ -307,6 +343,7 @@ function CollectionBoard({
   itemFilter,
   extraFields,
   onCount,
+  draftKey,
 }) {
   const [items, setItems] = useState([]);
   const [allTags, setAllTags] = useState([]);
@@ -445,8 +482,9 @@ function CollectionBoard({
   return (
     <Box>
       <Composer
-        key={`composer-${selectedTag}`}
         inputRef={composerRef}
+        contentStorageKey={draftKey}
+        tagsStorageKey={draftKey ? `${draftKey}:tags:${collectionName}` : undefined}
         placeholder={placeholder}
         knownTags={knownTags}
         initialTags={composerTags}
