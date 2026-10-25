@@ -7,8 +7,8 @@ function fakeDb(seed = {}) {
   const store = new Map(Object.entries(seed)); // "col/id" -> data
   let n = 0;
   const docsOf = (col) => [...store.entries()]
-    .filter(([key]) => key.startsWith(`${col}/`) && key.split('/').length === 2)
-    .map(([key, data]) => ({ id: key.split('/')[1], data: () => data }));
+    .filter(([key]) => key.startsWith(`${col}/`) && key.split('/').length === col.split('/').length + 1)
+    .map(([key, data]) => ({ id: key.split('/').pop(), data: () => data }));
   const collection = (col) => ({
     doc: (id = `auto${(n += 1)}`) => ({
       id,
@@ -49,7 +49,7 @@ test('listBoards orders tags by usage and includes unused registered tags', asyn
     'stock_tags/Z': {},
   });
   const boards = await listBoards({ db });
-  assert.deepEqual(boards.map((b) => b.id), ['stocks', 'ideas', 'hobbies']);
+  assert.deepEqual(boards.map((b) => b.id), ['stocks', 'ideas', 'hobbies', 'memos']);
   assert.deepEqual(boards[0].tags, ['B', 'A', 'Z']);
 });
 
@@ -65,6 +65,13 @@ test('listItems returns board items and keeps agent ideas out of ideas', async (
   const stocks = await listItems({ board: 'stocks', limit: 1 }, { db });
   assert.equal(stocks.items[0].content, 'ネタ');
   await assert.rejects(listItems({ board: 'nope' }, { db }), /Unknown board/);
+});
+
+test('memos board writes under memos/board/', async () => {
+  const db = fakeDb();
+  const result = await capture({ board: 'memos', content: 'ただのメモ', tags: ['買い物'] }, { db });
+  assert.ok(db.store.has(`memos/board/items/${result.id}`));
+  assert.ok(db.store.has('memos/board/tags/買い物'));
 });
 
 test('helpers', () => {

@@ -10,6 +10,7 @@ Two-level hierarchy:
    - `ideas` — 企画・ビジネス。ビジネス・企画・作りたいもの・試したいこと寄り。
    - `hobbies` — 興味・趣味。興味がある物・人・場所・作品・テーマ。
    - `stocks` — ネタ・表現。ネタ帳・大喜利・ユーモア・文体・言い回し・センスなど、感覚的な素材。
+   - `memos` — メモ。分類に迷うもの・覚え書き。保存先は `memos/board/items`（タグは `memos/board/tags`）。旧 `/memo` のアクションメモ（`memos` 直下）や `memos/agent-control` とは別。Agent Ideas のミラー対象外。
 2. Tag category inside each large board
    - `tags`
    - `hobby_tags`

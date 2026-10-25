@@ -9,8 +9,12 @@ const BOARDS = Object.freeze({
   stocks: { id: 'stocks', label: 'ネタ・表現', collection: 'stocks', tagsCollection: 'stock_tags' },
   ideas: { id: 'ideas', label: '企画・ビジネス', collection: 'ideas', tagsCollection: 'tags', extra: { owner: 'portal' } },
   hobbies: { id: 'hobbies', label: '興味・趣味', collection: 'hobbies', tagsCollection: 'hobby_tags' },
+  memos: { id: 'memos', label: 'メモ', collection: 'memos/board/items', tagsCollection: 'memos/board/tags' },
 });
-const BOARD_ORDER = ['stocks', 'ideas', 'hobbies'];
+const BOARD_ORDER = ['stocks', 'ideas', 'hobbies', 'memos'];
+// Items returned per request (the extension pages with a growing limit).
+const DEFAULT_LIST_LIMIT = 40;
+const MAX_LIST_LIMIT = 200;
 const MAX_CONTENT = 20000;
 const MAX_TAGS = 20;
 const MAX_TAG_LENGTH = 60;
@@ -83,7 +87,7 @@ function belongsToBoard(board, data) {
 /** Newest items of one board (what the side panel shows). */
 async function listItems(input = {}, { db = getDocumentDb(DATABASE_ID) } = {}) {
   const board = boardConfig(input.board);
-  const limit = Math.min(Math.max(Number(input.limit) || 50, 1), 200);
+  const limit = Math.min(Math.max(Number(input.limit) || DEFAULT_LIST_LIMIT, 1), MAX_LIST_LIMIT);
   // ideas shares its collection with agent ideas: over-fetch, then filter.
   const fetchLimit = board.id === 'ideas' ? Math.min(limit * 3, 600) : limit;
   const snapshot = await db.collection(board.collection).orderBy('createdAt', 'desc').limit(fetchLimit).get();
@@ -129,4 +133,4 @@ async function capture(input = {}, { db = getDocumentDb(DATABASE_ID) } = {}) {
   return { board: board.id, id: ref.id, tags };
 }
 
-module.exports = { BOARDS, BOARD_ORDER, normalizeTags, cleanUrl, listBoards, listItems, capture };
+module.exports = { BOARDS, BOARD_ORDER, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT, normalizeTags, cleanUrl, listBoards, listItems, capture };

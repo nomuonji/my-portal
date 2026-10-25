@@ -372,7 +372,7 @@ function App() {
       label: '自分',
       items: [
         { to: '/discover', label: 'Discover', hint: '動画・記事・作品のおすすめ', icon: <DiscoveryIcon /> },
-        { to: '/boards', match: BOARD_PATHS, label: 'ボード', hint: '企画・ビジネス / 興味・趣味 / ネタ・表現', icon: <ViewCompactIcon /> },
+        { to: '/boards', match: BOARD_PATHS, label: 'ボード', hint: '企画・ビジネス / 興味・趣味 / ネタ・表現 / メモ', icon: <ViewCompactIcon /> },
         { to: '/taste', label: '好みの記録', hint: '好き嫌い / 根拠 / 訂正履歴', icon: <TasteIcon /> },
         { to: '/thinking', label: '思考テーマ', hint: '長期テーマ / Context Store', icon: <PsychologyAltIcon /> },
         { to: '/social-archive', label: 'X投稿アーカイブ', hint: '過去投稿の検索・分類・見返し', icon: <ArchiveIcon /> },
