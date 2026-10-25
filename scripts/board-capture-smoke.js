@@ -1,7 +1,7 @@
 // node --test scripts/board-capture-smoke.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { capture, listBoards, normalizeTags, cleanUrl } = require('../functions/boardCapture');
+const { capture, listBoards, listItems, normalizeTags, cleanUrl } = require('../functions/boardCapture');
 
 function fakeDb(seed = {}) {
   const store = new Map(Object.entries(seed)); // "col/id" -> data
@@ -51,6 +51,20 @@ test('listBoards orders tags by usage and includes unused registered tags', asyn
   const boards = await listBoards({ db });
   assert.deepEqual(boards.map((b) => b.id), ['stocks', 'ideas', 'hobbies']);
   assert.deepEqual(boards[0].tags, ['B', 'A', 'Z']);
+});
+
+test('listItems returns board items and keeps agent ideas out of ideas', async () => {
+  const db = fakeDb({
+    'ideas/1': { content: 'portal idea', owner: 'portal', tags: ['x'], sourceUrl: 'https://a.example/' },
+    'ideas/2': { content: 'agent idea', createdBy: 'agent', maturity: 'seed' },
+    'stocks/9': { content: 'ネタ', tags: [] },
+  });
+  const ideas = await listItems({ board: 'ideas' }, { db });
+  assert.deepEqual(ideas.items.map((i) => i.id), ['1']);
+  assert.equal(ideas.items[0].sourceUrl, 'https://a.example/');
+  const stocks = await listItems({ board: 'stocks', limit: 1 }, { db });
+  assert.equal(stocks.items[0].content, 'ネタ');
+  await assert.rejects(listItems({ board: 'nope' }, { db }), /Unknown board/);
 });
 
 test('helpers', () => {

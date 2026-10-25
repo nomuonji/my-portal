@@ -67,6 +67,43 @@ async function listBoards({ db = getDocumentDb(DATABASE_ID), usageLimit = 500 } 
   }));
 }
 
+function isoTime(value) {
+  if (!value) return null;
+  if (typeof value.toDate === 'function') return value.toDate().toISOString();
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+// Same rule the /boards UI uses to keep agent ideas out of the Portal ideas board.
+function belongsToBoard(board, data) {
+  if (board.id !== 'ideas') return true;
+  return data.owner === 'portal' || (Boolean(data.content) && !data.createdBy && !data.maturity && !data.spaceId);
+}
+
+/** Newest items of one board (what the side panel shows). */
+async function listItems(input = {}, { db = getDocumentDb(DATABASE_ID) } = {}) {
+  const board = boardConfig(input.board);
+  const limit = Math.min(Math.max(Number(input.limit) || 50, 1), 200);
+  // ideas shares its collection with agent ideas: over-fetch, then filter.
+  const fetchLimit = board.id === 'ideas' ? Math.min(limit * 3, 600) : limit;
+  const snapshot = await db.collection(board.collection).orderBy('createdAt', 'desc').limit(fetchLimit).get();
+  const items = [];
+  for (const doc of snapshot.docs) {
+    const data = doc.data() || {};
+    if (!belongsToBoard(board, data)) continue;
+    items.push({
+      id: doc.id,
+      content: String(data.content || ''),
+      tags: Array.isArray(data.tags) ? data.tags : [],
+      createdAt: isoTime(data.createdAt),
+      ...(data.sourceUrl ? { sourceUrl: data.sourceUrl } : {}),
+      ...(data.sourceTitle ? { sourceTitle: data.sourceTitle } : {}),
+    });
+    if (items.length >= limit) break;
+  }
+  return { board: board.id, items };
+}
+
 async function capture(input = {}, { db = getDocumentDb(DATABASE_ID) } = {}) {
   const board = boardConfig(input.board);
   const content = String(input.content ?? '').trim().slice(0, MAX_CONTENT);
@@ -92,4 +129,4 @@ async function capture(input = {}, { db = getDocumentDb(DATABASE_ID) } = {}) {
   return { board: board.id, id: ref.id, tags };
 }
 
-module.exports = { BOARDS, BOARD_ORDER, normalizeTags, cleanUrl, listBoards, capture };
+module.exports = { BOARDS, BOARD_ORDER, normalizeTags, cleanUrl, listBoards, listItems, capture };

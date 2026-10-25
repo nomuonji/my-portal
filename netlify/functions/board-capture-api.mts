@@ -68,6 +68,10 @@ export default async (request: Request) => {
   try {
     ensureFirebaseAdmin();
     if (request.method === "GET") {
+      const url = new URL(request.url);
+      const board = url.searchParams.get("board");
+      // ?board=stocks&limit=50 → newest items of that board; otherwise boards + tags.
+      if (board) return json(request, await boardCapture.listItems({ board, limit: url.searchParams.get("limit") }));
       return json(request, { boards: await boardCapture.listBoards() });
     }
     if (request.method === "POST") {
