@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>My Portal に保存</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main id="app">
+    <header class="top">
+      <span class="eyebrow">MY PORTAL</span>
+      <a id="openBoard" class="link" href="#" title="ボードを開く">ボードを開く ↗</a>
+    </header>
+
+    <div class="tabs" role="tablist" aria-label="保存先ボード" id="boards"></div>
+
+    <textarea id="content" rows="6" placeholder="保存する内容" aria-label="保存する内容"></textarea>
+
+    <label class="source" id="sourceRow">
+      <input type="checkbox" id="withSource" checked>
+      <span>ページのリンクを付ける</span>
+      <span class="source-title" id="sourceTitle"></span>
+    </label>
+
+    <div class="tags" id="tagBox">
+      <div class="chips" id="chips"></div>
+      <input id="tagInput" type="text" placeholder="＋タグ" autocomplete="off" aria-label="タグを入力"
+        role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="suggest">
+      <ul class="suggest" id="suggest" role="listbox" hidden></ul>
+    </div>
+
+    <footer class="bottom">
+      <span class="status" id="status" role="status"></span>
+      <span class="hint" id="hint"></span>
+      <button id="save" type="button">保存</button>
+    </footer>
+  </main>
+
+  <section id="setup" hidden>
+    <p class="setup-title">アクセスキーが未設定です</p>
+    <p class="setup-text">My Portal MCP と同じアクセスキーを設定画面で入力してください。</p>
+    <button id="openOptions" type="button">設定を開く</button>
+  </section>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

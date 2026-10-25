@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "My Portal ボード保存",
+  "short_name": "Portal保存",
+  "version": "1.0.0",
+  "description": "選択したテキストやページを My Portal のボード（ネタ・表現 / 企画・ビジネス / 興味・趣味）に保存します。",
+  "permissions": ["contextMenus", "storage", "activeTab", "scripting"],
+  "host_permissions": ["https://my-portal-agent.netlify.app/*"],
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_title": "My Portal に保存",
+    "default_popup": "popup.html",
+    "default_icon": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" }
+  },
+  "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" },
+  "options_page": "options.html",
+  "commands": {
+    "_execute_action": {
+      "suggested_key": { "default": "Alt+Shift+S", "mac": "Alt+Shift+S" },
+      "description": "保存ポップアップを開く"
+    }
+  }
+}
