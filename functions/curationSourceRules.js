@@ -24,6 +24,18 @@ function clamp(value,max=1000){return String(value??'').trim().slice(0,max)}
 function enumValue(value,allowed,defaultValue){
   return allowed.includes(value)?value:defaultValue;
 }
+/**
+ * Discover is a PRIVATE RSS reader: reading a public feed's title/link/short
+ * excerpt is the normal intended use of RSS, so an rss source only needs a
+ * feed that was actually fetched and parsed (and not marked restricted).
+ * Other access methods keep the stricter rights-evidence gate, and
+ * republication rights are never implied by either.
+ */
+function canBeActive({accessMethod,feedUrl,rightsStatus,fetchVerification,rightsEvidenceUrl}){
+  if(rightsStatus==='restricted'||fetchVerification!=='verified')return false;
+  if(accessMethod==='rss')return Boolean(feedUrl);
+  return rightsStatus==='permitted'&&Boolean(rightsEvidenceUrl);
+}
 function sourceId(url) {
   return 'curation_'+createHash('sha256').update(validUrl(url,'url')).digest('hex').slice(0,32);
 }
@@ -38,15 +50,22 @@ function normalizedSource(input={},old={}) {
   const fetchVerification=enumValue(input.fetchVerification??old.fetchVerification,VERIFICATION,'untested');
   const rightsEvidenceUrl=validUrl(input.rightsEvidenceUrl??old.rightsEvidenceUrl,'rightsEvidenceUrl',{optional:true});
   const requestedStatus=enumValue(input.status??old.status,STATUSES,'candidate');
-  const status=requestedStatus==='active' && !(rightsStatus==='permitted'&&fetchVerification==='verified'&&rightsEvidenceUrl&&(accessMethod!=='rss'||feedUrl))
+  const status=requestedStatus==='active' && !canBeActive({accessMethod,feedUrl,rightsStatus,fetchVerification,rightsEvidenceUrl})
     ? 'candidate' :requestedStatus;
+  const rawPriority=Number(input.priority??old.priority??0);
+  const priority=Number.isFinite(rawPriority)?Math.max(-2,Math.min(2,Math.round(rawPriority))):0;
+  const rawInterval=Number(input.fetchIntervalMinutes??old.fetchIntervalMinutes??60);
+  const fetchIntervalMinutes=Number.isFinite(rawInterval)?Math.max(30,Math.min(1440,Math.round(rawInterval))):60;
   return {
-    schemaVersion:1,
+    schemaVersion:2,
     title,url,feedUrl,
     selectionType:enumValue(input.selectionType??old.selectionType,SELECTION_TYPES,'editorial'),
     selectionDescription:clamp(input.selectionDescription??old.selectionDescription,1500),
     accessMethod,rightsStatus,fetchVerification,rightsEvidenceUrl,status,
     useCase:clamp(input.useCase??old.useCase,1200),
+    // Discover RSS reader settings (schema v2). priority nudges ranking (-2..+2).
+    category:clamp(input.category??old.category,70),
+    priority,fetchIntervalMinutes,
     notes:clamp(input.notes??old.notes,3000),
     tags:Array.from(new Set((Array.isArray(input.tags??old.tags)?(input.tags??old.tags):[])
       .map(x=>clamp(x,50)).filter(Boolean))).slice(0,20),
@@ -55,4 +74,4 @@ function normalizedSource(input={},old={}) {
     storageScope:'url_metadata_only',
   };
 }
-module.exports={validUrl,sourceId,normalizedSource,SELECTION_TYPES,ACCESS_METHODS,STATUSES,RIGHTS,VERIFICATION};
+module.exports={validUrl,sourceId,canBeActive,normalizedSource,SELECTION_TYPES,ACCESS_METHODS,STATUSES,RIGHTS,VERIFICATION};

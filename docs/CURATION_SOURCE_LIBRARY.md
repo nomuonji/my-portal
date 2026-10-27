@@ -1,5 +1,7 @@
 # Human-curated Source Library
 
+> **2026-10-28:** this registry is now the source list of the Discover RSS reader. RSS sources become `active` once their feed is fetched and parsed (rights review is no longer required for private reading), and an hourly job fetches them. See `docs/DISCOVER_RSS_READER.md`; the "no scheduled ingestion" paragraph below is historical.
+
 ## What this stores
 
 My Portal **情報源ライブラリ** (`/curation-sources`) stores **ongoing sources** whose items have already been selected by real human editors, juries, votes or curators. This is **not** a bookmark list of individual articles and not an automated scraper. The source registry is the authoritative catalog, separate from `reading_list_urls` and existing Agent Idea `sources` provenance.

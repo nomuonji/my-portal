@@ -8,6 +8,8 @@ import * as portalToolsImport from "../../functions/portalMcpTools.js";
 import * as metaStoreImport from "../../functions/metaStrategyStore.js";
 import * as personalFeedImport from "../../functions/personalFeedStore.js";
 import * as personalFeedToolsImport from "../../functions/personalFeedToolSchemas.js";
+import * as discoverReaderImport from "../../functions/discoverReaderStore.js";
+import * as discoverReaderToolsImport from "../../functions/discoverReaderToolSchemas.js";
 import * as personalTasteImport from "../../functions/personalTasteStore.js";
 import * as personalTasteExternalImport from "../../functions/personalTasteExternalStore.js";
 import * as anilistImport from "../../functions/anilistIntegration.js";
@@ -43,6 +45,8 @@ const portalToolsModule: any = (portalToolsImport as any).default ?? portalTools
 const metaStore: any = (metaStoreImport as any).default ?? metaStoreImport;
 const personalFeed: any = (personalFeedImport as any).default ?? personalFeedImport;
 const personalFeedTools: any = (personalFeedToolsImport as any).default ?? personalFeedToolsImport;
+const discoverReader: any = (discoverReaderImport as any).default ?? discoverReaderImport;
+const discoverReaderTools: any = (discoverReaderToolsImport as any).default ?? discoverReaderToolsImport;
 const personalTaste: any = (personalTasteImport as any).default ?? personalTasteImport;
 const externalTaste: any = (personalTasteExternalImport as any).default ?? personalTasteExternalImport;
 const anilist: any = (anilistImport as any).default ?? anilistImport;
@@ -70,10 +74,10 @@ const worldMapTools: any = (worldMapToolsImport as any).default ?? worldMapTools
 const contextToolsModule: any = (contextToolsImport as any).default ?? contextToolsImport;
 const linearBridge: any = (linearBridgeImport as any).default ?? linearBridgeImport;
 const migration: any = (migrationImport as any).default ?? migrationImport;
-const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...worldMapTools.TOOLS, ...chatContextTools.TOOLS, ...contextRegistryTools.TOOLS, ...portalToolsModule.TOOLS, ...metaTools.TOOLS, ...personalFeedTools.TOOLS, ...personalTasteTools.TOOLS, ...routineTools.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS, ...workspaceApp.TOOLS];
+const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...worldMapTools.TOOLS, ...chatContextTools.TOOLS, ...contextRegistryTools.TOOLS, ...portalToolsModule.TOOLS, ...metaTools.TOOLS, ...personalFeedTools.TOOLS, ...discoverReaderTools.TOOLS, ...personalTasteTools.TOOLS, ...routineTools.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS, ...workspaceApp.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "1.18.0-netlify";
+const SERVER_VERSION = "1.19.0-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -385,11 +389,31 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "taste_evidence_get") return structured(await personalTaste.get(args));
   if (name === "taste_evidence_upsert") return structured(await personalTaste.upsert(args));
   if (name === "taste_evidence_history") return structured(await personalTaste.history(args));
+  if (name === "discover_source_list") return structured(await discoverReader.sourcesList(args));
+  if (name === "discover_source_test") return structured(await discoverReader.sourceTest(args));
+  if (name === "discover_source_upsert") return structured(await discoverReader.sourceUpsert(args));
+  if (name === "discover_fetch_now") return structured(await discoverReader.fetchDue({ sourceId: args.sourceId, force: args.force }));
+  if (name === "discover_items_list") return structured(await discoverReader.list({ ...args, max: args.max || 60 }));
+  if (name === "discover_taste_model_get") return structured(await discoverReader.modelGet(args));
+  if (name === "discover_item_feedback") {
+    const updated = await discoverReader.feedback(args);
+    let tasteLedger = "synced";
+    try {
+      await personalTaste.fromDiscover({ itemId: updated.id, feedback: updated.feedback, title: updated.title, url: updated.url, note: args.note });
+    } catch (error) {
+      tasteLedger = "failed: " + String((error as any)?.message || error).slice(0, 200);
+    }
+    return structured({ item: updated, tasteLedger });
+  }
   if (name === "personal_feed_list") return structured(await personalFeed.list(args));
   if (name === "personal_feed_get") return structured(await personalFeed.get(args));
   if (name === "personal_feed_add") return structured(await personalFeed.add(args));
   if (name === "personal_feed_batch_add") return structured(await personalFeed.batchAdd(args));
-  if (name === "personal_feed_feedback") return structured(await personalFeed.feedback(args));
+  if (name === "personal_feed_feedback") {
+    const updated = await personalFeed.feedback(args);
+    await discoverReader.signalForLegacy(updated).catch(() => null);
+    return structured(updated);
+  }
   if (name === "meta_proposal_list") return structured(await metaStore.list(args));
   if (name === "meta_proposal_get") return structured(await metaStore.get(args));
   if (name === "meta_proposal_create") return structured(await metaStore.create(args));

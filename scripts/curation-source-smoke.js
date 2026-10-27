@@ -38,4 +38,21 @@ test('do not accept output content or client-controlled ingestion grants',()=>{
   assert.equal(record.storageScope,'url_metadata_only');
   assert.ok(!Object.hasOwn(record,'collectionMode'));
 });
+test('reader: a verified RSS feed can be active without republication rights review',()=>{
+  const a=normalizedSource({title:'Feed',url:'https://example.org/',accessMethod:'rss',feedUrl:'https://example.org/feed',status:'active',fetchVerification:'verified'});
+  assert.equal(a.status,'active');
+  assert.equal(a.rightsStatus,'unreviewed');
+  assert.equal(a.storageScope,'url_metadata_only');
+});
+test('reader: restricted or unverified feeds stay candidate; non-RSS still needs rights evidence',()=>{
+  assert.equal(normalizedSource({title:'F',url:'https://example.org/',accessMethod:'rss',feedUrl:'https://example.org/feed',status:'active',fetchVerification:'verified',rightsStatus:'restricted'}).status,'candidate');
+  assert.equal(normalizedSource({title:'F',url:'https://example.org/',accessMethod:'rss',status:'active',fetchVerification:'verified'}).status,'candidate');
+  assert.equal(normalizedSource({title:'F',url:'https://example.org/',accessMethod:'archive',status:'active',fetchVerification:'verified'}).status,'candidate');
+});
+test('reader settings are clamped and preserved on merge',()=>{
+  const a=normalizedSource({title:'F',url:'https://example.org/',priority:9,fetchIntervalMinutes:5,category:'ネット文化'});
+  assert.equal(a.priority,2);assert.equal(a.fetchIntervalMinutes,30);
+  const b=normalizedSource({notes:'x'},a);
+  assert.equal(b.category,'ネット文化');assert.equal(b.priority,2);
+});
 console.log('curation source schema tests passed');

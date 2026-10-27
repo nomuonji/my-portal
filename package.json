@@ -13,6 +13,8 @@
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^13.5.0",
+    "@tursodatabase/serverless": "^1.4.0",
+    "fast-xml-parser": "^4.5.7",
     "firebase": "^11.9.1",
     "firebase-admin": "^12.6.0",
     "marked": "^16.0.0",
@@ -21,8 +23,7 @@
     "react-router-dom": "^7.6.2",
     "react-scripts": "5.0.1",
     "react-swipeable": "^7.0.2",
-    "web-vitals": "^2.1.4",
-    "@tursodatabase/serverless": "^1.4.0"
+    "web-vitals": "^2.1.4"
   },
   "scripts": {
     "start": "react-scripts start",
@@ -33,7 +34,8 @@
     "migrate:turso": "node scripts/migrate-firestore-to-turso.js",
     "test:intelligence-corpus": "node scripts/intelligence-corpus-smoke.js",
     "test:curation-sources": "node --test scripts/curation-source-smoke.js",
-    "prebuild": "npm run test:curation-sources && npm run test:personal-feed && npm run test:personal-taste && npm run test:taste-sources && npm run test:anilist-integration && npm run test:media-accounts && npm run test:intelligence-corpus && npm run test:public-cms && npm run test:organization-lifecycle && npm run test:hq-dispatch && npm run test:hq-outcome && npm run test:character-image && npm run test:world-home && npm run test:meta-strategy && npm run test:routine-jobs && npm run test:filmarks-trakt-migration && npm run test:board-capture",
+    "test:discover-reader": "node --test scripts/discover-reader-smoke.js scripts/discover-reader-flow-smoke.js",
+    "prebuild": "npm run test:curation-sources && npm run test:discover-reader && npm run test:personal-feed && npm run test:personal-taste && npm run test:taste-sources && npm run test:anilist-integration && npm run test:media-accounts && npm run test:intelligence-corpus && npm run test:public-cms && npm run test:organization-lifecycle && npm run test:hq-dispatch && npm run test:hq-outcome && npm run test:character-image && npm run test:world-home && npm run test:meta-strategy && npm run test:routine-jobs && npm run test:filmarks-trakt-migration && npm run test:board-capture",
     "test:board-capture": "node --test scripts/board-capture-smoke.js",
     "test:hq-dispatch": "node scripts/hq-dispatch-smoke.js",
     "test:organization-lifecycle": "node scripts/organization-lifecycle-smoke.js",
