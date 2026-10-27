@@ -261,9 +261,10 @@ async function history(args={}){
 async function fromDiscover(args={}){
  await bootstrap();
  const itemId=trim(args.itemId,120),feedback=trim(args.feedback,30);
- if(!/^cur-[a-f0-9]{30}$/.test(itemId))throw Error('Invalid content item ID');
+ if(!/^(cur|rss)-[a-f0-9]{30}$/.test(itemId))throw Error('Invalid content item ID');
  if(!['new','loved','saved','skipped','seen'].includes(feedback))throw Error('Invalid Discover feedback');
- const id='taste-feed-'+itemId.slice(4);
+ // Legacy AI picks keep their historical ID; RSS reader items are namespaced.
+ const id=itemId.startsWith('rss-')?'taste-feed-'+itemId:'taste-feed-'+itemId.slice(4);
  const direction=feedback==='loved'?'like':feedback==='skipped'?'dislike':'unknown';
  // saved/seen are not explicit endorsements and must not be entered as positive taste.
  const record=direction==='unknown'?{

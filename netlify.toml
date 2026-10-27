@@ -9,12 +9,14 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-  external_node_modules = ["firebase-admin", "@tursodatabase/serverless"]
+  external_node_modules = ["firebase-admin", "@tursodatabase/serverless", "fast-xml-parser", "strnum"]
   included_files = [
     "docs/AGENT_HQ_OPERATING_MODEL.md",
     "docs/AGENT_HQ_DECISION_LOG.md",
     "node_modules/firebase-admin/**/*",
-    "node_modules/@tursodatabase/serverless/**/*"
+    "node_modules/@tursodatabase/serverless/**/*",
+    "node_modules/fast-xml-parser/**/*",
+    "node_modules/strnum/**/*"
   ]
 
 # React Router is client-side. Keep the explicit Agent Ideas rewrite for clarity,

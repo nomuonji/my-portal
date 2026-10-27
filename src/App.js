@@ -371,7 +371,7 @@ function App() {
     {
       label: '自分',
       items: [
-        { to: '/discover', label: 'Discover', hint: '動画・記事・作品のおすすめ', icon: <DiscoveryIcon /> },
+        { to: '/discover', label: 'Discover', hint: 'RSSの新着を好みの順に', icon: <DiscoveryIcon /> },
         { to: '/boards', match: BOARD_PATHS, label: 'ボード', hint: '企画・ビジネス / 興味・趣味 / ネタ・表現 / メモ', icon: <ViewCompactIcon /> },
         { to: '/taste', label: '好みの記録', hint: '好き嫌い / 根拠 / 訂正履歴', icon: <TasteIcon /> },
         { to: '/thinking', label: '思考テーマ', hint: '長期テーマ / Context Store', icon: <PsychologyAltIcon /> },
@@ -384,7 +384,7 @@ function App() {
         { to: '/dashboard', label: 'Agent HQ', hint: '実行キュー / Agents / 再開地点', icon: <DashboardIcon /> },
         { to: '/meta', label: 'プロジェクト提案', hint: '戦略・次の一手', icon: <MetaIcon /> },
         { to: '/agent-ideas', label: 'Agent Ideas', hint: 'Portalと同じ構造でAIが補充', icon: <SmartToyIcon /> },
-        { to: '/curation-sources', label: '情報源ライブラリ', hint: '人間の選考で発掘した情報源', icon: <SourcesIcon /> },
+        { to: '/curation-sources', label: '情報源ライブラリ', hint: 'Discoverが読むRSSの管理', icon: <SourcesIcon /> },
       ],
     },
     {

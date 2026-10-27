@@ -9,6 +9,7 @@ import * as chatContextImport from "../../functions/chatContextRegistry.js";
 import * as contextRegistryImport from "../../functions/contextRegistry.js";
 import * as metaStoreImport from "../../functions/metaStrategyStore.js";
 import * as personalFeedImport from "../../functions/personalFeedStore.js";
+import * as discoverReaderImport from "../../functions/discoverReaderStore.js";
 import * as personalTasteImport from "../../functions/personalTasteStore.js";
 import * as personalTasteExternalImport from "../../functions/personalTasteExternalStore.js";
 import * as anilistImport from "../../functions/anilistIntegration.js";
@@ -22,6 +23,7 @@ const chatContext: any = (chatContextImport as any).default ?? chatContextImport
 const contextRegistry: any = (contextRegistryImport as any).default ?? contextRegistryImport;
 const metaStore: any = (metaStoreImport as any).default ?? metaStoreImport;
 const personalFeed: any = (personalFeedImport as any).default ?? personalFeedImport;
+const discoverReader: any = (discoverReaderImport as any).default ?? discoverReaderImport;
 const personalTaste: any = (personalTasteImport as any).default ?? personalTasteImport;
 const externalTaste: any = (personalTasteExternalImport as any).default ?? personalTasteExternalImport;
 const anilist: any = (anilistImport as any).default ?? anilistImport;
@@ -143,6 +145,13 @@ export default async (request: Request) => {
       if (resource === "taste_evidence") return json(await personalTaste.list({limit:Number(url.searchParams.get("limit"))||120,includeInactive:url.searchParams.get("includeInactive")==="true",domain:url.searchParams.get("domain")||undefined,evidenceKind:url.searchParams.get("evidenceKind")||undefined,direction:url.searchParams.get("direction")||undefined}));
       if (resource === "taste_profile") return json(await personalTaste.profile({domain:url.searchParams.get("domain")||undefined}));
       if (resource === "taste_evidence_history") return json(await personalTaste.history({id:url.searchParams.get("id")||"",limit:40}));
+      if (resource === "discover_reader") return json(await discoverReader.list({
+        sort: url.searchParams.get("sort") || "score",
+        includeSkipped: url.searchParams.get("includeSkipped") === "true",
+        limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 500, 1), 600),
+      }));
+      if (resource === "discover_sources") return json(await discoverReader.sourcesList({ includeArchived: url.searchParams.get("includeArchived") === "true" }));
+      if (resource === "discover_model") return json(await discoverReader.modelGet({ limit: 20 }));
       if (resource === "personal_feed") return json(await personalFeed.list({limit:Math.min(Math.max(Number(url.searchParams.get("limit"))||160,1),500),includeSkipped:url.searchParams.get("includeSkipped")==="true"}));
       if (resource === "personal_feed_rejected") return json(await personalFeed.rejected({limit:Math.min(Math.max(Number(url.searchParams.get("limit"))||20,1),40)}));
       if (resource === "meta_proposals") return json(await metaStore.list({limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 150, 1), 200), status: url.searchParams.get("status") || undefined}));
@@ -247,8 +256,23 @@ export default async (request: Request) => {
       if (action === "anilist_authorize_token") return json(await anilist.authorize({token:body.token}));
       if (action === "taste_external_import") return json(await externalTaste.importRecords({source:body.source,rows:body.rows}));
       if (action === "taste_evidence_upsert") return json(await personalTaste.upsert({id:body.id,record:body.record,expectedRevision:body.expectedRevision,changeReason:body.changeReason||"Manual user interface edit"}));
-      if (action === "personal_feed_feedback") {
+      if (action === "discover_feedback" && /^rss-/.test(String(body.id || ""))) {
+        const updated = await discoverReader.feedback({ id: body.id, status: body.status, note: body.note, expectedRevision: body.expectedRevision });
+        try {
+          await personalTaste.fromDiscover({ itemId: updated.id, feedback: updated.feedback, title: updated.title, url: updated.url, note: body.note });
+        } catch (error) {
+          return json({ error: "Reaction was saved, but taste ledger sync failed; reload before retrying", detail: String((error as any)?.message || error) }, 503);
+        }
+        return json(updated);
+      }
+      if (action === "discover_opened") return json(await discoverReader.opened({ id: body.id }));
+      if (action === "discover_mark_read") return json(await discoverReader.markRead({ ids: body.ids, read: body.read }));
+      if (action === "discover_fetch_now") return json(await discoverReader.fetchDue({ sourceId: body.sourceId, force: body.force === true }));
+      if (action === "discover_source_test") return json(await discoverReader.sourceTest({ url: body.url }));
+      if (action === "discover_source_upsert") return json(await discoverReader.sourceUpsert(body.source || {}));
+      if (action === "personal_feed_feedback" || action === "discover_feedback") {
         const updated=await personalFeed.feedback({id:body.id,status:body.status,note:body.note,expectedRevision:body.expectedRevision});
+        await discoverReader.signalForLegacy(updated).catch(() => null);
         // Keep the direct-user taste ledger aligned with Discover's explicit reaction.
         // Saved/seen/new are never positive signals; ledger entry becomes inactive.
         try{
