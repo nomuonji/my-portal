@@ -190,8 +190,16 @@ export default function PersonalFeed(){
   const fetchNow=async()=>{
     setFetching(true);setError('');setNotice('');
     try{
-      const r=await request('',{action:'discover_fetch_now'});
-      setNotice(r.fetched?`${r.fetched}件の情報源を確認、新着 ${r.created}件`+(r.errors?.length?`（取得失敗 ${r.errors.length}件）`:''):'今は取得間隔内です（各情報源は既定で1時間おき）');
+      // The server works in ~7s slices; keep calling while sources remain.
+      let fetched=0,created=0,errors=[];
+      for(let round=0;round<8;round++){
+        const r=await request('',{action:'discover_fetch_now'});
+        fetched+=r.fetched||0;created+=r.created||0;errors=errors.concat(r.errors||[]);
+        if(round===0||r.created)await load();
+        setNotice(`取得中… ${fetched}件の情報源を確認、新着 ${created}件`);
+        if(!r.remaining)break;
+      }
+      setNotice(fetched?`${fetched}件の情報源を確認、新着 ${created}件`+(errors.length?`（取得失敗 ${errors.length}件: ${errors.map(e=>e.error).slice(0,2).join(' / ')}）`:''):'今は取得間隔内です（各情報源は既定で1時間おき）');
       await load();
     }catch(e){setError(e.message);}finally{setFetching(false);}
   };

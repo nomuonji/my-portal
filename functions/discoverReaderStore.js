@@ -82,18 +82,18 @@ async function assertPublicUrl(raw) {
   return u;
 }
 /** GET with SSRF checks on every redirect hop, timeout and size cap. */
-async function safeFetch(url, { headers = {}, accept = 'application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9, text/html;q=0.6, */*;q=0.3' } = {}) {
+async function safeFetch(url, { headers = {}, timeoutMs = FETCH_TIMEOUT_MS, accept = 'application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9, text/html;q=0.6, */*;q=0.3' } = {}) {
   let current = url;
   for (let hop = 0; hop < 4; hop++) {
     await assertPublicUrl(current);
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     let res;
     try {
       res = await fetch(current, { redirect: 'manual', signal: controller.signal, headers: { 'User-Agent': USER_AGENT, Accept: accept, ...headers } });
     } catch (error) {
       clearTimeout(timer);
-      throw Error(error?.name === 'AbortError' ? 'Timed out after ' + FETCH_TIMEOUT_MS / 1000 + 's' : 'Network error: ' + String(error?.message || error).slice(0, 160));
+      throw Error(error?.name === 'AbortError' ? 'Timed out after ' + Math.round(timeoutMs / 100) / 10 + 's' : 'Network error: ' + String(error?.message || error).slice(0, 160));
     }
     if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
       clearTimeout(timer);
@@ -243,7 +243,7 @@ function buildItem(source, entry, fetchedAt) {
   };
   return { ...base, features: model.featuresOf(base) };
 }
-async function fetchSource(source, { force = false } = {}) {
+async function fetchSource(source, { force = false, timeoutMs = FETCH_TIMEOUT_MS } = {}) {
   const started = Date.now();
   const reader = source.reader || {};
   const headers = {};
@@ -251,7 +251,7 @@ async function fetchSource(source, { force = false } = {}) {
   if (!force && reader.lastModified) headers['If-Modified-Since'] = reader.lastModified;
   const ref = sourcesDb().collection(SOURCES).doc(source.id);
   try {
-    const res = await safeFetch(source.feedUrl, { headers });
+    const res = await safeFetch(source.feedUrl, { headers, timeoutMs });
     if (res.status === 304) {
       await ref.set({ reader: { ...reader, lastFetchedAt: nowIso(), lastStatus: 'not_modified', lastError: '', consecutiveFailures: 0, lastNewCount: 0 } }, { merge: true });
       return { sourceId: source.id, status: 'not_modified', created: 0, ms: Date.now() - started };
@@ -275,10 +275,9 @@ async function fetchSource(source, { force = false } = {}) {
       // Expired items must not come back: dated entries are filtered by the window above,
       // reacted ones by their persistent signal, undated ones by a per-source seen list.
       const undated = new Set(Array.isArray(reader.undatedSeen) ? reader.undatedSeen : []);
-      const [snaps, signalSnaps] = await Promise.all([
-        itemsDb().getAll(...refs),
-        itemsDb().getAll(...candidates.map(i => itemsDb().collection(SIGNALS).doc('sig-' + i.id))),
-      ]);
+      // One round trip for both existence checks (items + reacted-item tombstones).
+      const all = await itemsDb().getAll(...refs, ...candidates.map(i => itemsDb().collection(SIGNALS).doc('sig-' + i.id)));
+      const snaps = all.slice(0, refs.length), signalSnaps = all.slice(refs.length);
       const batch = itemsDb().batch();
       candidates.forEach((item, i) => {
         const known = item.dateEstimated && undated.has(item.id);
@@ -314,9 +313,16 @@ async function pool(list, size, fn) {
   }));
   return out;
 }
-/** Fetch due (or forced) sources. Bounded so it fits a scheduled-function budget. */
+/**
+ * Fetch due (or forced) sources within a time budget. Web requests on Netlify are
+ * cut at ~10s, so callers pass budgetMs and repeat while `remaining` > 0; each
+ * source's result is written as soon as it finishes, so partial progress is kept.
+ */
 async function fetchDue(args = {}) {
-  const now = Date.now();
+  const started = Date.now();
+  const budgetMs = Math.max(3000, Math.min(60000, Number(args.budgetMs) || 7000));
+  const deadline = started + budgetMs;
+  const now = started;
   const only = trim(args.sourceId, 80);
   const sources = (await allSources()).filter(s => only ? s.id === only : readable(s));
   if (only && !sources.length) throw Error('Source not found: ' + only);
@@ -325,11 +331,17 @@ async function fetchDue(args = {}) {
     || now - Date.parse(s.reader.lastFetchedAt) >= Math.max(30, s.fetchIntervalMinutes) * 60000 * (s.reader.consecutiveFailures >= 3 ? 4 : 1) - 120000)
     .sort((a, b) => (Date.parse(a.reader?.lastFetchedAt || 0) || 0) - (Date.parse(b.reader?.lastFetchedAt || 0) || 0))
     .slice(0, Math.min(60, Number(args.maxSources) || 40));
-  const results = await pool(due, 6, s => fetchSource(s, { force: Boolean(args.force) }));
+  let skipped = 0;
+  const results = (await pool(due, 6, async s => {
+    const left = deadline - Date.now();
+    // Each source needs time for the request plus a few database round trips.
+    if (left < 2500) { skipped++; return null; }
+    return fetchSource(s, { force: Boolean(args.force), timeoutMs: Math.max(1500, Math.min(FETCH_TIMEOUT_MS, left - 1500)) });
+  })).filter(Boolean);
   return {
-    checkedSources: sources.length, fetched: results.length,
+    checkedSources: sources.length, due: due.length, fetched: results.length, remaining: skipped,
     created: results.reduce((n, r) => n + (r.created || 0), 0),
-    errors: results.filter(r => r.status === 'error'), results,
+    errors: results.filter(r => r.status === 'error'), results, ms: Date.now() - started,
   };
 }
 
@@ -359,9 +371,10 @@ async function purge() {
 }
 async function runScheduled() {
   const started = Date.now();
-  const fetched = await fetchDue({});
+  // Scheduled functions may run 30s; keep headroom for the purge.
+  const fetched = await fetchDue({ budgetMs: 22000 });
   const purged = await purge();
-  const run = { at: nowIso(), ms: Date.now() - started, fetched: fetched.fetched, created: fetched.created,
+  const run = { at: nowIso(), ms: Date.now() - started, fetched: fetched.fetched, remaining: fetched.remaining, created: fetched.created,
     errors: fetched.errors.map(e => ({ sourceId: e.sourceId, error: e.error })).slice(0, 20), ...purged };
   await itemsDb().collection(MODEL).doc('lastRun').set(run);
   return run;

@@ -392,7 +392,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "discover_source_list") return structured(await discoverReader.sourcesList(args));
   if (name === "discover_source_test") return structured(await discoverReader.sourceTest(args));
   if (name === "discover_source_upsert") return structured(await discoverReader.sourceUpsert(args));
-  if (name === "discover_fetch_now") return structured(await discoverReader.fetchDue({ sourceId: args.sourceId, force: args.force }));
+  if (name === "discover_fetch_now") return structured(await discoverReader.fetchDue({ sourceId: args.sourceId, force: args.force, budgetMs: 6000 }));
   if (name === "discover_items_list") return structured(await discoverReader.list({ ...args, max: args.max || 60 }));
   if (name === "discover_taste_model_get") return structured(await discoverReader.modelGet(args));
   if (name === "discover_item_feedback") {
