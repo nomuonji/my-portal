@@ -143,6 +143,20 @@ export default function PersonalFeed(){
   const [busy,setBusy]=useState('');
   const [autoRead,setAutoRead]=useState(()=>{try{return localStorage.getItem('discover.autoRead')!=='off';}catch{return true;}});
   const generation=useRef(0);
+  // My Portal scrolls inside a panel under the top bar, not the window. Observers must use
+  // that panel as their root, otherwise "scrolled off the top" is measured against the
+  // window edge, which items never cross. undefined = not measured yet, null = window.
+  const rootEl=useRef(null);
+  const [scrollRoot,setScrollRoot]=useState(undefined);
+  useEffect(()=>{
+    let el=rootEl.current?.parentElement||null;
+    while(el&&el!==document.body){
+      const oy=getComputedStyle(el).overflowY;
+      if((oy==='auto'||oy==='scroll')&&el.scrollHeight>=el.clientHeight)break;
+      el=el.parentElement;
+    }
+    setScrollRoot(el&&el!==document.body?el:null);
+  },[]);
   const cursor=useRef(0);
 
   useEffect(()=>{const t=setTimeout(()=>setQuery(queryInput.trim()),350);return()=>clearTimeout(t);},[queryInput]);
@@ -184,10 +198,11 @@ export default function PersonalFeed(){
   useEffect(()=>{
     const el=sentinel.current;
     if(!el)return;
-    const io=new IntersectionObserver(es=>{if(es.some(e=>e.isIntersecting))loadMore();},{rootMargin:'800px 0px'});
+    if(scrollRoot===undefined)return;
+    const io=new IntersectionObserver(es=>{if(es.some(e=>e.isIntersecting))loadMore();},{root:scrollRoot,rootMargin:'800px 0px'});
     io.observe(el);
     return()=>io.disconnect();
-  },[loadMore,items.length]);
+  },[loadMore,items.length,scrollRoot]);
 
   // ---- read on scroll: an item that was on screen and then scrolled off the top is read
   const pending=useRef(new Set());
@@ -225,20 +240,20 @@ export default function PersonalFeed(){
   },[flush]);
   useEffect(()=>{readById.current=new Map(items.map(x=>[x.id,Boolean(x.readAt)]));},[items]);
   const observer=useMemo(()=>{
-    if(typeof IntersectionObserver==='undefined')return null;
+    if(typeof IntersectionObserver==='undefined'||scrollRoot===undefined)return null;
     // When anything scrolls off the top, every item now above the screen counts as read.
     // A fast flick can carry items from below the screen to above it in one frame, and those
     // never produce an event of their own, so they are found by position instead.
     return new IntersectionObserver(entries=>{
-      const top=entries[0]?.rootBounds?.top||0;
+      const top=entries[0]?.rootBounds?.top??(scrollRoot?scrollRoot.getBoundingClientRect().top:0);
       if(!entries.some(e=>!e.isIntersecting&&e.boundingClientRect.bottom<=top+1))return;
       const above=[];
       document.querySelectorAll('article[data-id]').forEach(el=>{
         if(el.getBoundingClientRect().bottom<=top+1&&readById.current.get(el.dataset.id)===false)above.push(el.dataset.id);
       });
       markReadLocal(above);
-    },{threshold:0});
-  },[markReadLocal]);
+    },{root:scrollRoot,threshold:0});
+  },[markReadLocal,scrollRoot]);
   useEffect(()=>()=>observer&&observer.disconnect(),[observer]);
   const watch=useCallback(el=>{if(el&&observer&&autoRead)observer.observe(el);},[observer,autoRead]);
   useEffect(()=>{if(!autoRead&&observer)observer.disconnect();},[autoRead,observer]);
@@ -285,7 +300,7 @@ export default function PersonalFeed(){
   const noSources=!loading&&!meta.sources.length&&!query&&!source;
   const lastRun=meta.lastRun;
 
-  return <Box sx={{maxWidth:1280,mx:'auto',pb:6,color:V.ink}}>
+  return <Box ref={rootEl} sx={{maxWidth:1280,mx:'auto',pb:6,color:V.ink}}>
     <Box component="header" sx={{pt:{xs:1,md:1.5}}}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
         <Typography sx={{fontFamily:MONO,fontSize:{xs:11,md:12},letterSpacing:'.06em',color:V.muted}}>
