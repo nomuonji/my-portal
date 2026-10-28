@@ -126,4 +126,30 @@ function summarize(entries, { limit = 20 } = {}) {
     authors: top(by('author'), 1).concat(top(by('author'), -1)),
   };
 }
-module.exports = { LABELS, WEIGHT, featuresOf, evidenceOf, applyDelta, featureWeight, scoreItem, summarize, toMap, host };
+/**
+ * Re-rank so one high-volume source can't fill the page with a block of its items.
+ * Greedy: at each position pick the candidate with the best (score - penalty x how many
+ * of the last `window` picks share its source). A source the user clearly likes still
+ * appears more often; it just stops arriving in clumps. O(n * lookahead).
+ */
+function diversify(items, { window = 8, penalty = 0.45, lookahead = 80, scoreOf = x => x.score, keyOf = x => x.sourceId } = {}) {
+  const remaining = items.slice().sort((a, b) => scoreOf(b) - scoreOf(a));
+  const out = [], recent = [];
+  while (remaining.length) {
+    let best = 0, bestValue = -Infinity;
+    const span = Math.min(lookahead, remaining.length);
+    for (let i = 0; i < span; i++) {
+      const key = keyOf(remaining[i]);
+      let same = 0;
+      for (const r of recent) if (r === key) same++;
+      const value = scoreOf(remaining[i]) - penalty * same;
+      if (value > bestValue) { bestValue = value; best = i; }
+    }
+    const [pick] = remaining.splice(best, 1);
+    out.push(pick);
+    recent.push(keyOf(pick));
+    if (recent.length > window) recent.shift();
+  }
+  return out;
+}
+module.exports = { LABELS, WEIGHT, featuresOf, diversify, evidenceOf, applyDelta, featureWeight, scoreItem, summarize, toMap, host };

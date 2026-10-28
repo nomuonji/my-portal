@@ -15,6 +15,19 @@ same stream as the source **AI選書** and follow the same retention.
 | `discoverReaderModel/lastRun` | Last scheduled run summary. | overwritten |
 | `personalDiscoveryFeed` (legacy AI picks) | Shown as "AI選書"; purged with the same rule by ingestion time. Reactions were converted to signals once (`discoverReaderModel/legacy-import-v1`). | 7 / 30 days |
 
+## Reading queue (2026-10-28)
+
+`/discover` asks for a **queue** once per filter set (`resource=discover_queue`: sort, view
+unread/all/saved, type, sourceId, q). The server scores and **interleaves sources** (greedy
+re-rank: score − 0.45 × same-source items among the last 8; 新着 uses recency with a lighter
+penalty) and returns all ordered ids plus the first 30 items. The screen then loads further
+pages by id (`resource=discover_items&ids=…`) as you scroll.
+
+**Read on scroll:** when an item scrolls off the top of the screen, every item above the screen
+is marked read (batched every 2.5 s, flushed with keepalive when the page is hidden). The 未読
+view excludes read items, so the next visit doesn't repeat them. Read state is never a taste
+signal. It can be turned off with the 「スクロールで既読」 toggle (stored per browser).
+
 ## Fetching
 
 `netlify/functions/discover-reader-fetch.mts` runs `@hourly`: fetches due sources (default
@@ -23,6 +36,14 @@ no AI calls. Each request uses HTTPS only, SSRF checks on every redirect hop (pr
 addresses refused), a 9 s timeout, a 2.5 MB cap, and ETag/Last-Modified. Only entries published
 within 7 days are ingested; reacted items never re-enter after expiry (signal tombstone); undated
 entries are remembered per source so they don't reappear.
+
+Each source keeps `reader.seen` (ids in its latest feed snapshots, ≤400). A routine fetch only
+touches the database for entries that are new to the feed (existence + signal check), then
+writes one source update. In production a database round trip is ~0.7 s, so the earlier
+"check every entry on every fetch" version could not finish within the 10 s/30 s function limits
+and left no fetch record. `lastRun` is written at start (`status: running`) and at the end
+(`status: done`, per-source `timings`), so a cut-off run is visible. Changing a source's feed URL
+or archiving it deletes that source's unreacted items and resets `seen`.
 
 Supported formats: RSS 2.0, RSS 1.0/RDF (e.g. はてブ), Atom (incl. YouTube channel feeds →
 videos play inline). A site/channel page URL is resolved through `<link rel="alternate">`.
