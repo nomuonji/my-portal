@@ -150,6 +150,16 @@ export default async (request: Request) => {
         includeSkipped: url.searchParams.get("includeSkipped") === "true",
         limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 500, 1), 600),
       }));
+      if (resource === "discover_queue") return json(await discoverReader.queue({
+        sort: url.searchParams.get("sort") || "score",
+        view: url.searchParams.get("view") || "unread",
+        type: url.searchParams.get("type") || undefined,
+        sourceId: url.searchParams.get("sourceId") || undefined,
+        q: url.searchParams.get("q") || undefined,
+        includeSkipped: url.searchParams.get("includeSkipped") === "true",
+        pageSize: Number(url.searchParams.get("pageSize")) || 30,
+      }));
+      if (resource === "discover_items") return json(await discoverReader.itemsByIds({ ids: url.searchParams.get("ids") || "" }));
       if (resource === "discover_sources") return json(await discoverReader.sourcesList({ includeArchived: url.searchParams.get("includeArchived") === "true" }));
       if (resource === "discover_model") return json(await discoverReader.modelGet({ limit: 20 }));
       if (resource === "personal_feed") return json(await personalFeed.list({limit:Math.min(Math.max(Number(url.searchParams.get("limit"))||160,1),500),includeSkipped:url.searchParams.get("includeSkipped")==="true"}));

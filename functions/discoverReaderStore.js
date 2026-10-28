@@ -221,9 +221,26 @@ async function sourceUpsert(args = {}) {
     if (dupe.exists) existing = dupe.data();
   }
   const ref = sourcesDb().collection(SOURCES).doc(id);
-  await ref.set({ ...data, ...(existing ? {} : { createdAt: FieldValue.serverTimestamp() }), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  const feedChanged = Boolean(existing && test && existing.feedUrl && existing.feedUrl !== test.feedUrl);
+  // A new feed URL starts with a clean "already seen" list so its items are ingested.
+  const resetReader = feedChanged ? { reader: { seen: [], lastFetchedAt: null, etag: '', lastModified: '' } } : {};
+  await ref.set({ ...data, ...resetReader, ...(existing ? {} : { createdAt: FieldValue.serverTimestamp() }), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  // Items from a replaced feed or an archived source are dropped unless the user reacted to them.
+  const cleared = (feedChanged || (existing && data.status === 'archived' && existing.status !== 'archived'))
+    ? await clearUnreactedItems(id) : 0;
   const saved = sourceView(await ref.get());
-  return { outcome: existing ? 'updated' : 'created', source: saved, readable: Boolean(readable(saved)), test };
+  return { outcome: existing ? 'updated' : 'created', source: saved, readable: Boolean(readable(saved)), test, clearedItems: cleared };
+}
+async function clearUnreactedItems(sourceId) {
+  const snap = await itemsDb().collection(ITEMS).where('sourceId', '==', sourceId).limit(500).get();
+  const batch = itemsDb().batch();
+  let n = 0;
+  for (const doc of snap.docs) {
+    const d = doc.data();
+    if ((d.feedback || 'new') === 'new' && !d.opened) { batch.delete(doc.ref); n++; }
+  }
+  if (n) await batch.commit();
+  return n;
 }
 
 // ---------------------------------------------------------------- fetching
@@ -250,60 +267,66 @@ async function fetchSource(source, { force = false, timeoutMs = FETCH_TIMEOUT_MS
   if (!force && reader.etag) headers['If-None-Match'] = reader.etag;
   if (!force && reader.lastModified) headers['If-Modified-Since'] = reader.lastModified;
   const ref = sourcesDb().collection(SOURCES).doc(source.id);
+  let httpMs = 0;
   try {
     const res = await safeFetch(source.feedUrl, { headers, timeoutMs });
+    httpMs = Date.now() - started;
     if (res.status === 304) {
-      await ref.set({ reader: { ...reader, lastFetchedAt: nowIso(), lastStatus: 'not_modified', lastError: '', consecutiveFailures: 0, lastNewCount: 0 } }, { merge: true });
-      return { sourceId: source.id, status: 'not_modified', created: 0, ms: Date.now() - started };
+      await ref.set({ reader: { lastFetchedAt: nowIso(), lastStatus: 'not_modified', lastError: '', consecutiveFailures: 0, lastNewCount: 0 } }, { merge: true });
+      return { sourceId: source.id, status: 'not_modified', created: 0, httpMs, ms: Date.now() - started };
     }
     if (res.status >= 400) throw Error('HTTP ' + res.status);
     const feed = parseFeed(res.body, res.url);
     const fetchedAt = nowIso(), cutoff = Date.now() - RETENTION_DAYS * DAY;
-    const seen = new Set();
-    const candidates = [];
+    // Everything in this feed snapshot is remembered as seen, including entries outside the
+    // retention window, so routine fetches skip them without any database reads and expired
+    // items never come back while they are still listed in the feed.
+    const seenBefore = new Set(Array.isArray(reader.seen) ? reader.seen : (Array.isArray(reader.undatedSeen) ? reader.undatedSeen : []));
+    const feedIds = [];
+    const fresh = [];
     for (const entry of feed.items) {
-      if (candidates.length >= MAX_ITEMS_PER_FETCH) break;
-      if (entry.publishedAt && Date.parse(entry.publishedAt) < cutoff) continue;
       if (entry.publishedAt && Date.parse(entry.publishedAt) > Date.now() + DAY) entry.publishedAt = '';
-      const item = buildItem(source, entry, fetchedAt);
-      if (!item.url || seen.has(item.id)) continue;
-      seen.add(item.id); candidates.push(item);
+      const url = canonicalUrl(entry.url);
+      if (!url) continue;
+      const id = itemIdFor(url);
+      if (feedIds.includes(id)) continue;
+      feedIds.push(id);
+      if (seenBefore.has(id) && !force) continue;
+      if (entry.publishedAt && Date.parse(entry.publishedAt) < cutoff) continue;
+      if (fresh.length < MAX_ITEMS_PER_FETCH) fresh.push(buildItem(source, entry, fetchedAt));
     }
     let created = 0;
-    if (candidates.length) {
-      const refs = candidates.map(i => itemsDb().collection(ITEMS).doc(i.id));
-      // Expired items must not come back: dated entries are filtered by the window above,
-      // reacted ones by their persistent signal, undated ones by a per-source seen list.
-      const undated = new Set(Array.isArray(reader.undatedSeen) ? reader.undatedSeen : []);
-      // One round trip for both existence checks (items + reacted-item tombstones).
-      const all = await itemsDb().getAll(...refs, ...candidates.map(i => itemsDb().collection(SIGNALS).doc('sig-' + i.id)));
-      const snaps = all.slice(0, refs.length), signalSnaps = all.slice(refs.length);
+    const dbStarted = Date.now();
+    if (fresh.length) {
+      // Only new-to-this-feed entries are checked: already stored (e.g. same URL in another
+      // source, or a write that was cut off) or reacted to and expired (signal tombstone).
+      const refs = fresh.map(i => itemsDb().collection(ITEMS).doc(i.id));
+      const all = await itemsDb().getAll(...refs, ...fresh.map(i => itemsDb().collection(SIGNALS).doc('sig-' + i.id)));
       const batch = itemsDb().batch();
-      candidates.forEach((item, i) => {
-        const known = item.dateEstimated && undated.has(item.id);
-        if (item.dateEstimated) undated.add(item.id);
-        if (known || snaps[i].exists || signalSnaps[i].exists) return;
+      fresh.forEach((item, i) => {
+        if (all[i].exists || all[fresh.length + i].exists) return;
         batch.set(refs[i], { ...item, createdAt: FieldValue.serverTimestamp() });
         created++;
       });
       if (created) await batch.commit();
-      reader.undatedSeen = [...undated].slice(-300);
     }
+    const seen = [...feedIds, ...[...seenBefore].filter(id => !feedIds.includes(id))].slice(0, 400);
     const etag = res.headers.get('etag') || '', lastModified = res.headers.get('last-modified') || '';
     await ref.set({
       fetchVerification: 'verified',
       reader: { lastFetchedAt: fetchedAt, lastSuccessAt: fetchedAt, lastStatus: 'ok', lastError: '', consecutiveFailures: 0,
-        lastNewCount: created, lastItemCount: feed.items.length, undatedSeen: reader.undatedSeen || [], etag: etag.slice(0, 200), lastModified: lastModified.slice(0, 100), feedTitle: feed.title },
+        lastNewCount: created, lastItemCount: feed.items.length, seen, undatedSeen: FieldValue.delete(),
+        etag: etag.slice(0, 200), lastModified: lastModified.slice(0, 100), feedTitle: feed.title },
     }, { merge: true });
-    return { sourceId: source.id, status: 'ok', created, inFeed: feed.items.length, ms: Date.now() - started };
+    return { sourceId: source.id, status: 'ok', created, inFeed: feed.items.length, newToFeed: fresh.length, httpMs, dbMs: Date.now() - dbStarted, ms: Date.now() - started };
   } catch (error) {
     const message = String(error?.message || error).slice(0, 300);
     const failures = (Number(reader.consecutiveFailures) || 0) + 1;
     await ref.set({
       ...(failures >= 5 ? { fetchVerification: 'failed' } : {}),
-      reader: { ...reader, lastFetchedAt: nowIso(), lastStatus: 'error', lastError: message, consecutiveFailures: failures },
+      reader: { lastFetchedAt: nowIso(), lastStatus: 'error', lastError: message, consecutiveFailures: failures },
     }, { merge: true }).catch(() => {});
-    return { sourceId: source.id, status: 'error', error: message, ms: Date.now() - started };
+    return { sourceId: source.id, status: 'error', error: message, httpMs, ms: Date.now() - started };
   }
 }
 async function pool(list, size, fn) {
@@ -332,11 +355,12 @@ async function fetchDue(args = {}) {
     .sort((a, b) => (Date.parse(a.reader?.lastFetchedAt || 0) || 0) - (Date.parse(b.reader?.lastFetchedAt || 0) || 0))
     .slice(0, Math.min(60, Number(args.maxSources) || 40));
   let skipped = 0;
-  const results = (await pool(due, 6, async s => {
+  const results = (await pool(due, 4, async s => {
     const left = deadline - Date.now();
-    // Each source needs time for the request plus a few database round trips.
-    if (left < 2500) { skipped++; return null; }
-    return fetchSource(s, { force: Boolean(args.force), timeoutMs: Math.max(1500, Math.min(FETCH_TIMEOUT_MS, left - 1500)) });
+    // Each source needs the request plus up to three database round trips (~0.7s each in
+    // production), so don't start one that can't finish inside the request limit.
+    if (left < 4000) { skipped++; return null; }
+    return fetchSource(s, { force: Boolean(args.force), timeoutMs: Math.max(1500, Math.min(FETCH_TIMEOUT_MS, left - 3000)) });
   })).filter(Boolean);
   return {
     checkedSources: sources.length, due: due.length, fetched: results.length, remaining: skipped,
@@ -371,13 +395,19 @@ async function purge() {
 }
 async function runScheduled() {
   const started = Date.now();
-  // Scheduled functions may run 30s; keep headroom for the purge.
-  const fetched = await fetchDue({ budgetMs: 22000 });
-  const purged = await purge();
-  const run = { at: nowIso(), ms: Date.now() - started, fetched: fetched.fetched, remaining: fetched.remaining, created: fetched.created,
-    errors: fetched.errors.map(e => ({ sourceId: e.sourceId, error: e.error })).slice(0, 20), ...purged };
-  await itemsDb().collection(MODEL).doc('lastRun').set(run);
-  return run;
+  const runRef = itemsDb().collection(MODEL).doc('lastRun');
+  // Written first, so a run that is cut off still shows up as "started, not finished".
+  await runRef.set({ startedAt: nowIso(), status: 'running', at: null });
+  const fetched = await fetchDue({ budgetMs: 20000 });
+  const run = { startedAt: new Date(started).toISOString(), at: nowIso(), status: 'fetched', ms: Date.now() - started,
+    fetched: fetched.fetched, remaining: fetched.remaining, created: fetched.created,
+    errors: fetched.errors.map(e => ({ sourceId: e.sourceId, error: e.error })).slice(0, 20),
+    timings: fetched.results.map(r => ({ sourceId: r.sourceId, ms: r.ms, httpMs: r.httpMs, dbMs: r.dbMs })).slice(0, 40) };
+  await runRef.set(run);
+  const purged = Date.now() - started < 24000 ? await purge() : { deleted: 0, legacyDeleted: 0, skipped: 'out of time' };
+  const done = { ...run, ...purged, status: 'done', ms: Date.now() - started, at: nowIso() };
+  await runRef.set(done);
+  return done;
 }
 
 // ---------------------------------------------------------------- signals / model
@@ -409,20 +439,23 @@ async function recordSignal(item, { label, opened }) {
   });
 }
 let legacyImported = false;
-async function importLegacySignalsOnce() {
+/** Convert reactions on old AI picks into signals, a few per run so it never blocks a run. */
+async function importLegacySignalsOnce(maxPerRun = 15) {
   if (legacyImported) return;
   const marker = itemsDb().collection(MODEL).doc('legacy-import-v1');
-  if ((await marker.get()).exists) { legacyImported = true; return; }
+  const m = await marker.get();
+  if (m.exists && m.data().done) { legacyImported = true; return; }
+  const done = new Set(m.exists ? (m.data().ids || []) : []);
   const snap = await itemsDb().collection(LEGACY).limit(500).get();
-  let imported = 0;
-  for (const doc of snap.docs) {
+  const todo = snap.docs.filter(doc => { const f = doc.data().feedback; return f && f !== 'new' && !done.has(doc.id); });
+  for (const doc of todo.slice(0, maxPerRun)) {
     const d = doc.data();
-    if (!d.feedback || d.feedback === 'new') continue;
     await recordSignal(legacyToItem({ id: doc.id, ...d }), { label: d.feedback === 'seen' ? 'new' : d.feedback, opened: d.feedback === 'seen' });
-    imported++;
+    done.add(doc.id);
   }
-  await marker.set({ imported, at: nowIso() });
-  legacyImported = true;
+  const finished = todo.length <= maxPerRun;
+  await marker.set({ ids: [...done].slice(-600), done: finished, imported: done.size, at: nowIso() });
+  if (finished) legacyImported = true;
 }
 
 // ---------------------------------------------------------------- reading API
@@ -442,15 +475,22 @@ function legacyView(doc) {
   return {
     ...base, excerpt: d.description || '', reason: d.reason || '', category: d.category || '', thumbnail: d.thumbnail || '',
     videoId: d.videoId || '', publishedAt: published || null, ingestedAt: iso(d.createdAt), feedback: d.feedback === 'seen' ? 'new' : (d.feedback || 'new'),
-    readAt: d.feedback === 'seen' ? iso(d.updatedAt) : null, opened: d.feedback === 'seen', revision: d.revision || 1,
+    readAt: d.readerReadAt || (d.feedback === 'seen' ? iso(d.updatedAt) : null), opened: d.feedback === 'seen' || Boolean(d.readerOpened), revision: d.revision || 1,
     origin: 'agent', features: model.featuresOf(base), editorialStatus: d.editorialStatus || null,
   };
 }
-async function list(args = {}) {
+/**
+ * Build the reading queue: filter, score, and interleave sources. Returns the ordered ids
+ * plus the first page of full items; the client then pages through the ids with
+ * itemsByIds(), so a session costs one scan and small follow-up reads.
+ */
+async function queue(args = {}) {
   const now = Date.now();
-  const limit = Math.min(600, Math.max(1, Number(args.limit) || 400));
+  const scanLimit = Math.min(1500, Math.max(50, Number(args.scanLimit) || 900));
+  const pageSize = Math.min(100, Math.max(5, Number(args.pageSize) || 30));
+  const view = ['unread', 'all', 'saved'].includes(args.view) ? args.view : 'unread';
   const [snap, legacySnap, entries, sources, lastRun] = await Promise.all([
-    itemsDb().collection(ITEMS).where('publishedAtMs', '>=', now - KEEP_MARKED_DAYS * DAY).orderBy('publishedAtMs', 'desc').limit(limit).get(),
+    itemsDb().collection(ITEMS).where('publishedAtMs', '>=', now - KEEP_MARKED_DAYS * DAY).orderBy('publishedAtMs', 'desc').limit(scanLimit).get(),
     args.includeAgentPicks === false ? null : itemsDb().collection(LEGACY).orderBy('createdAt', 'desc').limit(80).get(),
     readModel(), allSources(),
     itemsDb().collection(MODEL).doc('lastRun').get(),
@@ -465,27 +505,68 @@ async function list(args = {}) {
     const urls = new Set(items.map(i => i.url));
     items = items.concat(legacy.filter(x => !urls.has(canonicalUrl(x.url))));
   }
+  if (!args.includeSkipped) items = items.filter(x => x.feedback !== 'skipped');
+  // Per-source counts before the source/type/search filters, for the source chips.
+  const counts = {};
+  for (const x of items) {
+    const c = counts[x.sourceId] || (counts[x.sourceId] = { id: x.sourceId, title: x.sourceTitle, unread: 0, total: 0 });
+    c.total++; if (!x.readAt) c.unread++;
+  }
+  const unreadTotal = items.filter(x => !x.readAt).length;
+  if (view === 'unread' || args.unreadOnly) items = items.filter(x => !x.readAt);
+  if (view === 'saved' || args.savedOnly) items = items.filter(x => ['saved', 'loved'].includes(x.feedback));
   if (args.sourceId) items = items.filter(x => x.sourceId === args.sourceId);
   if (args.type === 'video' || args.type === 'article') items = items.filter(x => args.type === 'video' ? x.type === 'video' : x.type !== 'video');
-  if (!args.includeSkipped) items = items.filter(x => x.feedback !== 'skipped');
-  if (args.unreadOnly) items = items.filter(x => !x.readAt);
-  if (args.savedOnly) items = items.filter(x => ['saved', 'loved'].includes(x.feedback));
+  const q = trim(args.q, 100).normalize('NFKC').toLocaleLowerCase('ja-JP');
+  if (q) items = items.filter(x => [x.title, x.excerpt, x.sourceTitle, x.author, ...(x.categories || [])].join(' ')
+    .normalize('NFKC').toLocaleLowerCase('ja-JP').includes(q));
   for (const item of items) {
     const s = model.scoreItem(map, item, { sourcePriority: priority.get(item.sourceId) || 0, now });
     item.score = s.score; item.why = s.why; item.exploration = s.exploration;
     delete item.features;
   }
   const sort = args.sort === 'new' ? 'new' : 'score';
-  items.sort(sort === 'new'
-    ? (a, b) => (Date.parse(b.publishedAt) || 0) - (Date.parse(a.publishedAt) || 0)
-    : (a, b) => b.score - a.score || (Date.parse(b.publishedAt) || 0) - (Date.parse(a.publishedAt) || 0));
-  const max = Math.min(limit, Number(args.max) || limit);
+  // Both orders interleave sources; 新着 only lightly, so it stays close to time order.
+  const ordered = sort === 'new'
+    ? model.diversify(items, { scoreOf: x => -((now - (Date.parse(x.publishedAt) || now)) / 3600000) / 6, penalty: 0.6, window: 5 })
+    : model.diversify(items, { penalty: 0.45, window: 8 });
   return {
-    items: items.slice(0, max), count: Math.min(items.length, max), total: items.length, sort,
+    ids: ordered.map(x => x.id), items: ordered.slice(0, pageSize), total: ordered.length, unreadTotal, sort, view,
     retentionDays: RETENTION_DAYS, keepMarkedDays: KEEP_MARKED_DAYS,
-    sources: sources.filter(readable).map(s => ({ id: s.id, title: s.title, category: s.category, priority: s.priority, reader: s.reader })),
+    sources: Object.values(counts).sort((a, b) => b.unread - a.unread),
     lastRun: lastRun.exists ? lastRun.data() : null,
   };
+}
+/** Next page of the queue, in the requested order. */
+async function itemsByIds(args = {}) {
+  const ids = (Array.isArray(args.ids) ? args.ids : String(args.ids || '').split(','))
+    .map(x => trim(x, 80)).filter(x => /^(rss|cur)-[a-f0-9]{30}$/.test(x)).slice(0, 60);
+  if (!ids.length) return { items: [] };
+  const [snaps, entries, sources] = await Promise.all([
+    itemsDb().getAll(...ids.map(id => itemsDb().collection(id.startsWith('rss-') ? ITEMS : LEGACY).doc(id))),
+    readModel(), allSources(),
+  ]);
+  const priority = new Map(sources.map(s => [s.id, s.priority]));
+  const map = model.toMap(entries);
+  const now = Date.now();
+  const items = [];
+  snaps.forEach((snap, i) => {
+    if (!snap.exists) return;
+    const item = ids[i].startsWith('rss-') ? itemView(snap.data(), ids[i]) : legacyView(snap);
+    const s = model.scoreItem(map, item, { sourcePriority: priority.get(item.sourceId) || 0, now });
+    item.score = s.score; item.why = s.why; item.exploration = s.exploration;
+    delete item.features;
+    items.push(item);
+  });
+  return { items };
+}
+/** MCP/agent view: same ranking as the app, one page. */
+async function list(args = {}) {
+  const max = Math.min(200, Math.max(1, Number(args.max) || 60));
+  const view = args.savedOnly ? 'saved' : args.unreadOnly ? 'unread' : 'all';
+  const r = await queue({ ...args, view, pageSize: max });
+  return { items: r.items, count: r.items.length, total: r.total, unreadTotal: r.unreadTotal, sort: r.sort,
+    retentionDays: r.retentionDays, keepMarkedDays: r.keepMarkedDays, sources: r.sources, lastRun: r.lastRun };
 }
 async function loadAny(id) {
   if (/^rss-[a-f0-9]{30}$/.test(id)) {
@@ -534,18 +615,27 @@ async function opened(args = {}) {
   const id = trim(args.id, 80);
   const { ref, item, legacy } = await loadAny(id);
   if (!legacy) await ref.update({ opened: true, readAt: item.readAt || nowIso() });
+  else await ref.update({ readerOpened: true, readerReadAt: item.readAt || nowIso() });
   await recordSignal(item, { opened: true });
   return { id, opened: true };
 }
-/** Read state only — never a taste signal. */
+/** Read state only — never a taste signal. Accepts feed items and old AI picks. */
 async function markRead(args = {}) {
-  const ids = (Array.isArray(args.ids) ? args.ids : []).map(x => trim(x, 80)).filter(x => /^rss-[a-f0-9]{30}$/.test(x)).slice(0, 300);
+  const ids = [...new Set((Array.isArray(args.ids) ? args.ids : []).map(x => trim(x, 80)))]
+    .filter(x => /^(rss|cur)-[a-f0-9]{30}$/.test(x)).slice(0, 300);
   if (!ids.length) return { updated: 0 };
   const read = args.read !== false;
+  const refs = ids.map(id => itemsDb().collection(id.startsWith('rss-') ? ITEMS : LEGACY).doc(id));
+  const snaps = await itemsDb().getAll(...refs);
   const batch = itemsDb().batch();
-  const snaps = await itemsDb().getAll(...ids.map(id => itemsDb().collection(ITEMS).doc(id)));
   let updated = 0;
-  snaps.forEach(s => { if (s.exists) { batch.update(s.ref, { readAt: read ? (s.data().readAt || nowIso()) : null }); updated++; } });
+  snaps.forEach((s, i) => {
+    if (!s.exists) return;
+    const at = read ? nowIso() : null;
+    if (ids[i].startsWith('rss-')) { if (read && s.data().readAt) return; batch.update(s.ref, { readAt: at }); }
+    else { if (read && s.data().readerReadAt) return; batch.update(s.ref, { readerReadAt: at }); }
+    updated++;
+  });
   if (updated) await batch.commit();
   return { updated, read };
 }
@@ -569,5 +659,5 @@ module.exports = {
   ITEMS, SIGNALS, MODEL, RETENTION_DAYS, KEEP_MARKED_DAYS,
   canonicalUrl, youtubeId, buildItem, privateAddress, keepDays,
   sourcesList, sourceTest, sourceUpsert, fetchDue, fetchSource, purge, runScheduled,
-  list, feedback, opened, markRead, modelGet, signalForLegacy, recordSignal,
+  list, queue, itemsByIds, feedback, opened, markRead, clearUnreactedItems, modelGet, signalForLegacy, recordSignal,
 };
