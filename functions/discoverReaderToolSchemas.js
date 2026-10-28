@@ -38,7 +38,7 @@ const TOOLS = [
   },
   {
     name: 'discover_fetch_now',
-    description: 'Fetch feeds immediately (normally an hourly scheduled job does this). With sourceId fetches just that source; force ignores intervals and HTTP caching. Returns new item counts and per-source errors.',
+    description: 'Fetch feeds immediately (normally an hourly scheduled job does this). With sourceId fetches just that source; force ignores intervals and HTTP caching. Each call has a ~7s budget (web request limit): if `remaining` > 0, call again to continue. Returns new item counts and per-source errors.',
     inputSchema: { type: 'object', additionalProperties: false, properties: { sourceId: str('curation_… id', 80), force: { type: 'boolean' } } },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
   },

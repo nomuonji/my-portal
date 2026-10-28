@@ -267,7 +267,7 @@ export default async (request: Request) => {
       }
       if (action === "discover_opened") return json(await discoverReader.opened({ id: body.id }));
       if (action === "discover_mark_read") return json(await discoverReader.markRead({ ids: body.ids, read: body.read }));
-      if (action === "discover_fetch_now") return json(await discoverReader.fetchDue({ sourceId: body.sourceId, force: body.force === true }));
+      if (action === "discover_fetch_now") return json(await discoverReader.fetchDue({ sourceId: body.sourceId, force: body.force === true, budgetMs: 6000 }));
       if (action === "discover_source_test") return json(await discoverReader.sourceTest({ url: body.url }));
       if (action === "discover_source_upsert") return json(await discoverReader.sourceUpsert(body.source || {}));
       if (action === "personal_feed_feedback" || action === "discover_feedback") {

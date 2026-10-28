@@ -2,6 +2,7 @@
 // 7-day window (30 days for loved/saved). Reaction signals are never purged.
 // No AI involved — this is plain feed polling, so it stays cheap.
 import { cert, getApps, initializeApp } from "firebase-admin/app";
+import { initializeFirestore } from "firebase-admin/firestore";
 import * as documentDbImport from "../../functions/documentDb.js";
 import * as discoverReaderImport from "../../functions/discoverReaderStore.js";
 
@@ -22,7 +23,9 @@ function ensureFirebaseAdmin() {
   const raw = env("FIREBASE_SERVICE_ACCOUNT_JSON");
   if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is not configured on Netlify");
   const serviceAccount = JSON.parse(raw);
-  initializeApp({ credential: cert(serviceAccount), projectId: serviceAccount.project_id || "my-portal-d05fd" });
+  const app = initializeApp({ credential: cert(serviceAccount), projectId: serviceAccount.project_id || "my-portal-d05fd" });
+  // Same as agent-ideas-api / mcp: REST transport; gRPC can stall on serverless cold starts.
+  initializeFirestore(app, { preferRest: true });
 }
 
 export default async () => {
