@@ -13,7 +13,7 @@
 const { createHash } = require('node:crypto');
 const dns = require('node:dns').promises;
 const net = require('node:net');
-const { getDocumentDb, FieldValue } = require('./documentDb');
+const { getDocumentDb, FieldValue, FieldPath } = require('./documentDb');
 const { parseFeed, discoverFeedLinks, absolute } = require('./discoverFeedParser');
 const model = require('./discoverReaderModel');
 const { normalizedSource, sourceId } = require('./curationSourceRules');
@@ -39,6 +39,23 @@ const trim = (s, n = 2000) => String(s ?? '').trim().slice(0, n);
 const hash = s => createHash('sha256').update(String(s)).digest('hex').slice(0, 30);
 const iso = v => v?.toDate?.()?.toISOString?.() || (typeof v === 'string' ? v : null);
 const nowIso = () => new Date().toISOString();
+
+/**
+ * Read documents by id with chunked `documentId in [...]` queries (30 per query).
+ * Do NOT use db.getAll here: with the REST transport used on Netlify it measured about
+ * 160ms per document (60 docs = 9.6s), which made fetches, paging and read marks time out.
+ * A query returns all matches in one round trip. Returns Map(id -> data).
+ */
+async function getByIds(collection, ids) {
+  const unique = [...new Set(ids.filter(Boolean))];
+  const chunks = [];
+  for (let i = 0; i < unique.length; i += 30) chunks.push(unique.slice(i, i + 30));
+  const snaps = await Promise.all(chunks.map(chunk =>
+    itemsDb().collection(collection).where(FieldPath.documentId(), 'in', chunk).get()));
+  const out = new Map();
+  for (const snap of snaps) for (const doc of snap.docs) out.set(doc.id, doc.data());
+  return out;
+}
 
 // ---------------------------------------------------------------- URLs / network
 function youtubeId(value) {
@@ -300,14 +317,16 @@ async function fetchSource(source, { force = false, timeoutMs = FETCH_TIMEOUT_MS
     if (fresh.length) {
       // Only new-to-this-feed entries are checked: already stored (e.g. same URL in another
       // source, or a write that was cut off) or reacted to and expired (signal tombstone).
-      const refs = fresh.map(i => itemsDb().collection(ITEMS).doc(i.id));
-      const all = await itemsDb().getAll(...refs, ...fresh.map(i => itemsDb().collection(SIGNALS).doc('sig-' + i.id)));
+      const [existing, signals] = await Promise.all([
+        getByIds(ITEMS, fresh.map(i => i.id)),
+        getByIds(SIGNALS, fresh.map(i => 'sig-' + i.id)),
+      ]);
       const batch = itemsDb().batch();
-      fresh.forEach((item, i) => {
-        if (all[i].exists || all[fresh.length + i].exists) return;
-        batch.set(refs[i], { ...item, createdAt: FieldValue.serverTimestamp() });
+      for (const item of fresh) {
+        if (existing.has(item.id) || signals.has('sig-' + item.id)) continue;
+        batch.set(itemsDb().collection(ITEMS).doc(item.id), { ...item, createdAt: FieldValue.serverTimestamp() });
         created++;
-      });
+      }
       if (created) await batch.commit();
     }
     const seen = [...feedIds, ...[...seenBefore].filter(id => !feedIds.includes(id))].slice(0, 400);
@@ -542,17 +561,19 @@ async function itemsByIds(args = {}) {
   const ids = (Array.isArray(args.ids) ? args.ids : String(args.ids || '').split(','))
     .map(x => trim(x, 80)).filter(x => /^(rss|cur)-[a-f0-9]{30}$/.test(x)).slice(0, 60);
   if (!ids.length) return { items: [] };
-  const [snaps, entries, sources] = await Promise.all([
-    itemsDb().getAll(...ids.map(id => itemsDb().collection(id.startsWith('rss-') ? ITEMS : LEGACY).doc(id))),
+  const [feedDocs, legacyDocs, entries, sources] = await Promise.all([
+    getByIds(ITEMS, ids.filter(id => id.startsWith('rss-'))),
+    getByIds(LEGACY, ids.filter(id => id.startsWith('cur-'))),
     readModel(), allSources(),
   ]);
   const priority = new Map(sources.map(s => [s.id, s.priority]));
   const map = model.toMap(entries);
   const now = Date.now();
   const items = [];
-  snaps.forEach((snap, i) => {
-    if (!snap.exists) return;
-    const item = ids[i].startsWith('rss-') ? itemView(snap.data(), ids[i]) : legacyView(snap);
+  ids.forEach(id => {
+    const data = id.startsWith('rss-') ? feedDocs.get(id) : legacyDocs.get(id);
+    if (!data) return;
+    const item = id.startsWith('rss-') ? itemView(data, id) : legacyView({ id, data: () => data });
     const s = model.scoreItem(map, item, { sourcePriority: priority.get(item.sourceId) || 0, now });
     item.score = s.score; item.why = s.why; item.exploration = s.exploration;
     delete item.features;
@@ -625,17 +646,22 @@ async function markRead(args = {}) {
     .filter(x => /^(rss|cur)-[a-f0-9]{30}$/.test(x)).slice(0, 300);
   if (!ids.length) return { updated: 0 };
   const read = args.read !== false;
-  const refs = ids.map(id => itemsDb().collection(id.startsWith('rss-') ? ITEMS : LEGACY).doc(id));
-  const snaps = await itemsDb().getAll(...refs);
+  const [feedDocs, legacyDocs] = await Promise.all([
+    getByIds(ITEMS, ids.filter(id => id.startsWith('rss-'))),
+    getByIds(LEGACY, ids.filter(id => id.startsWith('cur-'))),
+  ]);
   const batch = itemsDb().batch();
+  const at = read ? nowIso() : null;
   let updated = 0;
-  snaps.forEach((s, i) => {
-    if (!s.exists) return;
-    const at = read ? nowIso() : null;
-    if (ids[i].startsWith('rss-')) { if (read && s.data().readAt) return; batch.update(s.ref, { readAt: at }); }
-    else { if (read && s.data().readerReadAt) return; batch.update(s.ref, { readerReadAt: at }); }
+  for (const id of ids) {
+    const feed = id.startsWith('rss-');
+    const data = feed ? feedDocs.get(id) : legacyDocs.get(id);
+    if (!data) continue; // expired or deleted meanwhile
+    const field = feed ? 'readAt' : 'readerReadAt';
+    if (read && data[field]) continue;
+    batch.update(itemsDb().collection(feed ? ITEMS : LEGACY).doc(id), { [field]: at });
     updated++;
-  });
+  }
   if (updated) await batch.commit();
   return { updated, read };
 }
