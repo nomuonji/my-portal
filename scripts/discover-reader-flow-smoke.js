@@ -8,6 +8,7 @@ const dns = require('node:dns');
 // ---- minimal in-memory Firestore-like adapter
 const SERVER_TS = { __ts: true };
 const DELETE = { __delete: true };
+const DOC_ID = { __documentId: true };
 let reads = 0; // document reads, to check that routine fetches stay cheap
 const store = new Map(); // "col/id" -> data
 const clone = v => JSON.parse(JSON.stringify(v));
@@ -43,19 +44,21 @@ function query(col, filters = [], order = null, lim = Infinity) {
   function rows() {
     let list = [...store.entries()].filter(([k]) => k.startsWith(col + '/') && !k.slice(col.length + 1).includes('/'))
       .map(([k, d]) => snap(docRef(col, k.slice(col.length + 1)), d));
-    for (const [f, op, v] of filters) list = list.filter(s => { const x = s.data()[f]; return op === '<' ? x < v : op === '>=' ? x >= v : op === '==' ? x === v : true; });
+    for (const [f, op, v] of filters) list = list.filter(s => {
+      if (f === DOC_ID) { if (op !== 'in' || v.length > 30) throw Error('documentId supports in with <=30 values'); return v.includes(s.id); }
+      const x = s.data()[f]; return op === '<' ? x < v : op === '>=' ? x >= v : op === '==' ? x === v : true; });
     if (order) list.sort((a, b) => { const x = a.data()[order[0]] ?? '', y = b.data()[order[0]] ?? ''; return (x < y ? -1 : x > y ? 1 : 0) * (order[1] === 'desc' ? -1 : 1); });
     return list;
   }
 }
 const fakeDb = {
   collection(col) { return Object.assign(query(col), { doc: id => docRef(col, id) }); },
-  async getAll(...refs) { return Promise.all(refs.map(r => r.get())); },
+  async getAll() { throw Error('getAll is ~160ms per document on the production REST transport; use getByIds'); },
   batch() { const ops = []; return { set: (r, d, o) => ops.push(() => r.set(d, o)), update: (r, d) => ops.push(() => r.update(d)), delete: r => ops.push(() => r.delete()), commit: async () => { for (const op of ops) await op(); } }; },
   async runTransaction(fn) { const ops = []; await fn({ get: r => r.get(), set: (r, d, o) => ops.push(() => r.set(d, o)), update: (r, d) => ops.push(() => r.update(d)) }); for (const op of ops) await op(); },
 };
 const dbPath = path.resolve(__dirname, '../functions/documentDb.js');
-require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { getDocumentDb: () => fakeDb, FieldValue: { serverTimestamp: () => SERVER_TS, delete: () => DELETE } } };
+require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { getDocumentDb: () => fakeDb, FieldValue: { serverTimestamp: () => SERVER_TS, delete: () => DELETE }, FieldPath: { documentId: () => DOC_ID } } };
 
 // ---- stubbed network
 dns.promises.lookup = async () => [{ address: '93.184.216.34', family: 4 }];
@@ -197,6 +200,7 @@ test('changing a feed URL drops its unreacted items and resets the seen list', a
   FEEDS['https://flood.example/better'] = FEEDS['https://quiet.example/rss'].replace(/quiet\.example/g, 'flood.example').replace(/quiet/g, 'better');
   const r = await reader.sourceUpsert({ id: src.id, feedUrl: 'https://flood.example/better' });
   assert.equal(r.clearedItems, 24, 'the saved item is kept');
+  assert.equal(r.clearRemaining, 0);
   assert.equal(count(), 1);
   assert.deepEqual(r.source.reader.seen, []);
   const fetched = await reader.fetchDue({ sourceId: src.id });
