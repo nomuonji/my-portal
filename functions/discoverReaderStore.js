@@ -243,21 +243,30 @@ async function sourceUpsert(args = {}) {
   const resetReader = feedChanged ? { reader: { seen: [], lastFetchedAt: null, etag: '', lastModified: '' } } : {};
   await ref.set({ ...data, ...resetReader, ...(existing ? {} : { createdAt: FieldValue.serverTimestamp() }), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
   // Items from a replaced feed or an archived source are dropped unless the user reacted to them.
-  const cleared = (feedChanged || (existing && data.status === 'archived' && existing.status !== 'archived'))
-    ? await clearUnreactedItems(id) : 0;
+  const clear = (args.clearItems === true || feedChanged || (existing && data.status === 'archived' && existing.status !== 'archived'))
+    ? await clearUnreactedItems(id) : null;
   const saved = sourceView(await ref.get());
-  return { outcome: existing ? 'updated' : 'created', source: saved, readable: Boolean(readable(saved)), test, clearedItems: cleared };
+  return { outcome: existing ? 'updated' : 'created', source: saved, readable: Boolean(readable(saved)), test,
+    clearedItems: clear ? clear.cleared : 0, ...(clear ? { clearRemaining: clear.remaining, clearMs: clear.ms } : {}) };
 }
-async function clearUnreactedItems(sourceId) {
-  const snap = await itemsDb().collection(ITEMS).where('sourceId', '==', sourceId).limit(500).get();
-  const batch = itemsDb().batch();
-  let n = 0;
-  for (const doc of snap.docs) {
-    const d = doc.data();
-    if ((d.feedback || 'new') === 'new' && !d.opened) { batch.delete(doc.ref); n++; }
+/**
+ * Delete a source's items the user hasn't reacted to (no like/save/skip, never opened),
+ * in batches of 100 within a time budget so a web request never times out midway.
+ * Call again while `remaining` > 0.
+ */
+async function clearUnreactedItems(sourceId, { budgetMs = 5000 } = {}) {
+  const started = Date.now();
+  const snap = await itemsDb().collection(ITEMS).where('sourceId', '==', sourceId).limit(600).get();
+  const doomed = snap.docs.filter(doc => { const d = doc.data(); return (d.feedback || 'new') === 'new' && !d.opened; });
+  let cleared = 0;
+  for (let i = 0; i < doomed.length; i += 100) {
+    if (i && Date.now() - started > budgetMs) break;
+    const batch = itemsDb().batch();
+    doomed.slice(i, i + 100).forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+    cleared += Math.min(100, doomed.length - i);
   }
-  if (n) await batch.commit();
-  return n;
+  return { cleared, remaining: doomed.length - cleared, ms: Date.now() - started };
 }
 
 // ---------------------------------------------------------------- fetching

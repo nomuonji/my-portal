@@ -32,6 +32,7 @@ const TOOLS = [
         notes: str('Why the user wants this source / what to watch for', 3000),
         selectionType: { type: 'string', enum: ['editorial', 'community_votes', 'jury_awards', 'curator_recommendation', 'discussion_highlights', 'other'] },
         selectionDescription: str('How items are selected at the source', 1500),
+        clearItems: { type: 'boolean', description: 'Also delete this source\'s items the user has not reacted to (liked/saved/skipped/opened are kept). Use when the user wants a noisy source tidied up. If clearRemaining > 0, call again.' },
       },
     },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },

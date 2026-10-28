@@ -200,6 +200,7 @@ test('changing a feed URL drops its unreacted items and resets the seen list', a
   FEEDS['https://flood.example/better'] = FEEDS['https://quiet.example/rss'].replace(/quiet\.example/g, 'flood.example').replace(/quiet/g, 'better');
   const r = await reader.sourceUpsert({ id: src.id, feedUrl: 'https://flood.example/better' });
   assert.equal(r.clearedItems, 24, 'the saved item is kept');
+  assert.equal(r.clearRemaining, 0);
   assert.equal(count(), 1);
   assert.deepEqual(r.source.reader.seen, []);
   const fetched = await reader.fetchDue({ sourceId: src.id });
