@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Card, CardContent,
-  Chip, CircularProgress, Divider, FormControl, Grid, IconButton, InputLabel, MenuItem,
+  Chip, CircularProgress, Dialog, Divider, FormControl, Grid, IconButton, InputLabel, MenuItem,
   Select, Stack, TextField, Typography,
 } from '@mui/material';
 import {
   Add as AddIcon, ArchiveOutlined as ArchiveIcon, ContentCopy as CopyIcon,
   EditOutlined as EditIcon, ExpandMore as ExpandMoreIcon, History as HistoryIcon,
-  Refresh as RefreshIcon, SaveOutlined as SaveIcon, Star as StarIcon,
+  Refresh as RefreshIcon, SaveOutlined as SaveIcon,
   ThumbUpAltOutlined as FeedbackIcon,
 } from '@mui/icons-material';
 import {
@@ -566,14 +566,7 @@ export default function Outputs() {
             {['create', 'metadata'].includes(dialog) && (
               <>
                 <TextField label="タイトル" fullWidth value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} required />
-                <FormControl fullWidth size="small">
-                  <InputLabel>成果物タイプ</InputLabel>
-                  <Select label="成果物タイプ" value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value })}>
-                    {TYPE_OPTIONS.map(([key, label]) => <MenuItem key={key} value={key}>{label}</MenuItem>)}
-                    <MenuItem value="custom">カスタム</MenuItem>
-                  </Select>
-                </FormControl>
-                {draft.type === 'custom' && <TextField label="カスタムタイプ名" helperText="現時点では「その他」を選び、メタデータに記録してください" disabled />}
+                <TextField label="成果物タイプ（自由入力）" fullWidth value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value })} helperText="例: song / lyrics / article / image / video / code / 3d-model" />
                 <TextField label="概要" fullWidth multiline minRows={2} value={draft.summary} onChange={(event) => setDraft({ ...draft, summary: event.target.value })} />
                 <TextField label="タグ（カンマ区切り）" fullWidth value={draft.tagsText} onChange={(event) => setDraft({ ...draft, tagsText: event.target.value })} />
                 <TextField label="メタデータ（JSON）" fullWidth multiline minRows={4} value={draft.metadataText} onChange={(event) => setDraft({ ...draft, metadataText: event.target.value })} />
