@@ -151,11 +151,13 @@ service cloud.firestore {
     }
 
     match /output_versions/{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, create: if request.auth != null;
+      allow update, delete: if false;
     }
 
     match /output_feedback/{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, create: if request.auth != null;
+      allow update, delete: if false;
     }
 
     // Long-running Context Store / Thinking Workspace.
