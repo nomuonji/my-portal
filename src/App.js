@@ -51,6 +51,7 @@ import {
   Public as PublicIcon,
   FaceRetouchingNatural as CharacterIcon,
   BookmarksOutlined as SourcesIcon,
+  WorkOutline as JobsIcon,
   OndemandVideo as DiscoveryIcon,
   FavoriteBorder as TasteIcon,
   Logout as LogoutIcon,
@@ -90,6 +91,7 @@ import GlobalFlashcardManagement from './components/GlobalFlashcardManagement';
 import PublicCms from './components/PublicCms';
 import CharacterLibrary from './components/CharacterLibrary';
 import CurationSources from './components/CurationSources';
+import JobOpportunities from './components/JobOpportunities';
 
 import getAppTheme, { fonts } from './theme';
 
@@ -177,6 +179,7 @@ function App() {
     if (path.startsWith('/public-cms')) return 'Public CMS';
     if (path.startsWith('/characters')) return 'キャラクターDB';
     if (path.startsWith('/curation-sources')) return '情報源ライブラリ';
+    if (path.startsWith('/jobs')) return '仕事DB';
     if (path.startsWith('/ideaboard') || path.startsWith('/idea')) return 'アイデア';
     if (path.startsWith('/hobbyboard') || path.startsWith('/hobby')) return '趣味';
     if (path.startsWith('/stockboard') || path.startsWith('/stock')) return 'ストック';
@@ -376,6 +379,7 @@ function App() {
         { to: '/taste', label: '好みの記録', hint: '好き嫌い / 根拠 / 訂正履歴', icon: <TasteIcon /> },
         { to: '/thinking', label: '思考テーマ', hint: '長期テーマ / Context Store', icon: <PsychologyAltIcon /> },
         { to: '/social-archive', label: 'X投稿アーカイブ', hint: '過去投稿の検索・分類・見返し', icon: <ArchiveIcon /> },
+        { to: '/jobs', label: '仕事DB', hint: 'オンライン仕事 / 報酬 / 応募情報・プライバシー', icon: <JobsIcon /> },
       ],
     },
     {
@@ -624,6 +628,7 @@ function App() {
                 <Route path="/public-cms" element={<PublicCms />} />
                 <Route path="/characters" element={<CharacterLibrary />} />
                 <Route path="/curation-sources" element={<CurationSources />} />
+                <Route path="/jobs" element={<JobOpportunities />} />
                 <Route path="/thinking" element={<ThinkingWorkspace />} />
                 <Route path="/feature-requests" element={<FeatureRequests />} />
                 <Route path="/project" element={<Project />} />
