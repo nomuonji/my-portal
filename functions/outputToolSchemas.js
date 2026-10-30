@@ -56,7 +56,7 @@ const TOOLS = [
         metadata: objectSchema,
         confirm: confirmSchema,
       },
-      required: ['title', 'content', 'confirm'],
+      required: ['title', 'confirm'],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
