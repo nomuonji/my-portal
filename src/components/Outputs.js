@@ -107,6 +107,427 @@ function ensureInitialSongSeed() {
   return initialSongSeedPromise;
 }
 
+
+let additionalSongSeedPromise = null;
+
+function ensureAdditionalSongSeeds() {
+  if (!additionalSongSeedPromise) {
+    additionalSongSeedPromise = (async () => {
+      const songs = [
+        {
+          id: 'suno-song-kamisama-no-teitaraku-20261031',
+          title: '神様の体たらく',
+          summary: '哲学的な独白と低俗で不条理な冗談を同じ温度で並置する、Art Rock / Alternativeの楽曲。',
+          genre: 'Art Rock / Alternative',
+          tags: ['Suno', '歌詞', 'Art Rock', 'Alternative', 'Dark Comedy', '哲学', 'ネット文化'],
+          stylePrompt: 'Japanese alternative art rock, post-punk, experimental indie rock, dark comedy, theatrical male vocals, deadpan spoken-word verses, explosive melodic chorus, melancholic piano bridge, distorted guitars, driving bass, dynamic live drums, unexpected tonal shifts, poetic and absurd, eccentric internet culture, existential but playful, emotional yet irreverent, memorable singalong hook.',
+          styleNotes: '普通のJ-POPにせず、哲学的な独白とバカバカしい歌詞が同居できる音楽性。投稿をそのまま並べた替え歌ではなく、投稿に何度も現れる世界観を一つの曲にする。',
+          content: \`[Intro – Spoken, almost emotionless]
+
+人生とは確率的な世界の主体的な観測であると。
+
+……まあ、いいか。
+
+テーブルを見る。
+街は見ない。
+関係ないから。
+
+[Verse 1]
+
+死ぬのが怖くて文明を作った
+逃げるために神様を作った
+正しさから遠ざかるほど
+世界は上手く回るらしい
+
+自由意志なんてないんだと
+ある日を境に決めたけど
+Aボタンを連打するのか
+Bボタンを連打するのか
+
+そんな程度の人生なら
+せめて面白くしてくれよ
+汚いケーキが届いたって
+むしゃむしゃ食えばいいだろ
+
+[Pre-Chorus]
+
+思想を持つ奴はいる
+芸を持つ奴もいる
+でも思想を芸にできる奴は
+なかなかいないらしい
+
+[Chorus – Explosive, melodic]
+
+神様の体たらくを
+俺たちの愛で埋めるのさ
+完璧な世界じゃきっと
+愛も虚しい
+
+正しいことばかり言わないで
+間違いの中で踊ろうぜ
+聖なる喜劇が俺を呼んでいる
+この世界はまだ終わらない
+
+[Verse 2 – Rhythmic, playful delivery]
+
+人が喋ってるのか
+法人が喋ってるのか
+もうよく分からない時代に
+AIが人間ごっこしてる
+
+俺の中ではずっと
+デンジとマキマが戦ってる
+思想と本能と欲望が
+同じ部屋で喧嘩してる
+
+例えから帰ってこない馬鹿が
+衛星カメラに映ったあと
+今ごろ火星人のメタファーの中で
+主役をやっているらしい
+
+[Pre-Chorus 2 – Gradually building]
+
+一人の人間の中には
+死に向かう男の子がいて
+行かないでと抱きつく女の子がいる
+
+どちらも俺なんだ
+どちらも俺なんだ
+
+[Chorus – Full band]
+
+神様の体たらくを
+俺たちの愛で埋めるのさ
+完璧な世界じゃきっと
+愛も虚しい
+
+幸せな人間は大爆笑なんて
+できないのかもしれないけど
+聖なる喜劇が俺を呼んでいる
+まだ笑えるうちは踊ろうぜ
+
+[Bridge – Soft piano, intimate vocal]
+
+来世はきっとショベルカーになって
+デッカイ穴をたくさん掘るんだ
+
+仕事の電話なんかもう鳴らない
+僕はただ穴を掘るんだ
+
+この星なんて要らないのさ
+僕は星を減らして空を作るんだ
+
+僕はひたすら
+デッカイ宇宙を作るんだ
+
+[Final Chorus – Dramatic, layered vocals]
+
+神様の体たらくを
+俺たちの愛で埋めるのさ
+完璧な世界じゃきっと
+愛も虚しい
+
+何もかもが間違いなら
+間違いのままで生きていこう
+聖なる喜劇が俺を呼んでいる
+俺はまだここにいる
+
+[Outro – Spoken, deadpan]
+
+腰抜けどもが爪弾き。
+
+……いや、なんでもない。\`
+        },
+        {
+          id: 'suno-song-gekaio-suberu-ou-20261031',
+          title: '下界を統べる王',
+          summary: 'トノサマバッタの尊大さと虫としての日常の落差を、80年代ディスコ歌謡で大真面目に歌うComedy Pop。',
+          genre: '80s Japanese Disco Kayokyoku / Funk',
+          tags: ['Suno', '歌詞', 'Disco', 'Funk', 'Comedy Pop', 'トノサマバッタ', '電波ソング'],
+          stylePrompt: 'Japanese 1980s disco kayokyoku, electro funk, funky slap bass, groovy four-on-the-floor drums, bright brass stabs, vintage analog synthesizers, theatrical deep male vocals, playful falsetto backing vocals, absurd comedy lyrics, infectious singalong chorus, flamboyant dance break, dramatic key change, energetic and ridiculous, polished retro production.',
+          styleNotes: '80年代ディスコ歌謡 × ファンキーな電波ソング。歌詞のくだらなさに対して音楽を一切ふざけさせず、大真面目な王様の戴冠式として豪華なブラスとコーラスで歌わせる。',
+          content: \`[Intro – Funky Spoken Voice]
+
+Ladies and gentlemen!
+
+下界の諸君、聞こえるか！
+
+俺はこの下界を統べる王！
+
+……バッタです。
+
+[Verse 1]
+
+朝日が昇れば俺の時間
+草むら全体が俺の城
+誰が決めたか知らないが
+俺ほど飛べる虫は居ない
+
+地面に這いつくばる君たち
+少しは空を見上げたまえ
+俺は王様　君は何様
+とりあえず葉っぱを食べている
+
+[Pre-Chorus]
+
+不覚にも先ほど
+バッタ面で泣きました
+王にも涙はあるのです
+下界には分からないでしょう
+
+[Chorus – Huge Disco Hook]
+
+俺はこの下界を統べる王！
+俺ほど飛べる虫は居ない！
+
+飛べ！ 飛べ！ 飛べ！
+天井なんか突き破れ！
+
+俺はこの下界を統べる王！
+下界はゴミのようなバカばかり！
+
+踊れ！ 踊れ！ 踊れ！
+今夜は俺の戴冠式！
+
+[Verse 2]
+
+神様だって忙しい
+世界の管理もままならない
+完璧な世界はいらないと
+誰かが言っていた気がする
+
+金持ちビビってる　ヘイヘイヘイ！
+革命前夜のバッタの群れ
+正義と倫理と自由意志
+全部まとめて草にしよう
+
+[Pre-Chorus 2 – Female Backing Vocals]
+
+王様、王様、どちらへ行くの？
+王様、王様、何を食べるの？
+
+[Spoken]
+
+……草です。
+
+[Chorus – More Energetic]
+
+俺はこの下界を統べる王！
+俺ほど飛べる虫は居ない！
+
+飛べ！ 飛べ！ 飛べ！
+重力なんか知ったことか！
+
+俺はこの下界を統べる王！
+下界はゴミのようなバカばかり！
+
+踊れ！ 踊れ！ 踊れ！
+今夜は俺の戴冠式！
+
+[Bridge – Sudden Romantic Slowdown]
+
+神様の体たらくを
+誰かの愛で埋めるのさ
+
+完璧な世界じゃあ
+きっと愛も虚しい
+
+だから俺は今日も飛ぶ
+誰にも頼まれてないけど
+
+小さな体で
+大きな空を夢見ている
+
+[Dance Break – Chant]
+
+バッタ！ バッタ！
+トノサマ！ バッタ！
+
+王冠！ 王冠！
+草むら！ 王国！
+
+バッタ！ バッタ！
+トノサマ！ バッタ！
+
+誰が何と言おうとも
+俺が王だ！
+
+[Final Chorus – Key Change, Full Choir]
+
+俺はこの下界を統べる王！
+俺ほど飛べる虫は居ない！
+
+飛べ！ 飛べ！ 飛べ！
+星の向こうへ突き抜けろ！
+
+俺はこの下界を統べる王！
+下界はゴミのようなバカばかり！
+
+踊れ！ 踊れ！ 踊れ！
+今夜は俺の戴冠式！
+
+[Outro – Deadpan]
+
+……あ、鳥だ。
+
+（暗転）\`
+        },
+        {
+          id: 'suno-song-ittan-koko-wa-tsuka-20261031',
+          title: '一旦ここは通過で（笑）',
+          summary: '汚いケーキや丸亀製麺、歯医者など、どうでもいい日常を人生の真理のように歌う脱力系City Pop。',
+          genre: 'Shibuya-kei / Bossa Nova / Lounge Pop',
+          tags: ['Suno', '歌詞', 'Shibuya-kei', 'Bossa Nova', 'Lounge Pop', '日常', '脱力系'],
+          stylePrompt: 'Japanese Shibuya-kei, sophisticated bossa nova, 1990s Japanese lounge pop, jazzy acoustic guitar, walking upright bass, brushed drums, vibraphone, playful piano, mellow male vocals with soft female backing harmonies, witty deadpan delivery, elegant and slightly melancholic, catchy melodic chorus, sophisticated retro production, whimsical everyday storytelling, warm analog recording.',
+          styleNotes: '脱力系シティポップ × 渋谷系ボサノヴァ。歌詞はしょうもないのに音楽は妙におしゃれ。休日の昼下がりのカフェで流れても違和感がない曲を狙う。',
+          content: \`[Intro – Soft Spoken]
+次の方、お決まりでしたらどうぞ。
+
+……一旦ここは通過で（笑）
+
+[Verse 1]
+汚いケーキが届いた午後
+そんなに悲しむことはない
+むしゃむしゃ食べればいいだろ
+クリームが少し曲がってるだけ
+
+本当にオシャレな奴は
+ハンガーに金を掛けるらしい
+俺はまだそこまでじゃない
+でも服はそれなりに綺麗
+
+[Pre-Chorus]
+逆張りホットコーヒー
+冷める前に飲み干して
+何かを選んだ気になって
+今日も何も決まらない
+
+[Chorus – Sweet, Catchy]
+一旦ここは通過で（笑）
+人生なんてそんなもの
+決めることなど何もない
+通り過ぎてから考えよう
+
+一旦ここは通過で（笑）
+悲しいことも食べてしまおう
+世界のことはよく知らない
+だけどコーヒーは冷めていく
+
+[Verse 2]
+丸亀製麺におにぎりを
+食べに来た人がいるらしい
+「次の方、お決まりでしたら」
+「一旦ここは通過で（笑）」
+
+風呂トイレ別はまだ早い
+水道代固定は大きな商機
+時計が少しズレていたって
+それはそれで面白い
+
+[Pre-Chorus 2]
+昔は良かったなぁ
+何が良かったか知らないけど
+過去を振り返ってみたところで
+歯医者の予約が待っている
+
+[Chorus – Rich Harmonies]
+一旦ここは通過で（笑）
+大げさにしなくていいだろ
+正しい答えを探すより
+とりあえず今日は帰ろう
+
+一旦ここは通過で（笑）
+失敗したって食べてしまおう
+きっと世界は続いていく
+俺の知らないところで
+
+[Bridge – Dreamy, Jazzy]
+テーブルを見る
+街は見ない
+関係ないから
+
+浮かれた人たち
+眺めているより
+こっちのコーヒーを飲もう
+
+あれも欲しい
+これも欲しい
+でも今は別にいい
+
+人生はAボタンの連打か
+Bボタンの連打でいける
+
+[Instrumental – Vibraphone Solo]
+
+[Final Chorus – Upbeat, Layered Vocals]
+一旦ここは通過で（笑）
+明日のことは明日でいい
+何も上手くいかない日だって
+とりあえず腹は減るだろう
+
+一旦ここは通過で（笑）
+そんなに深刻にならないで
+汚いケーキも悪くない
+むしゃむしゃ食えばいいだろ
+
+[Outro – Spoken]
+……あれ、奨学金ってもしかして借金？\`
+        }
+      ];
+
+      const batch = writeBatch(db);
+      let added = 0;
+      for (const song of songs) {
+        const outputRef = doc(db, 'outputs', song.id);
+        const existing = await getDoc(outputRef);
+        if (existing.exists()) continue;
+        const versionRef = doc(db, 'output_versions', song.id + '__v000001');
+        batch.set(outputRef, {
+          title: song.title,
+          type: 'song',
+          summary: song.summary,
+          tags: song.tags,
+          metadata: {
+            platform: 'Suno',
+            genre: song.genre,
+            language: 'Japanese',
+            stylePrompt: song.stylePrompt,
+            styleNotes: song.styleNotes,
+            status: 'lyrics-ready',
+            origin: 'ChatGPT conversation, 2026-10-31',
+          },
+          status: 'active',
+          currentVersion: 1,
+          versionCount: 1,
+          currentVersionId: versionRef.id,
+          ratingCount: 0,
+          ratingTotal: 0,
+          ratingAverage: null,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          schemaVersion: 1,
+        });
+        batch.set(versionRef, {
+          outputId: song.id,
+          versionNumber: 1,
+          content: '# ' + song.title + '\\n\\n' + song.content,
+          contentFormat: 'markdown',
+          externalUrl: null,
+          changeSummary: '初版：歌詞完成稿＋Suno Style Promptを登録',
+          promptNotes: 'Suno Style Prompt:\\n' + song.stylePrompt + '\\n\\n制作意図:\\n' + song.styleNotes,
+          model: 'ChatGPT',
+          createdAt: serverTimestamp(),
+          schemaVersion: 1,
+        });
+        added += 1;
+      }
+      if (added > 0) await batch.commit();
+      return added;
+    })().finally(() => { additionalSongSeedPromise = null; });
+  }
+  return additionalSongSeedPromise;
+}
+
 function typeLabel(value) {
   return TYPE_OPTIONS.find(([key]) => key === value)?.[1] || value || 'その他';
 }
@@ -201,7 +622,13 @@ export default function Outputs() {
     const initialize = async () => {
       try {
         const seeded = await ensureInitialSongSeed();
-        if (seeded && !cancelled) setNotice('初期成果物「地獄が俺たちを待っている」を登録しました');
+        const additionalSeeded = await ensureAdditionalSongSeeds();
+        if (!cancelled && (seeded || additionalSeeded > 0)) {
+          const messages = [];
+          if (seeded) messages.push('初期成果物「地獄が俺たちを待っている」を登録しました');
+          if (additionalSeeded > 0) messages.push('追加作品 ' + additionalSeeded + ' 件を登録しました');
+          setNotice(messages.join(' / '));
+        }
       } catch (err) {
         if (!cancelled) setError('初期成果物の登録に失敗しました: ' + (err.message || String(err)));
       }
