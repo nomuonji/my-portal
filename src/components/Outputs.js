@@ -11,7 +11,7 @@ import {
   ThumbUpAltOutlined as FeedbackIcon,
 } from '@mui/icons-material';
 import {
-  collection, doc, getDocs, increment, limit, orderBy, query, serverTimestamp,
+  collection, doc, getDoc, getDocs, increment, limit, orderBy, query, serverTimestamp,
   updateDoc, where, writeBatch,
 } from '../documentDbClient';
 import { db } from '../firebase';
@@ -52,6 +52,61 @@ function parseObject(value, label) {
 function splitTags(value) {
   return [...new Set(String(value || '').split(/[,、\n]/).map((item) => item.trim()).filter(Boolean))];
 }
+let initialSongSeedPromise = null;
+
+function ensureInitialSongSeed() {
+  if (!initialSongSeedPromise) {
+    initialSongSeedPromise = (async () => {
+      const outputId = 'suno-song-hell-awaits-us-20261031';
+      const outputRef = doc(db, 'outputs', outputId);
+      const existing = await getDoc(outputRef);
+      if (existing.exists()) return false;
+
+      const versionRef = doc(db, 'output_versions', outputId + '__v000001');
+      const batch = writeBatch(db);
+      batch.set(outputRef, {
+        title: '地獄が俺たちを待っている',
+        type: 'song',
+        summary: 'インド映画風の壮大な恋愛ミュージカル。Sunoでの音源生成に向けた歌詞とStyle Promptの初稿。',
+        tags: ['Suno', '歌詞', 'Bollywood Pop', '恋愛', 'Cinematic Pop'],
+        metadata: {
+          platform: 'Suno',
+          genre: 'Bollywood-inspired Cinematic Pop / Orchestral Dance Pop',
+          language: 'Japanese',
+          stylePrompt: "Japanese cinematic pop, Bollywood-inspired orchestral dance music, dramatic male and female duet, sweeping emotional strings, Indian percussion and tabla, powerful cinematic drums, exotic melodic motifs, passionate vocals, romantic melodrama, sudden comedic spoken interludes, massive uplifting chorus, theatrical arrangement, explosive finale, bittersweet and absurd.",
+          status: 'lyrics-ready',
+          origin: 'ChatGPT conversation, 2026-10-31',
+        },
+        status: 'active',
+        currentVersion: 1,
+        versionCount: 1,
+        currentVersionId: versionRef.id,
+        ratingCount: 0,
+        ratingTotal: 0,
+        ratingAverage: null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        schemaVersion: 1,
+      });
+      batch.set(versionRef, {
+        outputId,
+        versionNumber: 1,
+        content: "# 地獄が俺たちを待っている\n\n[Intro – Female Whisper]\nインド映画みたいに\n私を崖から救って\n\n[Verse 1 – Male Vocal]\n君は少し笑って\n僕の手を引いた\nどこへ行くのかなんて\n聞かないことにした\n\n世界の果てまで逃げよう\n誰にも見つからないように\n現実なんて忘れてしまおう\n今夜だけは夢の中に\n\n[Pre-Chorus – Rising Strings]\nごめんね\nまるでピロートークみたいに\n君といると酔いが回る\n\nでも窓の外では\n朝が始まっている\n\n[Chorus – Massive Cinematic Arrangement]\nさあ現実に帰ろう\n地獄が俺たちを待っている\n\n愛してると言うには\nこの世界は少し広すぎる\n\nさあ現実に帰ろう\nそれでも君と歩いていこう\n\n神様が何もしてくれないなら\n僕たちが抱きしめればいい\n\n[Verse 2 – Rhythmic, Playful]\n恋愛にはルールがあるらしい\nモテる男はボケるらしい\n相手がツッコめるように\nわざと隙を作るらしい\n\n眠いよ？ちゃんこそちゃんこそ！\n大丈夫！ understand？\n\nそんなことを言っている間に\n世界の終わりが近づいている\n\n[Pre-Chorus 2 – Female Vocal]\n俺が女だったらやらないけど\nあなたの判断を優先するよ\n\nあなたはあなたの生きたいように\n生きたらいいと思う\n\n[Chorus – Full Choir]\nさあ現実に帰ろう\n地獄が俺たちを待っている\n\n幸せになれるかなんて\n誰にも分かりはしないけど\n\nさあ現実に帰ろう\nそれでも君と歩いていこう\n\n完璧な世界じゃきっと\n愛も虚しい\n\n[Bridge – Bollywood Dance Break]\nああ！\n運命の崖を飛び越えて！\n\nああ！\n名前のない明日へ！\n\n走れ！\n走れ！\n\n……ちょっと待って\nどっちが崖から落ちるんだ？\n\n[Breakdown – Piano and Soft Vocals]\n一人の人間の中には\n行かないでと抱きつく女の子と\n死に向かう男の子が住んでいる\n\n君の中にもいるのかな\nそれとも僕だけなのかな\n\n[Final Chorus – Explosive Orchestral Finale]\nさあ現実に帰ろう\n地獄が俺たちを待っている\n\nそれでも君といる時間は\n少しだけ夢に似ていた\n\nさあ現実に帰ろう\n朝日が街を照らしている\n\nインド映画みたいな奇跡はなくても\n僕たちはここにいる\n\n[Outro – Spoken, Male]\n……ところで、今日何食べる？\n\n[End]",
+        contentFormat: 'markdown',
+        externalUrl: null,
+        changeSummary: '初版：歌詞＋Suno Style Promptを登録',
+        promptNotes: 'Suno Style Prompt:\n' + "Japanese cinematic pop, Bollywood-inspired orchestral dance music, dramatic male and female duet, sweeping emotional strings, Indian percussion and tabla, powerful cinematic drums, exotic melodic motifs, passionate vocals, romantic melodrama, sudden comedic spoken interludes, massive uplifting chorus, theatrical arrangement, explosive finale, bittersweet and absurd.",
+        model: 'ChatGPT',
+        createdAt: serverTimestamp(),
+        schemaVersion: 1,
+      });
+      await batch.commit();
+      return true;
+    })().finally(() => { initialSongSeedPromise = null; });
+  }
+  return initialSongSeedPromise;
+}
+
 function typeLabel(value) {
   return TYPE_OPTIONS.find(([key]) => key === value)?.[1] || value || 'その他';
 }
@@ -141,7 +196,20 @@ export default function Outputs() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    let cancelled = false;
+    const initialize = async () => {
+      try {
+        const seeded = await ensureInitialSongSeed();
+        if (seeded && !cancelled) setNotice('初期成果物「地獄が俺たちを待っている」を登録しました');
+      } catch (err) {
+        if (!cancelled) setError('初期成果物の登録に失敗しました: ' + (err.message || String(err)));
+      }
+      if (!cancelled) load();
+    };
+    initialize();
+    return () => { cancelled = true; };
+  }, [load]);
   useEffect(() => { loadDetail(selectedId); }, [selectedId, loadDetail]);
 
   const filtered = useMemo(() => {
