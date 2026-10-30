@@ -5,6 +5,8 @@ import * as agentStoreImport from "../../functions/agentIdeasStoreAgentDb.js";
 import * as portalStoreImport from "../../functions/portalStore.js";
 import * as agentToolsImport from "../../functions/agentIdeasToolSchemas.js";
 import * as portalToolsImport from "../../functions/portalMcpTools.js";
+import * as jobOpportunityStoreImport from "../../functions/jobOpportunityStore.js";
+import * as jobOpportunityToolsImport from "../../functions/jobOpportunityToolSchemas.js";
 import * as metaStoreImport from "../../functions/metaStrategyStore.js";
 import * as personalFeedImport from "../../functions/personalFeedStore.js";
 import * as personalFeedToolsImport from "../../functions/personalFeedToolSchemas.js";
@@ -42,6 +44,8 @@ const agentStore: any = (agentStoreImport as any).default ?? agentStoreImport;
 const portalStore: any = (portalStoreImport as any).default ?? portalStoreImport;
 const agentToolsModule: any = (agentToolsImport as any).default ?? agentToolsImport;
 const portalToolsModule: any = (portalToolsImport as any).default ?? portalToolsImport;
+const jobOpportunityStore: any = (jobOpportunityStoreImport as any).default ?? jobOpportunityStoreImport;
+const jobOpportunityToolsModule: any = (jobOpportunityToolsImport as any).default ?? jobOpportunityToolsImport;
 const metaStore: any = (metaStoreImport as any).default ?? metaStoreImport;
 const personalFeed: any = (personalFeedImport as any).default ?? personalFeedImport;
 const personalFeedTools: any = (personalFeedToolsImport as any).default ?? personalFeedToolsImport;
@@ -74,10 +78,10 @@ const worldMapTools: any = (worldMapToolsImport as any).default ?? worldMapTools
 const contextToolsModule: any = (contextToolsImport as any).default ?? contextToolsImport;
 const linearBridge: any = (linearBridgeImport as any).default ?? linearBridgeImport;
 const migration: any = (migrationImport as any).default ?? migrationImport;
-const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...worldMapTools.TOOLS, ...chatContextTools.TOOLS, ...contextRegistryTools.TOOLS, ...portalToolsModule.TOOLS, ...metaTools.TOOLS, ...personalFeedTools.TOOLS, ...discoverReaderTools.TOOLS, ...personalTasteTools.TOOLS, ...routineTools.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS, ...workspaceApp.TOOLS];
+const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...worldMapTools.TOOLS, ...chatContextTools.TOOLS, ...contextRegistryTools.TOOLS, ...portalToolsModule.TOOLS, ...jobOpportunityToolsModule.TOOLS, ...metaTools.TOOLS, ...personalFeedTools.TOOLS, ...discoverReaderTools.TOOLS, ...personalTasteTools.TOOLS, ...routineTools.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS, ...workspaceApp.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "1.19.0-netlify";
+const SERVER_VERSION = "1.20.0-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -488,6 +492,9 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "chat_skill_versions") return structured(await chatContext.skillVersions(args));
   if (name === "chat_skill_upsert") return structured(await chatContext.upsertSkill(args));
   if (name === "world_map_update") return structured(await worldMap.update(args));
+  if (name === "job_opportunity_search") return structured(await jobOpportunityStore.search(args));
+  if (name === "job_opportunity_get") return structured(await jobOpportunityStore.get(args));
+  if (name === "job_opportunity_upsert") return structured(await jobOpportunityStore.upsert(args));
   switch (name) {
     case "agent_ideas_status": {
       const legacyBootstrap = await contextStore.bootstrapIncomeSearchMigration();
@@ -582,7 +589,24 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
     case "profile_fact_upsert": return structured(await contextStore.profileFactUpsert(args));
     case "profile_fact_update": return structured(await contextStore.profileFactUpdate(args));
     case "decision_create": return structured(await contextStore.decisionCreate(args));
-    case "opportunity_create": return structured(await contextStore.opportunityCreate(args));
+    case "opportunity_create": {
+      // Backwards-compatible write path for scheduled job discovery: job records
+      // live in the dedicated collection, while other Opportunity types remain in Context Store.
+      if (String(args.type || "").toLowerCase() === "job") {
+        return structured(await jobOpportunityStore.upsert({
+          title: args.title,
+          summary: args.summary,
+          sourceUrl: args.sourceUrl,
+          reward: args.reward,
+          deadline: args.deadline,
+          status: args.status,
+          sourcePublisher: args.attributes?.sourcePublisher,
+          tags: args.attributes?.tags || args.tags,
+          attributes: args.attributes || {},
+        }));
+      }
+      return structured(await contextStore.opportunityCreate(args));
+    }
     case "opportunity_update": return structured(await contextStore.opportunityUpdate(args));
     case "space_distill_run": return structured(await contextStore.spaceDistillRun(args));
     case "idea_category_list": return structured(await agentStore.categoryList(args));
