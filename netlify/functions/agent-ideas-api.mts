@@ -15,6 +15,7 @@ import * as personalTasteExternalImport from "../../functions/personalTasteExter
 import * as anilistImport from "../../functions/anilistIntegration.js";
 import * as mediaConnectionsImport from "../../functions/mediaAccountConnections.js";
 import * as routineStoreImport from "../../functions/routineJobStore.js";
+import * as jobOpportunityStoreImport from "../../functions/jobOpportunityStore.js";
 
 const store: any = (storeImport as any).default ?? storeImport;
 const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
@@ -29,6 +30,7 @@ const externalTaste: any = (personalTasteExternalImport as any).default ?? perso
 const anilist: any = (anilistImport as any).default ?? anilistImport;
 const mediaConnections: any = (mediaConnectionsImport as any).default ?? mediaConnectionsImport;
 const routineStore: any = (routineStoreImport as any).default ?? routineStoreImport;
+const jobOpportunityStore: any = (jobOpportunityStoreImport as any).default ?? jobOpportunityStoreImport;
 const documentDb: any = (documentDbImport as any).default ?? documentDbImport;
 const AGENT_DATABASE_ID = "(default)";
 
@@ -164,6 +166,12 @@ export default async (request: Request) => {
       if (resource === "discover_model") return json(await discoverReader.modelGet({ limit: 20 }));
       if (resource === "personal_feed") return json(await personalFeed.list({limit:Math.min(Math.max(Number(url.searchParams.get("limit"))||160,1),500),includeSkipped:url.searchParams.get("includeSkipped")==="true"}));
       if (resource === "personal_feed_rejected") return json(await personalFeed.rejected({limit:Math.min(Math.max(Number(url.searchParams.get("limit"))||20,1),40)}));
+      if (resource === "job_opportunities") return json(await jobOpportunityStore.search({
+        query: url.searchParams.get("q") || undefined,
+        status: url.searchParams.get("status") || undefined,
+        limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 100, 1), 100),
+        scanLimit: 1000,
+      }));
       if (resource === "meta_proposals") return json(await metaStore.list({limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 150, 1), 200), status: url.searchParams.get("status") || undefined}));
       if (resource === "meta_proposal") return json(await metaStore.get({ id: url.searchParams.get("id") || "" }));
       if (resource === "ideas") {
@@ -292,6 +300,17 @@ export default async (request: Request) => {
         }
         return json(updated);
       }
+      if (action === "job_opportunity_upsert") return json(await jobOpportunityStore.upsert({
+        title: body.title,
+        sourcePublisher: body.sourcePublisher,
+        sourceUrl: body.sourceUrl,
+        summary: body.summary,
+        reward: body.reward,
+        deadline: body.deadline,
+        status: body.status,
+        tags: body.tags,
+        attributes: body.attributes || {},
+      }));
       if (action === "meta_proposal_feedback") return json(await metaStore.feedback({ id:body.id, status:body.status, feedback:body.feedback, expectedRevision:body.expectedRevision }));
       if (action === "category_upsert") {
         return json(await store.categoryUpsert({
