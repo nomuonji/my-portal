@@ -495,6 +495,25 @@ export default function Outputs() {
                 </CardContent>
               </Card>
 
+              <Accordion variant="outlined">
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Typography sx={{ fontWeight: 800 }}>生成条件・タイプ別メタデータ</Typography>
+                </AccordionSummary>
+                <AccordionDetails>
+                  {selectedVersion?.promptNotes && (
+                    <Box sx={{ mb: 1.2 }}>
+                      <Typography variant="caption" color="text.secondary">生成条件・プロンプト</Typography>
+                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>{selectedVersion.promptNotes}</Typography>
+                    </Box>
+                  )}
+                  {selectedVersion?.model && <Typography variant="body2" sx={{ mb: 1 }}>使用モデル: {selectedVersion.model}</Typography>}
+                  <Typography variant="caption" color="text.secondary">メタデータ JSON</Typography>
+                  <Typography component="pre" variant="body2" sx={{ mt: 0.5, p: 1.2, bgcolor: 'action.hover', borderRadius: 1, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontFamily: 'var(--p-mono)' }}>
+                    {JSON.stringify(selected.metadata || {}, null, 2)}
+                  </Typography>
+                </AccordionDetails>
+              </Accordion>
+
               <Card variant="outlined">
                 <CardContent>
                   <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
