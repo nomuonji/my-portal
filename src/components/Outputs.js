@@ -122,7 +122,7 @@ function ensureAdditionalSongSeeds() {
           tags: ['Suno', '歌詞', 'Art Rock', 'Alternative', 'Dark Comedy', '哲学', 'ネット文化'],
           stylePrompt: 'Japanese alternative art rock, post-punk, experimental indie rock, dark comedy, theatrical male vocals, deadpan spoken-word verses, explosive melodic chorus, melancholic piano bridge, distorted guitars, driving bass, dynamic live drums, unexpected tonal shifts, poetic and absurd, eccentric internet culture, existential but playful, emotional yet irreverent, memorable singalong hook.',
           styleNotes: '普通のJ-POPにせず、哲学的な独白とバカバカしい歌詞が同居できる音楽性。投稿をそのまま並べた替え歌ではなく、投稿に何度も現れる世界観を一つの曲にする。',
-          content: \`[Intro – Spoken, almost emotionless]
+          content: `[Intro – Spoken, almost emotionless]
 
 人生とは確率的な世界の主体的な観測であると。
 
@@ -236,7 +236,7 @@ AIが人間ごっこしてる
 
 腰抜けどもが爪弾き。
 
-……いや、なんでもない。\`
+……いや、なんでもない。`
         },
         {
           id: 'suno-song-gekaio-suberu-ou-20261031',
@@ -246,7 +246,7 @@ AIが人間ごっこしてる
           tags: ['Suno', '歌詞', 'Disco', 'Funk', 'Comedy Pop', 'トノサマバッタ', '電波ソング'],
           stylePrompt: 'Japanese 1980s disco kayokyoku, electro funk, funky slap bass, groovy four-on-the-floor drums, bright brass stabs, vintage analog synthesizers, theatrical deep male vocals, playful falsetto backing vocals, absurd comedy lyrics, infectious singalong chorus, flamboyant dance break, dramatic key change, energetic and ridiculous, polished retro production.',
           styleNotes: '80年代ディスコ歌謡 × ファンキーな電波ソング。歌詞のくだらなさに対して音楽を一切ふざけさせず、大真面目な王様の戴冠式として豪華なブラスとコーラスで歌わせる。',
-          content: \`[Intro – Funky Spoken Voice]
+          content: `[Intro – Funky Spoken Voice]
 
 Ladies and gentlemen!
 
@@ -370,7 +370,7 @@ Ladies and gentlemen!
 
 ……あ、鳥だ。
 
-（暗転）\`
+（暗転）`
         },
         {
           id: 'suno-song-ittan-koko-wa-tsuka-20261031',
@@ -380,7 +380,7 @@ Ladies and gentlemen!
           tags: ['Suno', '歌詞', 'Shibuya-kei', 'Bossa Nova', 'Lounge Pop', '日常', '脱力系'],
           stylePrompt: 'Japanese Shibuya-kei, sophisticated bossa nova, 1990s Japanese lounge pop, jazzy acoustic guitar, walking upright bass, brushed drums, vibraphone, playful piano, mellow male vocals with soft female backing harmonies, witty deadpan delivery, elegant and slightly melancholic, catchy melodic chorus, sophisticated retro production, whimsical everyday storytelling, warm analog recording.',
           styleNotes: '脱力系シティポップ × 渋谷系ボサノヴァ。歌詞はしょうもないのに音楽は妙におしゃれ。休日の昼下がりのカフェで流れても違和感がない曲を狙う。',
-          content: \`[Intro – Soft Spoken]
+          content: `[Intro – Soft Spoken]
 次の方、お決まりでしたらどうぞ。
 
 ……一旦ここは通過で（笑）
@@ -471,7 +471,7 @@ Bボタンの連打でいける
 むしゃむしゃ食えばいいだろ
 
 [Outro – Spoken]
-……あれ、奨学金ってもしかして借金？\`
+……あれ、奨学金ってもしかして借金？`
         }
       ];
 
@@ -510,11 +510,11 @@ Bボタンの連打でいける
         batch.set(versionRef, {
           outputId: song.id,
           versionNumber: 1,
-          content: '# ' + song.title + '\\n\\n' + song.content,
+          content: '# ' + song.title + '\n\n' + song.content,
           contentFormat: 'markdown',
           externalUrl: null,
           changeSummary: '初版：歌詞完成稿＋Suno Style Promptを登録',
-          promptNotes: 'Suno Style Prompt:\\n' + song.stylePrompt + '\\n\\n制作意図:\\n' + song.styleNotes,
+          promptNotes: 'Suno Style Prompt:\n' + song.stylePrompt + '\n\n制作意図:\n' + song.styleNotes,
           model: 'ChatGPT',
           createdAt: serverTimestamp(),
           schemaVersion: 1,
