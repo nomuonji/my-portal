@@ -92,6 +92,7 @@ import PublicCms from './components/PublicCms';
 import CharacterLibrary from './components/CharacterLibrary';
 import CurationSources from './components/CurationSources';
 import JobOpportunities from './components/JobOpportunities';
+import Outputs from './components/Outputs';
 
 import getAppTheme, { fonts } from './theme';
 
@@ -180,6 +181,7 @@ function App() {
     if (path.startsWith('/characters')) return 'キャラクターDB';
     if (path.startsWith('/curation-sources')) return '情報源ライブラリ';
     if (path.startsWith('/jobs')) return '仕事DB';
+    if (path.startsWith('/outputs')) return 'アウトプットDB';
     if (path.startsWith('/ideaboard') || path.startsWith('/idea')) return 'アイデア';
     if (path.startsWith('/hobbyboard') || path.startsWith('/hobby')) return '趣味';
     if (path.startsWith('/stockboard') || path.startsWith('/stock')) return 'ストック';
@@ -395,6 +397,7 @@ function App() {
       label: '制作・公開',
       items: [
         { to: '/ogiri', label: '大喜利ラボ', hint: '発想の拡散・センス蓄積', icon: <EmojiObjectsIcon /> },
+        { to: '/outputs', label: 'アウトプットDB', hint: '成果物 / バージョン / 採点・フィードバック', icon: <MetaIcon /> },
         { to: '/public-cms', label: 'Public CMS', hint: '思考 → 公開 / 複数サイト', icon: <PublicIcon /> },
         { to: '/characters', label: 'キャラクターDB', hint: 'キャラクター設定 / 画像ライブラリ', icon: <CharacterIcon /> },
         { to: '/project', label: 'プロジェクトボード', hint: 'Project一覧', icon: <Folder /> },
@@ -629,6 +632,7 @@ function App() {
                 <Route path="/characters" element={<CharacterLibrary />} />
                 <Route path="/curation-sources" element={<CurationSources />} />
                 <Route path="/jobs" element={<JobOpportunities />} />
+                <Route path="/outputs" element={<Outputs />} />
                 <Route path="/thinking" element={<ThinkingWorkspace />} />
                 <Route path="/feature-requests" element={<FeatureRequests />} />
                 <Route path="/project" element={<Project />} />
