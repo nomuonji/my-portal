@@ -589,7 +589,24 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
     case "profile_fact_upsert": return structured(await contextStore.profileFactUpsert(args));
     case "profile_fact_update": return structured(await contextStore.profileFactUpdate(args));
     case "decision_create": return structured(await contextStore.decisionCreate(args));
-    case "opportunity_create": return structured(await contextStore.opportunityCreate(args));
+    case "opportunity_create": {
+      // Backwards-compatible write path for scheduled job discovery: job records
+      // live in the dedicated collection, while other Opportunity types remain in Context Store.
+      if (String(args.type || "").toLowerCase() === "job") {
+        return structured(await jobOpportunityStore.upsert({
+          title: args.title,
+          summary: args.summary,
+          sourceUrl: args.sourceUrl,
+          reward: args.reward,
+          deadline: args.deadline,
+          status: args.status,
+          sourcePublisher: args.attributes?.sourcePublisher,
+          tags: args.attributes?.tags || args.tags,
+          attributes: args.attributes || {},
+        }));
+      }
+      return structured(await contextStore.opportunityCreate(args));
+    }
     case "opportunity_update": return structured(await contextStore.opportunityUpdate(args));
     case "space_distill_run": return structured(await contextStore.spaceDistillRun(args));
     case "idea_category_list": return structured(await agentStore.categoryList(args));
