@@ -21,6 +21,17 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
+    # Firebase Hosting deploys do not apply Firestore Security Rules.
+    # Keep the deployed rules in sync with the committed rules for both databases.
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v3
+      with:
+        project_id: my-portal-d05fd
+        credentials_json: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}'
+
+    - name: Deploy Firestore Security Rules
+      run: npx --yes firebase-tools deploy --only firestore:rules --project my-portal-d05fd --non-interactive
+
     - name: Build project
       run: npm run build
       env:
