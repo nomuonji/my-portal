@@ -256,10 +256,8 @@ async function addFeedback(input = {}) {
     schemaVersion: 1,
   };
   await db().runTransaction(async (transaction) => {
-    const [outputSnapshot, versionSnapshot] = await Promise.all([
-      transaction.get(outputRef),
-      transaction.get(versionRef),
-    ]);
+    const outputSnapshot = await transaction.get(outputRef);
+    const versionSnapshot = await transaction.get(versionRef);
     if (!outputSnapshot.exists) throw new Error('Output not found: ' + outputId);
     if (!versionSnapshot.exists || versionSnapshot.data().outputId !== outputId) {
       throw new Error('Version not found for output: ' + versionId);
