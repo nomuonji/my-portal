@@ -30,6 +30,8 @@ import * as outputStoreImport from "../../functions/outputStore.js";
 import * as outputToolsImport from "../../functions/outputToolSchemas.js";
 import * as intelligenceStoreImport from "../../functions/intelligenceCorpusStore.js";
 import * as intelligenceToolsImport from "../../functions/intelligenceCorpusToolSchemas.js";
+import * as agentIntelligenceRegistryImport from "../../functions/agentIntelligenceRegistry.js";
+import * as agentIntelligenceToolsImport from "../../functions/agentIntelligenceToolSchemas.js";
 import * as contextStoreImport from "../../functions/contextStore.js";
 import * as worldMapImport from "../../functions/worldMap.js";
 import * as workspaceAppImport from "../../functions/mcpWorkspaceApp.js";
@@ -71,6 +73,8 @@ const outputStore: any = (outputStoreImport as any).default ?? outputStoreImport
 const outputToolsModule: any = (outputToolsImport as any).default ?? outputToolsImport;
 const intelligenceStore: any = (intelligenceStoreImport as any).default ?? intelligenceStoreImport;
 const intelligenceToolsModule: any = (intelligenceToolsImport as any).default ?? intelligenceToolsImport;
+const agentIntelligenceRegistry: any = (agentIntelligenceRegistryImport as any).default ?? agentIntelligenceRegistryImport;
+const agentIntelligenceTools: any = (agentIntelligenceToolsImport as any).default ?? agentIntelligenceToolsImport;
 const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
 const worldMap: any = (worldMapImport as any).default ?? worldMapImport;
 const workspaceApp: any = (workspaceAppImport as any).default ?? workspaceAppImport;
@@ -82,10 +86,10 @@ const worldMapTools: any = (worldMapToolsImport as any).default ?? worldMapTools
 const contextToolsModule: any = (contextToolsImport as any).default ?? contextToolsImport;
 const linearBridge: any = (linearBridgeImport as any).default ?? linearBridgeImport;
 const migration: any = (migrationImport as any).default ?? migrationImport;
-const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...worldMapTools.TOOLS, ...chatContextTools.TOOLS, ...contextRegistryTools.TOOLS, ...portalToolsModule.TOOLS, ...jobOpportunityToolsModule.TOOLS, ...metaTools.TOOLS, ...personalFeedTools.TOOLS, ...discoverReaderTools.TOOLS, ...personalTasteTools.TOOLS, ...routineTools.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...outputToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS, ...workspaceApp.TOOLS];
+const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...worldMapTools.TOOLS, ...chatContextTools.TOOLS, ...contextRegistryTools.TOOLS, ...portalToolsModule.TOOLS, ...jobOpportunityToolsModule.TOOLS, ...metaTools.TOOLS, ...personalFeedTools.TOOLS, ...discoverReaderTools.TOOLS, ...personalTasteTools.TOOLS, ...routineTools.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...outputToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS, ...agentIntelligenceTools.TOOLS, ...workspaceApp.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "1.21.0-netlify";
+const SERVER_VERSION = "1.22.0-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -468,6 +472,15 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "intelligence_sync_murakami_radio") return structured(await intelligenceStore.syncMurakamiRadio(args));
   if (name === "intelligence_refresh_murakami_derived") return structured(await intelligenceStore.refreshDerivedDocuments(args));
 
+  if (name === "agent_profile_list") return structured(await agentIntelligenceRegistry.listProfiles(args));
+  if (name === "agent_profile_get") return structured(await agentIntelligenceRegistry.getProfile(args));
+  if (name === "agent_profile_version_create") return structured(await agentIntelligenceRegistry.createProfileVersion(args));
+  if (name === "intelligence_pack_list") return structured(await agentIntelligenceRegistry.listPacks(args));
+  if (name === "intelligence_pack_get") return structured(await agentIntelligenceRegistry.getPack(args));
+  if (name === "intelligence_pack_version_create") return structured(await agentIntelligenceRegistry.createPackVersion(args));
+  if (name === "cognitive_bundle_resolve") return structured(await agentIntelligenceRegistry.resolveBundle(args));
+  if (name === "agent_intelligence_bootstrap") return structured(await agentIntelligenceRegistry.bootstrapInitialPack(args));
+
   await ensureAgentData();
   if (name === "world_map_get") return structured(await worldMap.get());
   if (name === "portal_workspace_open") {
@@ -529,6 +542,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
         portalToolCount: portalToolsModule.TOOLS.length,
         socialToolCount: socialToolsModule.TOOLS.length,
         intelligenceToolCount: intelligenceToolsModule.TOOLS.length,
+        agentIntelligenceToolCount: agentIntelligenceTools.TOOLS.length,
         database: await agentStore.healthCheck(),
         contextStore: await contextStore.healthCheck(),
         linear: linearBridge.configSummary(),
