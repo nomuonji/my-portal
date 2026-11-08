@@ -35,7 +35,7 @@
     "test:intelligence-corpus": "node scripts/intelligence-corpus-smoke.js",
     "test:curation-sources": "node --test scripts/curation-source-smoke.js",
     "test:discover-reader": "node --test scripts/discover-reader-smoke.js scripts/discover-reader-flow-smoke.js",
-    "prebuild": "npm run test:curation-sources && npm run test:job-opportunities && npm run test:discover-reader && npm run test:personal-feed && npm run test:personal-taste && npm run test:taste-sources && npm run test:anilist-integration && npm run test:media-accounts && npm run test:intelligence-corpus && npm run test:public-cms && npm run test:organization-lifecycle && npm run test:hq-dispatch && npm run test:hq-outcome && npm run test:character-image && npm run test:world-home && npm run test:meta-strategy && npm run test:routine-jobs && npm run test:filmarks-trakt-migration && npm run test:board-capture",
+    "prebuild": "npm run test:curation-sources && npm run test:job-opportunities && npm run test:discover-reader && npm run test:personal-feed && npm run test:personal-taste && npm run test:taste-sources && npm run test:anilist-integration && npm run test:media-accounts && npm run test:intelligence-corpus && npm run test:agent-intelligence && npm run test:public-cms && npm run test:organization-lifecycle && npm run test:hq-dispatch && npm run test:hq-outcome && npm run test:character-image && npm run test:world-home && npm run test:meta-strategy && npm run test:routine-jobs && npm run test:filmarks-trakt-migration && npm run test:board-capture",
     "test:board-capture": "node --test scripts/board-capture-smoke.js",
     "test:hq-dispatch": "node scripts/hq-dispatch-smoke.js",
     "test:organization-lifecycle": "node scripts/organization-lifecycle-smoke.js",
@@ -51,7 +51,8 @@
     "test:anilist-integration": "node --test scripts/anilist-integration-smoke.js",
     "test:media-accounts": "node --test scripts/media-accounts-smoke.js",
     "test:filmarks-trakt-migration": "node --test scripts/filmarks-trakt-migration-smoke.js",
-    "test:job-opportunities": "node --test scripts/job-opportunities-smoke.js"
+    "test:job-opportunities": "node --test scripts/job-opportunities-smoke.js",
+    "test:agent-intelligence": "node --test scripts/agent-intelligence-registry-smoke.js"
   },
   "eslintConfig": {
     "extends": [
