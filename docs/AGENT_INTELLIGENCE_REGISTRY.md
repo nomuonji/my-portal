@@ -46,3 +46,7 @@ Unresolvable required dependencies are returned in unresolvedGaps; they are neve
 - agent_intelligence_bootstrap (idempotently creates the initial MCC Pack if absent)
 
 No Agent Profile is pre-seeded: its substantive identity must be explicitly authored rather than invented by an implementation migration.
+
+## Exploration Bases
+
+Packs hold cognition that survives method changes. State that moves during an exploration (outcome contract, method version, hypotheses, constraints, runs) lives in an Exploration Base; see EXPLORATION_BASE.md. A Pack references a base with a dependency of resourceType exploration_base and never copies its content.

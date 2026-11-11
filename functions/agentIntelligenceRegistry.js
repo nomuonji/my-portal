@@ -11,7 +11,7 @@ const COLLECTIONS = Object.freeze({
 const ID_PATTERN = /^[a-z][a-z0-9-]{1,79}$/;
 const RESOURCE_TYPES = new Set([
   'chat_skill', 'hq_method', 'knowledge', 'intelligence_raw_document',
-  'tool', 'policy', 'operator', 'context', 'external',
+  'tool', 'policy', 'operator', 'context', 'external', 'exploration_base',
 ]);
 const REQUIRED_CONTRIBUTION_FIELDS = [
   'findings', 'evidence', 'assumptions', 'counterevidence', 'uncertainty',
@@ -223,6 +223,7 @@ function createRegistry(options) {
   const getDb = opts.getDb || database;
   const chatSkills = opts.chatSkills || require('./chatContextRegistry');
   const contextStore = opts.contextStore || require('./contextStore');
+  const explorationBases = opts.explorationBases || require('./explorationBaseStore');
   const db = () => getDb();
 
   async function listProfiles(input) {
@@ -414,6 +415,10 @@ function createRegistry(options) {
             qualityGates: selected.qualityGates || [],
           },
         };
+      }
+      if (dep.resourceType === 'exploration_base') {
+        const brief = await explorationBases.brief({ id: dep.canonicalRef });
+        return { ...base, resolvedVersion: brief.base.revision, title: brief.base.title, loadState: 'loaded', content: brief };
       }
       return {
         ...base,

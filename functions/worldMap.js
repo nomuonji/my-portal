@@ -165,6 +165,16 @@ function summarizeMethod(p) {
     tags: safeArray(p.tags, 22),
   };
 }
+function summarizeExplorationBase(p) {
+  return {
+    id: p.id, title: safeText(p.title, 220), status: safeText(p.status, 40),
+    summary: safeText(p.summary, 400), projectIds: safeArray(p.projectIds, 20),
+    methodVersion: safeText(p.method?.version, 60) || null,
+    targetMin: Number(p.outcome?.target?.min) || null,
+    confirmedCount: Number(p.progress?.confirmedCount) || 0,
+    stalledRuns: Number(p.stalledRuns) || 0,
+  };
+}
 async function listCollection(name) {
   const snapshot = await db().collection(name).limit(250).get();
   return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -195,8 +205,9 @@ async function get() {
     ensureAgentGuide(),
     listCollection('projects'), listCollection('spaces'), listCollection('methods'),
     chatContext.listSkills(), contexts.list(),
+    listCollection('explorationBases'),
   ]);
-  const names = ['directory', 'projects', 'spaces', 'methods', 'chatSkills', 'contexts'];
+  const names = ['directory', 'projects', 'spaces', 'methods', 'chatSkills', 'contexts', 'explorationBases'];
   const warnings = results.flatMap((r, i) => r.status === 'rejected' ? [`${names[i]}: unavailable (${safeText(r.reason?.message || r.reason, 160)})`] : []);
   const settings = results[0].status === 'fulfilled' && results[0].value.exists ? results[0].value.data() : {};
   const edited = Array.isArray(settings.routes) ? settings.routes : [];
@@ -224,8 +235,9 @@ async function get() {
     contexts: contextRows,
     chatSkills: results[4].status === 'fulfilled' ? results[4].value.items : [],
     methods: items(3).map(summarizeMethod).sort((a,b) => a.title.localeCompare(b.title)),
+    explorationBases: items(6).map(summarizeExplorationBase).sort((a,b) => a.title.localeCompare(b.title)),
     coverage: Object.fromEntries(names.slice(1).map((n, i) => [n, results[i+1].status === 'fulfilled' ? 'loaded' : 'unavailable'])),
-    registrySemantics: {skills:'My Portal DB / chatSkills',methods:'Agent HQ Manager/Worker execution',contexts:'Independent project/domain context records and decision history',spaces:'Human Thinking Workspace only'}, 
+    registrySemantics: {skills:'My Portal DB / chatSkills',methods:'Agent HQ Manager/Worker execution',contexts:'Independent project/domain context records and decision history',spaces:'Human Thinking Workspace only',explorationBases:'Fixed points of an ongoing exploration: outcome, method version, hypotheses, constraints, runs. Read with exploration_base_get before exploring'}, 
     warnings,
     help: '最初にWorld Homeで担当とProject/Domain別のContextsを確認する。ContextsはSpaceとは別DB。MethodはManager/Worker専用、Skillはチャット用。',
   };

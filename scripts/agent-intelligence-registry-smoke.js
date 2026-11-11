@@ -70,8 +70,14 @@ const contextStore = {
     return { method: { id, title: 'Example Method' }, currentVersion, versions: [currentVersion] };
   },
 };
+const explorationBases = {
+  async brief({ id }) {
+    if (id !== 'example-base') throw new Error('Exploration Base not found: ' + id);
+    return { base: { id, title: 'Example Base', revision: 7 }, outcome: { statement: 'Find two things.' } };
+  },
+};
 const createRegistry = (database) => registryModule.createRegistry({
-  getDb: () => database, chatSkills, contextStore,
+  getDb: () => database, chatSkills, contextStore, explorationBases,
 });
 const baseProfile = (portfolio) => ({
   id: 'test-agent',
@@ -238,4 +244,29 @@ test('Initial MCC bootstrap is idempotent and does not create a Profile', async 
   assert.equal(profileList.count, 0);
   const packList = await registry.listPacks({});
   assert.equal(packList.items[0].id, 'marketing-creative-cognition');
+});
+
+test('Bundle Resolver loads an Exploration Base brief when the caller selects it', async () => {
+  const db = new MemoryDb();
+  const registry = createRegistry(db);
+  const pack = basePack();
+  pack.components[0].dependencies.push(
+    { resourceType: 'exploration_base', canonicalRef: 'example-base', requiredness: 'recommended' },
+    { resourceType: 'exploration_base', canonicalRef: 'missing-base', requiredness: 'optional' },
+  );
+  await registry.createPackVersion({ pack, expectedCurrentVersion: 0, confirm: true });
+  await registry.createProfileVersion({ profile: baseProfile([{ packId: 'test-cognition' }]), expectedCurrentVersion: 0, confirm: true });
+  const resolve = (selectedDependencies) => registry.resolveBundle({
+    profileId: 'test-agent', taskFrame: { objective: 'Run one exploration cycle.' },
+    selectedIntelligences: [{ packId: 'test-cognition', componentIds: ['evidence-review'], selectionRationale: 'Exploration run needs the base.' }],
+    selectedDependencies,
+  });
+  const idle = await resolve([]);
+  assert.equal(idle.resolvedDependencies.find((item) => item.canonicalRef === 'example-base').loadState, 'not_requested');
+  const loaded = await resolve(['exploration_base:example-base', 'exploration_base:missing-base']);
+  const base = loaded.resolvedDependencies.find((item) => item.canonicalRef === 'example-base');
+  assert.equal(base.loadState, 'loaded');
+  assert.equal(base.resolvedVersion, 7);
+  assert.equal(base.content.outcome.statement, 'Find two things.');
+  assert.equal(loaded.resolvedDependencies.find((item) => item.canonicalRef === 'missing-base').loadState, 'unresolved');
 });
