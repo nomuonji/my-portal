@@ -1,0 +1,592 @@
+{
+  "note": "Seed for the first Exploration Base. Apply once through MCP: exploration_base_create(base), then exploration_item_upsert for userConstraints (with the authorization fields), envConstraints+agentConstraints, and hypotheses. Dry-run verified against explorationBaseStore on 2026-11-11.",
+  "authorization": {
+    "userAuthorized": true,
+    "authorizationNote": "2026-11-11 チャット: 「それでいいです。やってください。本数は２か３KW、正本の分担はあなたの判断に任せます。今回のメインはシステム側なのでお宝KW探索はテストくらいの扱いでいいです」"
+  },
+  "base": {
+    "id": "treasure-keyword-note",
+    "title": "お宝KW探索｜note記事用",
+    "summary": "noteアカウントで書くための、競合が弱く需要と収益導線のあるキーワードを探す探索。探索拠点の仕組みの最初の適用例で、探索自体はテスト扱い。測定データの正本はKeywords Operatorとkeywordsリポジトリにあり、ここには定点だけを置く。",
+    "projectIds": [
+      "site-operations"
+    ],
+    "domains": [
+      "keyword-research",
+      "treasure-keywords",
+      "note-automation"
+    ],
+    "canonicalData": [
+      "Keywords Operator: keyword treasury / research sessions（候補と測定値）",
+      "nomuonji/keywords docs/treasure-cycles/*.json（サイクルごとの判定記録）",
+      "nomuonji/keywords docs/treasure-method.md（探索法の本文）"
+    ],
+    "packRefs": [
+      {
+        "packId": "exploration-operations",
+        "role": "探索の進め方（領域を問わない規律）"
+      },
+      {
+        "packId": "treasure-keyword-intelligence",
+        "role": "検索需要・競合・商流の証拠の読み方"
+      }
+    ],
+    "outcome": {
+      "statement": "依頼主が「書く」と決めた、現行の探索法の合格条件をすべて満たすキーワードを2〜3本見つける。",
+      "unit": "依頼主が書くと確認した合格キーワード1語",
+      "target": {
+        "min": 2,
+        "max": 3
+      },
+      "acceptance": "現行の探索法（本体）が定める合格条件をすべて実測で満たすこと（tsk-v25ではC1〜C6）。そのうえで依頼主が書けるか・書きたいかを確認する。未測定の条件が残る語は候補にとどめる。",
+      "confirmedBy": "user",
+      "finalIndicator": "記事化後の送客クリック（note運営方針の90日判定）。この探索の完了条件には含めない。",
+      "proxies": [
+        "検索ボリューム",
+        "CPC",
+        "弱い枠スコア",
+        "観測したパターンの数",
+        "探索法の版数",
+        "実行したサイクル数"
+      ],
+      "deadline": "",
+      "budget": {
+        "note": "上限は未設定。Reserpは1リクエストごとの従量課金。"
+      },
+      "stopConditions": [
+        "3回続けてどの定点も動かなかったら、測定を止めて制約の充足可能性を報告する",
+        "実Googleの測定手段（Reserp）が使えないときは、代理エンジンで競合を確定せずに止める"
+      ],
+      "priority": "今回の主目的は探索拠点の仕組みの検証で、お宝KW探索はそのテスト。"
+    },
+    "method": {
+      "title": "お宝キーワード探索法",
+      "version": "tsk-v25",
+      "summary": "合格条件C1〜C6と不変条件I1〜I13、8ステップの手順。拠点へ移行した時点の現行版。tsk-v8〜v24の経緯は本文のchangelogとdocs/method/versions.jsonにある。",
+      "bodyRef": {
+        "kind": "repo",
+        "location": "nomuonji/keywords",
+        "path": "docs/treasure-method.md",
+        "commit": "20a5307"
+      },
+      "benchmarkRef": "nomuonji/keywords: npm run test:treasure（scripts/treasure-score-smoke.ts が 転職 後悔=7・ペットロス=3・空き家 売却=0 を固定）"
+    },
+    "userAuthorized": true,
+    "authorizationNote": "2026-11-11 チャット: 「それでいいです。やってください。本数は２か３KW、正本の分担はあなたの判断に任せます。今回のメインはシステム側なのでお宝KW探索はテストくらいの扱いでいいです」"
+  },
+  "userConstraints": [
+    {
+      "owner": "user",
+      "statement": "一次資料（出典URLと取得日、または本人の体験）が無い語は記事にしない。体験や数値を捏造しない。",
+      "rationale": "note運営方針（2026-11-03 本人指示）。材料の無いAI出力は割り引かれる。",
+      "check": "候補ごとに一次資料の取得経路を実際に取得して記録する",
+      "legacyIds": [
+        "C6 (tsk-v25)"
+      ]
+    },
+    {
+      "owner": "user",
+      "statement": "書けるか・書きたいかは依頼主だけが判定する。エージェントは候補を絞ったあとで確認を取る。",
+      "rationale": "39サイクル、依頼主が書かないB2B技術語を掘り続けた。",
+      "check": "候補は依頼主の確認が出るまで達成に数えない",
+      "legacyIds": [
+        "C1 (tsk-v23)",
+        "P24"
+      ]
+    },
+    {
+      "owner": "user",
+      "statement": "依頼されていない定期実行・公開・広告出稿・ASP申請をしない。調査はオンデマンド。",
+      "rationale": "Treasure Keyword IntelligenceのContextに記録された決定。",
+      "legacyIds": [
+        "skill §6"
+      ]
+    },
+    {
+      "owner": "user",
+      "statement": "YMYL領域は、一次資料と体制が無い限り候補にしない。",
+      "rationale": "永代供養の計算機を提案した失敗から。緩める判断は依頼主に残す。",
+      "legacyIds": [
+        "I9 (Pack v7)",
+        "I10 (tsk-v25)"
+      ]
+    }
+  ],
+  "envConstraints": [
+    {
+      "owner": "environment",
+      "statement": "競合の確定は実Google（Reserp）の1ページ目だけで行う。Brave・ddg・exa・bingは参考にとどめる。",
+      "basis": "溶接 歪み 取り: Brave弱3→Google弱6。材料記号: ddg/exaで専門メディア10本→Googleでは圏外（2026-11-11 Reserp）",
+      "legacyIds": [
+        "I1 (tsk-v23)",
+        "P25"
+      ]
+    },
+    {
+      "owner": "environment",
+      "statement": "Google Adsの測定下限は月10前後。それ未満とnullは区別できない。",
+      "basis": "トマト 青枯病はAds nullだがサジェスト10件。クラファン商品5件は支援者がいてもすべてnull（2026-11-10）",
+      "legacyIds": [
+        "I6 (skill)",
+        "I3 (tsk-v25)",
+        "I18 (Pack v7)"
+      ]
+    },
+    {
+      "owner": "environment",
+      "statement": "Googleサジェストは市区町村×サービスのような超ロングテールを返さない。",
+      "basis": "世田谷区/練馬区/杉並区/横浜市 シロアリ 駆除はすべて0件。業者と広告は存在する（2026-11-10）",
+      "legacyIds": [
+        "I18の訂正"
+      ]
+    },
+    {
+      "owner": "environment",
+      "statement": "Reserpは従量課金で、SERPの結果にログインページや地図エントリが混ざる。",
+      "basis": "転職 失敗 その後 でノイズ1件を弱い枠に数えていた（2026-11-11）",
+      "legacyIds": [
+        "I11① (tsk-v24)"
+      ]
+    },
+    {
+      "owner": "environment",
+      "statement": "このランタイムではallintitleの総件数とAI Overviewの有無を測れないことが多い。",
+      "basis": "Pack v7のknownLimitsに記録された実行時の制約",
+      "legacyIds": []
+    }
+  ],
+  "agentConstraints": [
+    {
+      "owner": "agent",
+      "statement": "1回のrunに、既知の仮説の外にある領域の観測を最低1件含める。",
+      "rationale": "既知パターンへの固定を防ぐ。",
+      "legacyIds": [
+        "I14"
+      ]
+    },
+    {
+      "owner": "agent",
+      "statement": "既存アカウント・既存領域を探索範囲の上限にしない。",
+      "rationale": "書けないと確認できた語だけを棄却する。事前フィルタにすると新しい領域を測る前に捨てる。",
+      "legacyIds": [
+        "I4 (tsk-v23)"
+      ]
+    },
+    {
+      "owner": "agent",
+      "statement": "カテゴリ名だけの語は候補にしない。状況＋対象（＋条件）に切り直す。",
+      "rationale": "索引の弱いサイトでは上位が公式とまとめで固定される。Pack v7にあり、tsk-v25の本文には無い。本体に取り込むか外すかは次の版で決める。",
+      "legacyIds": [
+        "I16 (Pack v7)"
+      ]
+    },
+    {
+      "owner": "agent",
+      "statement": "AIの回答だけで用が足りる語は候補にしない。",
+      "rationale": "AI Overviewにクリックを取られる。Pack v7にあり、tsk-v25の本文には無い。",
+      "legacyIds": [
+        "I10 (Pack v7)",
+        "I11 (Pack v7)"
+      ]
+    }
+  ],
+  "hypotheses": [
+    {
+      "title": "感情語は空き、取引語は埋まる",
+      "statement": "同じ領域でも、後悔・不安・当たらないといった感情の語は1ページ目に弱い枠が立ち、売却・比較・ミスマッチといった取引の語は専門職が押さえている。",
+      "mechanism": "専門職と事業者は成約に近い語にしかページを作らない。感情の語は知恵袋・個人ブログ・noteが受けている。",
+      "limits": "感情語は広告主が付きにくい。記事は感情語で書き、送客だけ取引語へ向ける設計が要る。",
+      "stage": "reproduced",
+      "legacyIds": [
+        "P22",
+        "I12 (tsk-v24)"
+      ],
+      "addEvidence": [
+        {
+          "type": "observation",
+          "ref": "転職 後悔 弱7 ↔ 転職 ミスマッチ 弱5",
+          "source": "reserp",
+          "date": "2026-11-11"
+        },
+        {
+          "type": "observation",
+          "ref": "実家じまい・実家片付けは空き ↔ 空き家 売却 弱0",
+          "source": "reserp",
+          "date": "2026-11-11"
+        },
+        {
+          "type": "observation",
+          "ref": "占い 当たらない 1,300/月・弱6 ↔ 占い 依存 弱5",
+          "source": "reserp",
+          "date": "2026-11-11"
+        }
+      ]
+    },
+    {
+      "title": "競合は「誰が書けるか」で決まる",
+      "statement": "資格・立場・実務がないと書けない領域は、単価が低くても専門職が1ページ目を押さえている。",
+      "mechanism": "書ける主体が限られる領域では、その主体が自分の集客のために書く。単価は関係しない。",
+      "limits": "単価だけでは競合を予測できない、という否定形でしか使えていない。",
+      "stage": "observed",
+      "legacyIds": [
+        "P23",
+        "I13 (tsk-v24)"
+      ],
+      "addEvidence": [
+        {
+          "type": "observation",
+          "ref": "ペットロス 12,100/月・CPC ¥37・弱3（動物病院・霊園・葬祭）",
+          "source": "reserp",
+          "date": "2026-11-11"
+        }
+      ],
+      "addCounterexamples": [
+        "占い 依存 は CPC ¥4,109 で弱5。高単価でも専門職が薄い領域はある"
+      ]
+    },
+    {
+      "title": "記事が成立するのは「認知あり×問いあり×未回答」の帯だけ",
+      "statement": "対象の名前が検索され、サジェストに問いの形が出て、その問いに専用ページが無いときだけ記事が成立する。意外性は入口にならない。",
+      "mechanism": "意外な対象は検索者がまだ知らないので問いを持てない。問いがある対象はすでに誰かが答えている。",
+      "limits": "この帯に実例があるかは未検証。",
+      "legacyIds": [
+        "方法論v6",
+        "自己批判8"
+      ]
+    },
+    {
+      "title": "action層の空白",
+      "statement": "「〜とは」は大手SaaSと士業が埋めるが、申請方法・必要書類・期限といった手続きの語は空く。",
+      "mechanism": "SaaSのKPIは登録で、手続き記事は商流にならない。士業は依頼導線しか書かない。",
+      "limits": "実Googleでは未再測。当時の根拠だったexactTitleShare 0は空白の指標として無効と後に判明。需要は月70と小さい。",
+      "stage": "observed",
+      "legacyIds": [
+        "P2"
+      ],
+      "addEvidence": [
+        {
+          "type": "observation",
+          "ref": "くるみん 申請方法 CPC ¥431・70/月（えるぼしも同型）",
+          "source": "Keywords Operator 2026-11-10、Reserp導入前",
+          "date": "2026-11-11"
+        }
+      ],
+      "addCounterexamples": [
+        "助成金ポータルが申請ページを持つ"
+      ]
+    },
+    {
+      "title": "形式の不在（計算機・比較表）",
+      "statement": "読み物はあるが、自分の条件で絞る道具が無い語がある。",
+      "mechanism": "道具は作るのに手間がかかり、販売に直結しない判断には誰も作らない。",
+      "limits": "販売に直結する判断は業者が道具を作る（給湯器の後継検索は6社）。観測した2語はどちらも競合が強く記事不可だった。",
+      "stage": "observed",
+      "legacyIds": [
+        "P5"
+      ],
+      "addEvidence": [
+        {
+          "type": "observation",
+          "ref": "空き家 解体 費用 相場・永代供養 費用 に道具なし",
+          "source": "Keywords Operator 2026-11-10",
+          "date": "2026-11-11"
+        }
+      ],
+      "addCounterexamples": [
+        "ゴミ屋敷はミツモアがスニペット内にシミュレーターを持つ",
+        "ばね計算は計算ツールが8本あった"
+      ]
+    },
+    {
+      "title": "発売・受賞直後の時間差",
+      "statement": "発売や受賞の直後は、名前の需要が立ち上がる前で記事が無い。",
+      "mechanism": "書き手は需要が見えてから書く。",
+      "limits": "需要が立ち上がる前に書いても読者がいない期間がある。",
+      "stage": "observed",
+      "legacyIds": [
+        "P6"
+      ],
+      "addEvidence": [
+        {
+          "type": "observation",
+          "ref": "黄づつみ67 は2026-07に0→70〜90へ立ち上がった",
+          "source": "Google Ads 2026-11-10",
+          "date": "2026-11-11"
+        }
+      ]
+    },
+    {
+      "title": "道具インセンティブの非対称性",
+      "statement": "ツール化しても誰の売上も上がらず、かつ第三者がDB化するほど母数が無い判断だけが空白になる。",
+      "mechanism": "業者は販売に直結する選定だけを道具にする。母数のある領域は垂直DB事業者が集客のために埋める。",
+      "legacyIds": [
+        "P16",
+        "P16b"
+      ]
+    },
+    {
+      "title": "改正・経過措置の差分",
+      "statement": "法改正の新旧対照や経過措置の整理は誰も作っていない。",
+      "mechanism": "改正直後は解説が概要にとどまる。",
+      "legacyIds": [
+        "P3"
+      ]
+    },
+    {
+      "title": "同名衝突を修飾語で分離",
+      "statement": "同名の別対象に需要を食われている名前は、修飾語を足すと固有の空きが出る。",
+      "mechanism": "同名の強い対象がSERPを占め、固有の対象のページが無い。",
+      "legacyIds": [
+        "P4"
+      ]
+    },
+    {
+      "title": "行政の様式名",
+      "statement": "行政の様式名そのものを調べる検索に、書き方を答えるページが無い。",
+      "mechanism": "行政は様式を配るだけで、士業は依頼導線しか書かない。",
+      "legacyIds": [
+        "P7"
+      ]
+    },
+    {
+      "title": "地域×制度",
+      "statement": "市町村名×補助金名のような語は空いている。",
+      "mechanism": "全国メディアは市町村単位まで作らない。",
+      "limits": "サジェストでは需要を確認できない領域。",
+      "legacyIds": [
+        "P9"
+      ]
+    },
+    {
+      "title": "B2Bの窓口差",
+      "statement": "労働局や自治体ごとの運用差を整理したページが無い。",
+      "mechanism": "窓口差は実務者しか知らず、書く動機が無い。",
+      "legacyIds": [
+        "P10"
+      ]
+    },
+    {
+      "title": "1語で大きな需要×薄い競合はほぼ存在しない",
+      "statement": "需要の大きい語にはすでに誰かが書いており、競合の薄い語は測定下限より下にある。",
+      "mechanism": "需要が見える語は書き手にも見える。",
+      "limits": "Reserp導入前の測定に基づく。",
+      "stage": "observed",
+      "legacyIds": [
+        "goal-round-1"
+      ],
+      "addEvidence": [
+        {
+          "type": "observation",
+          "ref": "永代供養 9,900・車検 1,600・遺品整理 3,600 はすべて競合high",
+          "source": "Keywords Operator 2026-11-10、Reserp導入前",
+          "date": "2026-11-11"
+        }
+      ],
+      "addCounterexamples": [
+        "占い 当たらない は1,300/月で実Googleの弱い枠6"
+      ]
+    },
+    {
+      "title": "業者が商品ページしか作らない名前",
+      "statement": "品種名・型番など業者の商品DBにしかない固有名詞は、記事が無い。",
+      "mechanism": "業者にとって横断比較は他社を並べることになり得しない。",
+      "stage": "observed",
+      "status": "rejected",
+      "reason": "事例のキングバリアは語の形がカテゴリ名で、ECと公式が並ぶ正常なSERPを空白と読み違えていた。同型のグランバギーは公式4件と県PDF2件で閉じ、種苗は1成約40〜50円で採算も合わない。",
+      "legacyIds": [
+        "P1"
+      ],
+      "addEvidence": [
+        {
+          "type": "observation",
+          "ref": "キングバリア 170/月、上位10件がECと公式",
+          "source": "Keywords Operator 2026-11-10",
+          "date": "2026-11-11"
+        }
+      ],
+      "addCounterexamples": [
+        "グランバギー: タキイ公式4件＋岩手県PDF2件",
+        "ミノリスが148品種・台木50種の横断DBを持つ"
+      ]
+    },
+    {
+      "title": "業界記号の解読",
+      "statement": "耐病性記号や型番体系の意味をまとめた解説が無い。",
+      "mechanism": "記号は業界内の前提で、外向けに説明する動機が無い。",
+      "status": "rejected",
+      "reason": "トマトの耐病性記号は、タキイ公式の凡例・長崎県PDF・ミノリス・日本農業新聞がすでに解説していた。",
+      "legacyIds": [
+        "P8"
+      ]
+    },
+    {
+      "title": "供給の消滅（廃番・生産終了）",
+      "statement": "廃番で既存記事が陳腐化し、後継を案内する人がいない。",
+      "mechanism": "終了品は誰の売上にもならない。",
+      "status": "rejected",
+      "reason": "給湯器 後継品 は6社が後継検索ツールを提供していた。交換に直結する領域は業者が道具を作る。",
+      "legacyIds": [
+        "P11"
+      ]
+    },
+    {
+      "title": "互換表",
+      "statement": "互換・後継の対応表が無い。",
+      "mechanism": "メーカーは他社互換を案内しない。",
+      "status": "rejected",
+      "reason": "互換・後継はすでに検索DB化されている（給湯器ドットコムは17,000機種）。",
+      "legacyIds": [
+        "P14"
+      ]
+    },
+    {
+      "title": "供給者のWeb能力の低さ",
+      "statement": "小規模な工房や個人事業者の商品は、個別名の検索に誰も答えていない。",
+      "mechanism": "供給側に制作能力が無く、集約側には採算が合わない。",
+      "status": "rejected",
+      "reason": "クラファン商品6件のうち5件はAds null。支援者20〜91人の購買は検索需要に変換されない。検索の土俵では成立しない。",
+      "legacyIds": [
+        "P17"
+      ]
+    },
+    {
+      "title": "クラスタで合計需要を取る",
+      "statement": "個別名ページを数十本束ねれば、1語では弱くても合計で成立する。",
+      "mechanism": "同じ形式とアフィリ導線を使い回せる。",
+      "status": "rejected",
+      "reason": "同じメーカー・同じカテゴリでも品種ごとに公式記事の有無がばらつき、面で取れなかった（グランバギー）。",
+      "legacyIds": [
+        "goal-round-1 クラスタ基準"
+      ]
+    },
+    {
+      "title": "CPCと弱い枠の逆相関",
+      "statement": "単価が高いほど専門職が書くので弱い枠が減る。",
+      "mechanism": "高単価の語は集客投資の対象になる。",
+      "status": "rejected",
+      "reason": "ペットロスが反例（CPC ¥37で弱3）。単価ではなく執筆主体で決まる。",
+      "legacyIds": [
+        "H1"
+      ]
+    },
+    {
+      "title": "中立領域は需要が測定下限以下",
+      "statement": "供給者に販売動機が無い語は検索されない。",
+      "mechanism": "検索は購買の近くで起きる。",
+      "status": "rejected",
+      "reason": "材料記号が反例（SS400 2,400/月）。中立かどうかと需要は独立。",
+      "legacyIds": [
+        "H2"
+      ]
+    },
+    {
+      "title": "体系サイトの目次に無い＝機会",
+      "statement": "体系サイトの目次に無いジャンルは空いている。",
+      "mechanism": "体系サイトは網羅を目指すので、抜けは供給不足を示す。",
+      "status": "rejected",
+      "reason": "ばね計算は目次に無いが計算ツールが8本あった。目次差分は機会ではなく競合の指標。",
+      "legacyIds": [
+        "H3"
+      ]
+    },
+    {
+      "title": "登録簿走査（雅号型）",
+      "statement": "公的登録簿には、名前が実物を隠している対象が集まっている。",
+      "mechanism": "登録は名前を付ける行政手続きで、物語にする作業は誰の売上にもならない。",
+      "stage": "reproduced",
+      "status": "retired",
+      "reason": "現象は再現するが、名前しか検索されず問いが立たない。専門DBが一覧を先に作っており、空白の発見には使えない（2026-11-11 自己批判7・8）。対象の発見にだけ使う。",
+      "legacyIds": [
+        "P18"
+      ],
+      "addEvidence": [
+        {
+          "type": "observation",
+          "ref": "伯州美人（GI第153号）＝白ねぎ",
+          "source": "https://www.maff.go.jp/j/shokusan/gi_act/register/",
+          "date": "2026-11-11"
+        },
+        {
+          "type": "observation",
+          "ref": "田浦銀太刀（GI第88号）＝太刀魚",
+          "source": "https://www.kumamoto-agribiz.jp/chisan/kiji0032851/index.html",
+          "date": "2026-11-11"
+        }
+      ],
+      "addCounterexamples": [
+        "GI図鑑がGI全179件に「旬・産地・買える場所」のページを持つ",
+        "伝統的工芸品は記述型の命名でギャップが小さい"
+      ]
+    },
+    {
+      "title": "読めない名前型",
+      "statement": "旧かな・造語・外国語風で由来が読めない名前が登録簿にある。",
+      "mechanism": "命名時の表記慣習が、いまの読者から由来を奪っている。",
+      "stage": "reproduced",
+      "status": "retired",
+      "reason": "現象は再現するが、名前しか検索されず問いが立たない。専門DBが一覧を先に作っており、空白の発見には使えない（2026-11-11 自己批判7・8）。対象の発見にだけ使う。",
+      "legacyIds": [
+        "P19"
+      ],
+      "addEvidence": [
+        {
+          "type": "observation",
+          "ref": "機械遺産 第9号 ゐのくち渦巻きポンプ",
+          "source": "https://www.jsme.or.jp/kikaiisan/heritage_009_jp.html",
+          "date": "2026-11-11"
+        },
+        {
+          "type": "observation",
+          "ref": "機械遺産 第80号 ゼニアイキ",
+          "source": "https://www.jsme.or.jp/kikaiisan/heritage_080_jp.html",
+          "date": "2026-11-11"
+        }
+      ],
+      "addCounterexamples": [
+        "列島宝物館が機械遺産No.1〜138を一覧化している",
+        "機械遺産の大半は記述型の命名"
+      ]
+    },
+    {
+      "title": "新品種の未物語型",
+      "statement": "品種登録は名前と育成者だけを公示し、栽培・比較・購入は誰も書いていない。",
+      "mechanism": "育成機関は「育成しました」の報告しか出さない。",
+      "stage": "observed",
+      "status": "retired",
+      "reason": "現象は再現するが、名前しか検索されず問いが立たない。専門DBが一覧を先に作っており、空白の発見には使えない（2026-11-11 自己批判7・8）。対象の発見にだけ使う。",
+      "legacyIds": [
+        "P20"
+      ],
+      "addEvidence": [
+        {
+          "type": "observation",
+          "ref": "レディフレア／スイングレモネード／スノーフレア（静岡のマーガレット3品種）",
+          "source": "https://www.pref.shizuoka.jp/",
+          "date": "2026-11-11"
+        }
+      ]
+    },
+    {
+      "title": "売り手の言い分しかない型",
+      "statement": "PRとECはあるが、第三者の検証・比較が無い商品がある。",
+      "mechanism": "発売直後は販売者しか書いていない。",
+      "stage": "observed",
+      "status": "retired",
+      "reason": "マルチツール19in1はSERP10件すべてが販売者側だったが、検索需要はAds nullで読者がいない。",
+      "legacyIds": [
+        "P21"
+      ],
+      "addEvidence": [
+        {
+          "type": "observation",
+          "ref": "マルチツール19in1 のSERP10件すべてが販売者側",
+          "source": "https://www.makuake.com/project/19in1/",
+          "date": "2026-11-11"
+        }
+      ],
+      "addCounterexamples": [
+        "売れる商品には後からレビュー記事が出る"
+      ]
+    }
+  ]
+}
