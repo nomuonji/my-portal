@@ -23,7 +23,7 @@ jest.mock('../firebase', () => ({
 }));
 
 const LIST = { items: [
-  { id: 'job-base', title: '仕事DB探索', status: 'active', outcome: { statement: '応募する案件を見つける', target: { min: 1, max: 3 } }, confirmedCount: 0, methodVersion: 'jobdb-r4', runCount: 1, stalledRuns: 0, openRunId: null },
+  { id: 'job-base', title: '仕事DB探索', status: 'active', outcome: { statement: '応募する案件を見つける', target: { min: 1, max: 3 } }, confirmedCount: 0, methodVersion: 'jobdb-r4', runCount: 1, stalledRuns: 0, openRunId: null, awaitingCount: 0, lastRun: { finishedAt: '2026-11-12T02:00:00Z', moved: true } },
   { id: 'kw-base', title: 'お宝KW探索', status: 'active', outcome: { statement: '書く語を2〜3本', target: { min: 2, max: 3 } }, confirmedCount: 0, methodVersion: 'tsk-v25', runCount: 0, stalledRuns: 3, openRunId: null },
 ] };
 
@@ -37,7 +37,7 @@ const DETAIL = {
     confirmed: [],
   },
   method: { title: '求人探索法', version: 'jobdb-r4', summary: '定期ジョブの手順', bodyRef: { kind: 'repo', location: 'nomuonji/keywords', path: 'docs/treasure-method.md', commit: '20a5307' }, setAt: '2026-11-11T14:05:01Z' },
-  position: { runCount: 1, stalledRuns: 0, openRunId: null, lastRuns: [] },
+  position: { runCount: 1, stalledRuns: 0, openRunId: null, lastRuns: [{ id: 'R-001', finishedAt: '2026-11-12T02:00:00Z', moved: true, nextStep: '有望な2件の不明点を潰す' }] },
   full: {
     hypotheses: [
       { id: 'H-001', kind: 'hypothesis', stage: 'observed', status: 'open', title: '件数より不明点', statement: '判断を止めるのは不明点', limits: '未検証', mechanism: '公開ページに載らない', evidence: [{ type: 'observation', ref: '3件ともUNKNOWN', source: 'https://example.com/a', date: '2026-10-30' }], counterexamples: [] },
@@ -67,26 +67,34 @@ beforeEach(() => {
   });
 });
 
-test('lists bases with progress', async () => {
+test('lists bases with a one-line status and progress', async () => {
   renderAt('');
   expect(await screen.findByText('仕事DB探索')).toBeInTheDocument();
   expect(screen.getByText('お宝KW探索')).toBeInTheDocument();
-  expect(screen.getByText('成果 0 / 1〜3')).toBeInTheDocument();
+  expect(screen.getByText('3 回続けて進展がありません。進め方の見直しが必要です')).toBeInTheDocument();
+  expect(screen.getByText(/最後の実行は/)).toBeInTheDocument();
 });
 
-test('shows the fixed points of one base and lets the user confirm a candidate', async () => {
+test('detail leads with status, decisions, goal, leading guesses and recent runs; the ledger is folded', async () => {
   renderAt('id=job-base');
-  expect(await screen.findByText('応募すると決められる案件を見つける')).toBeInTheDocument();
-  expect(screen.getAllByText('件数より不明点')).toHaveLength(2); // ledger + event log
-  expect(screen.getByText('応募はしない')).toBeInTheDocument();
+  expect(await screen.findByText('あなたの判断を待っている候補が 1 件あります')).toBeInTheDocument();
+  expect(screen.getByText('応募すると決められる案件を見つける')).toBeInTheDocument();
+  expect(screen.getByText('件数より不明点')).toBeInTheDocument();
   expect(screen.getByText('3つの募集元を調べる')).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: /docs\/treasure-method\.md/ })).toHaveAttribute('href', 'https://github.com/nomuonji/keywords/blob/20a5307/docs/treasure-method.md');
-  // Rejected hypotheses are kept but folded away.
+  expect(screen.getByText('件数より不明点：当たり')).toBeInTheDocument();
+  // Constraints, rejected guesses and the event log stay out of the first view.
+  expect(screen.queryByText('応募はしない')).not.toBeInTheDocument();
   expect(screen.queryByText('棄却された仮説')).not.toBeInTheDocument();
-  fireEvent.click(screen.getByText(/棄却・引退した仮説 1 件/));
-  expect(await screen.findByText('棄却された仮説')).toBeInTheDocument();
 
-  fireEvent.click(screen.getByRole('button', { name: '確定' }));
-  fireEvent.click(await screen.findByRole('button', { name: '確定する' }));
+  fireEvent.click(screen.getByText(/詳しく見る/));
+  expect(await screen.findByText('棄却された仮説')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', { name: /制約/ }));
+  expect(screen.getByText('応募はしない')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', { name: '探索法' }));
+  expect(screen.getByRole('link', { name: /docs\/treasure-method\.md/ })).toHaveAttribute('href', 'https://github.com/nomuonji/keywords/blob/20a5307/docs/treasure-method.md');
+
+  fireEvent.click(screen.getByRole('button', { name: '成果にする' }));
+  const dialogButtons = await screen.findAllByRole('button', { name: '成果にする' });
+  fireEvent.click(dialogButtons[dialogButtons.length - 1]);
   await waitFor(() => expect(posted).toEqual({ action: 'exploration_achievement_decide', baseId: 'job-base', id: 'A-001', decision: 'confirmed', note: '' }));
 });

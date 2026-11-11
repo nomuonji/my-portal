@@ -223,6 +223,9 @@ function createStore(options) {
         confirmedCount: base.progress?.confirmedCount || 0,
         methodVersion: base.method?.version || null,
         runCount: base.runCount || 0, stalledRuns: base.stalledRuns || 0, openRunId: base.openRunId || null,
+        awaitingCount: (base.progress?.achievements || []).filter((a) => a.status === 'candidate').length,
+        pendingProposalCount: (base.proposals || []).filter((p) => p.status === 'pending').length,
+        lastRun: (base.lastRuns || [])[0] || null, // newest first
         updatedAt: base.updatedAt,
       }))
       .sort((a, b) => String(a.title).localeCompare(String(b.title)));
@@ -318,12 +321,21 @@ function createStore(options) {
     const hasOutcome = input.outcome !== undefined;
     const decisions = Array.isArray(input.confirmAchievements) ? input.confirmAchievements.slice(0, 30) : [];
     const resolve = list(input.resolveProposalIds, 30, 20);
-    if (!hasOutcome && !decisions.length && !resolve.length && !input.status) throw new Error('Nothing to change');
+    // Title, summary and domains describe what is being explored and for whom: the user's, like the outcome.
+    // Domains may arrive as a comma-separated string from clients holding an older tool schema.
+    const descriptor = {};
+    if (input.title !== undefined) descriptor.title = text(input.title, 220, 'title', true);
+    if (input.summary !== undefined) descriptor.summary = text(input.summary, 1500, 'summary', true);
+    if (input.domains !== undefined) {
+      descriptor.domains = list(typeof input.domains === 'string' ? input.domains.split(',').map((d) => d.trim()) : input.domains, 20, 100);
+    }
+    const hasDescriptor = Object.keys(descriptor).length > 0;
+    if (!hasOutcome && !hasDescriptor && !decisions.length && !resolve.length && !input.status) throw new Error('Nothing to change');
     const authorized = input.userAuthorized === true;
     await db().runTransaction(async (tx) => {
       const base = await loadBase(tx, id);
       if (!authorized) {
-        if (!hasOutcome) authorization(input, 'Confirming achievements, resolving proposals or changing status');
+        if (!hasOutcome) authorization(input, 'Renaming the base, confirming achievements, resolving proposals or changing status');
         base.counters.PR = (base.counters.PR || 0) + 1;
         const proposal = {
           id: seqId('PR', base.counters.PR), status: 'pending', target: 'outcome',
@@ -341,6 +353,11 @@ function createStore(options) {
         const outcome = cleanOutcome(input.outcome);
         base.outcome = { ...outcome, revision: (Number(base.outcome?.revision) || 0) + 1, setAt: now(), authorizationNote: note };
         pushEvent(tx, base, { type: 'outcome_set', summary: text(input.reason, 1000, 'reason', false) || 'Outcome contract revised', actor: input.actor, detail: outcome });
+      }
+      if (hasDescriptor) {
+        const before = { title: base.title, summary: base.summary, domains: base.domains };
+        Object.assign(base, descriptor);
+        pushEvent(tx, base, { type: 'base_described', summary: text(input.reason, 1000, 'reason', false) || 'Title or summary revised', actor: input.actor, detail: { before, after: descriptor } });
       }
       decisions.forEach((raw) => {
         const decision = plain(raw, 'confirmAchievements item');
