@@ -102,6 +102,14 @@ try {
     await assert.rejects(()=>chatContext.upsertSkill({
       skill:{id:skill.id,title:skill.title,body:skill.body},expectedRevision:1,confirm:true,
     }),/revision conflict/);
+    // Partial edit: only the passage changes; title, summary and triggers are kept without being resent.
+    const editedSkill=await chatContext.upsertSkill({skill:{id:skill.id},bodyEdits:[{find:'Revision proof.',replace:'Edited in place.'}],expectedRevision:2,changeReason:'Partial edit',confirm:true});
+    assert.equal(editedSkill.revision,3);
+    assert.equal(editedSkill.title,skill.title);
+    assert.deepEqual(editedSkill.triggers,skill.triggers);
+    assert.equal(editedSkill.body,skill.body+'\nEdited in place.');
+    await assert.rejects(()=>chatContext.upsertSkill({skill:{id:skill.id},bodyEdits:[{find:'no such passage',replace:'x'}],expectedRevision:3,confirm:true}),/text not found/);
+    await assert.rejects(()=>chatContext.upsertSkill({skill:{id:skill.id,body:'x'.repeat(80)},bodyEdits:[{find:'a',replace:'b'}],expectedRevision:3,confirm:true}),/not both/);
     await assert.rejects(()=>chatContext.createNote({spaceId:'seo-space',summary:'incorrect',confirm:true}),/AI-side/);
     await chatContext.createNote({spaceId:'ai-space',kind:'correction',summary:'Skill and Method must stay separate',confirm:true,idempotencyKey:'test-conversation-1'});
     const legacy=await contexts.get({id:'legacy-ai-space'});
@@ -172,6 +180,15 @@ try {
     assert.doesNotMatch(thought,/AI側の課題/);
     assert.match(mcp,/context_event_create/);
     assert.doesNotMatch(home, /Methods \/ スキル/);
+    {
+      // Partial Agent Guide edit: only the passage changes; nothing is resent.
+      const current=await world.get();
+      const guideEdited=await world.update({confirm:true,expectedRevision:current.metadataRevision,agentGuideEdits:[{find:'Final: always preserve context.',replace:'Final: preserve context.'}]});
+      assert.equal(guideEdited.metadataRevision,current.metadataRevision+1);
+      assert.equal(guideEdited.agentGuide.title,current.agentGuide.title);
+      assert.equal(guideEdited.agentGuide.instructions,current.agentGuide.instructions.replace('Final: always preserve context.','Final: preserve context.'));
+      await assert.rejects(()=>world.update({confirm:true,expectedRevision:guideEdited.metadataRevision,agentGuideEdits:[{find:'not in the guide',replace:'x'}]}),/text not found/);
+    }
     console.log('world-map-smoke: ok — meta directory, live registries, writes and routes');
   })().catch(error => { console.error(error); process.exitCode = 1; });
 } finally {

@@ -93,7 +93,7 @@ const migration: any = (migrationImport as any).default ?? migrationImport;
 const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...worldMapTools.TOOLS, ...chatContextTools.TOOLS, ...contextRegistryTools.TOOLS, ...portalToolsModule.TOOLS, ...jobOpportunityToolsModule.TOOLS, ...metaTools.TOOLS, ...personalFeedTools.TOOLS, ...discoverReaderTools.TOOLS, ...personalTasteTools.TOOLS, ...routineTools.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...outputToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS, ...agentIntelligenceTools.TOOLS, ...explorationBaseTools.TOOLS, ...workspaceApp.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "1.24.0-netlify";
+const SERVER_VERSION = "1.25.0-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -482,6 +482,8 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "intelligence_pack_list") return structured(await agentIntelligenceRegistry.listPacks(args));
   if (name === "intelligence_pack_get") return structured(await agentIntelligenceRegistry.getPack(args));
   if (name === "intelligence_pack_version_create") return structured(await agentIntelligenceRegistry.createPackVersion(args));
+  if (name === "intelligence_pack_version_derive") return structured(await agentIntelligenceRegistry.derivePackVersion(args));
+  if (name === "agent_profile_version_derive") return structured(await agentIntelligenceRegistry.deriveProfileVersion(args));
   if (name === "cognitive_bundle_resolve") return structured(await agentIntelligenceRegistry.resolveBundle(args));
   if (name === "agent_intelligence_bootstrap") return structured(await agentIntelligenceRegistry.bootstrapInitialPack(args));
   if (name === "exploration_base_list") return structured(await explorationBaseStore.list(args));
@@ -520,14 +522,21 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   }
   if (name === "context_list") return structured(await contextRegistry.list(args));
   if (name === "context_get") return structured(await contextRegistry.get(args));
-  if (name === "context_save") return structured(await contextRegistry.save(args));
+  if (name === "context_save") {
+    // The full event history is read with context_get; echoing it after every save cost tens of thousands of tokens.
+    const saved: any = await contextRegistry.save(args);
+    return structured({ context: saved.context, linkedProjects: saved.linkedProjects, historyCount: (saved.history || []).length });
+  }
   if (name === "context_history") return structured(await contextRegistry.listEvents(args));
   if (name === "context_event_create") return structured(await contextRegistry.addEvent(args));
   if (name === "chat_skill_list") return structured(await chatContext.listSkills());
   if (name === "chat_skill_get") return structured(await chatContext.getSkill(args));
   if (name === "chat_skill_versions") return structured(await chatContext.skillVersions(args));
   if (name === "chat_skill_upsert") return structured(await chatContext.upsertSkill(args));
-  if (name === "world_map_update") return structured(await worldMap.update(args));
+  if (name === "world_map_update") {
+    await worldMap.update(args);
+    return structured(await worldMap.getCompact());
+  }
   if (name === "job_opportunity_search") return structured(await jobOpportunityStore.search(args));
   if (name === "job_opportunity_get") return structured(await jobOpportunityStore.get(args));
   if (name === "job_opportunity_upsert") return structured(await jobOpportunityStore.upsert(args));

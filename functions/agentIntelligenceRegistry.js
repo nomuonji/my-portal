@@ -434,6 +434,68 @@ function createRegistry(options) {
     }
   }
 
+  // Derive a new immutable version from the current one by changing only dependencies or the portfolio.
+  // The rest of the definition is copied server-side, so an agent never has to retype a long Pack or Profile.
+  function sameDependency(dep, target) {
+    return dep.resourceType === target.resourceType && dep.canonicalRef === target.canonicalRef
+      && (target.versionNumber === undefined || target.versionNumber === null || dep.versionNumber === target.versionNumber);
+  }
+  async function derivePackVersion(input) {
+    if (input?.confirm !== true) throw new Error('intelligence_pack_version_derive requires confirm=true');
+    const current = await getPack({ id: input.id });
+    const expected = Number(input.expectedCurrentVersion);
+    if (current.pack.currentVersionNumber !== expected) throw new Error('Pack version conflict: current is ' + current.pack.currentVersionNumber);
+    const rewrites = Array.isArray(input.dependencyRewrites) ? input.dependencyRewrites : [];
+    if (!rewrites.length) throw new Error('dependencyRewrites must be a non-empty array');
+    const used = rewrites.map(() => 0);
+    const rewrite = (deps) => (deps || []).flatMap((dep) => {
+      const index = rewrites.findIndex((entry) => sameDependency(dep, object(entry.from, 'dependencyRewrites.from')));
+      if (index === -1) return [dep];
+      used[index] += 1;
+      if (rewrites[index].to === null || rewrites[index].to === undefined) return [];
+      const to = object(rewrites[index].to, 'dependencyRewrites.to');
+      return [{ requiredness: dep.requiredness, when: dep.when, note: dep.note, ...to }];
+    });
+    const definition = jsonSafe(current.definition);
+    ['packId', 'versionNumber', 'changeSummary', 'createdAt'].forEach((key) => delete definition[key]);
+    definition.dependencies = rewrite(definition.dependencies);
+    definition.components = (definition.components || []).map((component) => ({ ...component, dependencies: rewrite(component.dependencies) }));
+    const unused = rewrites.filter((_, index) => used[index] === 0).map((entry) => entry.from.resourceType + ':' + entry.from.canonicalRef);
+    if (unused.length) throw new Error('No dependency matched: ' + unused.join(', '));
+    const created = await createPackVersion({ pack: definition, expectedCurrentVersion: expected, changeSummary: input.changeSummary, confirm: true });
+    return { pack: created.pack, versionNumber: created.definition.versionNumber, rewritten: used.reduce((sum, n) => sum + n, 0),
+      dependencies: created.definition.dependencies,
+      componentDependencies: (created.definition.components || []).map((c) => ({ id: c.id, dependencies: c.dependencies })) };
+  }
+  async function deriveProfileVersion(input) {
+    if (input?.confirm !== true) throw new Error('agent_profile_version_derive requires confirm=true');
+    const current = await getProfile({ id: input.id });
+    const expected = Number(input.expectedCurrentVersion);
+    if (current.profile.currentVersionNumber !== expected) throw new Error('Profile version conflict: current is ' + current.profile.currentVersionNumber);
+    const updates = Array.isArray(input.portfolio) ? input.portfolio : [];
+    if (!updates.length) throw new Error('portfolio must be a non-empty array');
+    const definition = jsonSafe(current.definition);
+    ['profileId', 'versionNumber', 'changeSummary', 'createdAt'].forEach((key) => delete definition[key]);
+    let portfolio = definition.intelligencePortfolio || [];
+    updates.forEach((raw) => {
+      const update = object(raw, 'portfolio item');
+      const existing = portfolio.find((entry) => entry.packId === update.packId);
+      if (update.remove === true) {
+        if (!existing) throw new Error('Portfolio has no Pack ' + update.packId);
+        portfolio = portfolio.filter((entry) => entry.packId !== update.packId);
+        return;
+      }
+      const next = { availability: 'available', ...(existing || {}), packId: update.packId };
+      if ('versionNumber' in update) next.versionNumber = update.versionNumber;
+      if (update.selectionHint !== undefined) next.selectionHint = update.selectionHint;
+      if (!existing && !next.selectionHint) throw new Error('A new portfolio entry needs selectionHint: ' + update.packId);
+      portfolio = existing ? portfolio.map((entry) => (entry.packId === update.packId ? next : entry)) : [...portfolio, next];
+    });
+    definition.intelligencePortfolio = portfolio;
+    const created = await createProfileVersion({ profile: definition, expectedCurrentVersion: expected, changeSummary: input.changeSummary, confirm: true });
+    return { profile: created.profile, versionNumber: created.definition.versionNumber, intelligencePortfolio: created.definition.intelligencePortfolio };
+  }
+
   async function resolveBundle(input) {
     const args = input || {};
     const profileId = requireId(args.profileId, 'profileId');
@@ -526,8 +588,11 @@ function createRegistry(options) {
         resolvedDependencies.push(await resolveDependency(dep, requested));
       }
     }
-    const unresolvedGaps = resolvedDependencies.filter((item) => item.requiredness === 'required' && item.loadState !== 'loaded')
+    // reference_only means the resource is owned elsewhere and the agent reads it there; that is by design, not a gap.
+    const unresolvedGaps = resolvedDependencies.filter((item) => item.requiredness === 'required' && item.loadState !== 'loaded' && item.loadState !== 'reference_only')
       .map((item) => ({ resourceType: item.resourceType, canonicalRef: item.canonicalRef, reason: item.reason || 'Required dependency is not loaded' }));
+    const externalReferences = resolvedDependencies.filter((item) => item.loadState === 'reference_only')
+      .map((item) => ({ resourceType: item.resourceType, canonicalRef: item.canonicalRef, requiredness: item.requiredness, when: item.when || '', note: item.note || '' }));
     const taskFrame = jsonSafe(object(args.taskFrame, 'taskFrame'));
     if (!taskFrame.objective && !taskFrame.userRequest) throw new Error('taskFrame.objective or taskFrame.userRequest is required');
     const plan = args.compositionPlan && typeof args.compositionPlan === 'object' ? jsonSafe(args.compositionPlan) : {};
@@ -566,6 +631,7 @@ function createRegistry(options) {
       resolvedDependencies,
       compositionPlan: plan,
       unresolvedGaps,
+      externalReferences,
       knownConflicts: Array.isArray(args.knownConflicts) ? jsonSafe(args.knownConflicts) : [],
       provenance: {
         resolverContractVersion: '1.0.0',
@@ -600,6 +666,8 @@ function createRegistry(options) {
     listPacks,
     getPack,
     createPackVersion,
+    derivePackVersion,
+    deriveProfileVersion,
     resolveBundle,
     bootstrapInitialPack,
   };

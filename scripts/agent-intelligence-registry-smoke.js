@@ -270,3 +270,34 @@ test('Bundle Resolver loads an Exploration Base brief when the caller selects it
   assert.equal(base.content.outcome.statement, 'Find two things.');
   assert.equal(loaded.resolvedDependencies.find((item) => item.canonicalRef === 'missing-base').loadState, 'unresolved');
 });
+
+test('derive creates a new version by changing only dependencies or the portfolio', async () => {
+  const db = new MemoryDb();
+  const registry = createRegistry(db);
+  await registry.createPackVersion({ pack: basePack(), expectedCurrentVersion: 0, confirm: true });
+  await registry.createProfileVersion({ profile: baseProfile([{ packId: 'test-cognition', versionNumber: 1 }]), expectedCurrentVersion: 0, confirm: true });
+  const before = await registry.getPack({ id: 'test-cognition' });
+  const allDeps = (definition) => [...definition.dependencies, ...definition.components.flatMap((c) => c.dependencies)];
+  const target = allDeps(before.definition)[0];
+  await assert.rejects(registry.derivePackVersion({ id: 'test-cognition', expectedCurrentVersion: 1, confirm: true,
+    dependencyRewrites: [{ from: { resourceType: 'chat_skill', canonicalRef: 'does-not-exist' }, to: null }] }), /No dependency matched/);
+  const derived = await registry.derivePackVersion({ id: 'test-cognition', expectedCurrentVersion: 1, confirm: true, changeSummary: 'Repoint',
+    dependencyRewrites: [{ from: { resourceType: target.resourceType, canonicalRef: target.canonicalRef }, to: { resourceType: 'external', canonicalRef: 'https://example.com/replacement' } }] });
+  assert.equal(derived.versionNumber, 2);
+  const after = await registry.getPack({ id: 'test-cognition' });
+  assert.equal(after.definition.purpose, before.definition.purpose);
+  assert.deepEqual(after.definition.reasoningProcedures, before.definition.reasoningProcedures);
+  assert.equal(allDeps(after.definition).length, allDeps(before.definition).length);
+  const replaced = allDeps(after.definition).find((dep) => dep.canonicalRef === 'https://example.com/replacement');
+  assert.equal(replaced.requiredness, target.requiredness, 'requiredness carries over');
+  assert.ok(!allDeps(after.definition).some((dep) => dep.canonicalRef === target.canonicalRef && dep.resourceType === target.resourceType));
+  assert.equal((await registry.getPack({ id: 'test-cognition', versionNumber: 1 })).definition.versionNumber, 1, 'the earlier version is untouched');
+
+  const profile = await registry.deriveProfileVersion({ id: 'test-agent', expectedCurrentVersion: 1, confirm: true, changeSummary: 'Unpin',
+    portfolio: [{ packId: 'test-cognition', versionNumber: null }] });
+  assert.equal(profile.versionNumber, 2);
+  assert.equal(profile.intelligencePortfolio[0].versionNumber, null);
+  await assert.rejects(registry.deriveProfileVersion({ id: 'test-agent', expectedCurrentVersion: 1, confirm: true, portfolio: [{ packId: 'test-cognition', versionNumber: null }] }), /version conflict/);
+  const identityBefore = (await registry.getProfile({ id: 'test-agent', versionNumber: 1 })).definition.identity;
+  assert.deepEqual((await registry.getProfile({ id: 'test-agent' })).definition.identity, identityBefore);
+});

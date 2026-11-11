@@ -4,6 +4,7 @@
  * only if missing; subsequent reads and edits always use the database.
  */
 const { getDocumentDb, FieldValue } = require('./documentDb');
+const { applyTextEdits } = require('./textEdits');
 const SEEDS = require('./chatSkillSeeds');
 const DB_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const db = () => getDocumentDb(DB_ID);
@@ -92,7 +93,17 @@ async function getSkill(input) {
 }
 async function upsertSkill(input) {
  if(input.confirm!==true)throw new Error('Explicit confirmation required');
- const cleaned=cleanSkill(input.skill||{});
+ let draft=input.skill||{};
+ if(input.bodyEdits!==undefined){
+  if(draft.body!==undefined)throw new Error('Pass either skill.body or bodyEdits, not both');
+  const existing=await db().collection(SKILLS).doc(safeString(draft.id,90)).get();
+  if(!existing.exists)throw new Error('bodyEdits needs an existing skill');
+  const current=existing.data();
+  // Unspecified fields keep their stored value; the revision check below still guards against races.
+  draft={id:current.id||existing.id,title:current.title,summary:current.summary,triggers:current.triggers,status:current.status,...draft,
+   body:applyTextEdits(current.body,input.bodyEdits,'bodyEdits')};
+ }
+ const cleaned=cleanSkill(draft);
  const expectedRevision=Number(input.expectedRevision);
  if(!Number.isInteger(expectedRevision)||expectedRevision<0)throw new Error('expectedRevision must be a nonnegative integer');
  const ref=db().collection(SKILLS).doc(cleaned.id);

@@ -158,5 +158,59 @@ const tools = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   },
+  {
+    name: 'intelligence_pack_version_derive',
+    description: 'Append a new immutable Pack version that differs from the current one only in its dependencies. The server copies everything else, so the Pack text is never retyped. Each rewrite matches {resourceType, canonicalRef} (optionally versionNumber) in top-level and component dependencies; to=null removes the dependency; requiredness/when/note are kept unless to overrides them.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', minLength: 2, maxLength: 80, description: 'Intelligence Pack ID.' },
+        expectedCurrentVersion: { type: 'integer', minimum: 1 },
+        dependencyRewrites: {
+          type: 'array', minItems: 1, maxItems: 50,
+          items: {
+            type: 'object',
+            properties: {
+              from: { type: 'object', additionalProperties: true, description: '{resourceType, canonicalRef, versionNumber?} of the dependency to replace.' },
+              to: { type: ['object', 'null'], additionalProperties: true, description: 'Replacement {resourceType, canonicalRef, versionNumber?, requiredness?, when?, note?}, or null to remove.' },
+            },
+            required: ['from'], additionalProperties: false,
+          },
+        },
+        changeSummary: { type: 'string', maxLength: 2000, description: 'Why this version was created.' },
+        confirm: { type: 'boolean', description: 'Write to the Agent Intelligence Registry only after the user explicitly authorizes this change.' },
+      },
+      required: ['id', 'expectedCurrentVersion', 'dependencyRewrites', 'confirm'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'agent_profile_version_derive',
+    description: 'Append a new immutable Agent Profile version that differs from the current one only in its Intelligence portfolio. The server copies identity and composition policy, so the Profile text is never retyped. Each item adds or updates one Pack entry (versionNumber null follows the current Pack version), or removes it with remove=true.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', minLength: 2, maxLength: 80, description: 'Agent Profile ID.' },
+        expectedCurrentVersion: { type: 'integer', minimum: 1 },
+        portfolio: {
+          type: 'array', minItems: 1, maxItems: 30,
+          items: {
+            type: 'object',
+            properties: {
+              packId: { type: 'string', minLength: 2, maxLength: 80 },
+              versionNumber: { type: ['integer', 'null'], description: 'Exact Pack version to pin, or null to follow the current version.' },
+              selectionHint: { type: 'string', maxLength: 2000 },
+              remove: { type: 'boolean' },
+            },
+            required: ['packId'], additionalProperties: false,
+          },
+        },
+        changeSummary: { type: 'string', maxLength: 2000, description: 'Why this version was created.' },
+        confirm: { type: 'boolean', description: 'Write to the Agent Intelligence Registry only after the user explicitly authorizes this change.' },
+      },
+      required: ['id', 'expectedCurrentVersion', 'portfolio', 'confirm'],
+      additionalProperties: false,
+    },
+  },
 ];
 module.exports = { TOOLS: tools };
