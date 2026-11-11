@@ -242,6 +242,51 @@ async function get() {
     help: '最初にWorld Homeで担当とProject/Domain別のContextsを確認する。ContextsはSpaceとは別DB。MethodはManager/Worker専用、Skillはチャット用。',
   };
 }
+
+// Placement rule for the agent-side registries. One question per layer; nothing is written in two layers.
+const LAYERS = [
+  { layer: 'World Home', question: 'どこの仕事で、正本はどこか', holds: 'routes・projects・Agent Guide', tools: 'world_map_get' },
+  { layer: 'Operator / Repo', question: '数値・実データは何か', holds: '測定値・在庫・公開状態などの正本', tools: '各Operator' },
+  { layer: 'Context', question: 'このプロジェクトで何が決まっていて、今どこか', holds: '目的・決定・訂正・現在地・次の行動', tools: 'context_list / context_get' },
+  { layer: 'Exploration Base', question: '探索の成果条件・探索法の版・仮説・制約はどうなっているか', holds: '未知領域を探索中のジョブの定点とrun記録。探索ジョブは最初に読む', tools: 'exploration_base_list / exploration_base_get' },
+  { layer: 'Chat Skill', question: 'どうやるか', holds: '手順', tools: 'chat_skill_list / chat_skill_get' },
+  { layer: 'Agent Profile / Intelligence Pack', question: 'どう判断するか', holds: '証拠の読み方・領域の認識・既知の失敗の型。手順と閾値は置かない', tools: 'agent_profile_get / intelligence_pack_get / cognitive_bundle_resolve' },
+  { layer: 'HQ Method', question: '定期・委譲の仕事の運用契約は何か', holds: 'Manager/Worker専用。チャットの手順には使わない', tools: 'method_get_context' },
+  { layer: 'Thinking Space', question: '本人の長期テーマは何か', holds: '人間側の思考。会話記録やAIの作業状態は置かない', tools: 'space_get_context' },
+];
+const cut = (value, max) => { const t = safeText(value, 4000); return t.length > max ? t.slice(0, max - 1) + '…' : t; };
+// Index-only view for agents. Full records are read on demand with the per-layer tools.
+function compact(full) {
+  const activeMethods = full.methods.filter(m => m.status !== 'archived');
+  return {
+    schemaVersion: full.schemaVersion, view: 'compact', title: full.title, generatedAt: full.generatedAt,
+    metadataRevision: full.metadataRevision,
+    agentGuide: full.agentGuide, agentGuideStorage: full.agentGuideStorage,
+    layers: LAYERS,
+    routes: full.routes.map(r => ({
+      id: r.id, title: r.title, description: r.description, primary: r.primary, projectId: r.projectId || undefined,
+      tools: (r.tools || []).join(', '), boundary: r.boundary || undefined, url: r.url || undefined,
+    })),
+    boundaries: full.boundaries,
+    projects: full.projects.map(p => ({
+      id: p.id, name: p.name, status: p.status, description: cut(p.description, 160),
+      repositories: (p.repositories || []).map(r => r.fullName).filter(Boolean).join(', '),
+    })),
+    explorationBases: full.explorationBases,
+    contexts: full.contexts.filter(c => c.status !== 'archived').map(c => ({
+      id: c.id, title: c.title, summary: cut(c.summary, 140), projectIds: (c.projectIds || []).join(', '), domains: (c.domains || []).slice(0, 4).join(', '),
+      updatedAt: String(c.updatedAt || '').slice(0, 10),
+    })),
+    chatSkills: full.chatSkills.filter(s => s.status !== 'archived').map(s => ({
+      id: s.id, title: s.title, summary: cut(s.summary, 120), triggers: (s.triggers || []).slice(0, 5).join(' / '),
+    })),
+    methods: activeMethods.map(m => ({ id: m.id, title: m.title, summary: cut(m.summary, 100) })),
+    spaces: full.spaces.map(s => ({ id: s.id, title: s.title, status: s.status })),
+    coverage: full.coverage, warnings: full.warnings,
+    help: 'これは索引。詳細は layers の各ツールで必要なものだけ読む。全項目が必要なときだけ world_map_get({detail:"full"})。',
+  };
+}
+async function getCompact() { return compact(await get()); }
 async function update(input = {}) {
   if (input.confirm !== true) throw new Error('world_map_update requires confirm=true');
   const expectedRevision = Number(input.expectedRevision);
@@ -269,4 +314,4 @@ async function update(input = {}) {
   });
   return get();
 }
-module.exports = { get, update, ROUTES, cleanRoute, summarizeProject, summarizeMethod, summarizeSpace, ensureAgentGuide };
+module.exports = { get, getCompact, compact, LAYERS, update, ROUTES, cleanRoute, summarizeProject, summarizeMethod, summarizeSpace, ensureAgentGuide };

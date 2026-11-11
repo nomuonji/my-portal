@@ -18,8 +18,8 @@ const ROUTE = {
 const TOOLS = [
   {
     name: 'world_map_get',
-    description: 'FIRST ENTRYPOINT for user-specific project conversations. Read world_map_get once first, then FOLLOW its agentGuide.instructions (the canonical, editable bootstrap protocol stored in My Portal, not ChatGPT custom instructions). Use its routes, Projects, Contexts and Skills to select relevant authoritative tools. This is not a Space and does not change scheduled Managers or Workers.',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    description: 'FIRST ENTRYPOINT for user-specific project conversations. Read world_map_get once first, then FOLLOW its agentGuide.instructions (the canonical, editable bootstrap protocol stored in My Portal, not ChatGPT custom instructions). Returns an index: Agent Guide, layers (which registry answers which question), routes, Projects, Exploration Bases, Contexts and Skills. Read details on demand with the tool named for each layer. This is not a Space and does not change scheduled Managers or Workers.',
+    inputSchema: { type: 'object', properties: { detail: { type: 'string', enum: ['compact', 'full'], description: 'compact (default): index only. full: every field of every record; large, rarely needed.' } }, additionalProperties: false },
     annotations: { readOnlyHint: true },
   },
   {

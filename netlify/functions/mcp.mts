@@ -93,7 +93,7 @@ const migration: any = (migrationImport as any).default ?? migrationImport;
 const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...worldMapTools.TOOLS, ...chatContextTools.TOOLS, ...contextRegistryTools.TOOLS, ...portalToolsModule.TOOLS, ...jobOpportunityToolsModule.TOOLS, ...metaTools.TOOLS, ...personalFeedTools.TOOLS, ...discoverReaderTools.TOOLS, ...personalTasteTools.TOOLS, ...routineTools.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...outputToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS, ...agentIntelligenceTools.TOOLS, ...explorationBaseTools.TOOLS, ...workspaceApp.TOOLS];
 
 const SERVER_NAME = "my-portal";
-const SERVER_VERSION = "1.23.0-netlify";
+const SERVER_VERSION = "1.24.0-netlify";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 const ALLOWED_SCOPES = new Set(["agent-ideas", "offline_access"]);
@@ -494,7 +494,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "exploration_run_finish") return structured(await explorationBaseStore.finishRun(args));
 
   await ensureAgentData();
-  if (name === "world_map_get") return structured(await worldMap.get());
+  if (name === "world_map_get") return structured(args?.detail === "full" ? await worldMap.get() : await worldMap.getCompact());
   if (name === "portal_workspace_open") {
     const data = await worldMap.get();
     const projects = (data.projects || []).filter((p: any) => p && p.id).map((p: any) => ({
