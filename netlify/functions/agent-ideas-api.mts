@@ -16,6 +16,7 @@ import * as anilistImport from "../../functions/anilistIntegration.js";
 import * as mediaConnectionsImport from "../../functions/mediaAccountConnections.js";
 import * as routineStoreImport from "../../functions/routineJobStore.js";
 import * as jobOpportunityStoreImport from "../../functions/jobOpportunityStore.js";
+import * as explorationBaseStoreImport from "../../functions/explorationBaseStore.js";
 
 const store: any = (storeImport as any).default ?? storeImport;
 const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
@@ -31,6 +32,7 @@ const anilist: any = (anilistImport as any).default ?? anilistImport;
 const mediaConnections: any = (mediaConnectionsImport as any).default ?? mediaConnectionsImport;
 const routineStore: any = (routineStoreImport as any).default ?? routineStoreImport;
 const jobOpportunityStore: any = (jobOpportunityStoreImport as any).default ?? jobOpportunityStoreImport;
+const explorationBaseStore: any = (explorationBaseStoreImport as any).default ?? explorationBaseStoreImport;
 const documentDb: any = (documentDbImport as any).default ?? documentDbImport;
 const AGENT_DATABASE_ID = "(default)";
 
@@ -172,6 +174,12 @@ export default async (request: Request) => {
         limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 100, 1), 100),
         scanLimit: 1000,
       }));
+      if (resource === "exploration_bases") return json(await explorationBaseStore.list({ status: url.searchParams.get("status") || undefined }));
+      if (resource === "exploration_base") return json(await explorationBaseStore.get({
+        id: url.searchParams.get("id") || "",
+        view: "full",
+        eventLimit: Math.min(Math.max(Number(url.searchParams.get("eventLimit")) || 40, 1), 300),
+      }));
       if (resource === "meta_proposals") return json(await metaStore.list({limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 150, 1), 200), status: url.searchParams.get("status") || undefined}));
       if (resource === "meta_proposal") return json(await metaStore.get({ id: url.searchParams.get("id") || "" }));
       if (resource === "ideas") {
@@ -299,6 +307,20 @@ export default async (request: Request) => {
           return json({error:"Discover feedback was saved, but taste ledger sync failed; reload before retrying",detail:String(error?.message||error)},503);
         }
         return json(updated);
+      }
+      if (action === "exploration_achievement_decide") {
+        // The signed-in user deciding in the UI is the owner's own decision, so it is applied directly.
+        const decision = body.decision === "confirmed" ? "confirmed" : body.decision === "declined" ? "declined" : "";
+        if (!decision) return json({ error: "decision must be confirmed or declined" }, 400);
+        const day = new Date().toISOString().slice(0, 10);
+        const note = String(body.note || "").trim().slice(0, 500);
+        return json(await explorationBaseStore.setOutcome({
+          baseId: body.baseId,
+          confirmAchievements: [{ id: body.id, decision, note }],
+          userAuthorized: true,
+          authorizationNote: "My Portal の探索拠点画面で本人が判断（" + day + "）" + (note ? "：" + note : ""),
+          actor: "My Portal UI",
+        }));
       }
       if (action === "job_opportunity_upsert") return json(await jobOpportunityStore.upsert({
         title: body.title,

@@ -11,6 +11,7 @@ import {
   ShieldOutlined as ShieldIcon, WorkOutline as WorkIcon,
 } from '@mui/icons-material';
 import { auth } from '../firebase';
+import { pick, toList, toText } from './jobOpportunityView';
 
 const STATUS = [
   ['active', '募集中', 'success'],
@@ -83,18 +84,14 @@ function formatDate(value) {
   }).format(date);
 }
 
-function compactList(value) {
-  if (Array.isArray(value)) return value.filter(Boolean).map(String);
-  if (value === null || value === undefined || value === '') return [];
-  return [String(value)];
-}
+const compactList = toList;
 
 function requirementItems(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
   return Object.entries(value).map(([key, requirement]) => ({
     key,
     label: APPLICANT_LABELS[key] || key.replace(/([A-Z])/g, ' $1'),
-    requirement: String(requirement || 'unknown'),
+    requirement: toText(requirement) || 'unknown',
   }));
 }
 
@@ -106,7 +103,7 @@ function requiredDataSummary(value) {
 
 function riskText(item) {
   const attrs = item.attributes || {};
-  const explicit = String(attrs.recommendationStatus || '').trim();
+  const explicit = toText(attrs.recommendationStatus).trim();
   if (explicit) return explicit;
   const risks = compactList(attrs.riskNotes);
   return risks[0] || 'プライバシー条件の確認が必要';
@@ -191,9 +188,9 @@ export default function JobOpportunities() {
       const haystack = [
         item.title, item.sourcePublisher, item.summary, item.reward, item.sourceUrl,
         ...compactList(item.tags), ...compactList(attrs.tasks),
-        attrs.locationEligibility, attrs.languages, attrs.jobType,
-        attrs.recommendationStatus, attrs.accountPermissions,
-      ].flat().join(' ').toLocaleLowerCase();
+        attrs.locationEligibility, attrs.location, attrs.languages, attrs.jobType, attrs.employmentType,
+        attrs.recommendationStatus, attrs.accountPermissions, attrs.externalPermissions,
+      ].map(toText).join(' ').toLocaleLowerCase();
       return haystack.includes(needle);
     });
   }, [items, search, statusFilter]);
@@ -290,10 +287,10 @@ export default function JobOpportunities() {
       </Stack>
 
       <Grid container spacing={1.2} sx={{ mb: 2 }}>
-        <Grid item xs={6} sm={3}><Metric label="登録件数" value={counts.total} /></Grid>
-        <Grid item xs={6} sm={3}><Metric label="募集中" value={counts.active} /></Grid>
-        <Grid item xs={6} sm={3}><Metric label="要確認" value={counts.watching} /></Grid>
-        <Grid item xs={6} sm={3}><Metric label="プライバシー要確認" value={counts.privacy} /></Grid>
+        <Grid size={{ xs: 6, sm: 3 }}><Metric label="登録件数" value={counts.total} /></Grid>
+        <Grid size={{ xs: 6, sm: 3 }}><Metric label="募集中" value={counts.active} /></Grid>
+        <Grid size={{ xs: 6, sm: 3 }}><Metric label="要確認" value={counts.watching} /></Grid>
+        <Grid size={{ xs: 6, sm: 3 }}><Metric label="プライバシー要確認" value={counts.privacy} /></Grid>
       </Grid>
 
       {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 1.5 }}>{error}</Alert>}
@@ -344,32 +341,34 @@ export default function JobOpportunities() {
             const meta = statusMeta(item.status);
             const requirements = requirementItems(attrs.requiredApplicantData);
             const risk = riskText(item);
+            const chipLocation = toText(pick(attrs, 'locationEligibility', 'location')).slice(0, 80);
+            const chipType = toText(pick(attrs, 'jobType', 'employmentType')).slice(0, 80);
             return (
               <Card key={item.id} variant="outlined" sx={{ borderRadius: 2.5, minWidth: 0 }}>
                 <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.15, height: '100%' }}>
                   <Stack direction="row" alignItems="flex-start" spacing={1}>
                     <Box sx={{ flex: 1, minWidth: 0 }}>
                       <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 750 }}>
-                        {item.sourcePublisher || '募集元未確認'}
+                        {toText(item.sourcePublisher) || '募集元未確認'}
                       </Typography>
                       <Typography variant="h6" sx={{ fontWeight: 850, lineHeight: 1.3, overflowWrap: 'anywhere' }}>
-                        {item.title}
+                        {toText(item.title)}
                       </Typography>
                     </Box>
                     <Chip size="small" color={meta[2]} variant={item.status === 'active' ? 'filled' : 'outlined'} label={meta[1]} />
                   </Stack>
                   <Typography variant="h6" sx={{ fontWeight: 850, color: 'primary.main', lineHeight: 1.2 }}>
-                    {item.reward || '報酬未掲載'}
+                    {toText(item.reward) || '報酬未掲載'}
                   </Typography>
                   <Typography variant="body2" color="text.secondary" sx={{
                     display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden',
                     lineHeight: 1.55, minHeight: '4.65em',
                   }}>
-                    {item.summary || '仕事内容の説明は未登録です。'}
+                    {toText(item.summary) || '仕事内容の説明は未登録です。'}
                   </Typography>
                   <Stack direction="row" spacing={0.6} useFlexGap flexWrap="wrap">
-                    {attrs.locationEligibility && <Chip size="small" variant="outlined" label={attrs.locationEligibility} />}
-                    {attrs.jobType && <Chip size="small" variant="outlined" label={attrs.jobType} />}
+                    {chipLocation && <Chip size="small" variant="outlined" label={chipLocation} sx={{ maxWidth: '100%' }} />}
+                    {chipType && <Chip size="small" variant="outlined" label={chipType} sx={{ maxWidth: '100%' }} />}
                     {compactList(item.tags).slice(0, 3).map((tag) => <Chip key={tag} size="small" variant="outlined" label={tag} />)}
                   </Stack>
                   <Box sx={{ borderRadius: 1.5, bgcolor: 'action.hover', p: 1 }}>
@@ -403,14 +402,18 @@ export default function JobOpportunities() {
                     <AccordionDetails sx={{ px: 0, pt: 0 }}>
                       <DetailLine label="主な作業" value={attrs.tasks} />
                       <DetailLine label="言語" value={attrs.languages} />
-                      <DetailLine label="稼働条件" value={attrs.workload} />
+                      <DetailLine label="応募可能地域" value={pick(attrs, 'locationEligibility', 'location')} />
+                      <DetailLine label="稼働条件" value={pick(attrs, 'workload', 'schedule')} />
+                      <DetailLine label="条件" value={attrs.requirements} />
                       <DetailLine label="支払方法" value={attrs.payoutMethods} />
                       <DetailLine label="応募時に必要な情報" value={requirements.map((x) => x.label + '：' + (REQUIREMENT_LABEL[x.requirement] || x.requirement))} />
                       <DetailLine label="身分証・本人確認" value={attrs.identityChecks} />
-                      <DetailLine label="アカウント権限" value={attrs.accountPermissions} />
-                      <DetailLine label="保存・共有条件" value={attrs.retentionAndSharing} />
+                      <DetailLine label="アカウント権限" value={pick(attrs, 'accountPermissions', 'externalPermissions')} />
+                      <DetailLine label="保存・共有条件" value={pick(attrs, 'retentionAndSharing', 'privacy')} />
                       <DetailLine label="削除・撤回" value={attrs.withdrawalOrDeletion} />
-                      <DetailLine label="テスト・選考" value={attrs.testsOrScreening} />
+                      <DetailLine label="テスト・選考" value={pick(attrs, 'testsOrScreening', 'screening')} />
+                      <DetailLine label="確認した事実" value={attrs.observedFacts} />
+                      <DetailLine label="本人との適合" value={attrs.userFit} />
                       <DetailLine label="不明点" value={attrs.unknowns} />
                       <DetailLine label="リスクメモ" value={attrs.riskNotes} />
                       <DetailLine label="次回確認予定" value={attrs.nextCheckAfter} />
@@ -430,12 +433,12 @@ export default function JobOpportunities() {
         <DialogContent dividers>
           <Stack spacing={1.5} sx={{ pt: 0.5 }}>
             <Grid container spacing={1.2}>
-              <Grid item xs={12} sm={8}>{field('title', '求人名 *')}</Grid>
-              <Grid item xs={12} sm={4}>{field('sourcePublisher', '募集元')}</Grid>
-              <Grid item xs={12}>{field('sourceUrl', '公式求人URL（HTTPS） *')}</Grid>
-              <Grid item xs={12} sm={7}>{field('reward', '報酬')}</Grid>
-              <Grid item xs={12} sm={5}>{field('deadline', '応募期限')}</Grid>
-              <Grid item xs={12}>
+              <Grid size={{ xs: 12, sm: 8 }}>{field('title', '求人名 *')}</Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>{field('sourcePublisher', '募集元')}</Grid>
+              <Grid size={{ xs: 12 }}>{field('sourceUrl', '公式求人URL（HTTPS） *')}</Grid>
+              <Grid size={{ xs: 12, sm: 7 }}>{field('reward', '報酬')}</Grid>
+              <Grid size={{ xs: 12, sm: 5 }}>{field('deadline', '応募期限')}</Grid>
+              <Grid size={{ xs: 12 }}>
                 <FormControl fullWidth size="small">
                   <InputLabel>募集状態</InputLabel>
                   <Select label="募集状態" value={draft.status || 'watching'}
@@ -444,9 +447,9 @@ export default function JobOpportunities() {
                   </Select>
                 </FormControl>
               </Grid>
-              <Grid item xs={12}>{field('summary', '仕事内容・応募上の注意', { multiline: true, minRows: 3 })}</Grid>
-              <Grid item xs={12}>{field('tagsText', 'タグ（カンマ区切り）')}</Grid>
-              <Grid item xs={12}>
+              <Grid size={{ xs: 12 }}>{field('summary', '仕事内容・応募上の注意', { multiline: true, minRows: 3 })}</Grid>
+              <Grid size={{ xs: 12 }}>{field('tagsText', 'タグ（カンマ区切り）')}</Grid>
+              <Grid size={{ xs: 12 }}>
                 <TextField
                   fullWidth size="small" label="詳細データ（JSON）"
                   value={draft.attributesText || '{}'}

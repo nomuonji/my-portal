@@ -58,6 +58,7 @@ import {
   ArticleOutlined as ReadLaterIcon,
   SmartDisplayOutlined as WatchLaterIcon,
   StyleOutlined as CardsIcon,
+  ExploreOutlined as ExplorationIcon,
 } from '@mui/icons-material';
 
 import Memo from './components/Memo';
@@ -92,6 +93,8 @@ import PublicCms from './components/PublicCms';
 import CharacterLibrary from './components/CharacterLibrary';
 import CurationSources from './components/CurationSources';
 import JobOpportunities from './components/JobOpportunities';
+import ExplorationBases from './components/ExplorationBases';
+import PageErrorBoundary from './components/PageErrorBoundary';
 import Outputs from './components/Outputs';
 
 import getAppTheme, { fonts } from './theme';
@@ -181,6 +184,7 @@ function App() {
     if (path.startsWith('/characters')) return 'キャラクターDB';
     if (path.startsWith('/curation-sources')) return '情報源ライブラリ';
     if (path.startsWith('/jobs')) return '仕事DB';
+    if (path.startsWith('/exploration')) return '探索拠点';
     if (path.startsWith('/outputs')) return 'アウトプットDB';
     if (path.startsWith('/ideaboard') || path.startsWith('/idea')) return 'アイデア';
     if (path.startsWith('/hobbyboard') || path.startsWith('/hobby')) return '趣味';
@@ -389,6 +393,7 @@ function App() {
       items: [
         { to: '/dashboard', label: 'Agent HQ', hint: '実行キュー / Agents / 再開地点', icon: <DashboardIcon /> },
         { to: '/meta', label: 'プロジェクト提案', hint: '戦略・次の一手', icon: <MetaIcon /> },
+        { to: '/exploration', label: '探索拠点', hint: '成果条件 / 探索法の版 / 仮説 / 制約 / 実行記録', icon: <ExplorationIcon /> },
         { to: '/agent-ideas', label: 'Agent Ideas', hint: 'Portalと同じ構造でAIが補充', icon: <SmartToyIcon /> },
         { to: '/curation-sources', label: '情報源ライブラリ', hint: 'Discoverが読むRSSの管理', icon: <SourcesIcon /> },
       ],
@@ -607,6 +612,7 @@ function App() {
             }}
           >
             {user ? (
+              <PageErrorBoundary resetKey={location.pathname}>
               <Routes>
                 <Route path="/" element={new URLSearchParams(location.search).has("board") ? <Navigate to={`/boards${location.search}`} replace /> : <WorldHome />} />
                 <Route path="/dashboard" element={<Dashboard />} />
@@ -632,6 +638,7 @@ function App() {
                 <Route path="/characters" element={<CharacterLibrary />} />
                 <Route path="/curation-sources" element={<CurationSources />} />
                 <Route path="/jobs" element={<JobOpportunities />} />
+                <Route path="/exploration" element={<ExplorationBases />} />
                 <Route path="/outputs" element={<Outputs />} />
                 <Route path="/thinking" element={<ThinkingWorkspace />} />
                 <Route path="/feature-requests" element={<FeatureRequests />} />
@@ -648,6 +655,7 @@ function App() {
                 <Route path="/flashcards/manage" element={<GlobalFlashcardManagement />} />
                 <Route path="/drive" element={<Typography variant="h4">Google Drive機能はまだ実装されていません。</Typography>} />
               </Routes>
+              </PageErrorBoundary>
             ) : (
               <SignIn onLogin={handleLogin} />
             )}
