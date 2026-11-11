@@ -77,6 +77,13 @@ try {
     assert.equal(before.chatSkills[0].sourceOfTruth,'My Portal DB');
     assert.ok(before.chatSkills.every(s=>!('body' in s)));
     assert.ok(!before.contexts.some(c=>c.id==='seo-space'));
+    const compactView = await world.getCompact();
+    assert.equal(compactView.view,'compact');
+    assert.equal(compactView.agentGuide.instructions,before.agentGuide.instructions);
+    assert.equal(compactView.contexts.length,before.contexts.length);
+    assert.ok(compactView.contexts.every(c=>!('decisions' in c)&&!('currentState' in c)));
+    assert.ok(compactView.layers.some(l=>l.layer==='Exploration Base'));
+    assert.equal(compactView.routes.length,before.routes.length);
     const contexts=require('../functions/contextRegistry');
     const chatContext=require('../functions/chatContextRegistry');
     assert.equal(chatContext.cleanSkill({id:'custom',title:'My Skill',body:'A'.repeat(70)}).id,'custom');
