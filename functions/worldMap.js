@@ -5,6 +5,7 @@
 const { getDocumentDb, FieldValue } = require('./documentDb');
 const chatContext = require('./chatContextRegistry');
 const contexts = require('./contextRegistry');
+const { applyTextEdits } = require('./textEdits');
 const { DEFAULT_GUIDE, validateGuide } = require('./worldHomeGuide');
 
 const DB_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
@@ -294,14 +295,22 @@ async function update(input = {}) {
   const routes = Array.isArray(input.routes) ? input.routes.map(cleanRoute) : null;
   const hiddenRouteIds = input.hiddenRouteIds === undefined ? null : safeArray(input.hiddenRouteIds, 100);
   const boundaries = input.boundaries === undefined ? null : safeArray(input.boundaries, 40);
-  const guide = input.agentGuide === undefined ? null : validateGuide(input.agentGuide);
-  if (routes === null && hiddenRouteIds === null && boundaries === null && guide === null) throw new Error('No world map changes');
+  if (input.agentGuideEdits !== undefined && input.agentGuide !== undefined) throw new Error('Pass either agentGuide or agentGuideEdits, not both');
+  let guide = input.agentGuide === undefined ? null : validateGuide(input.agentGuide);
+  const guideEdits = input.agentGuideEdits === undefined ? null : input.agentGuideEdits;
+  if (routes === null && hiddenRouteIds === null && boundaries === null && guide === null && guideEdits === null) throw new Error('No world map changes');
   if (routes && routes.length > 80) throw new Error('Too many route overrides');
   const ref = db().collection(COLLECTION).doc(DOC_ID);
   await db().runTransaction(async tx => {
     const current = await tx.get(ref);
     const data = current.exists ? current.data() : {};
     if ((Number(data.revision) || 0) !== expectedRevision) throw new Error('World map revision conflict');
+    if (guideEdits !== null) {
+      const stored = data.agentGuide || {};
+      if (!stored.instructions) throw new Error('agentGuideEdits needs a stored Agent Guide');
+      guide = validateGuide({ title: stored.title, minimalCustomInstruction: stored.minimalCustomInstruction,
+        instructions: applyTextEdits(stored.instructions, guideEdits, 'agentGuideEdits') });
+    }
     tx.set(ref, {
       ...(data || {}),
       ...(routes !== null ? { routes } : {}),

@@ -1,3 +1,4 @@
+const { EDITS_SCHEMA } = require('./textEdits');
 const ROUTE = {
   type: 'object',
   additionalProperties: false,
@@ -28,6 +29,7 @@ const TOOLS = [
     inputSchema: {
       type: 'object', additionalProperties: false,
       properties: {
+        agentGuideEdits: { ...EDITS_SCHEMA, description: 'Change part of the stored Agent Guide instructions without resending them: exact {find, replace} pairs, each find occurring exactly once. Use instead of agentGuide for small edits.' },
         expectedRevision: { type: 'integer', minimum: 0 },
         routes: { type: 'array', maxItems: 80, items: ROUTE },
         hiddenRouteIds: { type: 'array', maxItems: 100, items: { type: 'string' } },

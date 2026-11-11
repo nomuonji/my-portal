@@ -1,6 +1,7 @@
 'use strict';
 
 const { getDocumentDb } = require('./documentDb');
+const { applyTextEdits } = require('./textEdits');
 const JOBS = 'memos/agent-control/routineJobs';
 const RUNS = 'memos/agent-control/routineJobRuns';
 const DATABASE = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
@@ -86,7 +87,11 @@ async function upsert(input = {}) {
     if (previous && expectedRevision !== previous.revision) throw new Error('Routine job revision mismatch');
     if (!previous && expectedRevision !== null) throw new Error('Routine job does not exist');
     const title = text(input.title ?? previous?.title, 180);
-    const instructions = text(input.instructions ?? previous?.instructions, 12000);
+    if (input.instructionEdits !== undefined && input.instructions !== undefined) throw new Error('Pass either instructions or instructionEdits, not both');
+    if (input.instructionEdits !== undefined && !previous) throw new Error('instructionEdits needs an existing routine job');
+    const instructions = text(input.instructionEdits !== undefined
+      ? applyTextEdits(previous.instructions, input.instructionEdits, 'instructionEdits')
+      : (input.instructions ?? previous?.instructions), 12000);
     const status = text(input.status ?? previous?.status ?? 'paused', 20);
     const slots = validateSlots(input.slots ?? previous?.slots);
     if (!title || !instructions) throw new Error('Title and instructions are required');

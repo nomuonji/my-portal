@@ -1,4 +1,5 @@
 'use strict';
+const { EDITS_SCHEMA } = require('./textEdits');
 const str = (description, maxLength = 12000) => ({ type: 'string', description, maxLength });
 const obj = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const slots = { type: 'array', items: { type: 'string', pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }, minItems: 1, maxItems: 24 };
@@ -16,6 +17,7 @@ const TOOLS = [
       title: str('Job title',180),
       description: str('Outcome and scope',1000),
       instructions: str('Execution procedure to be read by the scheduled ChatGPT agent',12000),
+      instructionEdits: { ...EDITS_SCHEMA, description: 'Change part of the existing instructions without resending them: exact {find, replace} pairs, each find occurring exactly once. Use instead of instructions for small edits.' },
       targetSystem: str('Canonical specialist Operator',120),
       status: { type: 'string', enum: ['active','paused'] },
       priority: { type: 'string', enum: ['critical','normal','background'], description: 'Within each 3-job shared wake-up, run critical first and once-daily jobs before 3-times-daily jobs.' },

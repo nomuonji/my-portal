@@ -23,3 +23,10 @@ Every agent-side record belongs to exactly one layer. The layer is chosen by the
 ## Entry point
 
 `world_map_get` returns an index (about a quarter of the former payload). Records are read on demand with the tool of their layer. `world_map_get({detail:"full"})` returns every field and is rarely needed.
+
+## Editing long stored texts
+
+Routine job instructions, Chat Skill bodies and the Agent Guide accept exact-match partial edits (`instructionEdits`, `bodyEdits`, `agentGuideEdits`): a list of `{find, replace}` where every `find` must occur exactly once. Packs and Profiles have `intelligence_pack_version_derive` (dependency rewrites) and `agent_profile_version_derive` (portfolio changes), which copy the rest of the definition on the server. Use these for small changes; resending a whole text to change one sentence invites silent transcription errors.
+
+Write tools answer with what changed. `context_save` returns the saved Context and an event count, and `world_map_update` returns the compact map; read full histories with `context_get`.
+
