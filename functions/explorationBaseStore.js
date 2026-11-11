@@ -283,6 +283,9 @@ function createStore(options) {
         conjectures: open.filter((item) => item.stage === 'conjecture').map(hypothesisBrief),
         rejected: hypotheses.filter((item) => item.status === 'rejected')
           .map((item) => ({ id: item.id, title: item.title, reason: item.statusReason || '', legacyIds: item.legacyIds || [] })),
+        // Retired: the phenomenon may be real but it does not lead to the outcome. Listed so it is not rediscovered.
+        retired: hypotheses.filter((item) => item.status === 'retired')
+          .map((item) => ({ id: item.id, title: item.title, stage: item.stage, reason: item.statusReason || '', legacyIds: item.legacyIds || [] })),
       },
       position: {
         runCount: base.runCount || 0, stalledRuns: base.stalledRuns || 0,
