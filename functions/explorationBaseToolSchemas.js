@@ -128,11 +128,14 @@ const tools = [
   },
   {
     name: 'exploration_outcome_set',
-    description: 'Change the outcome contract, confirm or decline candidate achievements, resolve proposals, or pause/close the base. All of these belong to the user: with userAuthorized=true they are applied; an outcome passed without it is stored as a pending proposal (reason required) and nothing changes.',
+    description: 'Change the outcome contract, rename or re-describe the base (title/summary/domains), confirm or decline candidate achievements, resolve proposals, or pause/close the base. All of these belong to the user: with userAuthorized=true they are applied; an outcome passed without it is stored as a pending proposal (reason required) and nothing changes.',
     inputSchema: {
       type: 'object',
       properties: {
         baseId, outcome,
+        title: string('New base title (user-authorized).', 220),
+        summary: string('New description of what is explored and for what (user-authorized).', 1500),
+        domains: strings('Replacement domain list (user-authorized).', 20),
         confirmAchievements: {
           type: 'array', maxItems: 30,
           items: { type: 'object', properties: { id: string('Achievement ID (A-nnn).', 20), decision: { type: 'string', enum: ['confirmed', 'declined'] }, note: string('The user\'s words.', 800) }, required: ['id', 'decision'], additionalProperties: false },

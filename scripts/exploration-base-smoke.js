@@ -69,6 +69,23 @@ test('the outcome contract belongs to the user', async () => {
   assert.equal(brief.proposals.length, 0);
 });
 
+test('title, summary and domains are user-owned and can be revised without touching the outcome', async () => {
+  const db = new MemoryDb();
+  const store = createStore({ getDb: () => db });
+  await store.create({ id: 'test-base', title: 'T', summary: 'S', domains: ['a'], outcome, method, ...auth });
+  await assert.rejects(store.setOutcome({ baseId: 'test-base', title: 'New' }), /owned by the user/);
+  // Older client schemas send domains as one string.
+  const renamed = await store.setOutcome({ baseId: 'test-base', title: 'New', summary: 'New summary', domains: 'x, y', reason: 'Not for one channel', ...auth });
+  assert.equal(renamed.base.title, 'New');
+  assert.equal(renamed.base.summary, 'New summary');
+  assert.deepEqual(renamed.base.domains, ['x', 'y']);
+  assert.equal(renamed.outcome.revision, 1, 'renaming must not revise the outcome contract');
+  const full = await store.get({ id: 'test-base', view: 'full' });
+  const event = full.full.events.find((entry) => entry.type === 'base_described');
+  assert.equal(event.detail.before.title, 'T');
+  await assert.rejects(store.setOutcome({ baseId: 'test-base', title: '', ...auth }), /title/);
+});
+
 test('hypothesis stages need the evidence they claim, and rejections are kept', async () => {
   const store = await setup();
   const created = await store.upsertItems({ baseId: 'test-base', kind: 'hypothesis', items: [{ ...hypothesis, legacyIds: ['P22'] }, { ...hypothesis, title: 'CPC predicts competition' }] });
