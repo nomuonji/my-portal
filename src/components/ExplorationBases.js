@@ -2,16 +2,15 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Alert, Box, Button, CircularProgress, Collapse, Dialog, DialogActions, DialogContent, DialogTitle,
-  Link, Stack, Tab, Tabs, TextField, Typography,
+  Link, Stack, TextField, Typography,
 } from '@mui/material';
-import { ArrowBack, ExpandLess, ExpandMore, OpenInNew, Refresh } from '@mui/icons-material';
+import { ArrowBack, OpenInNew, Refresh } from '@mui/icons-material';
 import { marked } from 'marked';
 import { auth } from '../firebase';
 import { toText } from './jobOpportunityView';
 
-// 探索拠点. The page answers, in this order: how far along is it, is anything waiting for me,
-// what is the current best guess, and what happened recently. The full ledger (every hypothesis,
-// constraint, method version, event) stays behind 「詳しく見る」 for when it is actually needed.
+// 探索拠点. The page answers, in this order: how far along is it, is anything waiting for me, what
+// counts as done, what has been run, the current guesses and constraints, and the method text.
 
 const V = {
   ink: 'var(--p-ink)', muted: 'var(--p-muted)', faint: 'var(--p-faint)', rule: 'var(--p-rule)',
@@ -130,7 +129,7 @@ function Small({ children }) {
   return <Typography component="span" sx={{ fontSize: 11.5, color: V.faint }}>{children}</Typography>;
 }
 
-// ---- 詳しく見る -------------------------------------------------------------
+// ---- Building blocks --------------------------------------------------------
 
 // The method body is Markdown written by the user or an agent. Raw HTML is escaped before parsing.
 function MarkdownBody({ source }) {
@@ -199,112 +198,46 @@ function HypothesisDetail({ item }) {
   );
 }
 
-function Details({ detail }) {
-  const [tab, setTab] = useState('hypotheses');
-  const { outcome = {}, method, full = {} } = detail;
-  const hypotheses = [...(full.hypotheses || [])].sort((a, b) => {
-    const order = (item) => (item.status === 'open' ? (STAGE[item.stage]?.rank ?? 9) : item.status === 'rejected' ? 20 : 30);
-    return order(a) - order(b);
-  });
-  const constraints = (full.constraints || []).filter((item) => item.status === 'active');
-  const url = methodUrl(method?.bodyRef);
+// ---- Detail page ------------------------------------------------------------
+// One page, top to bottom: where it stands, what waits for the user, the goal (the only place the
+// pass criteria live), runs, guesses, constraints, the method text, history. Nothing is folded away.
+
+function Run({ run, hypotheses }) {
+  const stalled = run.status === 'finished' && run.moved === false;
   return (
-    <Box sx={{ mt: 1 }}>
-      <Tabs value={tab} onChange={(_, value) => setTab(value)} variant="scrollable" allowScrollButtonsMobile sx={{ borderBottom: '1px solid ' + V.rule, minHeight: 40, '& .MuiTab-root': { minHeight: 40, fontSize: 13 } }}>
-        <Tab value="hypotheses" label={'見立て ' + hypotheses.length} />
-        <Tab value="constraints" label={'制約 ' + constraints.length} />
-        <Tab value="goal" label="ゴールの条件" />
-        <Tab value="method" label="探索法" />
-        <Tab value="history" label="履歴" />
-      </Tabs>
-
-      {tab === 'hypotheses' && (
-        <Box>
-          <Quiet>棄却・引退した見立ても、同じ推論を繰り返さないために残しています。</Quiet>
-          {hypotheses.map((item) => <HypothesisDetail key={item.id} item={item} />)}
-        </Box>
+    <Box sx={{ py: 1.1, borderBottom: '1px solid ' + V.rule }}>
+      <Stack direction="row" gap={1} alignItems="baseline" flexWrap="wrap">
+        <Small>{shortDate(run.startedAt)}</Small>
+        <Typography component="span" sx={{ fontSize: 12, fontWeight: 800, color: run.status === 'open' ? V.blue : stalled ? V.pink : run.status === 'abandoned' ? V.faint : V.green }}>
+          {run.status === 'open' ? '実行中' : stalled ? '空振り' : run.status === 'abandoned' ? '中断' : '進展あり'}
+        </Typography>
+        <Typography sx={{ fontSize: 14, fontWeight: 700 }}>{run.objective}</Typography>
+      </Stack>
+      {(run.summary || run.notMovedReason) && <Typography sx={{ fontSize: 13, color: V.muted, mt: 0.3, lineHeight: 1.6 }}>{run.summary || run.notMovedReason}</Typography>}
+      {(run.verdicts || []).length > 0 && (
+        <Typography sx={{ fontSize: 12, color: V.faint, mt: 0.3 }}>
+          {run.verdicts.map((verdict) => {
+            const title = hypotheses.find((item) => item.id === verdict.hypothesisId)?.title || verdict.hypothesisId;
+            return title + '：' + (VERDICT[verdict.result] || verdict.result);
+          }).join('　')}
+        </Typography>
       )}
-
-      {tab === 'constraints' && ['user', 'environment', 'agent'].map((owner) => {
-        const list = constraints.filter((item) => item.owner === owner);
-        if (!list.length) return null;
-        return (
-          <Box key={owner} sx={{ mt: 2 }}>
-            <Typography sx={{ fontSize: 13, fontWeight: 800 }}>{OWNER[owner]} <Small>{list.length}</Small></Typography>
-            {list.map((item) => (
-              <Box key={item.id} sx={{ py: 1, borderBottom: '1px solid ' + V.rule }}>
-                <Typography sx={{ fontSize: 13.5, lineHeight: 1.65 }}>{item.statement}</Typography>
-                {(item.rationale || item.basis) && <Typography sx={{ fontSize: 12, color: V.muted, mt: 0.2 }}>{item.rationale || item.basis}</Typography>}
-              </Box>
-            ))}
-          </Box>
-        );
-      })}
-
-      {tab === 'goal' && (
-        <Box sx={{ mt: 1 }}>
-          <DetailRow label="数える単位">{outcome.unit}</DetailRow>
-          <DetailRow label="合格の判定">{outcome.acceptance}</DetailRow>
-          <DetailRow label="期限">{outcome.deadline || 'なし'}</DetailRow>
-          <DetailRow label="その先に見る指標">{outcome.finalIndicator}</DetailRow>
-          <DetailRow label="成果に数えないもの">{(outcome.proxies || []).join('、')}</DetailRow>
-          <DetailRow label="止める条件">{(outcome.stopConditions || []).map((text) => <Box key={text}>{text}</Box>)}</DetailRow>
-        </Box>
-      )}
-
-      {tab === 'method' && (method ? (
-        <Box sx={{ mt: 1.5 }}>
-          <Typography sx={{ fontSize: 13, color: V.muted }}>{method.title}　<b style={{ color: 'var(--p-ink)' }}>{method.version}</b>　{shortDate(method.setAt)}</Typography>
-          {method.body ? <MarkdownBody source={method.body} /> : (
-            <DetailRow label="本文">
-              {url ? <Link href={url} target="_blank" rel="noreferrer" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.4 }}>
-                {method.bodyRef?.path || method.bodyRef?.location}<OpenInNew sx={{ fontSize: 14 }} />
-              </Link> : method.bodyRef?.location}
-            </DetailRow>
-          )}
-          <DetailRow label="検査">{method.benchmarkRef}</DetailRow>
-          {(full.methodHistory || []).length > 1 && (
-            <DetailRow label="これまでの版">
-              {[...full.methodHistory].reverse().map((entry) => <Box key={entry.version}>{entry.version}：{entry.summary} <Small>{shortDate(entry.setAt)}</Small></Box>)}
-            </DetailRow>
-          )}
-        </Box>
-      ) : <Quiet>探索法はまだ設定されていません。</Quiet>)}
-
-      {tab === 'history' && (
-        <Box sx={{ mt: 1 }}>
-          {(full.events || []).map((event) => (
-            <Box key={event.seq} sx={{ display: 'grid', gridTemplateColumns: '64px minmax(0,1fr)', columnGap: 1.5, py: 0.8, borderBottom: '1px solid ' + V.rule }}>
-              <Small>{shortDate(event.createdAt)}</Small>
-              <Typography sx={{ fontSize: 13, lineHeight: 1.6 }}>
-                <b>{EVENT_LABEL[event.type] || event.type}</b>　{event.summary}
-              </Typography>
-            </Box>
-          ))}
-          {!(full.events || []).length && <Quiet>履歴はありません。</Quiet>}
-        </Box>
-      )}
+      {run.nextStep && <Typography sx={{ fontSize: 12, color: V.muted, mt: 0.3 }}>次の一手：{run.nextStep}</Typography>}
     </Box>
   );
 }
 
-// ---- Detail page ------------------------------------------------------------
-
 function BaseDetail({ detail, onDecide, busy }) {
-  const [showDetails, setShowDetails] = useState(false);
-  const { base, outcome = {}, full = {}, position = {} } = detail;
+  const { base, outcome = {}, method, full = {}, position = {} } = detail;
   const awaiting = outcome.awaitingConfirmation || [];
   const proposals = (full.proposals || []).filter((proposal) => proposal.status === 'pending');
   const hypotheses = full.hypotheses || [];
-  const leading = hypotheses
-    .filter((item) => item.status === 'open' && (STAGE[item.stage]?.rank ?? 9) <= 3)
-    .sort((a, b) => STAGE[a.stage].rank - STAGE[b.stage].rank)
-    .slice(0, 5);
-  const others = {
-    open: hypotheses.filter((item) => item.status === 'open').length - leading.length,
-    closed: hypotheses.filter((item) => item.status !== 'open').length,
-  };
-  const runs = (full.runs || []).slice(0, 3);
+  const open = hypotheses.filter((item) => item.status === 'open');
+  const closed = hypotheses.filter((item) => item.status !== 'open');
+  const constraints = (full.constraints || []).filter((item) => item.status === 'active');
+  const runs = full.runs || [];
+  const events = (full.events || []).slice(0, 20);
+  const url = methodUrl(method?.bodyRef);
   const state = {
     status: base.status, reached: outcome.reached, awaitingCount: awaiting.length,
     pendingProposalCount: proposals.length, stalledRuns: position.stalledRuns, openRunId: position.openRunId,
@@ -350,52 +283,77 @@ function BaseDetail({ detail, onDecide, busy }) {
         </>
       )}
 
-      <Heading>ゴール</Heading>
-      <Typography sx={{ fontSize: 15.5, fontWeight: 700, lineHeight: 1.7 }}>{outcome.statement}</Typography>
+      <Heading>ゴールと合格の条件</Heading>
+      <Typography sx={{ fontSize: 15.5, fontWeight: 750, lineHeight: 1.7 }}>{outcome.statement}</Typography>
+      {outcome.acceptance && (
+        <Typography sx={{ fontSize: 14, lineHeight: 1.85, mt: 1, whiteSpace: 'pre-line' }}>{outcome.acceptance}</Typography>
+      )}
+      <Box sx={{ mt: 1.5 }}>
+        <DetailRow label="その先に見る指標">{outcome.finalIndicator}</DetailRow>
+        <DetailRow label="成果に数えないもの">{(outcome.proxies || []).join('、')}</DetailRow>
+        <DetailRow label="止める条件">{(outcome.stopConditions || []).map((text) => <Box key={text}>{text}</Box>)}</DetailRow>
+        <DetailRow label="期限">{outcome.deadline || 'なし'}</DetailRow>
+      </Box>
 
-      <Heading aside={others.open + others.closed > 0 ? <Small>ほかに {others.open > 0 ? '検討中 ' + others.open + '件・' : ''}棄却や引退 {others.closed}件</Small> : null}>
-        いま有力な見立て
-      </Heading>
-      {leading.length ? leading.map((item) => (
-        <Box key={item.id} sx={{ py: 1.1, borderBottom: '1px solid ' + V.rule }}>
-          <Stack direction="row" gap={1} alignItems="baseline" flexWrap="wrap">
-            <Typography sx={{ fontSize: 14.5, fontWeight: 800 }}>{item.title}</Typography>
-            <Typography component="span" sx={{ fontSize: 11.5, fontWeight: 700, color: STAGE[item.stage].color }}>{STAGE[item.stage].label}</Typography>
-          </Stack>
-          <Typography sx={{ fontSize: 13.5, color: V.muted, mt: 0.3, lineHeight: 1.65 }}>{item.statement}</Typography>
-        </Box>
-      )) : <Quiet>まだ観測に裏づけられた見立てはありません。</Quiet>}
+      <Heading aside={<Small>{runs.length}件</Small>}>実行記録</Heading>
+      {runs.length ? runs.map((run) => <Run key={run.id} run={run} hypotheses={hypotheses} />) : <Quiet>まだ一度も実行していません。</Quiet>}
 
-      <Heading>最近の実行</Heading>
-      {runs.length ? runs.map((run) => {
-        const stalled = run.status === 'finished' && run.moved === false;
+      <Heading aside={<Small>検討中 {open.length}件・棄却や引退 {closed.length}件</Small>}>見立て</Heading>
+      {Object.keys(STAGE).map((key) => {
+        const list = open.filter((item) => item.stage === key);
+        if (!list.length) return null;
         return (
-          <Box key={run.id} sx={{ py: 1.1, borderBottom: '1px solid ' + V.rule }}>
-            <Stack direction="row" gap={1} alignItems="baseline" flexWrap="wrap">
-              <Small>{shortDate(run.startedAt)}</Small>
-              <Typography component="span" sx={{ fontSize: 12, fontWeight: 800, color: run.status === 'open' ? V.blue : stalled ? V.pink : run.status === 'abandoned' ? V.faint : V.green }}>
-                {run.status === 'open' ? '実行中' : stalled ? '空振り' : run.status === 'abandoned' ? '中断' : '進展あり'}
-              </Typography>
-              <Typography sx={{ fontSize: 14, fontWeight: 700 }}>{run.objective}</Typography>
-            </Stack>
-            {(run.summary || run.notMovedReason) && <Typography sx={{ fontSize: 13, color: V.muted, mt: 0.3, lineHeight: 1.6 }}>{run.summary || run.notMovedReason}</Typography>}
-            {(run.verdicts || []).length > 0 && (
-              <Typography sx={{ fontSize: 12, color: V.faint, mt: 0.3 }}>
-                {run.verdicts.map((verdict) => {
-                  const title = hypotheses.find((item) => item.id === verdict.hypothesisId)?.title || verdict.hypothesisId;
-                  return title + '：' + (VERDICT[verdict.result] || verdict.result);
-                }).join('　')}
-              </Typography>
-            )}
+          <Box key={key} sx={{ mt: 1.5 }}>
+            <Typography sx={{ fontSize: 12.5, fontWeight: 800, color: STAGE[key].color }}>{STAGE[key].label} <Small>{list.length}</Small></Typography>
+            {list.map((item) => <HypothesisDetail key={item.id} item={item} />)}
           </Box>
         );
-      }) : <Quiet>まだ一度も実行していません。</Quiet>}
+      })}
+      {!open.length && <Quiet>検討中の見立てはありません。</Quiet>}
+      {closed.length > 0 && (
+        <Box sx={{ mt: 2 }}>
+          <Typography sx={{ fontSize: 12.5, fontWeight: 800, color: V.muted }}>棄却・引退 <Small>{closed.length}　同じ推論を繰り返さないために残している</Small></Typography>
+          {closed.map((item) => <HypothesisDetail key={item.id} item={item} />)}
+        </Box>
+      )}
 
-      <Button onClick={() => setShowDetails((v) => !v)} endIcon={showDetails ? <ExpandLess /> : <ExpandMore />}
-        sx={{ mt: 4, px: 0, color: V.muted, fontWeight: 700 }}>
-        {showDetails ? '詳しい記録を閉じる' : '詳しく見る（すべての見立て・制約・探索法・履歴）'}
-      </Button>
-      <Collapse in={showDetails} unmountOnExit><Details detail={detail} /></Collapse>
+      <Heading aside={<Small>{constraints.length}件</Small>}>制約</Heading>
+      {['user', 'environment', 'agent'].map((owner) => {
+        const list = constraints.filter((item) => item.owner === owner);
+        if (!list.length) return null;
+        return (
+          <Box key={owner} sx={{ mt: 1.5 }}>
+            <Typography sx={{ fontSize: 12.5, fontWeight: 800, color: V.muted }}>{OWNER[owner]} <Small>{list.length}</Small></Typography>
+            {list.map((item) => (
+              <Box key={item.id} sx={{ py: 1, borderBottom: '1px solid ' + V.rule }}>
+                <Typography sx={{ fontSize: 13.5, lineHeight: 1.65 }}>{item.statement}</Typography>
+                {(item.rationale || item.basis) && <Typography sx={{ fontSize: 12, color: V.muted, mt: 0.2 }}>{item.rationale || item.basis}</Typography>}
+              </Box>
+            ))}
+          </Box>
+        );
+      })}
+      {!constraints.length && <Quiet>制約はありません。</Quiet>}
+
+      <Heading aside={method ? <Small>{method.version}　{shortDate(method.setAt)}</Small> : null}>探索法（測り方と手順）</Heading>
+      {method ? (
+        method.body ? <MarkdownBody source={method.body} /> : (
+          <DetailRow label="本文">
+            {url ? <Link href={url} target="_blank" rel="noreferrer" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.4 }}>
+              {method.bodyRef?.path || method.bodyRef?.location}<OpenInNew sx={{ fontSize: 14 }} />
+            </Link> : method.bodyRef?.location}
+          </DetailRow>
+        )
+      ) : <Quiet>探索法はまだ設定されていません。</Quiet>}
+
+      <Heading aside={<Small>新しい順に最大20件</Small>}>変更履歴</Heading>
+      {events.map((event) => (
+        <Box key={event.seq} sx={{ display: 'grid', gridTemplateColumns: '64px minmax(0,1fr)', columnGap: 1.5, py: 0.8, borderBottom: '1px solid ' + V.rule }}>
+          <Small>{shortDate(event.createdAt)}</Small>
+          <Typography sx={{ fontSize: 13, lineHeight: 1.6 }}><b>{EVENT_LABEL[event.type] || event.type}</b>　{event.summary}</Typography>
+        </Box>
+      ))}
+      {!events.length && <Quiet>履歴はありません。</Quiet>}
     </Box>
   );
 }

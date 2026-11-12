@@ -75,22 +75,16 @@ test('lists bases with a one-line status and progress', async () => {
   expect(screen.getByText(/最後の実行は/)).toBeInTheDocument();
 });
 
-test('detail leads with status, decisions, goal, leading guesses and recent runs; the ledger is folded', async () => {
+test('detail shows everything on one page: status, decisions, goal with criteria, runs, guesses, constraints, method', async () => {
   renderAt('id=job-base');
   expect(await screen.findByText('あなたの判断を待っている候補が 1 件あります')).toBeInTheDocument();
   expect(screen.getByText('応募すると決められる案件を見つける')).toBeInTheDocument();
-  expect(screen.getByText('件数より不明点')).toBeInTheDocument();
+  expect(screen.getByText('不明点が残っていない')).toBeInTheDocument();
   expect(screen.getByText('3つの募集元を調べる')).toBeInTheDocument();
   expect(screen.getByText('件数より不明点：当たり')).toBeInTheDocument();
-  // Constraints, rejected guesses and the event log stay out of the first view.
-  expect(screen.queryByText('応募はしない')).not.toBeInTheDocument();
-  expect(screen.queryByText('棄却された仮説')).not.toBeInTheDocument();
-
-  fireEvent.click(screen.getByText(/詳しく見る/));
-  expect(await screen.findByText('棄却された仮説')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('tab', { name: /制約/ }));
   expect(screen.getByText('応募はしない')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('tab', { name: '探索法' }));
+  expect(screen.getByText('棄却された仮説')).toBeInTheDocument();
+  expect(screen.queryByText(/詳しく見る/)).not.toBeInTheDocument();
   expect(screen.getByRole('link', { name: /docs\/treasure-method\.md/ })).toHaveAttribute('href', 'https://github.com/nomuonji/keywords/blob/20a5307/docs/treasure-method.md');
 
   fireEvent.click(screen.getByRole('button', { name: '成果にする' }));
@@ -104,9 +98,7 @@ test('an inline method body is rendered as text on the page, with raw HTML escap
     body: '## 測るもの\n\n| 言葉 | 線 |\n|---|---|\n| 検索されている | 月10以上 |\n\n<img src=x onerror=alert(1)>' } };
   global.fetch = jest.fn((url) => Promise.resolve({ ok: true, json: () => Promise.resolve(String(url).includes('exploration_bases') ? LIST : inline) }));
   renderAt('id=job-base');
-  fireEvent.click(await screen.findByText(/詳しく見る/));
-  fireEvent.click(screen.getByRole('tab', { name: '探索法' }));
-  expect(screen.getByRole('heading', { name: '測るもの' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: '測るもの' })).toBeInTheDocument();
   expect(screen.getByRole('cell', { name: '月10以上' })).toBeInTheDocument();
   expect(document.querySelector('.method-body img')).toBeNull();
 });
