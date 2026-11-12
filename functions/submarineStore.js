@@ -111,7 +111,15 @@ function cleanChartEntry(raw, sortieId) {
 
 const DECISIONS = ['confirmed', 'candidate', 'declined'];
 const TONES = ['good', 'neutral', 'bad'];
-function cleanActions(raw) {
+// Hosts whose cached tool schema lacks a field may send an object/array as a JSON string.
+function parsed(raw) {
+  if (typeof raw !== 'string') return raw;
+  const trimmed = raw.trim();
+  if (!/^[[{]/.test(trimmed)) return raw;
+  try { return JSON.parse(trimmed); } catch (error) { return raw; }
+}
+function cleanActions(input) {
+  const raw = parsed(input);
   if (raw === undefined || raw === null) return null;
   if (!Array.isArray(raw) || raw.length < 2 || raw.length > 6) throw new Error('feedbackActions needs 2 to 6 actions');
   const actions = raw.map((a, i) => {
@@ -125,7 +133,8 @@ function cleanActions(raw) {
   return actions;
 }
 // What a find is, in words the user reads on the card. Used when the haul has no canonical record to render.
-function cleanDetails(raw) {
+function cleanDetails(input) {
+  const raw = parsed(input);
   if (!raw) return null;
   const d = plain(raw, 'haul.details');
   const out = {
