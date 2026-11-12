@@ -2,15 +2,15 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Alert, Box, Button, CircularProgress, Collapse, Dialog, DialogActions, DialogContent, DialogTitle,
-  Link, Stack, TextField, Typography,
+  Link, Stack, Tab, Tabs, TextField, Typography,
 } from '@mui/material';
 import { ArrowBack, OpenInNew, Refresh } from '@mui/icons-material';
 import { marked } from 'marked';
 import { auth } from '../firebase';
 import { toText } from './jobOpportunityView';
 
-// 探索拠点. The page answers, in this order: how far along is it, is anything waiting for me, what
-// counts as done, what has been run, the current guesses and constraints, and the method text.
+// 探索拠点. Status and anything waiting for the user stay on top; the rest of the base is split into
+// tabs (goal, runs, guesses, constraints, method, history) so each part is read on its own.
 
 const V = {
   ink: 'var(--p-ink)', muted: 'var(--p-muted)', faint: 'var(--p-faint)', rule: 'var(--p-rule)',
@@ -199,8 +199,7 @@ function HypothesisDetail({ item }) {
 }
 
 // ---- Detail page ------------------------------------------------------------
-// One page, top to bottom: where it stands, what waits for the user, the goal (the only place the
-// pass criteria live), runs, guesses, constraints, the method text, history. Nothing is folded away.
+// Status and decisions on top; then one tab per part. The goal tab is the only place the pass criteria live.
 
 function Run({ run, hypotheses }) {
   const stalled = run.status === 'finished' && run.moved === false;
@@ -227,7 +226,13 @@ function Run({ run, hypotheses }) {
   );
 }
 
+const TABS = [
+  { key: 'goal', label: 'ゴール' }, { key: 'runs', label: '実行記録' }, { key: 'guesses', label: '見立て' },
+  { key: 'constraints', label: '制約' }, { key: 'method', label: '探索法' }, { key: 'history', label: '履歴' },
+];
+
 function BaseDetail({ detail, onDecide, busy }) {
+  const [tab, setTab] = useState('goal');
   const { base, outcome = {}, method, full = {}, position = {} } = detail;
   const awaiting = outcome.awaitingConfirmation || [];
   const proposals = (full.proposals || []).filter((proposal) => proposal.status === 'pending');
@@ -283,7 +288,15 @@ function BaseDetail({ detail, onDecide, busy }) {
         </>
       )}
 
-      <Heading>ゴールと合格の条件</Heading>
+      <Tabs value={tab} onChange={(_, value) => setTab(value)} variant="scrollable" allowScrollButtonsMobile
+        sx={{ mt: 3, borderBottom: '1px solid ' + V.rule, minHeight: 42, '& .MuiTab-root': { minHeight: 42, fontSize: 13.5, fontWeight: 700 } }}>
+        {TABS.map((item) => {
+          const count = { runs: runs.length, guesses: open.length, constraints: constraints.length }[item.key];
+          return <Tab key={item.key} value={item.key} label={item.label + (count !== undefined ? ' ' + count : '')} />;
+        })}
+      </Tabs>
+      <Box sx={{ pt: 2.5 }}>
+      {tab === 'goal' && (<>
       <Typography sx={{ fontSize: 15.5, fontWeight: 750, lineHeight: 1.7 }}>{outcome.statement}</Typography>
       {outcome.acceptance && (
         <Typography sx={{ fontSize: 14, lineHeight: 1.85, mt: 1, whiteSpace: 'pre-line' }}>{outcome.acceptance}</Typography>
@@ -294,11 +307,11 @@ function BaseDetail({ detail, onDecide, busy }) {
         <DetailRow label="止める条件">{(outcome.stopConditions || []).map((text) => <Box key={text}>{text}</Box>)}</DetailRow>
         <DetailRow label="期限">{outcome.deadline || 'なし'}</DetailRow>
       </Box>
+      </>)}
 
-      <Heading aside={<Small>{runs.length}件</Small>}>実行記録</Heading>
-      {runs.length ? runs.map((run) => <Run key={run.id} run={run} hypotheses={hypotheses} />) : <Quiet>まだ一度も実行していません。</Quiet>}
+      {tab === 'runs' && (runs.length ? runs.map((run) => <Run key={run.id} run={run} hypotheses={hypotheses} />) : <Quiet>まだ一度も実行していません。</Quiet>)}
 
-      <Heading aside={<Small>検討中 {open.length}件・棄却や引退 {closed.length}件</Small>}>見立て</Heading>
+      {tab === 'guesses' && (<>
       {Object.keys(STAGE).map((key) => {
         const list = open.filter((item) => item.stage === key);
         if (!list.length) return null;
@@ -316,8 +329,9 @@ function BaseDetail({ detail, onDecide, busy }) {
           {closed.map((item) => <HypothesisDetail key={item.id} item={item} />)}
         </Box>
       )}
+      </>)}
 
-      <Heading aside={<Small>{constraints.length}件</Small>}>制約</Heading>
+      {tab === 'constraints' && (<>
       {['user', 'environment', 'agent'].map((owner) => {
         const list = constraints.filter((item) => item.owner === owner);
         if (!list.length) return null;
@@ -334,8 +348,10 @@ function BaseDetail({ detail, onDecide, busy }) {
         );
       })}
       {!constraints.length && <Quiet>制約はありません。</Quiet>}
+      </>)}
 
-      <Heading aside={method ? <Small>{method.version}　{shortDate(method.setAt)}</Small> : null}>探索法（測り方と手順）</Heading>
+      {tab === 'method' && (<>
+      {method && <Typography sx={{ fontSize: 12.5, color: V.muted }}>{method.title}　<b style={{ color: 'var(--p-ink)' }}>{method.version}</b>　{shortDate(method.setAt)}</Typography>}
       {method ? (
         method.body ? <MarkdownBody source={method.body} /> : (
           <DetailRow label="本文">
@@ -345,8 +361,9 @@ function BaseDetail({ detail, onDecide, busy }) {
           </DetailRow>
         )
       ) : <Quiet>探索法はまだ設定されていません。</Quiet>}
+      </>)}
 
-      <Heading aside={<Small>新しい順に最大20件</Small>}>変更履歴</Heading>
+      {tab === 'history' && (<>
       {events.map((event) => (
         <Box key={event.seq} sx={{ display: 'grid', gridTemplateColumns: '64px minmax(0,1fr)', columnGap: 1.5, py: 0.8, borderBottom: '1px solid ' + V.rule }}>
           <Small>{shortDate(event.createdAt)}</Small>
@@ -354,6 +371,8 @@ function BaseDetail({ detail, onDecide, busy }) {
         </Box>
       ))}
       {!events.length && <Quiet>履歴はありません。</Quiet>}
+      </>)}
+      </Box>
     </Box>
   );
 }
