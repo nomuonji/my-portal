@@ -84,12 +84,26 @@ async function listSkills() {
   sourceOfTruth:'My Portal DB / chatSkills',
   notInstalledWarning:'Saving a skill in My Portal does not install it in ChatGPT. ChatGPT Skill installation is a separate user/product action.'};
 }
+// Lazy: the exploration base store loads the intelligence registry, which loads this module.
+async function dojosFor(id){
+ try{return await require('./explorationBaseStore').trainersOf({kind:'chat_skill',id});}catch(error){return [];}
+}
+function dojoNotice(dojos,id,revision){
+ if(!dojos.length)return null;
+ return dojos.map(d=>{
+  const head='このスキルは道場「'+d.title+'」（'+d.baseId+'）で鍛えられている。実行で使うのは道場が合格させた v'+d.releasedVersion+'。';
+  if(!(revision&&d.releasedVersion&&revision>d.releasedVersion))return head+'変更したら、道場で合格させるまで実行には使われない。';
+  return head+'v'+revision+' はまだ道場を通っていないので実行には使われない。使うには、根拠（終わったrunか本人の判断）と練習問題の結果を添えて exploration_method_version_set({baseId:"'+d.baseId+'", method:{bodyRef:{kind:"chat_skill", location:"'+id+'", versionNumber:'+revision+'}, ...}}) で合格させる。';
+ }).join('\n');
+}
 async function getSkill(input) {
  await bootstrapSkills();
  const id=safeString(input.id,90);
  const snap=await db().collection(SKILLS).doc(id).get();
  if(!snap.exists)throw new Error('Unknown chat Skill: '+id);
- return skillData(snap);
+ const skill=skillData(snap);
+ const dojos=await dojosFor(id);
+ return dojos.length?{...skill,dojos,dojoNotice:dojoNotice(dojos,id,skill.revision)}:skill;
 }
 async function upsertSkill(input) {
  if(input.confirm!==true)throw new Error('Explicit confirmation required');

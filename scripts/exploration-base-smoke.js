@@ -281,3 +281,12 @@ test('a skill pointer from before pinning warns instead of failing', async () =>
   assert.ok(brief.warnings.some((w) => /without a released version/.test(w)));
   assert.equal(brief.method.target, undefined);
 });
+
+test('trainersOf lists the bases that train a skill and the version each releases', async () => {
+  const db = new MemoryDb();
+  const resolveTarget = async () => ({ title: 's', latestVersion: 3, body: 'body text long enough' });
+  const store = createStore({ getDb: () => db, resolveTarget });
+  await store.create({ id: 'test-base', title: 'Dojo', summary: 'S', outcome, method: { title: 'M', version: 's2', summary: 'x', bodyRef: { kind: 'chat_skill', location: 'my-skill', versionNumber: 2 } }, ...auth });
+  assert.deepEqual(await store.trainersOf({ kind: 'chat_skill', id: 'my-skill' }), [{ baseId: 'test-base', title: 'Dojo', releasedVersion: 2 }]);
+  assert.deepEqual(await store.trainersOf({ kind: 'chat_skill', id: 'other' }), []);
+});

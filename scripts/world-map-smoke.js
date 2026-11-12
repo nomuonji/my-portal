@@ -87,7 +87,7 @@ try {
     assert.equal(compactView.agentGuide.instructions,before.agentGuide.instructions);
     assert.equal(compactView.contexts.length,before.contexts.length);
     assert.ok(compactView.contexts.every(c=>!('decisions' in c)&&!('currentState' in c)));
-    assert.ok(compactView.layers.some(l=>l.layer==='Exploration Base'));
+    assert.ok(compactView.layers.some(l=>l.layer.includes('Exploration Base')));
     assert.equal(compactView.routes.length,before.routes.length);
     const contexts=require('../functions/contextRegistry');
     const chatContext=require('../functions/chatContextRegistry');

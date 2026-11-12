@@ -171,6 +171,8 @@ function summarizeExplorationBase(p) {
     id: p.id, title: safeText(p.title, 220), status: safeText(p.status, 40),
     summary: safeText(p.summary, 400), projectIds: safeArray(p.projectIds, 20),
     methodVersion: safeText(p.method?.version, 60) || null,
+    trains: ['chat_skill', 'intelligence_pack'].includes(p.method?.bodyRef?.kind) && p.method.bodyRef.versionNumber
+      ? { kind: p.method.bodyRef.kind, id: safeText(p.method.bodyRef.location, 90), releasedVersion: Number(p.method.bodyRef.versionNumber) } : null,
     targetMin: Number(p.outcome?.target?.min) || null,
     confirmedCount: Number(p.progress?.confirmedCount) || 0,
     stalledRuns: Number(p.stalledRuns) || 0,
@@ -238,7 +240,7 @@ async function get() {
     methods: items(3).map(summarizeMethod).sort((a,b) => a.title.localeCompare(b.title)),
     explorationBases: items(6).map(summarizeExplorationBase).sort((a,b) => a.title.localeCompare(b.title)),
     coverage: Object.fromEntries(names.slice(1).map((n, i) => [n, results[i+1].status === 'fulfilled' ? 'loaded' : 'unavailable'])),
-    registrySemantics: {skills:'My Portal DB / chatSkills',methods:'Agent HQ Manager/Worker execution',contexts:'Independent project/domain context records and decision history',spaces:'Human Thinking Workspace only',explorationBases:'Fixed points of an ongoing exploration: outcome, method version, hypotheses, constraints, runs. Read with exploration_base_get before exploring'}, 
+    registrySemantics: {skills:'My Portal DB / chatSkills',methods:'Agent HQ Manager/Worker execution',contexts:'Independent project/domain context records and decision history',spaces:'Human Thinking Workspace only',explorationBases:'スキル錬成道場: each one trains one DB skill or pack (trains.id) and releases the version execution uses (trains.releasedVersion); it holds the goal, hypotheses, sources, constraints and runs. Read with exploration_base_get before running that skill'}, 
     warnings,
     help: '最初にWorld Homeで担当とProject/Domain別のContextsを確認する。ContextsはSpaceとは別DB。MethodはManager/Worker専用、Skillはチャット用。',
   };
@@ -249,7 +251,7 @@ const LAYERS = [
   { layer: 'World Home', question: 'どこの仕事で、正本はどこか', holds: 'routes・projects・Agent Guide', tools: 'world_map_get' },
   { layer: 'Operator / Repo', question: '数値・実データは何か', holds: '測定値・在庫・公開状態などの正本', tools: '各Operator' },
   { layer: 'Context', question: 'このプロジェクトで何が決まっていて、今どこか', holds: '目的・決定・訂正・現在地・次の行動', tools: 'context_list / context_get' },
-  { layer: 'Exploration Base', question: '探索の成果条件・探索法の版・仮説・制約はどうなっているか', holds: '未知領域を探索中のジョブの定点とrun記録。探索ジョブは最初に読む', tools: 'exploration_base_list / exploration_base_get' },
+  { layer: 'スキル錬成道場 (Exploration Base)', question: 'このスキルは何を目指して鍛えていて、実行ではどの版を使うか', holds: '鍛えるスキル/Packと実行で使う版、ゴール・見立て・情報源・制約・run記録。そのスキルを実行するジョブは最初に読む', tools: 'exploration_base_list / exploration_base_get' },
   { layer: 'Chat Skill', question: 'どうやるか', holds: '手順', tools: 'chat_skill_list / chat_skill_get' },
   { layer: 'Agent Profile / Intelligence Pack', question: 'どう判断するか', holds: '証拠の読み方・領域の認識・既知の失敗の型。手順と閾値は置かない', tools: 'agent_profile_get / intelligence_pack_get / cognitive_bundle_resolve' },
   { layer: 'HQ Method', question: '定期・委譲の仕事の運用契約は何か', holds: 'Manager/Worker専用。チャットの手順には使わない', tools: 'method_get_context' },
