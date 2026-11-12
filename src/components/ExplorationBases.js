@@ -25,12 +25,22 @@ const STAGE = {
   observed: { label: '一度観測', color: V.amber, rank: 3 },
   conjecture: { label: '推測', color: V.faint, rank: 4 },
 };
+// Same ladder, worded for where material comes from.
+const SOURCE_STAGE = {
+  yielded_outcome: { label: '成果を生んだ', color: V.green },
+  yielded_candidate: { label: '候補を生んだ', color: V.green },
+  reproduced: { label: '複数回で有用', color: V.blue },
+  observed: { label: '一度有用', color: V.amber },
+  conjecture: { label: '未検証', color: V.faint },
+};
 const OWNER = { user: 'あなたが決めたこと', environment: '道具やデータの限界', agent: 'エージェントの進め方' };
 const VERDICT = { supported: '当たり', contradicted: '外れ', inconclusive: '判定できず' };
 const EVENT_LABEL = {
   base_created: '拠点を作成', base_described: '名前・説明を変更', outcome_set: 'ゴールを変更',
   outcome_proposed: 'ゴールの変更を提案', method_version_set: '探索法を更新', hypothesis_created: '見立てを追加',
-  hypothesis_updated: '見立てを更新', constraint_created: '制約を追加', constraint_updated: '制約を更新',
+  hypothesis_updated: '見立てを更新', source_created: '情報源を追加', source_updated: '情報源を更新',
+  hypothesis_stage: '見立ての検証度が変化', source_stage: '情報源の検証度が変化', hypothesis_status: '見立てを棄却・引退', source_status: '情報源を外す',
+  constraint_status: '制約の扱いを変更', constraint_created: '制約を追加', constraint_updated: '制約を更新',
   run_started: '実行を開始', run_finished: '実行（進展あり）', run_stalled: '実行（空振り）', run_abandoned: '実行を中断',
   achievement_confirmed: '成果を確定', achievement_declined: '候補を見送り',
   status_active: '再開', status_paused: '一時停止', status_closed: '終了',
@@ -159,20 +169,32 @@ function DetailRow({ label, children }) {
   );
 }
 
-function HypothesisDetail({ item }) {
+function evidenceOf(item) {
+  return { hits: (item.evidence || []).filter((entry) => entry.type === 'candidate' || entry.type === 'outcome').length };
+}
+
+function LedgerDetail({ item, stages = STAGE }) {
   const [open, setOpen] = useState(false);
   const closed = item.status !== 'open';
-  const stage = STAGE[item.stage] || { label: item.stage, color: V.faint };
+  const isSource = item.kind === 'source';
+  const stage = stages[item.stage] || { label: item.stage, color: V.faint };
   const evidence = item.evidence || [];
   const counter = item.counterexamples || [];
   return (
     <Box sx={{ py: 1.2, borderBottom: '1px solid ' + V.rule }}>
       <Stack direction="row" gap={1} alignItems="baseline" flexWrap="wrap">
         <Typography sx={{ fontSize: 14, fontWeight: 750 }}>{item.title}</Typography>
-        <Small>{closed ? (item.status === 'rejected' ? '棄却' : '引退') : stage.label}</Small>
+        <Small>{closed ? (item.status === 'rejected' ? (isSource ? '外した' : '棄却') : '引退') : stage.label}</Small>
+        {isSource && evidenceOf(item).hits > 0 && <Small>候補 {evidenceOf(item).hits}</Small>}
+        {isSource && (item.counterexamples || []).length > 0 && <Small>空振り {(item.counterexamples || []).length}</Small>}
       </Stack>
+      {isSource && item.locator && (
+        /^https?:\/\//.test(item.locator)
+          ? <Link href={item.locator} target="_blank" rel="noreferrer" sx={{ fontSize: 12, overflowWrap: 'anywhere' }}>{item.locator}</Link>
+          : <Typography sx={{ fontSize: 12, color: V.faint, overflowWrap: 'anywhere' }}>{item.locator}</Typography>
+      )}
       <Typography sx={{ fontSize: 13, color: V.muted, mt: 0.3, lineHeight: 1.65 }}>
-        {closed ? (item.statusReason || item.statement) : item.statement}
+        {closed ? (item.statusReason || item.statement || item.coverage) : (isSource ? item.coverage : item.statement)}
       </Typography>
       {(item.mechanism || item.limits || evidence.length > 0 || counter.length > 0) && (
         <>
@@ -189,13 +211,37 @@ function HypothesisDetail({ item }) {
                   {/^https?:\/\//.test(entry.source || '') && <> <Link href={entry.source} target="_blank" rel="noreferrer" sx={{ fontSize: 11.5 }}>出典</Link></>}
                 </Box>
               ))}
-              {counter.map((entry, index) => <Box key={'c' + index} sx={{ mb: 0.6, color: V.pink }}>反例：{toText(entry.ref || entry)}</Box>)}
+              {counter.map((entry, index) => <Box key={'c' + index} sx={{ mb: 0.6, color: V.pink }}>{isSource ? '空振り' : '反例'}：{toText(entry.ref || entry)}</Box>)}
             </Box>
           </Collapse>
         </>
       )}
     </Box>
   );
+}
+
+function Ledger({ items, stages, empty, closedLabel, closedNote }) {
+  const open = items.filter((item) => item.status === 'open');
+  const closed = items.filter((item) => item.status !== 'open');
+  return (<>
+    {Object.keys(stages).map((key) => {
+      const list = open.filter((item) => item.stage === key);
+      if (!list.length) return null;
+      return (
+        <Box key={key} sx={{ mt: 1.5 }}>
+          <Typography sx={{ fontSize: 12.5, fontWeight: 800, color: stages[key].color }}>{stages[key].label} <Small>{list.length}</Small></Typography>
+          {list.map((item) => <LedgerDetail key={item.id} item={item} stages={stages} />)}
+        </Box>
+      );
+    })}
+    {!open.length && <Quiet>{empty}</Quiet>}
+    {closed.length > 0 && (
+      <Box sx={{ mt: 2 }}>
+        <Typography sx={{ fontSize: 12.5, fontWeight: 800, color: V.muted }}>{closedLabel} <Small>{closed.length}　{closedNote}</Small></Typography>
+        {closed.map((item) => <LedgerDetail key={item.id} item={item} stages={stages} />)}
+      </Box>
+    )}
+  </>);
 }
 
 // ---- Detail page ------------------------------------------------------------
@@ -229,7 +275,7 @@ function Run({ run, hypotheses }) {
 
 const TABS = [
   { key: 'goal', label: 'ゴール' }, { key: 'timeline', label: '経過' }, { key: 'guesses', label: '見立て' },
-  { key: 'constraints', label: '制約' }, { key: 'method', label: '探索法' },
+  { key: 'sources', label: '情報源' }, { key: 'constraints', label: '制約' }, { key: 'method', label: '探索法' },
 ];
 // Run start/finish events duplicate the run entries themselves, so the timeline leaves them out.
 const RUN_EVENTS = new Set(['run_started', 'run_finished', 'run_stalled', 'run_abandoned']);
@@ -249,7 +295,7 @@ function BaseDetail({ detail, onDecide, busy }) {
   const proposals = (full.proposals || []).filter((proposal) => proposal.status === 'pending');
   const hypotheses = full.hypotheses || [];
   const open = hypotheses.filter((item) => item.status === 'open');
-  const closed = hypotheses.filter((item) => item.status !== 'open');
+  const sources = full.sources || [];
   const constraints = (full.constraints || []).filter((item) => item.status === 'active');
   const runs = full.runs || [];
   const timeline = timelineOf(runs, full.events || []);
@@ -302,7 +348,7 @@ function BaseDetail({ detail, onDecide, busy }) {
       <Tabs value={tab} onChange={(_, value) => setTab(value)} variant="scrollable" allowScrollButtonsMobile
         sx={{ mt: 3, borderBottom: '1px solid ' + V.rule, minHeight: 42, '& .MuiTab-root': { minHeight: 42, fontSize: 13.5, fontWeight: 700 } }}>
         {TABS.map((item) => {
-          const count = { guesses: open.length, constraints: constraints.length }[item.key];
+          const count = { guesses: open.length, sources: sources.filter((source) => source.status === 'open').length, constraints: constraints.length }[item.key];
           return <Tab key={item.key} value={item.key} label={item.label + (count !== undefined ? ' ' + count : '')} />;
         })}
       </Tabs>
@@ -338,24 +384,17 @@ function BaseDetail({ detail, onDecide, busy }) {
         {!timeline.length && <Quiet>まだ記録はありません。</Quiet>}
       </>)}
 
-      {tab === 'guesses' && (<>
-      {Object.keys(STAGE).map((key) => {
-        const list = open.filter((item) => item.stage === key);
-        if (!list.length) return null;
-        return (
-          <Box key={key} sx={{ mt: 1.5 }}>
-            <Typography sx={{ fontSize: 12.5, fontWeight: 800, color: STAGE[key].color }}>{STAGE[key].label} <Small>{list.length}</Small></Typography>
-            {list.map((item) => <HypothesisDetail key={item.id} item={item} />)}
-          </Box>
-        );
-      })}
-      {!open.length && <Quiet>検討中の見立てはありません。</Quiet>}
-      {closed.length > 0 && (
-        <Box sx={{ mt: 2 }}>
-          <Typography sx={{ fontSize: 12.5, fontWeight: 800, color: V.muted }}>棄却・引退 <Small>{closed.length}　同じ推論を繰り返さないために残している</Small></Typography>
-          {closed.map((item) => <HypothesisDetail key={item.id} item={item} />)}
-        </Box>
+      {tab === 'guesses' && (
+        <Ledger items={hypotheses} stages={STAGE} empty="検討中の見立てはありません。"
+          closedLabel="棄却・引退" closedNote="同じ推論を繰り返さないために残している" />
       )}
+
+      {tab === 'sources' && (<>
+        <Typography sx={{ fontSize: 12.5, color: V.muted, mb: 0.5 }}>
+          候補をどこから拾うか。実際に候補や成果を生んだかで検証度が上がり、空振りが続いたものは外します。
+        </Typography>
+        <Ledger items={sources} stages={SOURCE_STAGE} empty="情報源はまだ記録されていません。"
+          closedLabel="外した・引退" closedNote="同じ所を掘り直さないために残している" />
       </>)}
 
       {tab === 'constraints' && (<>

@@ -72,17 +72,19 @@ const evidence = {
 };
 const item = {
   type: 'object',
-  description: 'Omit id to create (the base assigns H-nnn / K-nnn). Pass id to update; only the fields you pass change.',
+  description: 'Omit id to create (the base assigns H-nnn / K-nnn / S-nnn). Pass id to update; only the fields you pass change.',
   properties: {
     id: string('Existing item ID.', 20),
     title: string('Hypothesis: short name.', 160),
     statement: string('Hypothesis: the claim. Constraint: the rule.', 1500),
     mechanism: string('Hypothesis: why it would hold (required on create).', 2000),
-    limits: string('Hypothesis: where it does not apply.', 1500),
-    stage: { type: 'string', enum: ['conjecture', 'observed', 'reproduced', 'yielded_candidate', 'yielded_outcome'], description: 'Hypothesis stage. Only yielded_candidate and yielded_outcome count as win patterns. Advancing needs addEvidence in the same call.' },
-    status: { type: 'string', description: 'Hypothesis: open | rejected | retired. Constraint: active | relaxed | retired. Changes need reason.' },
+    limits: string('Hypothesis/source: where it does not apply.', 1500),
+    locator: string('Source: URL, search query or tool call that reaches it (required on create).', 600),
+    coverage: string('Source: what it yields for this outcome and why it is worth trying (required on create).', 1500),
+    stage: { type: 'string', enum: ['conjecture', 'observed', 'reproduced', 'yielded_candidate', 'yielded_outcome'], description: 'Hypothesis/source stage. For a source: conjecture = untried, observed = tried and gave relevant material, reproduced = useful in two runs, yielded_candidate = a candidate passing the acceptance came from it, yielded_outcome = a confirmed achievement came from it. Only yielded_candidate and yielded_outcome count as win patterns. Advancing needs addEvidence in the same call.' },
+    status: { type: 'string', description: 'Hypothesis/source: open | rejected | retired. Constraint: active | relaxed | retired. Changes need reason.' },
     addEvidence: evidence,
-    addCounterexamples: strings('Hypothesis: counterexamples to append.', 20),
+    addCounterexamples: strings('Hypothesis: counterexamples. Source: misses (tried, nothing usable) to append.', 20),
     owner: { type: 'string', enum: ['user', 'environment', 'agent'], description: 'Constraint owner. user: only the user may add/change/relax. environment: a measured property of the tools/world, needs basis. agent: provisional threshold the agent may revise with a reason.' },
     basis: string('Constraint (environment): the measurement that established it.', 1500),
     rationale: string('Constraint: why it exists.', 1500),
@@ -101,7 +103,7 @@ const tools = [
   },
   {
     name: 'exploration_base_get',
-    description: 'Read an Exploration Base. Call this first in every exploration run. view=brief returns the fixed points in one call: outcome contract and progress, active method version, constraints grouped by owner, hypothesis ledger by stage (including rejected ones), last runs, warnings and the run protocol. view=full adds item details, method history, runs and the event log.',
+    description: 'Read an Exploration Base. Call this first in every exploration run. view=brief returns the fixed points in one call: outcome contract and progress, active method version, constraints grouped by owner, hypothesis and source ledgers by stage (including rejected ones), last runs, warnings and the run protocol. view=full adds item details, method history, runs and the event log.',
     inputSchema: {
       type: 'object',
       properties: { id: baseId, view: { type: 'string', enum: ['brief', 'full'] }, eventLimit: { type: 'integer', minimum: 1, maximum: 300 } },
@@ -167,11 +169,11 @@ const tools = [
   },
   {
     name: 'exploration_item_upsert',
-    description: 'Create or update hypotheses or constraints of an Exploration Base (up to 40 per call). Hypothesis stages: conjecture → observed → reproduced → yielded_candidate → yielded_outcome; the server enforces the evidence each stage needs, and only the last two are win patterns. Rejected hypotheses are kept with their reason. Constraints carry an owner; user-owned ones need userAuthorized. Pass runId when the change comes from the open run.',
+    description: 'Create or update hypotheses, sources or constraints of an Exploration Base (up to 40 per call). Sources are where candidates come from (a site, feed, search query, API); they climb the same verified ladder as hypotheses, so record hits as evidence and misses as counterexamples, and reject sources that keep yielding nothing. Hypothesis stages: conjecture → observed → reproduced → yielded_candidate → yielded_outcome; the server enforces the evidence each stage needs, and only the last two are win patterns. Rejected hypotheses are kept with their reason. Constraints carry an owner; user-owned ones need userAuthorized. Pass runId when the change comes from the open run.',
     inputSchema: {
       type: 'object',
       properties: {
-        baseId, kind: { type: 'string', enum: ['hypothesis', 'constraint'] },
+        baseId, kind: { type: 'string', enum: ['hypothesis', 'constraint', 'source'] },
         items: { type: 'array', minItems: 1, maxItems: 40, items: item },
         runId: string('The open run this change belongs to.', 20),
         userAuthorized, authorizationNote, actor,
@@ -210,7 +212,7 @@ const tools = [
         },
         achievements: {
           type: 'array', maxItems: 20,
-          items: { type: 'object', properties: { label: string('The achievement (e.g. the keyword).', 300), ref: string('ID in the canonical operator data.', 600), evidence: string('How each acceptance check was met.', 2000), hypothesisIds: strings('Hypotheses that led to it.', 10) }, required: ['label', 'evidence'], additionalProperties: false },
+          items: { type: 'object', properties: { label: string('The achievement (e.g. the keyword).', 300), ref: string('ID in the canonical operator data.', 600), evidence: string('How each acceptance check was met.', 2000), hypothesisIds: strings('Hypotheses that led to it.', 10), sourceIds: strings('Sources it came from (S-nnn).', 10) }, required: ['label', 'evidence'], additionalProperties: false },
         },
         notMovedReason: string('Required when the run changed no fixed point.', 1000),
         costNote: string('Paid calls, quota used.', 400),
