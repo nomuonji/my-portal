@@ -306,6 +306,11 @@ export default async (request: Request) => {
         }catch(error){
           return json({error:"Discover feedback was saved, but taste ledger sync failed; reload before retrying",detail:String(error?.message||error)},503);
         }
+        // A 好き is an achievement of the Discover exploration base; withdrawing it takes the achievement back.
+        await explorationBaseStore.recordUserReaction({
+          baseId:"personal-discovery", ref:"personal_feed:"+updated.id, label:String(updated.title||updated.id),
+          liked:updated.feedback==="loved", evidence:"本人が Discover で「好き」を付けた（"+String(updated.url||"")+"）", actor:"My Portal Discover",
+        }).catch((error:any)=>console.error("discover base sync failed",String(error?.message||error)));
         return json(updated);
       }
       if (action === "exploration_achievement_decide") {

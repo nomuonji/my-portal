@@ -226,3 +226,21 @@ test('sources are a verified ledger like hypotheses', async () => {
   const done = await store.finishRun({ baseId: 'test-base', runId, summary: 'found one', achievements: [{ label: 'item', evidence: 'passed', sourceIds: ['S-001'] }] });
   assert.deepEqual(done.brief.outcome.awaitingConfirmation[0].sourceIds, ['S-001']);
 });
+
+test('a like in the app is a confirmed achievement, and withdrawing it declines it', async () => {
+  const store = await setup();
+  const like = { baseId: 'test-base', ref: 'personal_feed:cur-1', label: 'Foot bath', liked: true };
+  assert.equal((await store.recordUserReaction(like)).changed, true);
+  assert.equal((await store.recordUserReaction(like)).changed, false); // idempotent
+  let brief = await store.get({ id: 'test-base' });
+  assert.equal(brief.outcome.confirmedCount, 1);
+  assert.equal(brief.outcome.confirmed[0].label, 'Foot bath');
+  await store.recordUserReaction({ ...like, liked: false });
+  brief = await store.get({ id: 'test-base' });
+  assert.equal(brief.outcome.confirmedCount, 0);
+  await store.recordUserReaction(like);
+  brief = await store.get({ id: 'test-base' });
+  assert.equal(brief.outcome.confirmedCount, 1);
+  assert.equal(brief.outcome.confirmed.length, 1); // re-confirmed, not duplicated
+  assert.deepEqual(await store.recordUserReaction({ ...like, baseId: 'missing-base' }), { baseId: 'missing-base', changed: false });
+});
