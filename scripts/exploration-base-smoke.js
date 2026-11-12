@@ -79,6 +79,7 @@ test('a method version can be justified by an explicit user decision instead of 
   const updated = await store.setMethodVersion({ baseId: 'test-base', method: next, noBenchmarkReason: 'text moved, nothing to benchmark', userAuthorized: 'true', authorizationNote: 'chat 2026-11-12: drop C6' });
   assert.equal(updated.method.version, 'm-v2');
   assert.equal(updated.method.bodyRef.kind, 'inline');
+  assert.equal(updated.method.bodyRef.location, '', 'an inline body must not inherit the previous repo location');
   assert.ok(updated.method.body.startsWith('# Method'));
   const full = await store.get({ id: 'test-base', view: 'full' });
   assert.equal(full.full.methodHistory.at(-1).authorizationNote, 'chat 2026-11-12: drop C6');
@@ -91,7 +92,8 @@ test('title, summary and domains are user-owned and can be revised without touch
   await store.create({ id: 'test-base', title: 'T', summary: 'S', domains: ['a'], outcome, method, ...auth });
   await assert.rejects(store.setOutcome({ baseId: 'test-base', title: 'New' }), /owned by the user/);
   // Older client schemas send domains as one string.
-  const renamed = await store.setOutcome({ baseId: 'test-base', title: 'New', summary: 'New summary', domains: 'x, y', reason: 'Not for one channel', ...auth });
+  const renamed = await store.setOutcome({ baseId: 'test-base', title: 'New', summary: 'New summary', domains: 'x, y', canonicalData: 'Operator A\nrepo/path', reason: 'Not for one channel', ...auth });
+  assert.deepEqual(renamed.base.canonicalData, ['Operator A', 'repo/path']);
   assert.equal(renamed.base.title, 'New');
   assert.equal(renamed.base.summary, 'New summary');
   assert.deepEqual(renamed.base.domains, ['x', 'y']);

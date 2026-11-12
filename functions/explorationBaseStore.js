@@ -103,7 +103,8 @@ function cleanMethod(raw, fallbackLocation) {
   const body = text(input.body, 20000, 'method.body', false);
   const bodyRef = {
     kind: oneOf(ref.kind, ['repo', 'inline', 'document', 'chat_skill', 'hq_method'], 'method.bodyRef.kind', body ? 'inline' : undefined),
-    location: text(ref.location, 500, 'method.bodyRef.location', false) || fallbackLocation || '',
+    // An inline body has no external location; only pointer bodies inherit the previous location.
+    location: text(ref.location, 500, 'method.bodyRef.location', false) || ((ref.kind || (body ? 'inline' : '')) === 'inline' ? '' : (fallbackLocation || '')),
     path: text(ref.path, 500, 'method.bodyRef.path', false),
     commit: text(ref.commit, 80, 'method.bodyRef.commit', false),
   };
@@ -326,6 +327,9 @@ function createStore(options) {
     const descriptor = {};
     if (input.title !== undefined) descriptor.title = text(input.title, 220, 'title', true);
     if (input.summary !== undefined) descriptor.summary = text(input.summary, 1500, 'summary', true);
+    if (input.canonicalData !== undefined) {
+      descriptor.canonicalData = list(typeof input.canonicalData === 'string' ? input.canonicalData.split('\n').map((d) => d.trim()) : input.canonicalData, 12, 400);
+    }
     if (input.domains !== undefined) {
       descriptor.domains = list(typeof input.domains === 'string' ? input.domains.split(',').map((d) => d.trim()) : input.domains, 20, 100);
     }
@@ -355,7 +359,7 @@ function createStore(options) {
         pushEvent(tx, base, { type: 'outcome_set', summary: text(input.reason, 1000, 'reason', false) || 'Outcome contract revised', actor: input.actor, detail: outcome });
       }
       if (hasDescriptor) {
-        const before = { title: base.title, summary: base.summary, domains: base.domains };
+        const before = { title: base.title, summary: base.summary, domains: base.domains, canonicalData: base.canonicalData };
         Object.assign(base, descriptor);
         pushEvent(tx, base, { type: 'base_described', summary: text(input.reason, 1000, 'reason', false) || 'Title or summary revised', actor: input.actor, detail: { before, after: descriptor } });
       }
