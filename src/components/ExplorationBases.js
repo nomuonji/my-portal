@@ -9,7 +9,7 @@ import { marked } from 'marked';
 import { auth } from '../firebase';
 import { toText } from './jobOpportunityView';
 
-// 探索拠点. Status and anything waiting for the user stay on top; the rest of the base is split into
+// スキル錬成道場 (exploration bases). Each one trains a DB skill or pack. Status and anything waiting for the user stay on top; the rest of the base is split into
 // tabs (goal, timeline, guesses, constraints, method) so each part is read on its own.
 
 const V = {
@@ -36,8 +36,8 @@ const SOURCE_STAGE = {
 const OWNER = { user: 'あなたが決めたこと', environment: '道具やデータの限界', agent: 'エージェントの進め方' };
 const VERDICT = { supported: '当たり', contradicted: '外れ', inconclusive: '判定できず' };
 const EVENT_LABEL = {
-  base_created: '拠点を作成', base_described: '名前・説明を変更', outcome_set: 'ゴールを変更',
-  outcome_proposed: 'ゴールの変更を提案', method_version_set: '探索法を更新', hypothesis_created: '見立てを追加',
+  base_created: '道場を作成', base_described: '名前・説明を変更', outcome_set: 'ゴールを変更',
+  outcome_proposed: 'ゴールの変更を提案', method_version_set: 'スキルの版を更新', hypothesis_created: '見立てを追加',
   hypothesis_updated: '見立てを更新', source_created: '情報源を追加', source_updated: '情報源を更新',
   hypothesis_stage: '見立ての検証度が変化', source_stage: '情報源の検証度が変化', hypothesis_status: '見立てを棄却・引退', source_status: '情報源を外す',
   constraint_status: '制約の扱いを変更', constraint_created: '制約を追加', constraint_updated: '制約を更新',
@@ -275,7 +275,7 @@ function Run({ run, hypotheses }) {
 
 const TABS = [
   { key: 'goal', label: 'ゴール' }, { key: 'timeline', label: '経過' }, { key: 'guesses', label: '見立て' },
-  { key: 'sources', label: '情報源' }, { key: 'constraints', label: '制約' }, { key: 'method', label: '探索法' },
+  { key: 'sources', label: '情報源' }, { key: 'constraints', label: '制約' }, { key: 'method', label: 'スキル本文' },
 ];
 // Run start/finish events duplicate the run entries themselves, so the timeline leaves them out.
 const RUN_EVENTS = new Set(['run_started', 'run_finished', 'run_stalled', 'run_abandoned']);
@@ -309,6 +309,12 @@ function BaseDetail({ detail, onDecide, busy }) {
   return (
     <Box>
       <Typography component="h1" sx={{ fontSize: { xs: 22, md: 26 }, fontWeight: 900, letterSpacing: '-0.02em', lineHeight: 1.3 }}>{base.title}</Typography>
+      {method?.target && (
+        <Typography sx={{ fontSize: 13, color: V.accent, fontWeight: 700, mt: 0.5 }}>
+          鍛えている{method.target.kind === 'intelligence_pack' ? 'Pack' : 'スキル'}：{method.target.title || method.target.id}（実行は v{method.target.releasedVersion}）
+          {method.target.unreleasedNewer && <span style={{ color: 'var(--p-amber)' }}>　道場を通っていない v{method.target.latestVersion} があります</span>}
+        </Typography>
+      )}
       <Typography sx={{ fontSize: 14, color: V.muted, mt: 0.6, maxWidth: 760, lineHeight: 1.7 }}>{base.summary}</Typography>
 
       <Box sx={{ mt: 3, py: 2.2, borderTop: '1px solid ' + V.ink, borderBottom: '1px solid ' + V.rule, display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0,1fr) auto' }, gap: 2, alignItems: 'center' }}>
@@ -368,9 +374,9 @@ function BaseDetail({ detail, onDecide, busy }) {
 
       {tab === 'timeline' && (<>
         <Typography sx={{ fontSize: 12.5, color: V.muted, mb: 1 }}>
-          探索の回（{runs.length}回）と、ゴール・制約・見立て・探索法の変更を、新しい順に並べています。
+          探索の回（{runs.length}回）と、ゴール・制約・見立て・スキルの版の変更を、新しい順に並べています。
         </Typography>
-        {!runs.length && timeline.length > 0 && <Typography sx={{ fontSize: 12.5, color: V.muted, mb: 1 }}>探索はまだ一度も行っていません。下は拠点を整えたときの変更です。</Typography>}
+        {!runs.length && timeline.length > 0 && <Typography sx={{ fontSize: 12.5, color: V.muted, mb: 1 }}>探索はまだ一度も行っていません。下は道場を整えたときの変更です。</Typography>}
         {timeline.map((entry) => (entry.kind === 'run'
           ? <Run key={entry.key} run={entry.run} hypotheses={hypotheses} />
           : (
@@ -421,11 +427,11 @@ function BaseDetail({ detail, onDecide, busy }) {
       {method?.target && (
         <Box sx={{ mt: 1, py: 1, px: 1.5, borderLeft: '3px solid ' + (method.target.unreleasedNewer ? V.amber : V.accent), background: V.accentSoft }}>
           <Typography sx={{ fontSize: 13.5, lineHeight: 1.6 }}>
-            鍛える対象：{method.target.kind === 'intelligence_pack' ? 'Pack' : 'スキル'} <b>{method.target.title || method.target.id}</b>　実行で使う版 <b>v{method.target.releasedVersion}</b>
+            鍛えている{method.target.kind === 'intelligence_pack' ? 'Pack' : 'スキル'}：<b>{method.target.title || method.target.id}</b>　実行で使う版 <b>v{method.target.releasedVersion}</b>
           </Typography>
           {method.target.unreleasedNewer && (
             <Typography sx={{ fontSize: 12.5, color: V.muted, mt: 0.3 }}>
-              v{method.target.latestVersion} が拠点の外で作られています。ここで確かめるまで、実行は v{method.target.releasedVersion} のままです。
+              v{method.target.latestVersion} がこの道場の外で作られています。ここで確かめるまで、実行は v{method.target.releasedVersion} のままです。
             </Typography>
           )}
           {method.target.error && <Typography sx={{ fontSize: 12.5, color: V.pink, mt: 0.3 }}>読み込めませんでした：{method.target.error}</Typography>}
@@ -439,7 +445,7 @@ function BaseDetail({ detail, onDecide, busy }) {
             </Link> : method.bodyRef?.location}
           </DetailRow>
         )
-      ) : <Quiet>探索法はまだ設定されていません。</Quiet>}
+      ) : <Quiet>鍛えるスキルはまだ設定されていません。</Quiet>}
       </>)}
 
       </Box>
@@ -450,7 +456,7 @@ function BaseDetail({ detail, onDecide, busy }) {
 // ---- List -------------------------------------------------------------------
 
 function BaseList({ items, onOpen }) {
-  if (!items.length) return <Quiet>まだ探索拠点はありません。</Quiet>;
+  if (!items.length) return <Quiet>まだ道場はありません。</Quiet>;
   return (
     <Box sx={{ borderTop: '1px solid ' + V.ink }}>
       {items.map((base) => (
@@ -463,6 +469,9 @@ function BaseList({ items, onOpen }) {
           }}>
           <Box sx={{ minWidth: 0 }}>
             <Typography sx={{ fontSize: 17, fontWeight: 850 }}>{base.title}</Typography>
+            {base.target && <Typography sx={{ fontSize: 12.5, color: V.accent, mt: 0.3, fontWeight: 700 }}>
+              {base.target.kind === 'intelligence_pack' ? 'Pack' : 'スキル'} {base.target.id}　v{base.target.versionNumber}
+            </Typography>}
             <Typography sx={{ fontSize: 13.5, color: V.muted, mt: 0.3, lineHeight: 1.6 }}>{base.outcome?.statement}</Typography>
             <Box sx={{ mt: 0.8 }}><Status state={base} size={13} /></Box>
           </Box>
@@ -493,7 +502,7 @@ export default function ExplorationBases() {
       const data = await api('?resource=exploration_bases');
       setItems(Array.isArray(data.items) ? data.items : []);
     } catch (err) {
-      setError('探索拠点を読み込めません: ' + err.message);
+      setError('道場を読み込めません: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -507,7 +516,7 @@ export default function ExplorationBases() {
       setDetail(await api('?resource=exploration_base&eventLimit=60&id=' + encodeURIComponent(id)));
     } catch (err) {
       setDetail(null);
-      setError('拠点を読み込めません: ' + err.message);
+      setError('道場を読み込めません: ' + err.message);
     } finally {
       setDetailLoading(false);
     }
@@ -542,12 +551,12 @@ export default function ExplorationBases() {
     <Box sx={{ maxWidth: 880, mx: 'auto', pb: 8 }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1} sx={{ mb: selectedId ? 2 : 0 }}>
         {selectedId ? (
-          <Button startIcon={<ArrowBack />} onClick={() => open('')} sx={{ px: 0, color: V.muted }}>探索拠点の一覧</Button>
+          <Button startIcon={<ArrowBack />} onClick={() => open('')} sx={{ px: 0, color: V.muted }}>道場の一覧</Button>
         ) : (
           <Box>
-            <Typography component="h1" sx={{ fontSize: { xs: 24, md: 28 }, fontWeight: 900, letterSpacing: '-0.03em' }}>探索拠点</Typography>
+            <Typography component="h1" sx={{ fontSize: { xs: 24, md: 28 }, fontWeight: 900, letterSpacing: '-0.03em' }}>スキル錬成道場</Typography>
             <Typography sx={{ fontSize: 13.5, color: V.muted, mt: 0.4, lineHeight: 1.65 }}>
-              エージェントに任せている探索ごとに、どこまで進んだかと、あなたの判断が要るものを並べています。
+              スキルごとの道場です。実行（定期ジョブなど）は、ここで合格させた版のスキルを使います。結果を見て見立てや情報源を検証し、効いたものだけを次の版に入れます。
             </Typography>
           </Box>
         )}

@@ -289,6 +289,8 @@ function createStore(options) {
         outcome: base.outcome ? { statement: base.outcome.statement, target: base.outcome.target, deadline: base.outcome.deadline } : null,
         confirmedCount: base.progress?.confirmedCount || 0,
         methodVersion: base.method?.version || null,
+        target: TARGET_KINDS.has(base.method?.bodyRef?.kind) && base.method.bodyRef.versionNumber
+          ? { kind: base.method.bodyRef.kind, id: base.method.bodyRef.location, versionNumber: base.method.bodyRef.versionNumber } : null,
         runCount: base.runCount || 0, stalledRuns: base.stalledRuns || 0, openRunId: base.openRunId || null,
         awaitingCount: (base.progress?.achievements || []).filter((a) => a.status === 'candidate').length,
         pendingProposalCount: (base.proposals || []).filter((p) => p.status === 'pending').length,
