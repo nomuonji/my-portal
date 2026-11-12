@@ -393,8 +393,12 @@ function createStore(options) {
         throw new Error('Method version label already used: ' + method.version + '. Version labels are never reused.');
       }
       const motivating = list(input.motivatingRunIds, 20, 20);
+      // A version is justified either by finished runs or by an explicit user decision (e.g. the user dropped a
+      // criterion). Clients holding an older tool schema send the flag as the string "true".
+      const userDirected = (input.userAuthorized === true || input.userAuthorized === 'true')
+        ? authorization({ ...input, userAuthorized: true }, 'A user-directed method version') : '';
       if (base.method) {
-        if (!motivating.length) throw new Error('motivatingRunIds is required: name the finished runs whose results justify this version.');
+        if (!motivating.length && !userDirected) throw new Error('motivatingRunIds is required: name the finished runs whose results justify this version, or pass userAuthorized with authorizationNote when the user decided the change.');
         for (const runId of motivating) {
           const run = value(await tx.get(runRef(id, runId)));
           if (!run || run.status !== 'finished') throw new Error('Motivating run not found or not finished: ' + runId);
@@ -411,8 +415,11 @@ function createStore(options) {
       } : { passed: null, noBenchmarkReason };
       const at = now();
       base.method = { ...method, setAt: at };
-      base.methodHistory = [...(base.methodHistory || []), { version: method.version, summary: method.summary, setAt: at, motivatingRunIds: motivating, benchmark }].slice(-100);
-      pushEvent(tx, base, { type: 'method_version_set', summary: method.version + ': ' + method.summary, actor: input.actor, detail: { motivatingRunIds: motivating, benchmark, bodyRef: method.bodyRef } });
+      base.methodHistory = [...(base.methodHistory || []), {
+        version: method.version, summary: method.summary, setAt: at, motivatingRunIds: motivating, benchmark,
+        ...(userDirected ? { authorizationNote: userDirected } : {}),
+      }].slice(-100);
+      pushEvent(tx, base, { type: 'method_version_set', summary: method.version + ': ' + method.summary, actor: input.actor, detail: { motivatingRunIds: motivating, benchmark, bodyRef: method.bodyRef, authorizationNote: userDirected || undefined } });
       saveBase(tx, base);
     });
     return get({ id });

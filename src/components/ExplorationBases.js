@@ -5,6 +5,7 @@ import {
   Link, Stack, Tab, Tabs, TextField, Typography,
 } from '@mui/material';
 import { ArrowBack, ExpandLess, ExpandMore, OpenInNew, Refresh } from '@mui/icons-material';
+import { marked } from 'marked';
 import { auth } from '../firebase';
 import { toText } from './jobOpportunityView';
 
@@ -131,6 +132,24 @@ function Small({ children }) {
 
 // ---- 詳しく見る -------------------------------------------------------------
 
+// The method body is Markdown written by the user or an agent. Raw HTML is escaped before parsing.
+function MarkdownBody({ source }) {
+  const html = marked.parse(String(source || '').replace(/&/g, '&amp;').replace(/</g, '&lt;'), { async: false });
+  return (
+    <Box className="method-body" dangerouslySetInnerHTML={{ __html: html }} sx={{
+      fontSize: 14, lineHeight: 1.75, color: V.ink, overflowWrap: 'anywhere',
+      '& h1': { fontSize: 18, fontWeight: 850, mt: 2, mb: 1 },
+      '& h2': { fontSize: 15.5, fontWeight: 800, mt: 3, mb: 1, pb: 0.5, borderBottom: '1px solid ' + V.rule },
+      '& h3': { fontSize: 14, fontWeight: 800, mt: 2, mb: 0.6 },
+      '& p': { my: 1 }, '& ul, & ol': { pl: 3, my: 1 }, '& li': { my: 0.4 },
+      '& code': { fontFamily: '"JetBrains Mono", ui-monospace, monospace', fontSize: 12.5, background: 'var(--p-sunken)', px: 0.5, borderRadius: 0.5 },
+      '& table': { display: 'block', overflowX: 'auto', borderCollapse: 'collapse', my: 1.5, fontSize: 13 },
+      '& th, & td': { border: '1px solid ' + V.rule, px: 1.2, py: 0.7, textAlign: 'left', verticalAlign: 'top' },
+      '& th': { background: 'var(--p-sunken)', fontWeight: 800 },
+    }} />
+  );
+}
+
 function DetailRow({ label, children }) {
   if (children === null || children === undefined || children === '' || (Array.isArray(children) && !children.length)) return null;
   return (
@@ -234,15 +253,16 @@ function Details({ detail }) {
       )}
 
       {tab === 'method' && (method ? (
-        <Box sx={{ mt: 1 }}>
-          <DetailRow label="名前">{method.title}</DetailRow>
-          <DetailRow label="現行版">{method.version}</DetailRow>
-          <DetailRow label="内容">{method.summary}</DetailRow>
-          <DetailRow label="本文">
-            {url ? <Link href={url} target="_blank" rel="noreferrer" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.4 }}>
-              {method.bodyRef?.path || method.bodyRef?.location}<OpenInNew sx={{ fontSize: 14 }} />
-            </Link> : method.bodyRef?.location}
-          </DetailRow>
+        <Box sx={{ mt: 1.5 }}>
+          <Typography sx={{ fontSize: 13, color: V.muted }}>{method.title}　<b style={{ color: 'var(--p-ink)' }}>{method.version}</b>　{shortDate(method.setAt)}</Typography>
+          {method.body ? <MarkdownBody source={method.body} /> : (
+            <DetailRow label="本文">
+              {url ? <Link href={url} target="_blank" rel="noreferrer" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.4 }}>
+                {method.bodyRef?.path || method.bodyRef?.location}<OpenInNew sx={{ fontSize: 14 }} />
+              </Link> : method.bodyRef?.location}
+            </DetailRow>
+          )}
+          <DetailRow label="検査">{method.benchmarkRef}</DetailRow>
           {(full.methodHistory || []).length > 1 && (
             <DetailRow label="これまでの版">
               {[...full.methodHistory].reverse().map((entry) => <Box key={entry.version}>{entry.version}：{entry.summary} <Small>{shortDate(entry.setAt)}</Small></Box>)}

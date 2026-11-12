@@ -98,3 +98,15 @@ test('detail leads with status, decisions, goal, leading guesses and recent runs
   fireEvent.click(dialogButtons[dialogButtons.length - 1]);
   await waitFor(() => expect(posted).toEqual({ action: 'exploration_achievement_decide', baseId: 'job-base', id: 'A-001', decision: 'confirmed', note: '' }));
 });
+
+test('an inline method body is rendered as text on the page, with raw HTML escaped', async () => {
+  const inline = { ...DETAIL, method: { title: '求人探索法', version: 'jobdb-r5', summary: 's', bodyRef: { kind: 'inline', location: '' },
+    body: '## 測るもの\n\n| 言葉 | 線 |\n|---|---|\n| 検索されている | 月10以上 |\n\n<img src=x onerror=alert(1)>' } };
+  global.fetch = jest.fn((url) => Promise.resolve({ ok: true, json: () => Promise.resolve(String(url).includes('exploration_bases') ? LIST : inline) }));
+  renderAt('id=job-base');
+  fireEvent.click(await screen.findByText(/詳しく見る/));
+  fireEvent.click(screen.getByRole('tab', { name: '探索法' }));
+  expect(screen.getByRole('heading', { name: '測るもの' })).toBeInTheDocument();
+  expect(screen.getByRole('cell', { name: '月10以上' })).toBeInTheDocument();
+  expect(document.querySelector('.method-body img')).toBeNull();
+});
