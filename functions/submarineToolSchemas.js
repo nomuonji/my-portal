@@ -185,8 +185,8 @@ const tools = [
   },
   {
     name: 'submarine_haul_list',
-    description: 'Haul across the whole fleet, newest first: what every submarine brought back, with its status.',
-    inputSchema: { type: 'object', properties: { status: { type: 'string', enum: ['candidate', 'confirmed', 'declined'] }, limit: { type: 'integer', minimum: 1, maximum: 500 } }, additionalProperties: false },
+    description: 'Haul across the whole fleet, newest first, one page at a time: what every submarine brought back, with its status. Pass nextCursor back as cursor for the next page.',
+    inputSchema: { type: 'object', properties: { status: { type: 'string', enum: ['candidate', 'confirmed', 'declined', 'decided', 'all'] }, submarineId, limit: { type: 'integer', minimum: 1, maximum: 50 }, cursor: { type: 'string', description: 'nextCursor from the previous page.' } }, additionalProperties: false },
   },
 ];
 

@@ -188,6 +188,11 @@ function fakeFeed() {
         const st = { loved: 'confirmed', skipped: 'declined' };
         return [...items.values()].map((i) => ({ id: i.id, ref: 'personal_feed:' + i.id, record: { title: i.title, url: i.url, reason: i.reason, state: i.feedback }, status: st[i.feedback] || 'candidate', evidence: i.reason }));
       },
+      async one(id) {
+        const st = { loved: 'confirmed', skipped: 'declined' };
+        const i = items.get(id);
+        return { id, ref: 'personal_feed:' + id, record: { title: i.title, url: i.url, reason: i.reason, state: i.feedback }, status: st[i.feedback] || 'candidate' };
+      },
       async apply(id, action, note) { calls.push([id, action, note]); items.get(id).feedback = action; },
     },
   };
@@ -226,6 +231,8 @@ test('a canonical store is indexed as haul, its state decides status, and feedba
   // The feed changed elsewhere (e.g. the old Discover page): the next read follows it.
   feed.items.get('a').feedback = 'skipped';
   sub = await subs.get({ id: 'disc' });
+  assert.equal(sub.haul.confirmed.length, 1, 'between syncs, the submarine reads only the shown records');
+  sub = await subs.get({ id: 'disc', sync: true });
   assert.equal(sub.haul.confirmed.length, 0);
   base = await dojo.get({ id: 'finder-dojo' });
   assert.ok(!base.outcome.confirmed.some((x) => x.ref === 'personal_feed:a'), 'the 道場 follows the withdrawal');
@@ -233,14 +240,14 @@ test('a canonical store is indexed as haul, its state decides status, and feedba
   // A new record added during a sortie is linked to it rather than counted as a duplicate.
   const s = await subs.sortieStart({ submarineId: 'disc', objective: 'find' });
   feed.items.set('c', { id: 'c', title: 'New find', url: 'https://x/c', reason: 'r', feedback: 'new', revision: 1 });
-  await subs.get({ id: 'disc' });
+  await subs.get({ id: 'disc', sync: true });
   const back = await subs.sortieFinish({ submarineId: 'disc', sortieId: s.sortieId, summary: 'one', haul: [{ label: 'New find', ref: 'personal_feed:c', evidence: 'passes' }] });
   assert.equal(back.sortie.haulCount, 1);
   assert.equal(back.sortie.duplicates, 0);
   assert.equal(back.brief.haul.awaiting.find((h) => h.ref === 'personal_feed:c').sortieId, s.sortieId);
   const all = await subs.haulList({});
   assert.ok(all.items.every((h) => h.record), 'the fleet view renders canonical records');
-  assert.equal(all.actions.personal_feed[0].key, 'loved');
+  assert.equal(all.actionsBySubmarine.disc[0].key, 'loved');
 });
 
 test('haul carries the gear versions that found it; feedback reaches the 道場 per version; a submarine can have its own buttons', async () => {
@@ -284,7 +291,15 @@ test('haul carries the gear versions that found it; feedback reaches the 道場 
   assert.equal(base.feedback.recent.find((f) => f.label === 'World B').decision, 'declined');
   const list = await subs.haulList({});
   assert.deepEqual(list.actionsBySubmarine.scout.map((x) => x.key), ['widened', 'known']);
-  assert.equal(list.counts.scout.declined, 1);
+  assert.equal(list.counts.scout.confirmed, 1);
+  const page = await subs.haulList({ status: 'decided', limit: 1 });
+  assert.equal(page.items.length, 1);
+  assert.equal(page.total, 2);
+  assert.equal(page.nextCursor, '1');
+  const second = await subs.haulList({ status: 'decided', limit: 1, cursor: page.nextCursor });
+  assert.equal(second.nextCursor, null);
+  assert.notEqual(second.items[0].id, page.items[0].id);
+  assert.equal((await subs.haulList({ status: 'candidate' })).total, 0);
 });
 
 test('fields a cached tool schema sends as JSON strings are still accepted', async () => {

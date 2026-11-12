@@ -32,7 +32,24 @@ function personalFeedAdapter(store) {
     authoritative: true,
     async list() {
       const result = await feed().list({ limit: 500, includeSkipped: true });
-      return (result.items || []).map((item) => ({
+      return (result.items || []).map(feedRow);
+    },
+    // One record, for a page of haul (no full scan).
+    async one(id) {
+      const current = await feed().get({ id });
+      return feedRow(current.item || current);
+    },
+    async apply(recordId, action, note) {
+      const current = await feed().get({ id: recordId });
+      const item = current.item || current;
+      if (!item || !item.revision) throw new Error('Discover recommendation not found: ' + recordId);
+      await feed().feedback({ id: recordId, status: action, expectedRevision: item.revision, note });
+    },
+  };
+}
+
+function feedRow(item) {
+  return ({
         id: item.id,
         ref: 'personal_feed:' + item.id,
         record: {
@@ -46,15 +63,7 @@ function personalFeedAdapter(store) {
         status: (DISCOVER_STATE[item.feedback] || DISCOVER_STATE.new).status,
         foundAt: item.createdAt || null,
         evidence: text(item.reason, 1000),
-      }));
-    },
-    async apply(recordId, action, note) {
-      const current = await feed().get({ id: recordId });
-      const item = current.item || current;
-      if (!item || !item.revision) throw new Error('Discover recommendation not found: ' + recordId);
-      await feed().feedback({ id: recordId, status: action, expectedRevision: item.revision, note });
-    },
-  };
+      });
 }
 
 function jobAdapter(store) {
@@ -70,7 +79,18 @@ function jobAdapter(store) {
     authoritative: false,
     async list() {
       const result = await jobs().search({ limit: 100, scanLimit: 1000 });
-      return (result.items || []).map((item) => {
+      return (result.items || []).map(jobRow);
+    },
+    async one(id) {
+      const current = await jobs().get({ id });
+      return jobRow(current.item || current);
+    },
+    async apply() { /* The decision lives on the haul. */ },
+  };
+}
+
+function jobRow(item) {
+  {
         const a = item.attributes || {};
         const required = Array.isArray(a.requiredApplicantData) ? a.requiredApplicantData
           .filter((x) => x && x.requirement && x.requirement !== 'optional').map((x) => (x.label || x.field) + '（' + (x.requirement === 'required' ? '必須' : '不明') + '）')
@@ -97,10 +117,7 @@ function jobAdapter(store) {
           foundAt: item.firstSeenAt || item.createdAt || null,
           evidence: text(item.summary, 1000),
         };
-      });
-    },
-    async apply() { /* The decision lives on the haul. */ },
-  };
+  }
 }
 
 const GENERIC = {
@@ -112,6 +129,7 @@ const GENERIC = {
   ],
   authoritative: false,
   async list() { return []; },
+  async one() { return null; },
   async apply() {},
 };
 
