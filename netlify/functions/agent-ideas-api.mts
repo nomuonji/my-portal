@@ -18,6 +18,7 @@ import * as routineStoreImport from "../../functions/routineJobStore.js";
 import * as jobOpportunityStoreImport from "../../functions/jobOpportunityStore.js";
 import * as explorationBaseStoreImport from "../../functions/explorationBaseStore.js";
 import * as submarineStoreImport from "../../functions/submarineStore.js";
+import * as submarineFleetImport from "../../functions/submarineFleet.js";
 
 const store: any = (storeImport as any).default ?? storeImport;
 const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
@@ -35,6 +36,7 @@ const routineStore: any = (routineStoreImport as any).default ?? routineStoreImp
 const jobOpportunityStore: any = (jobOpportunityStoreImport as any).default ?? jobOpportunityStoreImport;
 const explorationBaseStore: any = (explorationBaseStoreImport as any).default ?? explorationBaseStoreImport;
 const submarineStore: any = (submarineStoreImport as any).default ?? submarineStoreImport;
+const submarineFleet: any = (submarineFleetImport as any).default ?? submarineFleetImport;
 const documentDb: any = (documentDbImport as any).default ?? documentDbImport;
 const AGENT_DATABASE_ID = "(default)";
 
@@ -182,7 +184,10 @@ export default async (request: Request) => {
         view: "full",
         eventLimit: Math.min(Math.max(Number(url.searchParams.get("eventLimit")) || 40, 1), 300),
       }));
-      if (resource === "submarines") return json(await submarineStore.list({ status: url.searchParams.get("status") || undefined }));
+      if (resource === "submarines") {
+        await submarineFleet.ensureFleet(submarineStore, { actor: "My Portal UI" }).catch((error: any) => console.error("fleet ensure failed", String(error?.message || error)));
+        return json(await submarineStore.list({ status: url.searchParams.get("status") || undefined }));
+      }
       if (resource === "submarine") return json(await submarineStore.get({ id: url.searchParams.get("id") || "", view: "full" }));
       if (resource === "submarine_haul") return json(await submarineStore.haulList({ status: url.searchParams.get("status") || undefined, limit: Number(url.searchParams.get("limit")) || 200 }));
       if (resource === "meta_proposals") return json(await metaStore.list({limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 150, 1), 200), status: url.searchParams.get("status") || undefined}));
