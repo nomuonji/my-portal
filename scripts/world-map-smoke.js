@@ -32,6 +32,11 @@ function database() {
         docs: [...(data[name]||[]).map(value => ({id:value.id,data:()=>value})),
           ...[...documentMap.entries()].filter(([key])=>key.startsWith(name+'/')).map(([key,value])=>({id:key.split('/').pop(),data:()=>value}))],
       }) }),
+      where: (field, op, expected) => ({ limit: () => ({ get: async () => ({
+        docs: [...(data[name]||[]).map(value => ({id:value.id,data:()=>value})),
+          ...[...documentMap.entries()].filter(([key])=>key.startsWith(name+'/')).map(([key,value])=>({id:key.split('/').pop(),data:()=>value}))]
+          .filter(doc => doc.data()[field] === expected),
+      }) }) }),
     }),
     runTransaction: async action => action({
       get: ref => ref.get(),
