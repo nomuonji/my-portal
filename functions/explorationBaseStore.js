@@ -325,7 +325,10 @@ function createStore(options) {
     if (base.openRunId) warnings.push('Run ' + base.openRunId + ' is still open. Finish it, or take it over if abandoned.');
     let released = null;
     const ref = base.method?.bodyRef;
-    if (ref && TARGET_KINDS.has(ref.kind)) {
+    if (ref && TARGET_KINDS.has(ref.kind) && !ref.versionNumber) {
+      // Set before versions were pinned: it points at the skill/pack but releases no version.
+      warnings.push('The method points at ' + ref.kind + ' ' + ref.location + ' without a released version, so execution would follow whatever its latest version is. Release a version with exploration_method_version_set (bodyRef.versionNumber).');
+    } else if (ref && TARGET_KINDS.has(ref.kind)) {
       released = { kind: ref.kind, id: ref.location, releasedVersion: ref.versionNumber };
       try {
         const resolved = await resolveTarget({ kind: ref.kind, id: ref.location, versionNumber: ref.versionNumber });
