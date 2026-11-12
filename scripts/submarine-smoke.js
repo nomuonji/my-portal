@@ -147,3 +147,28 @@ test('the mission belongs to the user; chart entries retire with a reason', asyn
   assert.equal(sub.chart.length, 0);
   await assert.rejects(subs.update({ submarineId: 'scout', loadout }), /reason/);
 });
+
+test('the fleet manifest commissions missing submarines once, with their 道場 and chart', async () => {
+  const fleetModule = require('../functions/submarineFleet');
+  const calls = [];
+  const have = new Set(['job-db']);
+  const stub = {
+    list: async () => ({ items: [...have].map((id) => ({ id })) }),
+    commission: async (input) => { calls.push(['commission', input]); if (input.id === 'unknown') throw new Error('gear missing'); have.add(input.id); },
+    update: async (input) => { calls.push(['update', input]); },
+  };
+  const first = await fleetModule.ensureFleet(stub, { force: true });
+  const commissioned = calls.filter(([kind]) => kind === 'commission').map(([, input]) => input);
+  assert.ok(!commissioned.some((c) => c.id === 'job-db'), 'an existing submarine is never touched');
+  assert.ok(commissioned.every((c) => c.userAuthorized === true && /うまく道場と整合性/.test(c.authorizationNote) && c.migrateFromDojo));
+  assert.equal(first.results.find((r) => r.id === 'unknown').commissioned, false);
+  assert.equal(first.settled, false, 'a failed submarine is retried next time');
+  const chart = calls.find(([kind, input]) => kind === 'update' && input.submarineId === 'discover');
+  assert.equal(chart[1].chartEdits.length, 2);
+  have.add('unknown');
+  const second = await fleetModule.ensureFleet(stub, { force: true });
+  assert.equal(second.results.length, 0);
+  assert.equal(second.settled, true);
+  assert.equal((await fleetModule.ensureFleet(stub)).settled, true);
+  assert.deepEqual(fleetModule.FLEET.map((s) => s.hull), ['SS-01', 'SS-02', 'SS-03', 'SS-04', 'SS-05']);
+});

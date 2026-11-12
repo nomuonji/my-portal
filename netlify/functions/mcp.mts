@@ -36,6 +36,7 @@ import * as explorationBaseStoreImport from "../../functions/explorationBaseStor
 import * as explorationBaseToolsImport from "../../functions/explorationBaseToolSchemas.js";
 import * as submarineStoreImport from "../../functions/submarineStore.js";
 import * as submarineToolsImport from "../../functions/submarineToolSchemas.js";
+import * as submarineFleetImport from "../../functions/submarineFleet.js";
 import * as contextStoreImport from "../../functions/contextStore.js";
 import * as worldMapImport from "../../functions/worldMap.js";
 import * as workspaceAppImport from "../../functions/mcpWorkspaceApp.js";
@@ -83,6 +84,7 @@ const explorationBaseStore: any = (explorationBaseStoreImport as any).default ??
 const explorationBaseTools: any = (explorationBaseToolsImport as any).default ?? explorationBaseToolsImport;
 const submarineStore: any = (submarineStoreImport as any).default ?? submarineStoreImport;
 const submarineTools: any = (submarineToolsImport as any).default ?? submarineToolsImport;
+const submarineFleet: any = (submarineFleetImport as any).default ?? submarineFleetImport;
 const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
 const worldMap: any = (worldMapImport as any).default ?? worldMapImport;
 const workspaceApp: any = (workspaceAppImport as any).default ?? workspaceAppImport;
@@ -498,7 +500,10 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "exploration_item_upsert") return structured(await explorationBaseStore.upsertItems(args));
   if (name === "exploration_run_start") return structured(await explorationBaseStore.startRun(args));
   if (name === "exploration_run_finish") return structured(await explorationBaseStore.finishRun(args));
-  if (name === "submarine_list") return structured(await submarineStore.list(args));
+  if (name === "submarine_list") {
+    await submarineFleet.ensureFleet(submarineStore, { actor: "MCP" }).catch(() => null);
+    return structured(await submarineStore.list(args));
+  }
   if (name === "submarine_get") return structured(await submarineStore.get(args));
   if (name === "submarine_commission") return structured(await submarineStore.commission(args));
   if (name === "submarine_update") return structured(await submarineStore.update(args));
@@ -1073,10 +1078,12 @@ export default async (request: Request) => {
     let portalDatabase: any = { ok: false, reason: "Firebase credentials are not configured" };
     let socialDatabase: any = { ok: false, reason: "Firebase credentials are not configured" };
     let migrationResult: any = null;
+    let fleetResult: any = null;
     if (credentialsConfigured) {
       try {
         ensureFirebaseAdmin();
         migrationResult = await ensureAgentData();
+        fleetResult = await submarineFleet.ensureFleet(submarineStore, { actor: "health" }).catch((error: any) => ({ error: String(error?.message || error).slice(0, 300) }));
         [agentDatabase, contextDatabase, portalDatabase, socialDatabase] = await Promise.all([
           agentStore.healthCheck(),
           contextStore.healthCheck(),
@@ -1103,6 +1110,7 @@ export default async (request: Request) => {
       serverVersion: SERVER_VERSION,
       toolCount: TOOLS.length,
       tools: TOOLS.map((tool) => tool.name),
+      submarineFleet: fleetResult,
       agentIdeas: { databaseId: agentStore.DATABASE_ID, database: agentDatabase, migration: migrationResult },
       contextStore: { databaseId: contextStore.DATABASE_ID, collections: contextStore.COLLECTIONS, database: contextDatabase },
       portal: { databaseId: portalStore.DATABASE_ID, database: portalDatabase },

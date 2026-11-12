@@ -19,6 +19,7 @@ const OPEN_SORTIE_TTL_MS = 12 * 60 * 60 * 1000;
 const STALL_WARNING_AT = 3;
 const PROTOCOL = [
   'Read the submarine (submarine_get) before every sortie. Use the loadout bodies it returns: they are the versions the 道場 released, not the latest edits.',
+  'The sortie is the run: where a gear body says exploration_run_start / exploration_run_finish, do submarine_sortie_start / submarine_sortie_finish instead (declare its hypotheses in dojoRuns, give their verdicts in dojoReports, and bring its achievements back as haul). Do not open a second 道場 run.',
   'submarine_sortie_start opens the sortie and a practice run in the 道場 of every trained gear. Write 道場 ledger changes (sources, hypotheses) with the dojoRuns runId it returns.',
   'Judge every find against mission.acceptance before bringing it back. Write finds to their canonical store first when the submarine has one (haulCanonical), then list them as haul with ref = that ID.',
   'submarine_sortie_finish closes the sortie and the 道場 runs. Give each 道場 its verdicts. A sortie that brought nothing back and changed no chart or ledger is recorded as stalled.',
