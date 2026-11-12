@@ -17,6 +17,7 @@ const STATUSES = ['active', 'paused', 'decommissioned'];
 const MODES = ['standing', 'one_shot'];
 const OPEN_SORTIE_TTL_MS = 12 * 60 * 60 * 1000;
 const STALL_WARNING_AT = 3;
+const SYNC_EVERY_MS = 15 * 60 * 1000;
 const PROTOCOL = [
   'Read the submarine (submarine_get) before every sortie. Use the loadout bodies it returns: they are the versions the 道場 released, not the latest edits.',
   'The sortie is the run: where a gear body says exploration_run_start / exploration_run_finish, do submarine_sortie_start / submarine_sortie_finish instead (declare its hypotheses in dojoRuns, give their verdicts in dojoReports, and bring its achievements back as haul). Do not open a second 道場 run.',
@@ -313,11 +314,24 @@ function createStore(options) {
     if (!sub) throw new Error('Submarine not found: ' + id);
     const where = sub.haulCanonical?.where || 'here';
     const adapter = canonical.adapterFor(where);
-    const synced = canonical.syncable(where) ? await syncCanonical(sub, adapter) : { records: new Map(), error: null };
+    // Re-index the canonical store at most every SYNC_EVERY_MS (or when asked); otherwise read only the shown records.
+    const due = input?.sync === true || !sub.syncedAt || Date.now() - Date.parse(sub.syncedAt) > SYNC_EVERY_MS;
+    const synced = !canonical.syncable(where) ? { records: new Map(), error: null }
+      : due ? await syncCanonical(sub, adapter) : { records: null, error: null };
     if (synced.changed) sub = value(await subRef(id).get());
     const index = await dojoIndex();
     const loadout = await loadGearBodies((sub.loadout || []).map((g) => bind(g, index)));
-    const haul = (await haulOf(id)).map((h) => withRecord(h, synced.records));
+    let haulRows = await haulOf(id);
+    if (!synced.records) {
+      // Only the records this view shows: waiting items and the latest decided ones.
+      const shown = [...haulRows.filter((h) => h.status === 'candidate'), ...haulRows.filter((h) => h.status === 'confirmed').slice(0, view === 'full' ? 60 : 30)];
+      const records = new Map();
+      await Promise.all(shown.filter((h) => h.ref && h.ref.startsWith(where + ':') && !h.details).slice(0, 80).map(async (h) => {
+        try { const row = await adapter.one(h.ref.slice(where.length + 1)); if (row) records.set(h.ref, row.record); } catch (error) { /* shown without the record */ }
+      }));
+      synced.records = records;
+    }
+    const haul = haulRows.map((h) => withRecord(h, synced.records));
     const target = sub.mission?.target || {};
     const confirmed = haul.filter((h) => h.status === 'confirmed');
     const awaiting = haul.filter((h) => h.status === 'candidate');
@@ -422,6 +436,11 @@ function createStore(options) {
         if (row && row.status !== h.status) { await decide(sub, h, row.status, '台帳（' + adapter.where + '）の状態に合わせた', 'sync'); changed = true; }
       }
     }
+    await db().runTransaction(async (tx) => {
+      const fresh = await loadSub(tx, sub.id);
+      fresh.syncedAt = now();
+      put(tx, subRef(sub.id), fresh); // not a revision bump: syncing is bookkeeping
+    });
     return { records, changed, error: null };
   }
 
@@ -458,6 +477,8 @@ function createStore(options) {
     });
     const after = value(await haulRef(id, haulId).get()) || haul;
     await forwardFeedback(sub, after, { decision: action ? action.decision : after.status, actionLabel: action ? action.label : '', comment }, entry.actor);
+    // The timeline only needs the updated item back; reading the whole submarine again is the expensive path.
+    if (input.light === true) return { haul: after, actions: actionsFor(sub) };
     return get({ id });
   }
 
@@ -776,31 +797,41 @@ function createStore(options) {
     return { submarineId: id, changed: true, haulId: haul.id, status: decision };
   }
 
-  // The whole fleet's haul, newest first, for the cross-submarine view.
+  // The whole fleet's haul as a timeline, one page at a time. Only the page's own records are read from the
+  // canonical stores (never a full scan), and the per-submarine counts come from each submarine's own counters.
   async function haulList(input) {
     const status = text(input?.status, 20, 'status', false);
-    const limit = Math.min(Math.max(Number(input?.limit) || 200, 1), 500);
-    const [snap, subs] = await Promise.all([db().collection(COLLECTIONS.haul).limit(3000).get(), db().collection(COLLECTIONS.subs).limit(200).get()]);
-    const subList = subs.docs.map((doc) => doc.data());
+    const submarineId = text(input?.submarineId, 80, 'submarineId', false);
+    const limit = Math.min(Math.max(Number(input?.limit) || 15, 1), 50);
+    const offset = Math.max(Number.parseInt(text(input?.cursor, 12, 'cursor', false) || '0', 10) || 0, 0);
+    const subsSnap = await db().collection(COLLECTIONS.subs).limit(200).get();
+    const subList = subsSnap.docs.map((doc) => doc.data());
     const names = new Map(subList.map((s) => [s.id, { id: s.id, name: s.name, hull: s.hull || '', where: s.haulCanonical?.where || 'here' }]));
     const actionsBySubmarine = Object.fromEntries(subList.map((s) => [s.id, actionsFor(s)]));
-    // Render canonical records (Discover recommendations, job listings) once per store.
-    const records = new Map();
-    const actions = {};
-    for (const where of [...new Set(subList.map((s) => s.haulCanonical?.where || 'here'))]) {
-      const adapter = canonical.adapterFor(where);
-      actions[where] = adapter.actions;
-      if (!canonical.syncable(where)) continue;
-      try { (await adapter.list()).forEach((r) => records.set(r.ref, r.record)); } catch (error) { /* shown without the record */ }
-    }
-    const items = snap.docs.map((doc) => doc.data())
-      .filter((h) => !status || h.status === status)
-      .sort((a, b) => String(b.decidedAt || b.foundAt).localeCompare(String(a.decidedAt || a.foundAt)))
-      .slice(0, limit)
-      .map((h) => ({ ...withRecord(h, records), submarine: names.get(h.submarineId) || { id: h.submarineId, name: h.submarineId, hull: '', where: 'here' } }));
-    const all = snap.docs.map((doc) => doc.data());
-    const counts = Object.fromEntries(subList.map((s) => [s.id, DECISIONS.reduce((acc, d) => ({ ...acc, [d]: all.filter((h) => h.submarineId === s.id && h.status === d).length }), {})]));
-    return { items, count: items.length, actions, actionsBySubmarine, counts };
+    let query = db().collection(COLLECTIONS.haul);
+    if (submarineId) query = query.where('submarineId', '==', submarineId);
+    else if (DECISIONS.includes(status)) query = query.where('status', '==', status);
+    const snap = await query.limit(3000).get();
+    const decided = status === 'decided';
+    const matching = snap.docs.map((doc) => doc.data())
+      .filter((h) => (!status || status === 'all' ? true : decided ? h.status !== 'candidate' : h.status === status))
+      .filter((h) => !submarineId || h.submarineId === submarineId)
+      .sort((a, b) => String((decided ? b.decidedAt : null) || b.foundAt).localeCompare(String((decided ? a.decidedAt : null) || a.foundAt)));
+    const page = matching.slice(offset, offset + limit);
+    const items = await Promise.all(page.map(async (h) => {
+      const where = names.get(h.submarineId)?.where || 'here';
+      let record = h.details ? recordOf(h) : null;
+      if (!record && canonical.syncable(where) && h.ref && h.ref.startsWith(where + ':')) {
+        const adapter = canonical.adapterFor(where);
+        if (typeof adapter.one === 'function') {
+          try { record = (await adapter.one(h.ref.slice(where.length + 1)))?.record || null; } catch (error) { record = null; }
+        }
+      }
+      return { ...h, record, submarine: names.get(h.submarineId) || { id: h.submarineId, name: h.submarineId, hull: '', where: 'here' } };
+    }));
+    const counts = Object.fromEntries(subList.map((s) => [s.id, { candidate: s.progress?.candidateCount || 0, confirmed: s.progress?.confirmedCount || 0 }]));
+    const next = offset + limit < matching.length ? String(offset + limit) : null;
+    return { items, count: items.length, total: matching.length, nextCursor: next, actionsBySubmarine, counts };
   }
 
   return { commission, list: listSubs, get, update, sortieStart, sortieFinish, haulDecide, haulFeedback, recordReaction, haulList };

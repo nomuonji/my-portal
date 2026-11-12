@@ -189,7 +189,7 @@ export default async (request: Request) => {
         return json(await submarineStore.list({ status: url.searchParams.get("status") || undefined }));
       }
       if (resource === "submarine") return json(await submarineStore.get({ id: url.searchParams.get("id") || "", view: "full" }));
-      if (resource === "submarine_haul") return json(await submarineStore.haulList({ status: url.searchParams.get("status") || undefined, limit: Number(url.searchParams.get("limit")) || 200 }));
+      if (resource === "submarine_haul") return json(await submarineStore.haulList({ status: url.searchParams.get("status") || undefined, submarineId: url.searchParams.get("sub") || undefined, cursor: url.searchParams.get("cursor") || undefined, limit: Number(url.searchParams.get("limit")) || 15 }));
       if (resource === "meta_proposals") return json(await metaStore.list({limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 150, 1), 200), status: url.searchParams.get("status") || undefined}));
       if (resource === "meta_proposal") return json(await metaStore.get({ id: url.searchParams.get("id") || "" }));
       if (resource === "ideas") {
@@ -333,7 +333,7 @@ export default async (request: Request) => {
         return json(await submarineStore.haulFeedback({
           submarineId: body.submarineId, haulId: body.haulId, action: String(body.feedbackAction || "").trim() || undefined,
           comment: String(body.comment || "").trim().slice(0, 1000),
-          userAuthorized: true, authorizationNote: "My Portal の潜水艦画面で本人が評価（" + day + "）", actor: "My Portal UI",
+          userAuthorized: true, authorizationNote: "My Portal の潜水艦画面で本人が評価（" + day + "）", actor: "My Portal UI", light: body.light === true,
         }));
       }
       if (action === "submarine_haul_decide") {
