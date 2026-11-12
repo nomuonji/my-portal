@@ -418,6 +418,19 @@ function BaseDetail({ detail, onDecide, busy }) {
 
       {tab === 'method' && (<>
       {method && <Typography sx={{ fontSize: 12.5, color: V.muted }}>{method.title}　<b style={{ color: 'var(--p-ink)' }}>{method.version}</b>　{shortDate(method.setAt)}</Typography>}
+      {method?.target && (
+        <Box sx={{ mt: 1, py: 1, px: 1.5, borderLeft: '3px solid ' + (method.target.unreleasedNewer ? V.amber : V.accent), background: V.accentSoft }}>
+          <Typography sx={{ fontSize: 13.5, lineHeight: 1.6 }}>
+            鍛える対象：{method.target.kind === 'intelligence_pack' ? 'Pack' : 'スキル'} <b>{method.target.title || method.target.id}</b>　実行で使う版 <b>v{method.target.releasedVersion}</b>
+          </Typography>
+          {method.target.unreleasedNewer && (
+            <Typography sx={{ fontSize: 12.5, color: V.muted, mt: 0.3 }}>
+              v{method.target.latestVersion} が拠点の外で作られています。ここで確かめるまで、実行は v{method.target.releasedVersion} のままです。
+            </Typography>
+          )}
+          {method.target.error && <Typography sx={{ fontSize: 12.5, color: V.pink, mt: 0.3 }}>読み込めませんでした：{method.target.error}</Typography>}
+        </Box>
+      )}
       {method ? (
         method.body ? <MarkdownBody source={method.body} /> : (
           <DetailRow label="本文">
