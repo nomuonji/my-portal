@@ -64,6 +64,24 @@ const JOB = {
   recentFeedback: [],
 };
 
+const UNKNOWN_ACTIONS = [
+  { key: 'widened', label: '広がった', decision: 'confirmed', tone: 'good' },
+  { key: 'known', label: '知ってた', decision: 'declined', tone: 'bad' },
+];
+const BOARD = {
+  items: [
+    { ...DISCOVER.haul.awaiting[0], gearVersions: [{ gear: 'chat_skill:discover-curation', role: 'primary', version: 2, dojoId: 'personal-discovery' }], submarine: { id: 'discover', hull: 'SS-01', name: 'Discover', where: 'personal_feed' } },
+    { id: 'C-001', submarineId: 'unknown', label: '盆栽の世界', status: 'candidate', foundAt: '2026-11-12T05:00:00Z',
+      gearVersions: [{ gear: 'chat_skill:unknown-discovery-engine', role: 'primary', version: 1, dojoId: 'unknown-discovery-engine' }],
+      record: { kind: 'note', title: '盆栽の世界', summary: '鉢の中の時間', reason: '知らない営み', bridge: 'ミニチュア好きから', firstStep: 'この動画を1本見る' },
+      submarine: { id: 'unknown', hull: 'SS-04', name: '未知探索', where: 'here' } },
+    { id: 'C-000', submarineId: 'discover', label: '古い推薦', status: 'confirmed', submarine: { id: 'discover', hull: 'SS-01', name: 'Discover', where: 'personal_feed' }, record: { kind: 'discover', title: '古い推薦' } },
+  ],
+  actions: { personal_feed: DISCOVER_ACTIONS },
+  actionsBySubmarine: { discover: DISCOVER_ACTIONS, unknown: UNKNOWN_ACTIONS },
+  counts: { discover: { candidate: 1, confirmed: 1, declined: 0 }, 'job-db': { candidate: 0, confirmed: 0, declined: 0 } },
+};
+
 let posted;
 beforeEach(() => {
   posted = [];
@@ -75,7 +93,7 @@ beforeEach(() => {
       return Promise.resolve({ ok: true, json: () => Promise.resolve(body.submarineId === 'job-db' ? JOB : DISCOVER) });
     }
     if (url.includes('resource=submarines')) return Promise.resolve({ ok: true, json: () => Promise.resolve(FLEET) });
-    if (url.includes('resource=submarine_haul')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ items: [{ ...DISCOVER.haul.awaiting[0], submarine: { hull: 'SS-01', name: 'Discover', where: 'personal_feed' } }], actions: { personal_feed: DISCOVER_ACTIONS } }) });
+    if (url.includes('resource=submarine_haul')) return Promise.resolve({ ok: true, json: () => Promise.resolve(BOARD) });
     if (url.includes('resource=submarine&id=job-db')) return Promise.resolve({ ok: true, json: () => Promise.resolve(JOB) });
     if (url.includes('resource=submarine&')) return Promise.resolve({ ok: true, json: () => Promise.resolve(DISCOVER) });
     return Promise.resolve({ ok: false, json: () => Promise.resolve({ error: 'unexpected ' + url }) });
@@ -91,7 +109,7 @@ test('lamps say where each submarine is and whether it needs the user', () => {
 });
 
 test('each fleet card is drawn as a submarine with its hull number, gear and lamp', async () => {
-  mockQuery = '';
+  mockQuery = 'view=fleet';
   render(<Submarines />);
   const card = await screen.findByRole('button', { name: 'SS-01 Discover' });
   expect(within(card).getByRole('img', { name: 'SS-01：評価待ち' })).toBeInTheDocument();
@@ -128,8 +146,7 @@ test('a job listing shows reward and application details, and 応募する is it
   expect(screen.getByText('CV（必須）')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: '応募する' }));
   await waitFor(() => expect(posted[0]).toMatchObject({ submarineId: 'job-db', haulId: 'C-001', feedbackAction: 'apply' }));
-  fireEvent.click(await screen.findByRole('button', { name: /求人台帳を直接開く/ }));
-  expect(mockNavigate).toHaveBeenCalledWith('/jobs/ledger');
+  expect(screen.queryByRole('button', { name: /求人台帳/ })).not.toBeInTheDocument();
 });
 
 test('the console keeps the mission, gear, logbook and chart', async () => {
@@ -147,10 +164,31 @@ test('the console keeps the mission, gear, logbook and chart', async () => {
   expect(screen.getByText('海外ミームの経緯解説は刺さらない')).toBeInTheDocument();
 });
 
-test('the fleet-wide haul view evaluates with each submarine\'s actions', async () => {
-  mockQuery = 'view=haul';
+test('the page opens on the whole fleet\'s haul: waiting items first, each with its submarine, version and own buttons', async () => {
+  mockQuery = '';
   render(<Submarines />);
+  expect(await screen.findByRole('heading', { name: '全艦の成果' })).toBeInTheDocument();
   expect(await screen.findByText('駅前の無料足湯')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: '興味なし' }));
-  await waitFor(() => expect(posted[0]).toMatchObject({ submarineId: 'discover', feedbackAction: 'skipped' }));
+  expect(screen.getByText('盆栽の世界')).toBeInTheDocument();
+  expect(screen.queryByText('古い推薦')).not.toBeInTheDocument();
+  expect(screen.getByText('discover-curation v2')).toBeInTheDocument();
+  expect(screen.getByText('unknown-discovery-engine v1')).toBeInTheDocument();
+  const unknownRow = screen.getByText('盆栽の世界').closest('article');
+  fireEvent.click(within(unknownRow).getByRole('button', { name: '広がった' }));
+  await waitFor(() => expect(posted[0]).toMatchObject({ submarineId: 'unknown', haulId: 'C-001', feedbackAction: 'widened' }));
+  const discoverRow = screen.getByText('駅前の無料足湯').closest('article');
+  fireEvent.click(within(discoverRow).getByRole('button', { name: '興味なし' }));
+  await waitFor(() => expect(posted[1]).toMatchObject({ submarineId: 'discover', feedbackAction: 'skipped' }));
+});
+
+test('a row opens into the full card with the bridge and first step; a submarine tile filters the board', async () => {
+  mockQuery = '';
+  render(<Submarines />);
+  const row = (await screen.findByText('盆栽の世界')).closest('article');
+  fireEvent.click(within(row).getByRole('button', { name: '詳しく見る' }));
+  expect(screen.getByText('ミニチュア好きから')).toBeInTheDocument();
+  expect(screen.getByText('この動画を1本見る')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /SS-01.*Discover/ }));
+  await waitFor(() => expect(screen.queryByText('盆栽の世界')).not.toBeInTheDocument());
+  expect(screen.getByText('駅前の無料足湯')).toBeInTheDocument();
 });

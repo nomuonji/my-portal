@@ -288,6 +288,38 @@ function timelineOf(runs, events) {
   ].sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
 }
 
+// What the user said about things this 道場's gear produced, grouped by the version that produced them.
+// This is the evidence for releasing a new version: a version is better when the user said so more often.
+export function VersionFeedback({ feedback }) {
+  const groups = feedback?.byVersion || [];
+  if (!groups.length) return null;
+  return (
+    <Box sx={{ mt: 2.5 }}>
+      <Heading aside={<Small>潜水艦の成果への評価・コメントが、見つけた版ごとに届きます</Small>}>本人の評価（版ごと）</Heading>
+      {groups.map((g) => {
+        const decided = (g.confirmed || 0) + (g.declined || 0);
+        const rate = decided ? Math.round(((g.confirmed || 0) / decided) * 100) : null;
+        return (
+          <Box key={String(g.version)} sx={{ py: 1.2, borderBottom: '1px solid ' + V.rule }}>
+            <Stack direction="row" gap={1.5} alignItems="baseline" flexWrap="wrap">
+              <Typography sx={{ fontSize: 14.5, fontWeight: 850 }}>{g.version === null ? '版の記録なし' : 'v' + g.version}{g.released ? '（いま実行で使う版）' : ''}</Typography>
+              <Typography sx={{ fontSize: 13, color: V.green, fontWeight: 800 }}>成果 {g.confirmed || 0}</Typography>
+              <Typography sx={{ fontSize: 13, color: V.faint, fontWeight: 800 }}>見送り {g.declined || 0}</Typography>
+              <Typography sx={{ fontSize: 13, color: V.amber, fontWeight: 800 }}>評価待ち {g.candidate || 0}</Typography>
+              {rate !== null && <Small>判断したもののうち成果 {rate}%</Small>}
+            </Stack>
+            {(g.comments || []).slice(0, 4).map((c, i) => (
+              <Typography key={i} sx={{ fontSize: 12.5, color: V.muted, lineHeight: 1.6, mt: 0.4 }}>
+                {c.actionLabel && <b>{c.actionLabel}</b>}{c.actionLabel ? '　' : ''}「{c.text}」<span style={{ color: 'var(--p-faint)' }}>　{c.label}</span>
+              </Typography>
+            ))}
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
+
 function BaseDetail({ detail, onDecide, busy }) {
   const [tab, setTab] = useState('goal');
   const { base, outcome = {}, method, full = {}, position = {} } = detail;
@@ -324,6 +356,8 @@ function BaseDetail({ detail, onDecide, busy }) {
         </Box>
         <Progress confirmed={outcome.confirmedCount || 0} target={outcome.target} big />
       </Box>
+
+      <VersionFeedback feedback={detail.feedback} />
 
       {(awaiting.length > 0 || proposals.length > 0) && (
         <>

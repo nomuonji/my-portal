@@ -38,6 +38,7 @@ const PROTOCOL = [
   'When the method is a chat_skill or intelligence_pack target, use exactly the released version (method.target.releasedVersion, body included here), not the latest one. A newer version made outside this base is unverified until it is released here.',
   'Sources (where candidates come from) are a ledger too: record which source a candidate came from (evidence on the source, sourceIds on the achievement) and reject sources that yield nothing, so the next run starts from proven ones.',
   'When a submarine (Project Submarine) carries this skill/pack, its sortie opens and closes the run here. What it finds is the submarine\'s haul; a haul the user confirms comes back here as an achievement.',
+  'feedback holds what the user said about each thing the gear produced (action and comment), grouped by the version that produced it. Read it before proposing a new version and cite it as the reason; a version is better only if the user said so more often, not if self-scores rose.',
 ];
 
 function database() { return getDocumentDb(DEFAULT_DATABASE_ID); }
@@ -203,6 +204,21 @@ async function defaultResolveTarget({ kind, id, versionNumber }) {
     };
   }
   throw new Error('Not a trainable target: ' + kind);
+}
+
+// The user's evaluations grouped by the released version that produced the evaluated thing, newest version first.
+function feedbackView(log, releasedVersion) {
+  const groups = new Map();
+  log.forEach((f) => {
+    const key = f.version === null || f.version === undefined ? 'unknown' : String(f.version);
+    const g = groups.get(key) || { version: key === 'unknown' ? null : Number(key), total: 0, confirmed: 0, candidate: 0, declined: 0, comments: [] };
+    g.total += 1; g[f.decision] = (g[f.decision] || 0) + 1;
+    if (f.comment && g.comments.length < 8) g.comments.push({ at: f.at, label: f.label, actionLabel: f.actionLabel, text: f.comment, haulId: f.haulId, submarineId: f.submarineId });
+    groups.set(key, g);
+  });
+  const byVersion = [...groups.values()].sort((a, b) => (b.version ?? -1) - (a.version ?? -1))
+    .map((g) => ({ ...g, released: g.version !== null && g.version === releasedVersion }));
+  return { releasedVersion, total: log.length, byVersion, recent: log.slice(0, 15) };
 }
 
 function createStore(options) {
@@ -374,6 +390,7 @@ function createStore(options) {
         runCount: base.runCount || 0, stalledRuns: base.stalledRuns || 0,
         openRunId: base.openRunId || null, lastRuns: base.lastRuns || [],
       },
+      feedback: feedbackView(base.feedbackLog || [], base.method?.bodyRef?.versionNumber || null),
       proposals: (base.proposals || []).filter((p) => p.status === 'pending'),
       warnings,
       protocol: PROTOCOL,
@@ -752,7 +769,8 @@ function createStore(options) {
         } else {
           base.counters.A = (base.counters.A || 0) + 1;
           achievements.push({
-            id: seqId('A', base.counters.A), runId: null, foundAt: at, decidedAt: at, methodVersion: base.method?.version || null,
+            id: seqId('A', base.counters.A), runId: text(input.runId, 20, 'runId', false) || null, foundAt: at, decidedAt: at, methodVersion: base.method?.version || null,
+            skillVersion: Number.isInteger(input.version) ? input.version : null,
             label: text(input.label, 300, 'label', true), ref,
             evidence: text(input.evidence, 2000, 'evidence', false) || 'The user reacted in the app.',
             hypothesisIds: [], sourceIds: list(input.sourceIds, 10, 20), status: 'confirmed',
@@ -773,6 +791,42 @@ function createStore(options) {
     return { baseId: id, changed };
   }
 
+  // The user's evaluation of something a trained gear produced (a submarine's haul): the action, the comment and
+  // the skill/pack version that produced it. Kept per ref (latest wins) so the 道場 can compare released versions
+  // by what the user actually said, not by self-scores. No-op without the base.
+  async function recordFeedback(input) {
+    const id = requireBaseId(input?.baseId);
+    const ref = text(input.ref, 600, 'ref', true);
+    const decision = ['confirmed', 'candidate', 'declined'].includes(input.decision) ? input.decision : '';
+    const comment = text(input.comment, 1000, 'comment', false);
+    const actionLabel = text(input.actionLabel, 40, 'actionLabel', false);
+    if (!decision && !comment && !actionLabel) return { baseId: id, changed: false };
+    let changed = false;
+    await db().runTransaction(async (tx) => {
+      const base = value(await tx.get(baseRef(id)));
+      if (!base || base.status === 'closed') return;
+      const log = base.feedbackLog || [];
+      const previous = log.find((f) => f.ref === ref) || {};
+      const entry = {
+        at: now(), ref, label: text(input.label, 300, 'label', false) || previous.label || ref,
+        version: Number.isInteger(input.version) ? input.version : (previous.version ?? null),
+        gear: text(input.gear, 120, 'gear', false) || previous.gear || '',
+        decision: decision || previous.decision || 'candidate',
+        actionLabel: actionLabel || previous.actionLabel || '',
+        comment: comment || previous.comment || '',
+        comments: [...(comment ? [{ at: now(), text: comment }] : []), ...(previous.comments || [])].slice(0, 5),
+        submarineId: text(input.submarineId, 80, 'submarineId', false) || previous.submarineId || '',
+        haulId: text(input.haulId, 20, 'haulId', false) || previous.haulId || '',
+        sortieId: text(input.sortieId, 20, 'sortieId', false) || previous.sortieId || '',
+        runId: text(input.runId, 20, 'runId', false) || previous.runId || '',
+      };
+      base.feedbackLog = [entry, ...log.filter((f) => f.ref !== ref)].slice(0, 300);
+      saveBase(tx, base);
+      changed = true;
+    });
+    return { baseId: id, changed };
+  }
+
   // Which 道場 train this skill or pack, and which version each one releases for execution. Used to tell
   // whoever edits the skill/pack directly that execution stays on the released version until the 道場 releases more.
   async function trainersOf(input) {
@@ -787,7 +841,7 @@ function createStore(options) {
   // Compact summary used by the Agent Intelligence bundle resolver.
   async function brief(input) { return get({ id: input?.id, view: 'brief' }); }
 
-  return { create, list: listBases, get, brief, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction, trainersOf };
+  return { create, list: listBases, get, brief, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, trainersOf };
 }
 
 const store = createStore();

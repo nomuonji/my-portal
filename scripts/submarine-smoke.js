@@ -242,3 +242,47 @@ test('a canonical store is indexed as haul, its state decides status, and feedba
   assert.ok(all.items.every((h) => h.record), 'the fleet view renders canonical records');
   assert.equal(all.actions.personal_feed[0].key, 'loved');
 });
+
+test('haul carries the gear versions that found it; feedback reaches the 道場 per version; a submarine can have its own buttons', async () => {
+  const { dojo, subs } = await setup();
+  await subs.commission({
+    id: 'scout', name: 'Scout', summary: 'S', loadout, mission: outcome, ...auth,
+    feedbackActions: [{ key: 'widened', label: '広がった', decision: 'confirmed', tone: 'good' }, { key: 'known', label: '知ってた', decision: 'declined', tone: 'bad' }],
+  });
+  await assert.rejects(subs.update({ submarineId: 'scout', feedbackActions: [{ key: 'x', label: 'X', decision: 'declined' }, { key: 'y', label: 'Y', decision: 'declined' }] }), /confirms/);
+  const started = await subs.sortieStart({ submarineId: 'scout', objective: 'unknown worlds' });
+  const back = await subs.sortieFinish({
+    submarineId: 'scout', sortieId: started.sortieId, summary: 'two worlds',
+    haul: [
+      { label: 'World A', evidence: 'new to the user', details: { summary: 'What A is', why: 'Because', bridge: 'From X you like', firstStep: 'Watch this one video' } },
+      { label: 'World B', evidence: 'also new' },
+    ],
+  });
+  const a = back.brief.haul.awaiting.find((h) => h.label === 'World A');
+  const b = back.brief.haul.awaiting.find((h) => h.label === 'World B');
+  assert.deepEqual(back.brief.actions.map((x) => x.key), ['widened', 'known']);
+  const finder = a.gearVersions.find((g) => g.gear === 'chat_skill:finder');
+  assert.equal(finder.version, 1, 'the haul remembers the version the sortie carried');
+  assert.equal(finder.dojoRunId, started.dojoRuns[0].runId);
+  assert.equal(a.gearVersions.find((g) => g.gear === 'chat_skill:helper').version, 1);
+  assert.equal(a.record.kind, 'note');
+  assert.equal(a.record.firstStep, 'Watch this one video');
+  await assert.rejects(subs.haulFeedback({ submarineId: 'scout', haulId: a.id, action: 'loved', ...auth }), /widened, known/);
+  await subs.haulFeedback({ submarineId: 'scout', haulId: a.id, action: 'widened', comment: 'これは知らなかった', ...auth });
+  await subs.haulFeedback({ submarineId: 'scout', haulId: b.id, action: 'known', comment: '昔から知ってる', ...auth });
+  let base = await dojo.get({ id: 'finder-dojo' });
+  const v1 = base.feedback.byVersion.find((g) => g.version === 1);
+  assert.equal(v1.confirmed, 1);
+  assert.equal(v1.declined, 1);
+  assert.equal(v1.released, true);
+  assert.ok(v1.comments.some((c) => c.text === '昔から知ってる' && c.actionLabel === '知ってた'));
+  assert.ok(base.outcome.confirmed.some((x) => x.label === 'World A' && x.skillVersion === 1), 'the achievement records the version');
+  // A comment alone updates the same entry (latest per ref), not a second one.
+  await subs.haulFeedback({ submarineId: 'scout', haulId: b.id, comment: 'でもこの切り口は新しい', ...auth });
+  base = await dojo.get({ id: 'finder-dojo' });
+  assert.equal(base.feedback.total, 2);
+  assert.equal(base.feedback.recent.find((f) => f.label === 'World B').decision, 'declined');
+  const list = await subs.haulList({});
+  assert.deepEqual(list.actionsBySubmarine.scout.map((x) => x.key), ['widened', 'known']);
+  assert.equal(list.counts.scout.declined, 1);
+});

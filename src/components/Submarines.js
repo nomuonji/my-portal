@@ -3,13 +3,14 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Alert, Box, Button, CircularProgress, Collapse, Link, Stack, Tab, Tabs, TextField, Typography,
 } from '@mui/material';
-import { ArrowBack, Refresh } from '@mui/icons-material';
+import { ArrowBack, ExpandLess, ExpandMore, OpenInNew, Refresh } from '@mui/icons-material';
 import { marked } from 'marked';
 import { auth } from '../firebase';
 
 // Project Submarine. Each submarine is an exploration job: a mission (what to find), gear (skills/packs at the
 // version their スキル錬成道場 released), a logbook of sorties and the haul it brought back. Discover and 仕事DB
-// live here too: their recommendations and listings are the haul of SS-01 and SS-02, evaluated on this page.
+// live here only: their recommendations and listings are the haul of SS-01 and SS-02. The page opens on the
+// whole fleet's haul, so everything waiting for the user is evaluated in one place.
 
 const V = {
   ink: 'var(--p-ink)', muted: 'var(--p-muted)', faint: 'var(--p-faint)', rule: 'var(--p-rule)',
@@ -327,6 +328,23 @@ const Small = ({ children }) => <Typography component="span" sx={{ fontSize: 11.
 const Quiet = ({ children }) => <Typography sx={{ fontSize: 13.5, color: V.muted, py: 1 }}>{children}</Typography>;
 
 // The item's current action: the canonical state when the store has one, else the last feedback given.
+// Which gear version brought this back. The 道場 compares its versions by these evaluations.
+export function versionText(item) {
+  const gear = (item.gearVersions || []).filter((g) => g.role !== 'support');
+  const shown = gear.length ? gear : (item.gearVersions || []);
+  if (!shown.length) return '';
+  return shown.map((g) => String(g.gear || '').replace(/^chat_skill:/, '').replace(/^intelligence_pack:/, 'Pack ') + (g.version ? ' v' + g.version : '')).join(' + ');
+}
+function VersionTag({ item }) {
+  const label = versionText(item);
+  return (
+    <Typography component="span" title={label ? 'この版で見つけたもの。評価は道場の版ごとの記録に届きます' : '出航の記録がないため、どの版で見つけたか分かりません'}
+      sx={{ fontFamily: MONO, fontSize: 10.5, color: label ? V.accent : V.faint, border: '1px solid ' + (label ? V.accent : V.rule), borderRadius: 0.75, px: 0.6, whiteSpace: 'nowrap' }}>
+      {label || '版の記録なし'}
+    </Typography>
+  );
+}
+
 function currentAction(item, actions) {
   if (item.record?.kind === 'discover' && actions.some((a) => a.key === item.record.state)) return item.record.state;
   const last = (item.feedback || []).find((f) => f.action);
@@ -360,6 +378,7 @@ export function HaulCard({ item, actions = [], onFeedback, busy, showSub }) {
         <Typography component="span" sx={{ fontSize: 11.5, fontWeight: 850, color: status.color }}>{status.label}</Typography>
         {record?.stateLabel && <Typography component="span" sx={{ fontSize: 11.5, color: V.muted, border: '1px solid ' + V.rule, borderRadius: 1, px: 0.7 }}>{record.stateLabel}</Typography>}
         <Small>{[record?.source || hostOf(url), shortDate(item.foundAt), item.sortieId ? '出航 ' + item.sortieId : ''].filter(Boolean).join('　')}</Small>
+        <VersionTag item={item} />
       </Stack>
       <Box sx={{ mt: 0.6 }}>
         {url ? (
@@ -372,7 +391,9 @@ export function HaulCard({ item, actions = [], onFeedback, busy, showSub }) {
           {summary}
         </Typography>
       )}
-      {record?.reason && <Typography sx={{ fontSize: 13.5, lineHeight: 1.7, mt: 0.8 }}><b>選んだ理由</b>　{record.reason}</Typography>}
+      {record?.bridge && <Typography sx={{ fontSize: 13.5, lineHeight: 1.7, mt: 0.8 }}><b>入口</b>　{record.bridge}</Typography>}
+      {record?.reason && <Typography sx={{ fontSize: 13.5, lineHeight: 1.7, mt: 0.8 }}><b>{record.kind === 'note' ? '持ち帰った理由' : '選んだ理由'}</b>　{record.reason}</Typography>}
+      {record?.firstStep && <Typography sx={{ fontSize: 13.5, lineHeight: 1.7, mt: 0.6 }}><b>最初の一歩</b>　{record.firstStep}</Typography>}
       {record?.weakness && <Typography sx={{ fontSize: 12.5, lineHeight: 1.6, mt: 0.4, color: V.faint }}>合わないかもしれない点　{record.weakness}</Typography>}
       {record?.kind === 'job' && (record.details || []).length > 0 && (
         <>
@@ -464,6 +485,143 @@ function HaulPanel({ items, actions, onFeedback, busy, showSub, note }) {
         <HaulCard key={item.submarineId + item.id} item={item} showSub={showSub} busy={busy}
           actions={typeof actions === 'function' ? actions(item) : actions} onFeedback={onFeedback} />
       ))}
+      {!shown.length && <Quiet>{filter === 'candidate' ? '評価待ちの成果はありません。' : 'ここにはまだありません。'}</Quiet>}
+    </Box>
+  );
+}
+
+// ---- Whole-fleet board (the default view) ----------------------------------------
+
+function HaulRow({ item, actions, onFeedback, busy, onOpenSub }) {
+  const [open, setOpen] = useState(false);
+  const status = STATUS[item.status] || STATUS.candidate;
+  const record = item.record || null;
+  const title = record?.title || item.label;
+  const rawUrl = record?.url || item.url || '';
+  const url = /^https?:\/\//.test(rawUrl) ? rawUrl : '';
+  const current = currentAction(item, actions);
+  const oneLine = record?.reason || record?.summary || item.evidence || '';
+  if (open) {
+    return (
+      <Box sx={{ position: 'relative' }}>
+        <Button size="small" onClick={() => setOpen(false)} startIcon={<ExpandLess />} sx={{ position: 'absolute', right: 6, top: 6, zIndex: 1, fontSize: 12, color: V.muted }}>閉じる</Button>
+        <HaulCard item={item} actions={actions} onFeedback={onFeedback} busy={busy} showSub />
+      </Box>
+    );
+  }
+  return (
+    <Box component="article" sx={{
+      display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0,1fr) auto' }, gap: { xs: 0.8, md: 2 }, alignItems: 'center',
+      py: 1.1, pl: 1.6, pr: 1, borderBottom: '1px solid ' + V.rule, position: 'relative',
+      '&::before': { content: '""', position: 'absolute', left: 0, top: 8, bottom: 8, width: 3, borderRadius: 2, background: status.color },
+      '&:hover': { background: 'var(--p-sunken)' },
+    }}>
+      <Box sx={{ minWidth: 0 }}>
+        <Stack direction="row" gap={0.8} alignItems="center" sx={{ minWidth: 0 }}>
+          <Box component="button" type="button" onClick={() => onOpenSub(item.submarineId)} title={(item.submarine?.name || '') + ' を絞り込む'} sx={{ all: 'unset', cursor: 'pointer', flexShrink: 0 }}>
+            <HullPlate hull={item.submarine?.hull || item.submarine?.name} />
+          </Box>
+          {url ? (
+            <Link href={url} target="_blank" rel="noreferrer" underline="hover" sx={{ fontSize: 14.5, fontWeight: 800, color: V.ink, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</Link>
+          ) : <Typography sx={{ fontSize: 14.5, fontWeight: 800, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</Typography>}
+        </Stack>
+        <Stack direction="row" gap={1} alignItems="center" sx={{ mt: 0.3, minWidth: 0 }}>
+          <VersionTag item={item} />
+          <Small>{[shortDate(item.foundAt), record?.source || hostOf(url)].filter(Boolean).join('　')}</Small>
+          <Typography component="span" sx={{ fontSize: 12.5, color: V.muted, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{oneLine}</Typography>
+        </Stack>
+      </Box>
+      <Stack direction="row" gap={0.5} alignItems="center" flexWrap="wrap" justifyContent={{ xs: 'flex-start', md: 'flex-end' }}>
+        {actions.map((a) => {
+          const active = current === a.key;
+          const color = TONE[a.tone] || V.blue;
+          return (
+            <Button key={a.key} size="small" disabled={busy} aria-pressed={active} onClick={() => onFeedback(item, a.key, '')}
+              sx={{
+                minWidth: 0, borderRadius: 999, px: 1.1, py: 0.1, fontSize: 12, fontWeight: 800, border: '1px solid ' + (active ? color : V.rule),
+                color: active ? '#fff' : V.ink, background: active ? color : 'transparent', '&:hover': { borderColor: color, background: active ? color : 'var(--p-sunken)' },
+              }}>{a.label}</Button>
+          );
+        })}
+        <Button size="small" onClick={() => setOpen(true)} aria-label="詳しく見る" sx={{ minWidth: 0, px: 0.6, color: V.muted }}><ExpandMore fontSize="small" /></Button>
+      </Stack>
+    </Box>
+  );
+}
+
+function SubTile({ sub, counts, selected, onSelect, onOpen }) {
+  const lamp = lampOf(sub);
+  const waiting = counts?.candidate || 0;
+  return (
+    <Box component="button" type="button" onClick={() => onSelect(sub.id)} aria-pressed={selected}
+      sx={{
+        all: 'unset', cursor: 'pointer', boxSizing: 'border-box', borderRadius: 1.5, p: 1.2, minWidth: 0,
+        border: '1px solid ' + (selected ? SEA.glow : '#0f3446'), color: SEA.text,
+        background: selected ? 'linear-gradient(180deg, #11384a 0%, ' + SEA.deep + ' 100%)' : 'linear-gradient(180deg, ' + SEA.mid + ' 0%, ' + SEA.deep + ' 100%)',
+        '&:focus-visible': { outline: '2px solid ' + SEA.glow, outlineOffset: 2 },
+      }}>
+      <Stack direction="row" alignItems="center" gap={0.7}>
+        <Lamp lamp={lamp} size={7} />
+        <Typography component="span" sx={{ fontFamily: MONO, fontSize: 10.5, color: SEA.dim }}>{sub.hull}</Typography>
+        <Box component="span" role="link" tabIndex={0} title={sub.name + ' を開く'} onClick={(event) => { event.stopPropagation(); onOpen(sub.id); }}
+          onKeyDown={(event) => { if (event.key === 'Enter') { event.stopPropagation(); onOpen(sub.id); } }}
+          sx={{ ml: 'auto', display: 'inline-flex', color: SEA.dim, '&:hover': { color: SEA.glow } }}><OpenInNew sx={{ fontSize: 14 }} /></Box>
+      </Stack>
+      <Typography sx={{ fontSize: 14, fontWeight: 850, mt: 0.4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sub.name}</Typography>
+      <Stack direction="row" gap={1.2} alignItems="baseline" sx={{ mt: 0.3 }}>
+        <Typography component="span" sx={{ fontFamily: MONO, fontSize: 20, fontWeight: 800, color: waiting ? SEA.amber : SEA.dim, lineHeight: 1.1 }}>{waiting}</Typography>
+        <Typography component="span" sx={{ fontSize: 10.5, color: SEA.dim }}>評価待ち</Typography>
+        <Typography component="span" sx={{ fontFamily: MONO, fontSize: 13, fontWeight: 700, color: SEA.green, ml: 'auto' }}>{counts?.confirmed || 0}</Typography>
+        <Typography component="span" sx={{ fontSize: 10.5, color: SEA.dim }}>成果</Typography>
+      </Stack>
+    </Box>
+  );
+}
+
+export function HaulBoard({ fleet, haul, subFilter, onSubFilter, onOpen, onFeedback, busy }) {
+  const items = useMemo(() => haul.items || [], [haul.items]);
+  const counts = haul.counts || {};
+  const scoped = useMemo(() => items.filter((h) => !subFilter || h.submarineId === subFilter), [items, subFilter]);
+  const tally = useMemo(() => ({
+    candidate: scoped.filter((h) => h.status === 'candidate').length, confirmed: scoped.filter((h) => h.status === 'confirmed').length,
+    declined: scoped.filter((h) => h.status === 'declined').length, all: scoped.length,
+  }), [scoped]);
+  const [filter, setFilter] = useState('candidate');
+  useEffect(() => { if (filter === 'candidate' && !tally.candidate && tally.all) setFilter('all'); }, [filter, tally.candidate, tally.all]);
+  const shown = scoped.filter((h) => filter === 'all' || h.status === filter);
+  const actionsOf = (item) => (haul.actionsBySubmarine || {})[item.submarineId] || (haul.actions || {})[item.submarine?.where || 'here'] || [];
+  const selected = fleet.find((s) => s.id === subFilter);
+  return (
+    <Box>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0,1fr))', sm: 'repeat(3, minmax(0,1fr))', md: 'repeat(' + Math.max(fleet.length, 1) + ', minmax(0,1fr))' }, gap: 1, mt: 2.5 }}>
+        {fleet.map((sub) => (
+          <SubTile key={sub.id} sub={sub} counts={counts[sub.id]} selected={subFilter === sub.id} onOpen={onOpen}
+            onSelect={(id) => onSubFilter(subFilter === id ? '' : id)} />
+        ))}
+      </Box>
+      <Stack direction="row" gap={0.8} flexWrap="wrap" alignItems="center" sx={{ mt: 2.2, mb: 0.6 }} role="group" aria-label="成果の絞り込み">
+        {HAUL_FILTERS.map((f) => (
+          <Button key={f.key} size="small" onClick={() => setFilter(f.key)} aria-pressed={filter === f.key}
+            sx={{
+              borderRadius: 999, px: 1.4, fontSize: 12.5, fontWeight: 800,
+              color: filter === f.key ? 'var(--p-paper, #fff)' : V.muted, background: filter === f.key ? V.ink : 'transparent',
+              border: '1px solid ' + (filter === f.key ? V.ink : V.rule), '&:hover': { background: filter === f.key ? V.ink : 'var(--p-sunken)' },
+            }}>{f.label} {tally[f.key]}</Button>
+        ))}
+        {selected && (
+          <Button size="small" onClick={() => onSubFilter('')} sx={{ ml: { sm: 'auto' }, fontSize: 12.5, color: V.muted }}>
+            {selected.hull} {selected.name} だけを表示中 ×
+          </Button>
+        )}
+      </Stack>
+      <Typography sx={{ fontSize: 12, color: V.faint, mb: 1 }}>
+        ボタンを押すとその場で記録されます。▼で中身を開くと、理由やコメントを残せます。評価は艦の次の出航と、見つけた装備の版ごとに道場へ届きます。
+      </Typography>
+      <Box sx={{ borderTop: '1px solid ' + V.ink }}>
+        {shown.map((item) => (
+          <HaulRow key={item.submarineId + item.id} item={item} actions={actionsOf(item)} onFeedback={onFeedback} busy={busy} onOpenSub={(id) => onSubFilter(id)} />
+        ))}
+      </Box>
       {!shown.length && <Quiet>{filter === 'candidate' ? '評価待ちの成果はありません。' : 'ここにはまだありません。'}</Quiet>}
     </Box>
   );
@@ -565,9 +723,10 @@ const CONSOLE_TABS = [
 const HAUL_NOTE = {
   personal_feed: 'Discover の推薦です。「好き」がそのまま成果になり、好みの記録と道場の成果にも残ります。「興味なし」の理由をコメントに残すと、次の出航が同じ方向を避けます。',
   job_opportunities: '仕事DBの案件です。「応募する」と決めたものが成果になります。条件の不安や見送る理由をコメントに残すと、次の出航が参考にします。',
+  here: 'この艦が持ち帰ったものです。評価とコメントは次の出航が読み、見つけた装備の版ごとに道場にも届きます。',
 };
 
-function Console({ detail, onFeedback, onDojo, busy, onLedger }) {
+function Console({ detail, onFeedback, onDojo, busy }) {
   const [tab, setTab] = useState('haul');
   const { submarine: sub, mission = {}, loadout = [], haul = {}, chart = [], position = {}, full = {}, warnings = [], actions = [], recentFeedback = [] } = detail;
   const awaiting = useMemo(() => haul.awaiting || [], [haul.awaiting]);
@@ -620,9 +779,6 @@ function Console({ detail, onFeedback, onDojo, busy, onLedger }) {
       <Box sx={{ pt: 2.5 }}>
         {tab === 'haul' && (<>
           <HaulPanel items={items} actions={actions} onFeedback={onFeedback} busy={busy} note={HAUL_NOTE[where]} />
-          {where === 'job_opportunities' && (
-            <Button size="small" onClick={onLedger} sx={{ mt: 1, px: 0, color: V.muted }}>求人台帳を直接開く（項目の編集）</Button>
-          )}
           {recentFeedback.length > 0 && (
             <Box sx={{ mt: 3 }}>
               <Typography sx={{ fontSize: 13, fontWeight: 800, pb: 0.6, borderBottom: '1px solid ' + V.rule }}>
@@ -689,7 +845,8 @@ export default function Submarines() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const selectedId = params.get('id') || '';
-  const view = params.get('view') === 'haul' ? 'haul' : 'fleet';
+  const view = params.get('view') === 'fleet' ? 'fleet' : 'haul';
+  const subFilter = params.get('sub') || '';
   const [fleet, setFleet] = useState([]);
   const [haul, setHaul] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -707,7 +864,7 @@ export default function Submarines() {
     } catch (err) { setError('艦隊を読み込めません: ' + err.message); } finally { setLoading(false); }
   }, []);
   const loadHaul = useCallback(async () => {
-    try { setHaul(await api('?resource=submarine_haul&limit=300')); } catch (err) { setError('成果を読み込めません: ' + err.message); }
+    try { setHaul(await api('?resource=submarine_haul&limit=500')); } catch (err) { setError('成果を読み込めません: ' + err.message); }
   }, []);
   const loadDetail = useCallback(async (id) => {
     if (!id) { setDetail(null); return; }
@@ -717,9 +874,11 @@ export default function Submarines() {
 
   useEffect(() => { loadFleet(); }, [loadFleet]);
   useEffect(() => { loadDetail(selectedId); }, [loadDetail, selectedId]);
-  useEffect(() => { if (view === 'haul' && !haul) loadHaul(); }, [view, haul, loadHaul]);
+  useEffect(() => { if (!selectedId && view === 'haul' && !haul) loadHaul(); }, [selectedId, view, haul, loadHaul]);
 
   const open = (id) => setParams(id ? { id } : {});
+  const setView = (value) => setParams(value === 'fleet' ? { view: 'fleet' } : (subFilter ? { sub: subFilter } : {}));
+  const setSubFilter = (id) => setParams(id ? { sub: id } : {});
   const openDojo = (dojoId) => navigate('/exploration?id=' + encodeURIComponent(dojoId));
   const active = useMemo(() => fleet.filter((s) => s.status !== 'decommissioned'), [fleet]);
   const retired = useMemo(() => fleet.filter((s) => s.status === 'decommissioned'), [fleet]);
@@ -733,27 +892,29 @@ export default function Submarines() {
       await Promise.all([
         loadFleet(),
         selectedId === item.submarineId ? loadDetail(selectedId) : null,
-        view === 'haul' && !selectedId ? loadHaul() : null,
+        !selectedId ? loadHaul() : null,
       ]);
     } catch (err) { setError(err.message || '保存に失敗しました'); } finally { setBusy(false); }
   };
 
   return (
-    <Box sx={{ maxWidth: 980, mx: 'auto', pb: 8 }}>
+    <Box sx={{ maxWidth: 1080, mx: 'auto', pb: 8 }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1} sx={{ mb: selectedId ? 2 : 0 }}>
         {selectedId ? (
-          <Button startIcon={<ArrowBack />} onClick={() => open('')} sx={{ px: 0, color: V.muted }}>艦隊に戻る</Button>
+          <Button startIcon={<ArrowBack />} onClick={() => open('')} sx={{ px: 0, color: V.muted }}>全艦の成果に戻る</Button>
         ) : (
           <Box>
             <Typography sx={{ fontFamily: MONO, fontSize: 11.5, letterSpacing: '0.2em', color: V.accent }}>PROJECT SUBMARINE</Typography>
-            <Typography component="h1" sx={{ fontSize: { xs: 24, md: 28 }, fontWeight: 900, letterSpacing: '-0.03em' }}>探索の艦隊</Typography>
-            <Typography sx={{ fontSize: 13.5, color: V.muted, mt: 0.4, lineHeight: 1.65, maxWidth: 720 }}>
-              潜水艦ごとに任務を持ち、スキルやPackを積んで潜ります。持ち帰った成果はここで評価でき、評価は次の出航と、積んだスキルの道場に届きます。
+            <Typography component="h1" sx={{ fontSize: { xs: 24, md: 28 }, fontWeight: 900, letterSpacing: '-0.03em' }}>{view === 'fleet' ? '探索の艦隊' : '全艦の成果'}</Typography>
+            <Typography sx={{ fontSize: 13.5, color: V.muted, mt: 0.4, lineHeight: 1.65, maxWidth: 760 }}>
+              {view === 'fleet'
+                ? '潜水艦ごとに任務を持ち、スキルやPackを積んで潜ります。艦を開くと任務・装備・航海日誌・海図が見られます。'
+                : 'Discover の推薦、仕事DBの案件、未知探索の発見など、すべての艦が持ち帰ったものです。上の艦を押すとその艦だけに絞れます。'}
             </Typography>
           </Box>
         )}
         <Button size="small" startIcon={<Refresh />} disabled={loading || detailLoading} sx={{ color: V.muted, flexShrink: 0 }}
-          onClick={() => { loadFleet(); loadDetail(selectedId); if (view === 'haul') loadHaul(); }}>再読み込み</Button>
+          onClick={() => { loadFleet(); loadDetail(selectedId); if (!selectedId) loadHaul(); }}>再読み込み</Button>
       </Stack>
 
       {error && <Alert severity="error" onClose={() => setError('')} sx={{ mt: 2 }}>{error}</Alert>}
@@ -761,31 +922,27 @@ export default function Submarines() {
 
       {selectedId ? (
         detailLoading && !detail ? <Box sx={{ display: 'grid', placeItems: 'center', py: 7 }}><CircularProgress /></Box>
-          : detail ? <Console key={selectedId} detail={detail} busy={busy} onDojo={openDojo} onFeedback={feedback} onLedger={() => navigate('/jobs/ledger')} /> : null
+          : detail ? <Console key={selectedId} detail={detail} busy={busy} onDojo={openDojo} onFeedback={feedback} /> : null
       ) : (<>
-        <SonarDeck fleet={active} onOpen={open} />
-        <Tabs value={view} onChange={(_, value) => setParams(value === 'haul' ? { view: 'haul' } : {})}
-          sx={{ mt: 3, borderBottom: '1px solid ' + V.rule, minHeight: 42, '& .MuiTab-root': { minHeight: 42, fontSize: 13.5, fontWeight: 700 } }}>
+        <Tabs value={view} onChange={(_, value) => setView(value)}
+          sx={{ mt: 2, borderBottom: '1px solid ' + V.rule, minHeight: 42, '& .MuiTab-root': { minHeight: 42, fontSize: 13.5, fontWeight: 700 } }}>
+          <Tab value="haul" label={'成果' + (active.reduce((sum, s) => sum + (s.candidateCount || 0), 0) ? '（評価待ち ' + active.reduce((sum, s) => sum + (s.candidateCount || 0), 0) + '）' : '')} />
           <Tab value="fleet" label={'艦隊 ' + active.length} />
-          <Tab value="haul" label="全艦の成果" />
         </Tabs>
+        {view === 'haul' && (
+          !haul ? <Box sx={{ display: 'grid', placeItems: 'center', py: 7 }}><CircularProgress /></Box> : (
+            <HaulBoard fleet={active} haul={haul} subFilter={subFilter} onSubFilter={setSubFilter} onOpen={open} onFeedback={feedback} busy={busy} />
+          )
+        )}
         {view === 'fleet' && (
           loading && !fleet.length ? <Box sx={{ display: 'grid', placeItems: 'center', py: 7 }}><CircularProgress /></Box> : (<>
+            <SonarDeck fleet={active} onOpen={open} />
             <Box sx={{ mt: 2.5, display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0,1fr))' }, gap: 2 }}>
               {active.map((sub) => <FleetCard key={sub.id} sub={sub} onOpen={open} onDojo={openDojo} />)}
             </Box>
             {!active.length && <Quiet>まだ潜水艦はありません。</Quiet>}
             {retired.length > 0 && <Typography sx={{ fontSize: 12.5, color: V.faint, mt: 2 }}>退役：{retired.map((s) => (s.hull ? s.hull + ' ' : '') + s.name).join('、')}</Typography>}
           </>)
-        )}
-        {view === 'haul' && (
-          !haul ? <Box sx={{ display: 'grid', placeItems: 'center', py: 7 }}><CircularProgress /></Box> : (
-            <Box sx={{ mt: 2 }}>
-              <HaulPanel items={haul.items || []} showSub busy={busy} onFeedback={feedback}
-                actions={(item) => (haul.actions || {})[item.submarine?.where || 'here'] || []}
-                note="すべての潜水艦が持ち帰ったものです。ここで付けた評価も、それぞれの艦と道場に届きます。" />
-            </Box>
-          )
         )}
       </>)}
     </Box>

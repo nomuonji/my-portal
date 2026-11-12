@@ -50,8 +50,6 @@ import {
   Archive as ArchiveIcon,
   Public as PublicIcon,
   FaceRetouchingNatural as CharacterIcon,
-  WorkOutline as JobsIcon,
-  OndemandVideo as DiscoveryIcon,
   FavoriteBorder as TasteIcon,
   Logout as LogoutIcon,
   ArticleOutlined as ReadLaterIcon,
@@ -90,7 +88,6 @@ import Stock from './components/Stock';
 import GlobalFlashcardManagement from './components/GlobalFlashcardManagement';
 import PublicCms from './components/PublicCms';
 import CharacterLibrary from './components/CharacterLibrary';
-import JobOpportunities from './components/JobOpportunities';
 import ExplorationBases from './components/ExplorationBases';
 import Submarines from './components/Submarines';
 import PageErrorBoundary from './components/PageErrorBoundary';
@@ -176,12 +173,10 @@ function App() {
     if (path.startsWith('/agent-ideas')) return 'Agent Ideas';
     if (path.startsWith('/meta')) return 'プロジェクト提案';
     if (path.startsWith('/taste')) return '好みの記録';
-    if (path.startsWith('/discover')) return 'Discover';
     if (path.startsWith('/ogiri')) return '大喜利ラボ';
     if (path.startsWith('/social-archive')) return 'X投稿アーカイブ';
     if (path.startsWith('/public-cms')) return 'Public CMS';
     if (path.startsWith('/characters')) return 'キャラクターDB';
-    if (path.startsWith('/jobs')) return '仕事DB';
     if (path.startsWith('/exploration')) return 'スキル錬成道場';
     if (path.startsWith('/submarines')) return 'Project Submarine';
     if (path.startsWith('/outputs')) return 'アウトプットDB';
@@ -207,8 +202,7 @@ function App() {
     if (path.startsWith('/thinking')) return '/thinking';
     if (path.startsWith('/agent-ideas')) return '/agent-ideas';
     if (path.startsWith('/meta')) return '/meta';
-    if (path.startsWith('/taste')) return '/discover';
-    if (path.startsWith('/discover')) return '/discover';
+    if (path.startsWith('/submarines')) return '/submarines';
     if (path.startsWith('/ogiri')) return '/ogiri';
     return false;
   }, [location.pathname]);
@@ -379,12 +373,11 @@ function App() {
     {
       label: '自分',
       items: [
-        { to: '/submarines?id=discover', match: ['/discover'], label: 'Discover', hint: 'SS-01 が探した推薦を評価する', icon: <DiscoveryIcon /> },
+        { to: '/submarines', label: 'Project Submarine', hint: '全艦が持ち帰った成果を評価する（Discover・仕事DB・未知探索…）', icon: <SubmarineIcon /> },
         { to: '/boards', match: BOARD_PATHS, label: 'ボード', hint: '企画・ビジネス / 興味・趣味 / ネタ・表現 / メモ', icon: <ViewCompactIcon /> },
         { to: '/taste', label: '好みの記録', hint: '好き嫌い / 根拠 / 訂正履歴', icon: <TasteIcon /> },
         { to: '/thinking', label: '思考テーマ', hint: '長期テーマ / Context Store', icon: <PsychologyAltIcon /> },
         { to: '/social-archive', label: 'X投稿アーカイブ', hint: '過去投稿の検索・分類・見返し', icon: <ArchiveIcon /> },
-        { to: '/submarines?id=job-db', match: ['/jobs'], label: '仕事DB', hint: 'SS-02 が探した案件を評価する', icon: <JobsIcon /> },
       ],
     },
     {
@@ -392,7 +385,6 @@ function App() {
       items: [
         { to: '/dashboard', label: 'Agent HQ', hint: '実行キュー / Agents / 再開地点', icon: <DashboardIcon /> },
         { to: '/meta', label: 'プロジェクト提案', hint: '戦略・次の一手', icon: <MetaIcon /> },
-        { to: '/submarines', label: 'Project Submarine', hint: '探索の艦隊 / 任務 / 装備 / 持ち帰った成果', icon: <SubmarineIcon /> },
         { to: '/exploration', label: 'スキル錬成道場', hint: '鍛えているスキルと版 / ゴール / 見立て / 情報源 / 経過', icon: <ExplorationIcon /> },
         { to: '/agent-ideas', label: 'Agent Ideas', hint: 'Portalと同じ構造でAIが補充', icon: <SmartToyIcon /> },
       ],
@@ -627,7 +619,7 @@ function App() {
                 <Route path="/stockboard" element={<Navigate to="/boards?board=stocks" replace />} />
                 <Route path="/agent-ideas" element={<AgentIdeaSpace />} />
                 <Route path="/meta" element={<MetaStrategy />} />
-                <Route path="/discover" element={<Navigate to="/submarines?id=discover" replace />} />
+                <Route path="/discover" element={<Navigate to="/submarines?sub=discover" replace />} />
                 <Route path="/taste" element={<PersonalTaste />} />
                 <Route path="/anilist/callback" element={<AniListOAuthCallback />} />
                 <Route path="/trakt/callback" element={<TraktOAuthCallback />} />
@@ -635,9 +627,8 @@ function App() {
                 <Route path="/social-archive" element={<SocialArchive />} />
                 <Route path="/public-cms" element={<PublicCms />} />
                 <Route path="/characters" element={<CharacterLibrary />} />
-                <Route path="/curation-sources" element={<Navigate to="/discover" replace />} />
-                <Route path="/jobs" element={<Navigate to="/submarines?id=job-db" replace />} />
-                <Route path="/jobs/ledger" element={<JobOpportunities />} />
+                <Route path="/curation-sources" element={<Navigate to="/submarines" replace />} />
+                <Route path="/jobs/*" element={<Navigate to="/submarines?sub=job-db" replace />} />
                 <Route path="/submarines" element={<Submarines />} />
                 <Route path="/exploration" element={<ExplorationBases />} />
                 <Route path="/outputs" element={<Outputs />} />
@@ -697,7 +688,7 @@ function App() {
           >
             <BottomNavigationAction value="/" label="ホーム" icon={<HomeIcon />} component={Link} to="/" />
             <BottomNavigationAction value="/thinking" label="思考" icon={<PsychologyAltIcon />} component={Link} to="/thinking" />
-            <BottomNavigationAction value="/discover" label="Discover" icon={<DiscoveryIcon />} component={Link} to="/discover" />
+            <BottomNavigationAction value="/submarines" label="成果" icon={<SubmarineIcon />} component={Link} to="/submarines" />
             <BottomNavigationAction value="/boards" label="ボード" icon={<ViewCompactIcon />} component={Link} to="/boards" />
             <BottomNavigationAction value="/dashboard" label="Agent HQ" icon={<DashboardIcon />} component={Link} to="/dashboard" />
           </BottomNavigation>

@@ -31,6 +31,25 @@ const haulCanonical = {
   properties: { where: string('here, or the canonical collection/operator.', 120), note: string('How haul.ref points into it.', 500) },
   additionalProperties: false,
 };
+const feedbackActions = {
+  type: 'array', minItems: 2, maxItems: 6,
+  description: 'Evaluation buttons on haul cards, for a submarine that keeps its haul itself (haulCanonical.where = here). One must confirm.',
+  items: {
+    type: 'object',
+    properties: { key: string('Lowercase key.', 30), label: string('Button label the user reads.', 20), decision: { type: 'string', enum: ['confirmed', 'candidate', 'declined'] }, tone: { type: 'string', enum: ['good', 'neutral', 'bad'] } },
+    required: ['key', 'label', 'decision'], additionalProperties: false,
+  },
+};
+const haulDetails = {
+  type: 'object',
+  description: 'What the user reads on the card when the haul has no canonical record: what it is, why it was brought, the bridge from what the user already likes, a concrete first step, and the main caution.',
+  properties: {
+    summary: string('What it is, concretely.', 1200), why: string('Why it was brought back for this user.', 1000),
+    bridge: string('Which of the user\'s known interests it connects from.', 600), firstStep: string('One concrete first thing to watch/read/try.', 600),
+    caution: string('Why it may not land.', 600), source: string('Where it was found (site/name).', 120),
+  },
+  additionalProperties: false,
+};
 const chartEntry = {
   type: 'object',
   properties: { statement: string('What the waters turned out to be like (about the target, not about how to search).', 1200), basis: string('What was observed.', 1200), limits: string('Where it may not hold.', 800) },
@@ -60,7 +79,7 @@ const tools = [
       properties: {
         id: submarineId, name: string('Submarine name.', 120), hull: string('Hull number, e.g. SS-01.', 20), summary: string('What this submarine is for.', 1500),
         mode: { type: 'string', enum: ['standing', 'one_shot'], description: 'standing: sails on a schedule. one_shot: one request.' },
-        mission, loadout, haulCanonical, projectIds: strings('World Home project IDs.', 20), routineJobIds: strings('Routine jobs that launch it.', 10),
+        mission, loadout, haulCanonical, feedbackActions, projectIds: strings('World Home project IDs.', 20), routineJobIds: strings('Routine jobs that launch it.', 10),
         migrateFromDojo: string('道場 id to copy the goal and achievements from.', 80),
         userAuthorized, authorizationNote, actor,
       },
@@ -69,13 +88,13 @@ const tools = [
   },
   {
     name: 'submarine_update',
-    description: 'Change a submarine between sorties: mission (user-owned: userAuthorized), loadout (reason required; skill/pack versions are still released by their 道場), name/summary/hull/mode/routineJobIds/haulCanonical, status (decommissioned needs userAuthorized), and chartEdits (add an entry, edit one by id, or retire one with a reason).',
+    description: 'Change a submarine between sorties: mission (user-owned: userAuthorized), loadout (reason required; skill/pack versions are still released by their 道場), name/summary/hull/mode/routineJobIds/haulCanonical/feedbackActions, status (decommissioned needs userAuthorized), and chartEdits (add an entry, edit one by id, or retire one with a reason).',
     inputSchema: {
       type: 'object',
       properties: {
         submarineId, mission, loadout, name: string('Name.', 120), hull: string('Hull number.', 20), summary: string('Summary.', 1500),
         mode: { type: 'string', enum: ['standing', 'one_shot'] }, status: { type: 'string', enum: ['active', 'paused', 'decommissioned'] },
-        routineJobIds: strings('Routine jobs that launch it.', 10), haulCanonical,
+        routineJobIds: strings('Routine jobs that launch it.', 10), haulCanonical, feedbackActions,
         chartEdits: {
           type: 'array', maxItems: 20,
           items: { type: 'object', properties: { id: string('F-nnn to edit; omit to add.', 20), statement: string('Statement.', 1200), basis: string('Basis.', 1200), limits: string('Limits.', 800), status: { type: 'string', enum: ['open', 'retired'] }, reason: string('Why it is retired.', 800), legacyRef: string('Where it came from (e.g. a 道場 hypothesis).', 120) }, additionalProperties: false },
@@ -123,6 +142,7 @@ const tools = [
             properties: {
               label: string('The find.', 300), ref: string('ID in the canonical store (e.g. personal_feed:abc, job_opportunities:xyz).', 600), url: string('URL.', 1000),
               evidence: string('How it meets each acceptance check.', 2000), sourceIds: strings('道場 sources it came from (S-nnn).', 10), gear: strings('Gear used, kind:id.', 8),
+              details: haulDetails,
             },
             required: ['label', 'evidence'], additionalProperties: false,
           },
