@@ -50,7 +50,6 @@ import {
   Archive as ArchiveIcon,
   Public as PublicIcon,
   FaceRetouchingNatural as CharacterIcon,
-  BookmarksOutlined as SourcesIcon,
   WorkOutline as JobsIcon,
   OndemandVideo as DiscoveryIcon,
   FavoriteBorder as TasteIcon,
@@ -91,7 +90,6 @@ import Stock from './components/Stock';
 import GlobalFlashcardManagement from './components/GlobalFlashcardManagement';
 import PublicCms from './components/PublicCms';
 import CharacterLibrary from './components/CharacterLibrary';
-import CurationSources from './components/CurationSources';
 import JobOpportunities from './components/JobOpportunities';
 import ExplorationBases from './components/ExplorationBases';
 import PageErrorBoundary from './components/PageErrorBoundary';
@@ -182,7 +180,6 @@ function App() {
     if (path.startsWith('/social-archive')) return 'X投稿アーカイブ';
     if (path.startsWith('/public-cms')) return 'Public CMS';
     if (path.startsWith('/characters')) return 'キャラクターDB';
-    if (path.startsWith('/curation-sources')) return '情報源ライブラリ';
     if (path.startsWith('/jobs')) return '仕事DB';
     if (path.startsWith('/exploration')) return '探索拠点';
     if (path.startsWith('/outputs')) return 'アウトプットDB';
@@ -380,7 +377,7 @@ function App() {
     {
       label: '自分',
       items: [
-        { to: '/discover', label: 'Discover', hint: 'RSSの新着を好みの順に', icon: <DiscoveryIcon /> },
+        { to: '/discover', label: 'Discover', hint: '好みに合いそうなものを探して厳選', icon: <DiscoveryIcon /> },
         { to: '/boards', match: BOARD_PATHS, label: 'ボード', hint: '企画・ビジネス / 興味・趣味 / ネタ・表現 / メモ', icon: <ViewCompactIcon /> },
         { to: '/taste', label: '好みの記録', hint: '好き嫌い / 根拠 / 訂正履歴', icon: <TasteIcon /> },
         { to: '/thinking', label: '思考テーマ', hint: '長期テーマ / Context Store', icon: <PsychologyAltIcon /> },
@@ -395,7 +392,6 @@ function App() {
         { to: '/meta', label: 'プロジェクト提案', hint: '戦略・次の一手', icon: <MetaIcon /> },
         { to: '/exploration', label: '探索拠点', hint: '成果条件 / 探索法の版 / 仮説 / 制約 / 実行記録', icon: <ExplorationIcon /> },
         { to: '/agent-ideas', label: 'Agent Ideas', hint: 'Portalと同じ構造でAIが補充', icon: <SmartToyIcon /> },
-        { to: '/curation-sources', label: '情報源ライブラリ', hint: 'Discoverが読むRSSの管理', icon: <SourcesIcon /> },
       ],
     },
     {
@@ -636,7 +632,7 @@ function App() {
                 <Route path="/social-archive" element={<SocialArchive />} />
                 <Route path="/public-cms" element={<PublicCms />} />
                 <Route path="/characters" element={<CharacterLibrary />} />
-                <Route path="/curation-sources" element={<CurationSources />} />
+                <Route path="/curation-sources" element={<Navigate to="/discover" replace />} />
                 <Route path="/jobs" element={<JobOpportunities />} />
                 <Route path="/exploration" element={<ExplorationBases />} />
                 <Route path="/outputs" element={<Outputs />} />

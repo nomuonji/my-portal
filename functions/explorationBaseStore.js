@@ -666,10 +666,53 @@ function createStore(options) {
     return { run: summary, brief: await get({ id }) };
   }
 
+  // A user's own reaction in an app (e.g. 好き in Discover) is the confirmation itself: liking records a
+  // confirmed achievement keyed by the item; withdrawing the like declines it again. No-op without the base.
+  async function recordUserReaction(input) {
+    const id = requireBaseId(input?.baseId);
+    const ref = text(input.ref, 600, 'ref', true);
+    const liked = input.liked === true;
+    let changed = false;
+    await db().runTransaction(async (tx) => {
+      const base = value(await tx.get(baseRef(id)));
+      if (!base || base.status === 'closed') return;
+      base.counters = base.counters || {};
+      base.progress = base.progress || { achievements: [], confirmedCount: 0 };
+      const achievements = base.progress.achievements || [];
+      const existing = achievements.find((a) => a.ref === ref);
+      const at = now();
+      if (liked) {
+        if (existing && existing.status === 'confirmed') return;
+        if (existing) {
+          existing.status = 'confirmed'; existing.decidedAt = at;
+        } else {
+          base.counters.A = (base.counters.A || 0) + 1;
+          achievements.push({
+            id: seqId('A', base.counters.A), runId: null, foundAt: at, decidedAt: at, methodVersion: base.method?.version || null,
+            label: text(input.label, 300, 'label', true), ref,
+            evidence: text(input.evidence, 2000, 'evidence', false) || 'The user reacted in the app.',
+            hypothesisIds: [], sourceIds: list(input.sourceIds, 10, 20), status: 'confirmed',
+            decisionNote: text(input.note, 800, 'note', false),
+          });
+        }
+      } else {
+        if (!existing || existing.status !== 'confirmed') return;
+        existing.status = 'declined'; existing.decidedAt = at;
+      }
+      const target = liked ? (existing || achievements[achievements.length - 1]) : existing;
+      base.progress.achievements = achievements.slice(-200);
+      base.progress.confirmedCount = base.progress.achievements.filter((a) => a.status === 'confirmed').length;
+      pushEvent(tx, base, { type: 'achievement_' + target.status, itemId: target.id, summary: target.label, actor: input.actor || 'user' });
+      saveBase(tx, base);
+      changed = true;
+    });
+    return { baseId: id, changed };
+  }
+
   // Compact summary used by the Agent Intelligence bundle resolver.
   async function brief(input) { return get({ id: input?.id, view: 'brief' }); }
 
-  return { create, list: listBases, get, brief, setOutcome, setMethodVersion, upsertItems, startRun, finishRun };
+  return { create, list: listBases, get, brief, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction };
 }
 
 const store = createStore();
