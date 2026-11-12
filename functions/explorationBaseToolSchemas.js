@@ -225,4 +225,4 @@ const tools = [
   },
 ];
 
-module.exports = { TOOLS: tools };
+module.exports = { TOOLS: tools, outcomeSchema: outcome };
