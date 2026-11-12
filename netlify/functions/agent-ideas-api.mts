@@ -17,6 +17,7 @@ import * as mediaConnectionsImport from "../../functions/mediaAccountConnections
 import * as routineStoreImport from "../../functions/routineJobStore.js";
 import * as jobOpportunityStoreImport from "../../functions/jobOpportunityStore.js";
 import * as explorationBaseStoreImport from "../../functions/explorationBaseStore.js";
+import * as submarineStoreImport from "../../functions/submarineStore.js";
 
 const store: any = (storeImport as any).default ?? storeImport;
 const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
@@ -33,6 +34,7 @@ const mediaConnections: any = (mediaConnectionsImport as any).default ?? mediaCo
 const routineStore: any = (routineStoreImport as any).default ?? routineStoreImport;
 const jobOpportunityStore: any = (jobOpportunityStoreImport as any).default ?? jobOpportunityStoreImport;
 const explorationBaseStore: any = (explorationBaseStoreImport as any).default ?? explorationBaseStoreImport;
+const submarineStore: any = (submarineStoreImport as any).default ?? submarineStoreImport;
 const documentDb: any = (documentDbImport as any).default ?? documentDbImport;
 const AGENT_DATABASE_ID = "(default)";
 
@@ -180,6 +182,9 @@ export default async (request: Request) => {
         view: "full",
         eventLimit: Math.min(Math.max(Number(url.searchParams.get("eventLimit")) || 40, 1), 300),
       }));
+      if (resource === "submarines") return json(await submarineStore.list({ status: url.searchParams.get("status") || undefined }));
+      if (resource === "submarine") return json(await submarineStore.get({ id: url.searchParams.get("id") || "", view: "full" }));
+      if (resource === "submarine_haul") return json(await submarineStore.haulList({ status: url.searchParams.get("status") || undefined, limit: Number(url.searchParams.get("limit")) || 200 }));
       if (resource === "meta_proposals") return json(await metaStore.list({limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 150, 1), 200), status: url.searchParams.get("status") || undefined}));
       if (resource === "meta_proposal") return json(await metaStore.get({ id: url.searchParams.get("id") || "" }));
       if (resource === "ideas") {
@@ -306,12 +311,27 @@ export default async (request: Request) => {
         }catch(error){
           return json({error:"Discover feedback was saved, but taste ledger sync failed; reload before retrying",detail:String(error?.message||error)},503);
         }
-        // A 好き is an achievement of the Discover exploration base; withdrawing it takes the achievement back.
-        await explorationBaseStore.recordUserReaction({
-          baseId:"personal-discovery", ref:"personal_feed:"+updated.id, label:String(updated.title||updated.id),
-          liked:updated.feedback==="loved", evidence:"本人が Discover で「好き」を付けた（"+String(updated.url||"")+"）", actor:"My Portal Discover",
-        }).catch((error:any)=>console.error("discover base sync failed",String(error?.message||error)));
+        // A 好き confirms the Discover submarine's haul (mirrored to the 道場 that trains its gear); withdrawing it
+        // takes it back. Before the submarine exists, the 道場 records it directly as before.
+        const reaction={ref:"personal_feed:"+updated.id,label:String(updated.title||updated.id),url:String(updated.url||""),
+          liked:updated.feedback==="loved",evidence:"本人が Discover で「好き」を付けた（"+String(updated.url||"")+"）",actor:"My Portal Discover"};
+        const viaSub=await submarineStore.recordReaction({submarineId:"discover",...reaction}).catch((error:any)=>{console.error("discover submarine sync failed",String(error?.message||error));return null;});
+        if(!viaSub||(viaSub.changed===false&&!viaSub.haulId)){
+          await explorationBaseStore.recordUserReaction({baseId:"personal-discovery",...reaction})
+            .catch((error:any)=>console.error("discover base sync failed",String(error?.message||error)));
+        }
         return json(updated);
+      }
+      if (action === "submarine_haul_decide") {
+        // The signed-in user deciding in the UI is the owner's own decision, so it is applied directly.
+        const decision = body.decision === "confirmed" ? "confirmed" : body.decision === "declined" ? "declined" : "";
+        if (!decision) return json({ error: "decision must be confirmed or declined" }, 400);
+        const day = new Date().toISOString().slice(0, 10);
+        const note = String(body.note || "").trim().slice(0, 500);
+        return json(await submarineStore.haulDecide({
+          submarineId: body.submarineId, haulId: body.haulId, decision, note,
+          userAuthorized: true, authorizationNote: "My Portal の潜水艦画面で本人が判断（" + day + "）" + (note ? "：" + note : ""), actor: "My Portal UI",
+        }));
       }
       if (action === "exploration_achievement_decide") {
         // The signed-in user deciding in the UI is the owner's own decision, so it is applied directly.

@@ -178,6 +178,17 @@ function summarizeExplorationBase(p) {
     stalledRuns: Number(p.stalledRuns) || 0,
   };
 }
+function summarizeSubmarine(p) {
+  return {
+    id: p.id, hull: safeText(p.hull, 20) || undefined, name: safeText(p.name, 120), status: safeText(p.status, 40),
+    mission: safeText(p.mission?.statement, 300), projectIds: safeArray(p.projectIds, 20),
+    gear: (Array.isArray(p.loadout) ? p.loadout : []).slice(0, 8).map((g) => safeText(g.kind, 30) + ':' + safeText(g.id, 90) + (g.dojoId ? '@' + safeText(g.dojoId, 80) : '')),
+    routineJobIds: safeArray(p.routineJobIds, 10),
+    targetMin: Number(p.mission?.target?.min) || null,
+    confirmedCount: Number(p.progress?.confirmedCount) || 0,
+    stalledSorties: Number(p.stalledSorties) || 0,
+  };
+}
 async function listCollection(name) {
   const snapshot = await db().collection(name).limit(250).get();
   return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -209,8 +220,9 @@ async function get() {
     listCollection('projects'), listCollection('spaces'), listCollection('methods'),
     chatContext.listSkills(), contexts.list(),
     listCollection('explorationBases'),
+    listCollection('submarines'),
   ]);
-  const names = ['directory', 'projects', 'spaces', 'methods', 'chatSkills', 'contexts', 'explorationBases'];
+  const names = ['directory', 'projects', 'spaces', 'methods', 'chatSkills', 'contexts', 'explorationBases', 'submarines'];
   const warnings = results.flatMap((r, i) => r.status === 'rejected' ? [`${names[i]}: unavailable (${safeText(r.reason?.message || r.reason, 160)})`] : []);
   const settings = results[0].status === 'fulfilled' && results[0].value.exists ? results[0].value.data() : {};
   const edited = Array.isArray(settings.routes) ? settings.routes : [];
@@ -239,8 +251,9 @@ async function get() {
     chatSkills: results[4].status === 'fulfilled' ? results[4].value.items : [],
     methods: items(3).map(summarizeMethod).sort((a,b) => a.title.localeCompare(b.title)),
     explorationBases: items(6).map(summarizeExplorationBase).sort((a,b) => a.title.localeCompare(b.title)),
+    submarines: items(7).filter((s) => s.status !== 'decommissioned').map(summarizeSubmarine).sort((a,b) => String(a.hull || a.name).localeCompare(String(b.hull || b.name))),
     coverage: Object.fromEntries(names.slice(1).map((n, i) => [n, results[i+1].status === 'fulfilled' ? 'loaded' : 'unavailable'])),
-    registrySemantics: {skills:'My Portal DB / chatSkills',methods:'Agent HQ Manager/Worker execution',contexts:'Independent project/domain context records and decision history',spaces:'Human Thinking Workspace only',explorationBases:'スキル錬成道場: each one trains one DB skill or pack (trains.id) and releases the version execution uses (trains.releasedVersion); it holds the goal, hypotheses, sources, constraints and runs. Read with exploration_base_get before running that skill'}, 
+    registrySemantics: {skills:'My Portal DB / chatSkills',methods:'Agent HQ Manager/Worker execution',contexts:'Independent project/domain context records and decision history',spaces:'Human Thinking Workspace only',explorationBases:'スキル錬成道場: each one trains one DB skill or pack (trains.id) and releases the version execution uses (trains.releasedVersion); it holds the goal, hypotheses, sources, constraints and runs. Read with exploration_base_get before running that skill',submarines:'Project Submarine: each submarine is an exploration job with a user-owned mission, gear (skills/packs at the version their 道場 released) and the haul it brings back. Read with submarine_get, sail with submarine_sortie_start / submarine_sortie_finish'}, 
     warnings,
     help: '最初にWorld Homeで担当とProject/Domain別のContextsを確認する。ContextsはSpaceとは別DB。MethodはManager/Worker専用、Skillはチャット用。',
   };
@@ -251,7 +264,8 @@ const LAYERS = [
   { layer: 'World Home', question: 'どこの仕事で、正本はどこか', holds: 'routes・projects・Agent Guide', tools: 'world_map_get' },
   { layer: 'Operator / Repo', question: '数値・実データは何か', holds: '測定値・在庫・公開状態などの正本', tools: '各Operator' },
   { layer: 'Context', question: 'このプロジェクトで何が決まっていて、今どこか', holds: '目的・決定・訂正・現在地・次の行動', tools: 'context_list / context_get' },
-  { layer: 'スキル錬成道場 (Exploration Base)', question: 'このスキルは何を目指して鍛えていて、実行ではどの版を使うか', holds: '鍛えるスキル/Packと実行で使う版、ゴール・見立て・情報源・制約・run記録。そのスキルを実行するジョブは最初に読む', tools: 'exploration_base_list / exploration_base_get' },
+  { layer: 'Project Submarine（潜水艦）', question: '何を探していて、何が見つかったか', holds: '任務（何を探すか・合格条件）、装備（スキル/Pack。版は道場が決める）、出航の記録、持ち帰った成果、海図（対象について分かったこと）。探索系の定期ジョブは潜水艦を出航させる', tools: 'submarine_list / submarine_get / submarine_sortie_start / submarine_sortie_finish' },
+  { layer: 'スキル錬成道場 (Exploration Base)', question: 'このスキルは何を目指して鍛えていて、実行ではどの版を使うか', holds: '鍛えるスキル/Packと実行で使う版、探し方の見立て・情報源・制約・練習記録（潜水艦の出航ごとに1回）。版を上げると、それを積む潜水艦すべてが次の出航から使う', tools: 'exploration_base_list / exploration_base_get' },
   { layer: 'Chat Skill', question: 'どうやるか', holds: '手順', tools: 'chat_skill_list / chat_skill_get' },
   { layer: 'Agent Profile / Intelligence Pack', question: 'どう判断するか', holds: '証拠の読み方・領域の認識・既知の失敗の型。手順と閾値は置かない', tools: 'agent_profile_get / intelligence_pack_get / cognitive_bundle_resolve' },
   { layer: 'HQ Method', question: '定期・委譲の仕事の運用契約は何か', holds: 'Manager/Worker専用。チャットの手順には使わない', tools: 'method_get_context' },
@@ -276,6 +290,7 @@ function compact(full) {
       repositories: (p.repositories || []).map(r => r.fullName).filter(Boolean).join(', '),
     })),
     explorationBases: full.explorationBases,
+    submarines: full.submarines,
     contexts: full.contexts.filter(c => c.status !== 'archived').map(c => ({
       id: c.id, title: c.title, summary: cut(c.summary, 140), projectIds: (c.projectIds || []).join(', '), domains: (c.domains || []).slice(0, 4).join(', '),
       updatedAt: String(c.updatedAt || '').slice(0, 10),

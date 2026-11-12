@@ -34,6 +34,8 @@ import * as agentIntelligenceRegistryImport from "../../functions/agentIntellige
 import * as agentIntelligenceToolsImport from "../../functions/agentIntelligenceToolSchemas.js";
 import * as explorationBaseStoreImport from "../../functions/explorationBaseStore.js";
 import * as explorationBaseToolsImport from "../../functions/explorationBaseToolSchemas.js";
+import * as submarineStoreImport from "../../functions/submarineStore.js";
+import * as submarineToolsImport from "../../functions/submarineToolSchemas.js";
 import * as contextStoreImport from "../../functions/contextStore.js";
 import * as worldMapImport from "../../functions/worldMap.js";
 import * as workspaceAppImport from "../../functions/mcpWorkspaceApp.js";
@@ -79,6 +81,8 @@ const agentIntelligenceRegistry: any = (agentIntelligenceRegistryImport as any).
 const agentIntelligenceTools: any = (agentIntelligenceToolsImport as any).default ?? agentIntelligenceToolsImport;
 const explorationBaseStore: any = (explorationBaseStoreImport as any).default ?? explorationBaseStoreImport;
 const explorationBaseTools: any = (explorationBaseToolsImport as any).default ?? explorationBaseToolsImport;
+const submarineStore: any = (submarineStoreImport as any).default ?? submarineStoreImport;
+const submarineTools: any = (submarineToolsImport as any).default ?? submarineToolsImport;
 const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
 const worldMap: any = (worldMapImport as any).default ?? worldMapImport;
 const workspaceApp: any = (workspaceAppImport as any).default ?? workspaceAppImport;
@@ -90,7 +94,7 @@ const worldMapTools: any = (worldMapToolsImport as any).default ?? worldMapTools
 const contextToolsModule: any = (contextToolsImport as any).default ?? contextToolsImport;
 const linearBridge: any = (linearBridgeImport as any).default ?? linearBridgeImport;
 const migration: any = (migrationImport as any).default ?? migrationImport;
-const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...worldMapTools.TOOLS, ...chatContextTools.TOOLS, ...contextRegistryTools.TOOLS, ...portalToolsModule.TOOLS, ...jobOpportunityToolsModule.TOOLS, ...metaTools.TOOLS, ...personalFeedTools.TOOLS, ...discoverReaderTools.TOOLS, ...personalTasteTools.TOOLS, ...routineTools.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...outputToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS, ...agentIntelligenceTools.TOOLS, ...explorationBaseTools.TOOLS, ...workspaceApp.TOOLS];
+const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...worldMapTools.TOOLS, ...chatContextTools.TOOLS, ...contextRegistryTools.TOOLS, ...portalToolsModule.TOOLS, ...jobOpportunityToolsModule.TOOLS, ...metaTools.TOOLS, ...personalFeedTools.TOOLS, ...discoverReaderTools.TOOLS, ...personalTasteTools.TOOLS, ...routineTools.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...outputToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS, ...agentIntelligenceTools.TOOLS, ...explorationBaseTools.TOOLS, ...submarineTools.TOOLS, ...workspaceApp.TOOLS];
 
 const SERVER_NAME = "my-portal";
 const SERVER_VERSION = "1.25.0-netlify";
@@ -494,6 +498,14 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "exploration_item_upsert") return structured(await explorationBaseStore.upsertItems(args));
   if (name === "exploration_run_start") return structured(await explorationBaseStore.startRun(args));
   if (name === "exploration_run_finish") return structured(await explorationBaseStore.finishRun(args));
+  if (name === "submarine_list") return structured(await submarineStore.list(args));
+  if (name === "submarine_get") return structured(await submarineStore.get(args));
+  if (name === "submarine_commission") return structured(await submarineStore.commission(args));
+  if (name === "submarine_update") return structured(await submarineStore.update(args));
+  if (name === "submarine_sortie_start") return structured(await submarineStore.sortieStart(args));
+  if (name === "submarine_sortie_finish") return structured(await submarineStore.sortieFinish(args));
+  if (name === "submarine_haul_decide") return structured(await submarineStore.haulDecide(args));
+  if (name === "submarine_haul_list") return structured(await submarineStore.haulList(args));
 
   await ensureAgentData();
   if (name === "world_map_get") return structured(args?.detail === "full" ? await worldMap.get() : await worldMap.getCompact());

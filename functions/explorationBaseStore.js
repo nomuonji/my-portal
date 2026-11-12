@@ -37,6 +37,7 @@ const PROTOCOL = [
   'IDs are never reused. Rejected hypotheses stay in the ledger so the same inference is not repeated.',
   'When the method is a chat_skill or intelligence_pack target, use exactly the released version (method.target.releasedVersion, body included here), not the latest one. A newer version made outside this base is unverified until it is released here.',
   'Sources (where candidates come from) are a ledger too: record which source a candidate came from (evidence on the source, sourceIds on the achievement) and reject sources that yield nothing, so the next run starts from proven ones.',
+  'When a submarine (Project Submarine) carries this skill/pack, its sortie opens and closes the run here. What it finds is the submarine\'s haul; a haul the user confirms comes back here as an achievement.',
 ];
 
 function database() { return getDocumentDb(DEFAULT_DATABASE_ID); }
@@ -699,7 +700,10 @@ function createStore(options) {
       base.progress.achievements = [...(base.progress.achievements || []), ...achievements].slice(-200);
       base.progress.confirmedCount = base.progress.achievements.filter((a) => a.status === 'confirmed').length;
       const itemChanges = run.movedItemIds || [];
-      const moved = itemChanges.length > 0 || achievements.length > 0;
+      // Finds a submarine brought back with this run's gear count as movement too; they are decided on the
+      // submarine and mirrored here as achievements once the user confirms them.
+      const yieldRefs = list(input.yieldRefs, 30, 600);
+      const moved = itemChanges.length > 0 || achievements.length > 0 || yieldRefs.length > 0;
       base.stalledRuns = moved ? 0 : (base.stalledRuns || 0) + 1;
       base.runCount = (base.runCount || 0) + 1;
       base.openRunId = null;
@@ -707,7 +711,7 @@ function createStore(options) {
         ...run, status: 'finished', finishedAt: now(),
         summary: text(input.summary, 2500, 'summary', true),
         verdicts, achievementIds: achievements.map((a) => a.id),
-        movedItemIds: [...new Set(itemChanges)], moved,
+        movedItemIds: [...new Set(itemChanges)], yieldRefs, moved,
         notMovedReason: moved ? '' : text(input.notMovedReason, 1000, 'notMovedReason (this run changed no fixed point; say why and what that implies)', true),
         costNote: text(input.costNote, 400, 'costNote', false),
         nextStep: text(input.nextStep, 800, 'nextStep', false),
@@ -716,7 +720,7 @@ function createStore(options) {
       summary = {
         id: runId, finishedAt: finished.finishedAt, methodVersion: run.methodVersion, objective: run.objective,
         summary: finished.summary.slice(0, 400), moved, movedItemIds: finished.movedItemIds,
-        verdicts: verdicts.map((v) => v.hypothesisId + ':' + v.result), achievementIds: finished.achievementIds,
+        verdicts: verdicts.map((v) => v.hypothesisId + ':' + v.result), achievementIds: finished.achievementIds, yieldCount: yieldRefs.length,
         nextStep: finished.nextStep,
       };
       base.lastRuns = [summary, ...(base.lastRuns || [])].slice(0, 5);
@@ -787,4 +791,4 @@ function createStore(options) {
 }
 
 const store = createStore();
-module.exports = { ...store, createStore, defaultResolveTarget, COLLECTIONS, STAGES, PROTOCOL };
+module.exports = { ...store, createStore, defaultResolveTarget, cleanOutcome, COLLECTIONS, STAGES, PROTOCOL };
