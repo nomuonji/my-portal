@@ -268,3 +268,16 @@ test('a base trains a DB skill or pack and releases one pinned version', async (
   assert.equal(brief.method.body, 'Version two body, edited outside the base.');
   assert.ok(!brief.warnings.some((w) => /newer than/.test(w)));
 });
+
+test('a skill pointer from before pinning warns instead of failing', async () => {
+  const db = new MemoryDb();
+  const store = createStore({ getDb: () => db, resolveTarget: async () => { throw new Error('should not resolve'); } });
+  await store.create({ id: 'test-base', title: 'T', summary: 'S', outcome, method, ...auth });
+  // Simulate a base stored by the older code: chat_skill pointer without versionNumber.
+  const key = [...db.records.keys()].find((k) => k.startsWith('explorationBases/'));
+  const stored = db.records.get(key);
+  stored.method.bodyRef = { kind: 'chat_skill', location: 'some-skill', path: '', commit: '' };
+  const brief = await store.get({ id: 'test-base' });
+  assert.ok(brief.warnings.some((w) => /without a released version/.test(w)));
+  assert.equal(brief.method.target, undefined);
+});
