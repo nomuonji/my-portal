@@ -23,7 +23,7 @@ jest.mock('../firebase', () => ({
 }));
 
 const LIST = { items: [
-  { id: 'job-base', title: '仕事DB探索', status: 'active', outcome: { statement: '応募する案件を見つける', target: { min: 1, max: 3 } }, confirmedCount: 0, methodVersion: 'jobdb-r4', runCount: 1, stalledRuns: 0, openRunId: null, awaitingCount: 0, lastRun: { finishedAt: '2026-11-12T02:00:00Z', moved: true } },
+  { id: 'job-base', title: '仕事DB探索', status: 'active', target: { kind: 'chat_skill', id: 'discover-curation', versionNumber: 1 }, outcome: { statement: '応募する案件を見つける', target: { min: 1, max: 3 } }, confirmedCount: 0, methodVersion: 'jobdb-r4', runCount: 1, stalledRuns: 0, openRunId: null, awaitingCount: 0, lastRun: { finishedAt: '2026-11-12T02:00:00Z', moved: true } },
   { id: 'kw-base', title: 'お宝KW探索', status: 'active', outcome: { statement: '書く語を2〜3本', target: { min: 2, max: 3 } }, confirmedCount: 0, methodVersion: 'tsk-v25', runCount: 0, stalledRuns: 3, openRunId: null },
 ] };
 
@@ -74,6 +74,8 @@ test('lists bases with a one-line status and progress', async () => {
   renderAt('');
   expect(await screen.findByText('仕事DB探索')).toBeInTheDocument();
   expect(screen.getByText('お宝KW探索')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'スキル錬成道場' })).toBeInTheDocument();
+  expect(screen.getByText(/discover-curation/)).toHaveTextContent('v1');
   expect(screen.getByText('3 回続けて進展がありません。進め方の見直しが必要です')).toBeInTheDocument();
   expect(screen.getByText(/最後の実行は/)).toBeInTheDocument();
 });
@@ -97,7 +99,7 @@ test('detail keeps status and decisions on top and puts each part of the base in
   expect(screen.getByText('棄却された仮説')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('tab', { name: /制約/ }));
   expect(screen.getByText('応募はしない')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('tab', { name: '探索法' }));
+  fireEvent.click(screen.getByRole('tab', { name: 'スキル本文' }));
   expect(screen.getByRole('link', { name: /docs\/treasure-method\.md/ })).toHaveAttribute('href', 'https://github.com/nomuonji/keywords/blob/20a5307/docs/treasure-method.md');
 
   fireEvent.click(screen.getByRole('button', { name: '成果にする' }));
@@ -111,7 +113,7 @@ test('an inline method body is rendered as text on the page, with raw HTML escap
     body: '## 測るもの\n\n| 言葉 | 線 |\n|---|---|\n| 検索されている | 月10以上 |\n\n<img src=x onerror=alert(1)>' } };
   global.fetch = jest.fn((url) => Promise.resolve({ ok: true, json: () => Promise.resolve(String(url).includes('exploration_bases') ? LIST : inline) }));
   renderAt('id=job-base');
-  fireEvent.click(await screen.findByRole('tab', { name: '探索法' }));
+  fireEvent.click(await screen.findByRole('tab', { name: 'スキル本文' }));
   expect(screen.getByRole('heading', { name: '測るもの' })).toBeInTheDocument();
   expect(screen.getByRole('cell', { name: '月10以上' })).toBeInTheDocument();
   expect(document.querySelector('.method-body img')).toBeNull();
@@ -142,8 +144,9 @@ test('a skill target shows which version execution uses and flags a newer unrele
     body: '## 手順\n\n1. 読む' } };
   global.fetch = jest.fn((url) => Promise.resolve({ ok: true, json: () => Promise.resolve(String(url).includes('exploration_bases') ? LIST : skill) }));
   renderAt('id=job-base');
-  fireEvent.click(await screen.findByRole('tab', { name: '探索法' }));
-  expect(screen.getByText('Discover 選書')).toBeInTheDocument();
-  expect(screen.getByText(/v3 が拠点の外で作られています/)).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole('tab', { name: 'スキル本文' }));
+  expect(screen.getAllByText(/Discover 選書/).length).toBeGreaterThan(0);
+  expect(screen.getByText(/v3 がこの道場の外で作られています/)).toBeInTheDocument();
+  expect(screen.getByText(/道場を通っていない v3 があります/)).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: '手順' })).toBeInTheDocument();
 });

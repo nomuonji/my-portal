@@ -181,7 +181,7 @@ function App() {
     if (path.startsWith('/public-cms')) return 'Public CMS';
     if (path.startsWith('/characters')) return 'キャラクターDB';
     if (path.startsWith('/jobs')) return '仕事DB';
-    if (path.startsWith('/exploration')) return '探索拠点';
+    if (path.startsWith('/exploration')) return 'スキル錬成道場';
     if (path.startsWith('/outputs')) return 'アウトプットDB';
     if (path.startsWith('/ideaboard') || path.startsWith('/idea')) return 'アイデア';
     if (path.startsWith('/hobbyboard') || path.startsWith('/hobby')) return '趣味';
@@ -390,7 +390,7 @@ function App() {
       items: [
         { to: '/dashboard', label: 'Agent HQ', hint: '実行キュー / Agents / 再開地点', icon: <DashboardIcon /> },
         { to: '/meta', label: 'プロジェクト提案', hint: '戦略・次の一手', icon: <MetaIcon /> },
-        { to: '/exploration', label: '探索拠点', hint: '成果条件 / 探索法の版 / 仮説 / 制約 / 実行記録', icon: <ExplorationIcon /> },
+        { to: '/exploration', label: 'スキル錬成道場', hint: '鍛えているスキルと版 / ゴール / 見立て / 情報源 / 経過', icon: <ExplorationIcon /> },
         { to: '/agent-ideas', label: 'Agent Ideas', hint: 'Portalと同じ構造でAIが補充', icon: <SmartToyIcon /> },
       ],
     },
