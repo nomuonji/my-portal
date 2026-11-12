@@ -76,5 +76,10 @@
   },
   "devDependencies": {
     "cross-env": "^7.0.3"
+  },
+  "jest": {
+    "transformIgnorePatterns": [
+      "node_modules/(?!(marked)/)"
+    ]
   }
 }

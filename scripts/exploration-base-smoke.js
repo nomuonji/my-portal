@@ -69,6 +69,22 @@ test('the outcome contract belongs to the user', async () => {
   assert.equal(brief.proposals.length, 0);
 });
 
+test('a method version can be justified by an explicit user decision instead of runs', async () => {
+  const db = new MemoryDb();
+  const store = createStore({ getDb: () => db });
+  await store.create({ id: 'test-base', title: 'T', summary: 'S', outcome, method, ...auth });
+  const next = { title: 'M', version: 'm-v2', summary: 'Dropped a criterion', bodyRef: { kind: 'inline' }, body: '# Method\n\n1. Measure' };
+  await assert.rejects(store.setMethodVersion({ baseId: 'test-base', method: next, noBenchmarkReason: 'no benchmark yet' }), /motivatingRunIds is required/);
+  // Older client schemas deliver the flag as a string.
+  const updated = await store.setMethodVersion({ baseId: 'test-base', method: next, noBenchmarkReason: 'text moved, nothing to benchmark', userAuthorized: 'true', authorizationNote: 'chat 2026-11-12: drop C6' });
+  assert.equal(updated.method.version, 'm-v2');
+  assert.equal(updated.method.bodyRef.kind, 'inline');
+  assert.ok(updated.method.body.startsWith('# Method'));
+  const full = await store.get({ id: 'test-base', view: 'full' });
+  assert.equal(full.full.methodHistory.at(-1).authorizationNote, 'chat 2026-11-12: drop C6');
+  await assert.rejects(store.setMethodVersion({ baseId: 'test-base', method: { ...next, version: 'm-v3' }, noBenchmarkReason: 'x'.repeat(10), userAuthorized: true, authorizationNote: '' }), /owned by the user/);
+});
+
 test('title, summary and domains are user-owned and can be revised without touching the outcome', async () => {
   const db = new MemoryDb();
   const store = createStore({ getDb: () => db });

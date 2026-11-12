@@ -151,7 +151,7 @@ const tools = [
   },
   {
     name: 'exploration_method_version_set',
-    description: 'Register a new version of the exploration method (pointer or inline body). Refused while a run is open. After the first version it requires motivatingRunIds (finished runs that justify it) and benchmark.passed=true, or noBenchmarkReason. Version labels are never reused. One insight from one run is a ledger entry, not a method version.',
+    description: 'Register a new version of the exploration method (pointer or inline body). Refused while a run is open. After the first version it requires motivatingRunIds (finished runs that justify it) — or userAuthorized with authorizationNote when the user decided the change — and benchmark.passed=true, or noBenchmarkReason. Prefer an inline body (bodyRef.kind=inline): the base then holds the method text itself. Version labels are never reused. One insight from one run is a ledger entry, not a method version.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -159,7 +159,7 @@ const tools = [
         motivatingRunIds: strings('Finished run IDs whose results justify this version.', 20),
         benchmark: { type: 'object', properties: { passed: { type: 'boolean' }, ref: string('Test/command/record.', 500), cases: string('Known cases checked.', 1000) }, additionalProperties: false },
         noBenchmarkReason: string('Why there is no benchmark yet.', 600),
-        actor,
+        userAuthorized, authorizationNote, actor,
       },
       required: ['baseId', 'method'], additionalProperties: false,
     },
