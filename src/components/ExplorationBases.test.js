@@ -116,3 +116,21 @@ test('an inline method body is rendered as text on the page, with raw HTML escap
   expect(screen.getByRole('cell', { name: '月10以上' })).toBeInTheDocument();
   expect(document.querySelector('.method-body img')).toBeNull();
 });
+
+test('sources have their own tab, ordered by how well they are verified', async () => {
+  const withSources = { ...DETAIL, full: { ...DETAIL.full, sources: [
+    { id: 'S-001', kind: 'source', stage: 'yielded_candidate', status: 'open', title: 'はてブ おもしろ', locator: 'https://b.hatena.ne.jp/hotentry/fun', coverage: '軽い国内ネタ',
+      evidence: [{ type: 'observation', ref: '好きが3件' }, { type: 'candidate', ref: '候補1件' }], counterexamples: [] },
+    { id: 'S-002', kind: 'source', stage: 'conjecture', status: 'open', title: 'デイリーポータルZ', locator: 'https://dailyportalz.jp', coverage: '未試行', evidence: [], counterexamples: [] },
+    { id: 'S-003', kind: 'source', stage: 'observed', status: 'rejected', title: 'Know Your Meme', locator: 'https://knowyourmeme.com', coverage: 'ミーム史', statusReason: '選んだ17件が全部スキップ', evidence: [], counterexamples: ['全スキップ'] },
+  ] } };
+  global.fetch = jest.fn((url) => Promise.resolve({ ok: true, json: () => Promise.resolve(String(url).includes('exploration_bases') ? LIST : withSources) }));
+  renderAt('id=job-base');
+  fireEvent.click(await screen.findByRole('tab', { name: '情報源 2' }));
+  expect(screen.getAllByText('候補を生んだ').length).toBe(2); // group heading and item badge
+  expect(screen.getByText('候補 1')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'https://b.hatena.ne.jp/hotentry/fun' })).toBeInTheDocument();
+  expect(screen.getAllByText('未検証').length).toBe(2);
+  expect(screen.getByText('選んだ17件が全部スキップ')).toBeInTheDocument();
+  expect(screen.getByText('外した')).toBeInTheDocument();
+});

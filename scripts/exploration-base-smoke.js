@@ -198,3 +198,31 @@ test('three stalled runs raise a warning', async () => {
   const brief = await store.get({ id: 'test-base' });
   assert.ok(brief.warnings.some((warning) => /consecutive runs moved no fixed point/.test(warning)));
 });
+
+test('sources are a verified ledger like hypotheses', async () => {
+  const store = await setup();
+  await assert.rejects(store.upsertItems({ baseId: 'test-base', kind: 'source', items: [{ title: 'No locator', coverage: 'x' }] }), /locator/);
+  const created = await store.upsertItems({ baseId: 'test-base', kind: 'source', items: [
+    { title: 'Hatena hot', locator: 'https://b.hatena.ne.jp/hotentry/fun', coverage: 'Light Japanese web finds the user liked in the RSS reader.' },
+    { title: 'Know Your Meme', locator: 'https://knowyourmeme.com', coverage: 'Meme histories.' },
+  ] });
+  assert.deepEqual(created.changed.map((c) => c.id), ['S-001', 'S-002']);
+  await assert.rejects(store.upsertItems({ baseId: 'test-base', kind: 'source', items: [{ id: 'S-001', stage: 'observed' }] }), /evidence/);
+  await store.upsertItems({ baseId: 'test-base', kind: 'source', items: [{ id: 'S-001', stage: 'observed', addEvidence: [{ ref: 'User liked 3 items from it' }] }] });
+  await assert.rejects(store.upsertItems({ baseId: 'test-base', kind: 'source', items: [{ id: 'S-002', status: 'rejected' }] }), /reason/);
+  await store.upsertItems({ baseId: 'test-base', kind: 'source', items: [{ id: 'S-002', status: 'rejected', reason: '17 picks, all skipped', addCounterexamples: ['all skipped'] }] });
+  // The hypothesis counter is separate from the source counter.
+  const h = await store.upsertItems({ baseId: 'test-base', kind: 'hypothesis', items: [hypothesis] });
+  assert.equal(h.changed[0].id, 'H-001');
+  const brief = await store.get({ id: 'test-base' });
+  assert.equal(brief.sources.observed[0].id, 'S-001');
+  assert.equal(brief.sources.observed[0].locator, 'https://b.hatena.ne.jp/hotentry/fun');
+  assert.equal(brief.sources.rejected[0].reason, '17 picks, all skipped');
+  assert.equal(brief.hypotheses.conjectures[0].id, 'H-001');
+  const full = await store.get({ id: 'test-base', view: 'full' });
+  assert.equal(full.full.sources.length, 2);
+  // Achievements record which source they came from.
+  const { runId } = await store.startRun({ baseId: 'test-base', objective: 'try', unknownTerritoryProbe: 'new sources' });
+  const done = await store.finishRun({ baseId: 'test-base', runId, summary: 'found one', achievements: [{ label: 'item', evidence: 'passed', sourceIds: ['S-001'] }] });
+  assert.deepEqual(done.brief.outcome.awaitingConfirmation[0].sourceIds, ['S-001']);
+});

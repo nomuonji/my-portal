@@ -18,6 +18,9 @@ const ID_PATTERN = /^[a-z][a-z0-9-]{1,79}$/;
 const STAGES = ['conjecture', 'observed', 'reproduced', 'yielded_candidate', 'yielded_outcome'];
 const WIN_STAGES = new Set(['yielded_candidate', 'yielded_outcome']);
 const HYPOTHESIS_STATUS = ['open', 'rejected', 'retired'];
+// Sources (where material comes from) climb the same ladder as hypotheses: tried and seen relevant material,
+// useful in two runs, produced a candidate, produced a confirmed achievement. Rejected = tried and useless.
+const LEDGER_KINDS = { hypothesis: 'H', source: 'S' };
 const CONSTRAINT_OWNERS = ['user', 'environment', 'agent'];
 const CONSTRAINT_STATUS = ['active', 'relaxed', 'retired'];
 const EVIDENCE_TYPES = ['observation', 'candidate', 'outcome'];
@@ -32,6 +35,7 @@ const PROTOCOL = [
   'Never change the method version during an open run. Bump it only between runs, with the motivating runs and a benchmark result.',
   'The outcome contract and user-owned constraints belong to the user: propose changes, never apply them without authorization.',
   'IDs are never reused. Rejected hypotheses stay in the ledger so the same inference is not repeated.',
+  'Sources (where candidates come from) are a ledger too: record which source a candidate came from (evidence on the source, sourceIds on the achievement) and reject sources that yield nothing, so the next run starts from proven ones.',
 ];
 
 function database() { return getDocumentDb(DEFAULT_DATABASE_ID); }
@@ -137,6 +141,30 @@ function hypothesisBrief(item) {
     id: item.id, title: item.title, stage: item.stage, statement: item.statement,
     limits: item.limits || '', evidenceCount: (item.evidence || []).length,
     counterexampleCount: (item.counterexamples || []).length, legacyIds: item.legacyIds || [],
+  };
+}
+function sourceBrief(item) {
+  const evidence = item.evidence || [];
+  return {
+    id: item.id, title: item.title, stage: item.stage, locator: item.locator || '', coverage: item.coverage || '',
+    limits: item.limits || '', evidenceCount: evidence.length,
+    candidateCount: evidence.filter((entry) => entry.type === 'candidate' || entry.type === 'outcome').length,
+    missCount: (item.counterexamples || []).length, legacyIds: item.legacyIds || [],
+  };
+}
+// Ledger view shared by hypotheses and sources: open items by stage, then rejected and retired.
+function ledgerView(items, brief) {
+  const open = items.filter((item) => item.status === 'open');
+  return {
+    winPatterns: open.filter((item) => WIN_STAGES.has(item.stage)).map(brief),
+    reproduced: open.filter((item) => item.stage === 'reproduced').map(brief),
+    observed: open.filter((item) => item.stage === 'observed').map(brief),
+    conjectures: open.filter((item) => item.stage === 'conjecture').map(brief),
+    rejected: items.filter((item) => item.status === 'rejected')
+      .map((item) => ({ id: item.id, title: item.title, reason: item.statusReason || '', legacyIds: item.legacyIds || [] })),
+    // Retired: real but not leading to the outcome. Listed so it is not rediscovered.
+    retired: items.filter((item) => item.status === 'retired')
+      .map((item) => ({ id: item.id, title: item.title, stage: item.stage, reason: item.statusReason || '', legacyIds: item.legacyIds || [] })),
   };
 }
 
@@ -246,7 +274,7 @@ function createStore(options) {
     const items = await loadItems(id);
     const hypotheses = items.filter((item) => item.kind === 'hypothesis');
     const constraints = items.filter((item) => item.kind === 'constraint');
-    const open = hypotheses.filter((item) => item.status === 'open');
+    const sources = items.filter((item) => item.kind === 'source');
     const target = base.outcome?.target || {};
     const confirmed = base.progress?.confirmedCount || 0;
     const warnings = [];
@@ -280,17 +308,8 @@ function createStore(options) {
       constraints: Object.fromEntries(CONSTRAINT_OWNERS.map((owner) => [owner, constraints
         .filter((item) => item.owner === owner && item.status === 'active')
         .map((item) => ({ id: item.id, statement: item.statement, check: item.check || '', legacyIds: item.legacyIds || [] }))])),
-      hypotheses: {
-        winPatterns: open.filter((item) => WIN_STAGES.has(item.stage)).map(hypothesisBrief),
-        reproduced: open.filter((item) => item.stage === 'reproduced').map(hypothesisBrief),
-        observed: open.filter((item) => item.stage === 'observed').map(hypothesisBrief),
-        conjectures: open.filter((item) => item.stage === 'conjecture').map(hypothesisBrief),
-        rejected: hypotheses.filter((item) => item.status === 'rejected')
-          .map((item) => ({ id: item.id, title: item.title, reason: item.statusReason || '', legacyIds: item.legacyIds || [] })),
-        // Retired: the phenomenon may be real but it does not lead to the outcome. Listed so it is not rediscovered.
-        retired: hypotheses.filter((item) => item.status === 'retired')
-          .map((item) => ({ id: item.id, title: item.title, stage: item.stage, reason: item.statusReason || '', legacyIds: item.legacyIds || [] })),
-      },
+      hypotheses: ledgerView(hypotheses, hypothesisBrief),
+      sources: ledgerView(sources, sourceBrief),
       position: {
         runCount: base.runCount || 0, stalledRuns: base.stalledRuns || 0,
         openRunId: base.openRunId || null, lastRuns: base.lastRuns || [],
@@ -306,7 +325,7 @@ function createStore(options) {
         db().collection(COLLECTIONS.events).where('baseId', '==', id).limit(2000).get(),
       ]);
       result.full = {
-        hypotheses, constraints,
+        hypotheses, constraints, sources,
         relaxedOrRetiredConstraints: constraints.filter((item) => item.status !== 'active').map((item) => item.id),
         methodHistory: base.methodHistory || [],
         proposals: base.proposals || [],
@@ -429,37 +448,43 @@ function createStore(options) {
     return get({ id });
   }
 
-  function applyHypothesis(prior, raw, runId, base) {
+  function applyLedgerItem(kind, prior, raw, runId, base) {
     const creating = !prior;
     const item = prior ? { ...prior } : {
-      kind: 'hypothesis', stage: 'conjecture', status: 'open', evidence: [], counterexamples: [], legacyIds: [], createdAt: now(),
+      kind, stage: 'conjecture', status: 'open', evidence: [], counterexamples: [], legacyIds: [], createdAt: now(),
     };
-    if (creating || raw.title !== undefined) item.title = text(raw.title, 160, 'hypothesis.title', true);
-    if (creating || raw.statement !== undefined) item.statement = text(raw.statement, 1500, 'hypothesis.statement', true);
-    if (creating || raw.mechanism !== undefined) item.mechanism = text(raw.mechanism, 2000, 'hypothesis.mechanism (why it would hold)', true);
-    if (raw.limits !== undefined) item.limits = text(raw.limits, 1500, 'hypothesis.limits', false);
+    if (creating || raw.title !== undefined) item.title = text(raw.title, 160, kind + '.title', true);
+    if (kind === 'hypothesis') {
+      if (creating || raw.statement !== undefined) item.statement = text(raw.statement, 1500, 'hypothesis.statement', true);
+      if (creating || raw.mechanism !== undefined) item.mechanism = text(raw.mechanism, 2000, 'hypothesis.mechanism (why it would hold)', true);
+    } else {
+      if (creating || raw.locator !== undefined) item.locator = text(raw.locator, 600, 'source.locator (URL, query or tool call that reaches it)', true);
+      if (creating || raw.coverage !== undefined) item.coverage = text(raw.coverage, 1500, 'source.coverage (what it yields and why it is worth trying)', true);
+      if (raw.statement !== undefined) item.statement = text(raw.statement, 1500, 'source.statement', false);
+    }
+    if (raw.limits !== undefined) item.limits = text(raw.limits, 1500, kind + '.limits', false);
     if (raw.legacyIds !== undefined) item.legacyIds = list(raw.legacyIds, 12, 60);
     const added = cleanEvidence(raw.addEvidence, runId);
     item.evidence = [...(item.evidence || []), ...added].slice(-60);
     item.counterexamples = [...new Set([...(item.counterexamples || []), ...list(raw.addCounterexamples, 20, 800)])].slice(-40);
     const reason = text(raw.reason, 1500, 'reason', false);
     const previousStage = item.stage;
-    if (raw.stage !== undefined) item.stage = oneOf(raw.stage, STAGES, 'hypothesis.stage');
+    if (raw.stage !== undefined) item.stage = oneOf(raw.stage, STAGES, kind + '.stage');
     const rank = STAGES.indexOf(item.stage);
     const previousRank = STAGES.indexOf(previousStage);
     const count = (type) => item.evidence.filter((entry) => !type || entry.type === type).length;
     if (rank >= 1 && count() < 1) throw new Error('Stage ' + item.stage + ' needs at least one evidence entry.');
     if (rank >= 2 && count() < 2) throw new Error('Stage reproduced needs two independent evidence entries.');
-    if (rank >= 3 && count('candidate') + count('outcome') < 1) throw new Error('Stage yielded_candidate needs evidence of type candidate: a candidate that passed the acceptance checks because of this hypothesis.');
+    if (rank >= 3 && count('candidate') + count('outcome') < 1) throw new Error('Stage yielded_candidate needs evidence of type candidate: a candidate that passed the acceptance checks because of this ' + kind + '.');
     if (rank >= 4 && count('outcome') < 1) throw new Error('Stage yielded_outcome needs evidence of type outcome: a confirmed achievement of this base.');
     if (rank >= 4 && !(base.progress?.confirmedCount > 0)) throw new Error('Stage yielded_outcome is impossible while the base has no confirmed achievement.');
     if (!creating && rank > previousRank && !added.length) throw new Error('Advancing a stage requires addEvidence in the same call.');
     if (!creating && rank < previousRank && !reason) throw new Error('Demoting a stage requires a reason.');
     if (raw.status !== undefined) {
-      const status = oneOf(raw.status, HYPOTHESIS_STATUS, 'hypothesis.status');
+      const status = oneOf(raw.status, HYPOTHESIS_STATUS, kind + '.status');
       if (status !== item.status) {
-        if (status !== 'open' && !reason) throw new Error('Rejecting or retiring a hypothesis requires a reason.');
-        if (status === 'open' && !reason) throw new Error('Reopening a hypothesis requires a reason.');
+        if (status !== 'open' && !reason) throw new Error('Rejecting or retiring a ' + kind + ' requires a reason.');
+        if (status === 'open' && !reason) throw new Error('Reopening a ' + kind + ' requires a reason.');
         item.status = status; item.statusReason = reason; item.statusChangedAt = now();
       }
     }
@@ -493,10 +518,10 @@ function createStore(options) {
 
   async function upsertItems(input) {
     const id = requireBaseId(input?.baseId);
-    const kind = oneOf(input.kind, ['hypothesis', 'constraint'], 'kind');
+    const kind = oneOf(input.kind, ['hypothesis', 'constraint', 'source'], 'kind');
     if (!Array.isArray(input.items) || !input.items.length) throw new Error('items must be a non-empty array');
     if (input.items.length > 40) throw new Error('At most 40 items per call');
-    const prefix = kind === 'hypothesis' ? 'H' : 'K';
+    const prefix = LEDGER_KINDS[kind] || 'K';
     const changed = [];
     await db().runTransaction(async (tx) => {
       const base = await loadBase(tx, id);
@@ -514,7 +539,7 @@ function createStore(options) {
       }
       const run = runId ? value(await tx.get(runRef(id, runId))) : null;
       loaded.forEach(({ raw, prior }) => {
-        const result = kind === 'hypothesis' ? applyHypothesis(prior, raw, runId, base) : applyConstraint(prior, raw, input);
+        const result = LEDGER_KINDS[kind] ? applyLedgerItem(kind, prior, raw, runId, base) : applyConstraint(prior, raw, input);
         const item = result.item;
         if (!prior) {
           base.counters[prefix] = (base.counters[prefix] || 0) + 1;
@@ -606,6 +631,7 @@ function createStore(options) {
           ref: text(raw.ref, 600, 'achievement.ref (ID in the canonical operator data)', false),
           evidence: text(raw.evidence, 2000, 'achievement.evidence (how each acceptance check was met)', true),
           hypothesisIds: list(raw.hypothesisIds, 10, 20),
+          sourceIds: list(raw.sourceIds, 10, 20),
           status: base.outcome.confirmedBy === 'measurement' ? 'confirmed' : 'candidate',
         };
       });
