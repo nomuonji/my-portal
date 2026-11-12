@@ -6,6 +6,13 @@
 
 const AUTHORIZATION = '2026-11-12 チャット（本人）:「project submarineとして、探索系ジョブを各サブマリンがスキルやpackを積んで探索をする…既存のdiscoveryとか仕事DBとかもこの系列に規格化しちゃうとか」「うまく道場と整合性をとりながらやってみて」';
 
+const UNKNOWN_ACTIONS = [
+  { key: 'widened', label: '広がった', decision: 'confirmed', tone: 'good' },
+  { key: 'curious', label: '気になる', decision: 'candidate', tone: 'neutral' },
+  { key: 'known', label: '知ってた', decision: 'declined', tone: 'bad' },
+  { key: 'pass', label: '興味なし', decision: 'declined', tone: 'bad' },
+];
+
 const FLEET = [
   {
     id: 'discover', hull: 'SS-01', name: 'Discover',
@@ -40,9 +47,10 @@ const FLEET = [
   },
   {
     id: 'unknown', hull: 'SS-04', name: '未知探索',
-    summary: '行き先の決まっていない「これ探して」を受ける艦。既知カテゴリに閉じず、一次観察から未知の事実・構造・問いを持ち帰る。',
+    summary: '本人がまだ知らない世界（分野・文化・営み）を見つけてきて、興味の範囲を広げる艦。すでに好きなものからの橋と、最初の一歩を添えて持ち帰る。',
     mode: 'one_shot', projectIds: ['my-portal'], routineJobIds: [],
     migrateFromDojo: 'unknown-discovery-engine',
+    feedbackActions: UNKNOWN_ACTIONS,
     loadout: [{ kind: 'chat_skill', id: 'unknown-discovery-engine', role: 'primary', use: '未知探索の手順' }],
   },
   {

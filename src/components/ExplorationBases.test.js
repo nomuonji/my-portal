@@ -150,3 +150,15 @@ test('a skill target shows which version execution uses and flags a newer unrele
   expect(screen.getByText(/道場を通っていない v3 があります/)).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: '手順' })).toBeInTheDocument();
 });
+
+test('the 道場 shows the user\'s evaluations grouped by the version that produced them', () => {
+  const { VersionFeedback } = require('./ExplorationBases');
+  render(<VersionFeedback feedback={{ byVersion: [
+    { version: 2, released: true, total: 3, confirmed: 2, declined: 1, candidate: 0, comments: [{ text: '前提知識が要る', actionLabel: '興味なし', label: 'ミーム史' }] },
+    { version: null, total: 1, confirmed: 0, declined: 0, candidate: 1, comments: [] },
+  ] }} />);
+  expect(screen.getByText('v2（いま実行で使う版）')).toBeInTheDocument();
+  expect(screen.getByText('判断したもののうち成果 67%')).toBeInTheDocument();
+  expect(screen.getByText(/前提知識が要る/)).toBeInTheDocument();
+  expect(screen.getByText('版の記録なし')).toBeInTheDocument();
+});

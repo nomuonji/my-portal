@@ -173,7 +173,7 @@ export default function PersonalTaste(){
     <Typography sx={{fontFamily:MONO,fontSize:{xs:11,md:12},letterSpacing:'.06em',color:V.muted}}>
      TASTE LEDGER — {profile.explicitCount??counts.explicit_user} 件の明示評価
     </Typography>
-    <Button component={Link} to="/discover" size="small" endIcon={<ArrowForward sx={{fontSize:15}}/>} sx={{color:V.muted,'&:hover':{color:V.ink}}}>Discover</Button>
+    <Button component={Link} to="/submarines?sub=discover" size="small" endIcon={<ArrowForward sx={{fontSize:15}}/>} sx={{color:V.muted,'&:hover':{color:V.ink}}}>Discover</Button>
    </Stack>
    <Stack direction={{xs:'column',md:'row'}} justifyContent="space-between" alignItems={{xs:'flex-start',md:'flex-end'}} gap={1.5} sx={{mt:.6}}>
     <Box>
