@@ -286,3 +286,13 @@ test('haul carries the gear versions that found it; feedback reaches the 道場 
   assert.deepEqual(list.actionsBySubmarine.scout.map((x) => x.key), ['widened', 'known']);
   assert.equal(list.counts.scout.declined, 1);
 });
+
+test('fields a cached tool schema sends as JSON strings are still accepted', async () => {
+  const { subs } = await setup();
+  await subs.commission({ id: 'scout', name: 'Scout', summary: 'S', loadout, mission: outcome, ...auth });
+  const updated = await subs.update({ submarineId: 'scout', feedbackActions: JSON.stringify([{ key: 'yes', label: 'はい', decision: 'confirmed' }, { key: 'no', label: 'いいえ', decision: 'declined' }]) });
+  assert.deepEqual(updated.actions.map((a) => a.key), ['yes', 'no']);
+  const started = await subs.sortieStart({ submarineId: 'scout', objective: 'o' });
+  const back = await subs.sortieFinish({ submarineId: 'scout', sortieId: started.sortieId, summary: 's', haul: [{ label: 'A', evidence: 'e', details: JSON.stringify({ firstStep: 'step' }) }] });
+  assert.equal(back.brief.haul.awaiting[0].record.firstStep, 'step');
+});
