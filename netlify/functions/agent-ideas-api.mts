@@ -327,6 +327,15 @@ export default async (request: Request) => {
         }
         return json(updated);
       }
+      if (action === "submarine_haul_feedback") {
+        // The signed-in owner evaluating in the UI is the user's own feedback.
+        const day = new Date().toISOString().slice(0, 10);
+        return json(await submarineStore.haulFeedback({
+          submarineId: body.submarineId, haulId: body.haulId, action: String(body.feedbackAction || "").trim() || undefined,
+          comment: String(body.comment || "").trim().slice(0, 1000),
+          userAuthorized: true, authorizationNote: "My Portal の潜水艦画面で本人が評価（" + day + "）", actor: "My Portal UI",
+        }));
+      }
       if (action === "submarine_haul_decide") {
         // The signed-in user deciding in the UI is the owner's own decision, so it is applied directly.
         const decision = body.decision === "confirmed" ? "confirmed" : body.decision === "declined" ? "declined" : "";

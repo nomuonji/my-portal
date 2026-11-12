@@ -26,6 +26,8 @@ const PROTOCOL = [
   'The mission belongs to the user: never change it without authorization. Haul stays a candidate until the user confirms it (unless mission.confirmedBy is measurement).',
   'Findings about the waters (what the target turned out to be like) go on the chart. Findings about how to search (sources, method) go to the 道場 ledger.',
   'Never edit gear during a sortie. Change a skill/pack in its 道場, which releases the version every submarine then carries.',
+  'Read recentFeedback before sailing: it is what the user said about earlier haul (the action and the comment). It outranks your own scoring.',
+  'When haulCanonical names a store (personal_feed, job_opportunities), every record in it is indexed as haul automatically; still list what this sortie added as haul with its ref so it is linked to the sortie and its gear.',
 ];
 
 function database() { return getDocumentDb(DEFAULT_DATABASE_ID); }
@@ -111,6 +113,8 @@ function createStore(options) {
   const getDb = (options && options.getDb) || database;
   const dojo = () => (options && options.dojo) || require('./explorationBaseStore');
   const resolveTarget = (options && options.resolveTarget) || ((input) => require('./explorationBaseStore').defaultResolveTarget(input));
+  const canonical = (options && options.canonical) || require('./submarineCanonical').createCanonical();
+  const routines = () => (options && options.routines) || require('./routineJobStore');
   const db = () => getDb();
   const subRef = (id) => db().collection(COLLECTIONS.subs).doc(id);
   const sortieRef = (subId, id) => db().collection(COLLECTIONS.sorties).doc(docId(subId, id));
@@ -249,11 +253,15 @@ function createStore(options) {
   async function get(input) {
     const id = requireId(input?.id, 'id');
     const view = oneOf(input?.view, ['brief', 'full'], 'view', 'brief');
-    const sub = value(await subRef(id).get());
+    let sub = value(await subRef(id).get());
     if (!sub) throw new Error('Submarine not found: ' + id);
+    const where = sub.haulCanonical?.where || 'here';
+    const adapter = canonical.adapterFor(where);
+    const synced = canonical.syncable(where) ? await syncCanonical(sub, adapter) : { records: new Map(), error: null };
+    if (synced.changed) sub = value(await subRef(id).get());
     const index = await dojoIndex();
     const loadout = await loadGearBodies((sub.loadout || []).map((g) => bind(g, index)));
-    const haul = await haulOf(id);
+    const haul = (await haulOf(id)).map((h) => (synced.records.has(h.ref) ? { ...h, record: synced.records.get(h.ref) } : h));
     const target = sub.mission?.target || {};
     const confirmed = haul.filter((h) => h.status === 'confirmed');
     const awaiting = haul.filter((h) => h.status === 'candidate');
@@ -265,6 +273,7 @@ function createStore(options) {
     if (sub.openSortieId) warnings.push('Sortie ' + sub.openSortieId + ' is still at sea. Finish it, or take it over if abandoned.');
     if ((sub.stalledSorties || 0) >= STALL_WARNING_AT) warnings.push(sub.stalledSorties + ' sorties in a row brought nothing back. Stop and re-examine the mission, the loadout and the waters before sailing again.');
     if (awaiting.length) warnings.push(awaiting.length + ' haul item(s) wait for the user.');
+    if (synced.error) warnings.push('Could not read the canonical store ' + where + ': ' + synced.error);
     const result = {
       submarine: {
         id: sub.id, hull: sub.hull || '', name: sub.name, summary: sub.summary, status: sub.status, mode: sub.mode,
@@ -280,6 +289,8 @@ function createStore(options) {
       })),
       haul: { awaiting, confirmed: confirmed.slice(0, view === 'full' ? 200 : 30), declinedCount: haul.filter((h) => h.status === 'declined').length },
       chart: (sub.chart || []).filter((entry) => entry.status !== 'retired'),
+      actions: adapter.actions,
+      recentFeedback: (sub.recentFeedback || []).slice(0, 30),
       position: { sortieCount: sub.sortieCount || 0, stalledSorties: sub.stalledSorties || 0, openSortieId: sub.openSortieId || null, lastSorties: sub.lastSorties || [] },
       warnings,
       protocol: PROTOCOL,
@@ -291,9 +302,104 @@ function createStore(options) {
         declined: haul.filter((h) => h.status === 'declined').slice(0, 100),
         chartRetired: (sub.chart || []).filter((entry) => entry.status === 'retired'),
         events: sub.events || [],
+        schedule: await scheduleOf(sub).catch((error) => ({ error: String(error?.message || error).slice(0, 200) })),
       };
     }
     return result;
+  }
+
+  // The routine jobs that launch this submarine, with their slots and last runs.
+  async function scheduleOf(sub) {
+    const ids = sub.routineJobIds || [];
+    if (!ids.length) return { jobs: [] };
+    const listed = await routines().list({});
+    const jobs = [];
+    for (const job of (listed.items || []).filter((j) => ids.includes(j.id))) {
+      const runs = await routines().runs({ jobId: job.id, limit: 5 }).catch(() => ({ items: [] }));
+      jobs.push({
+        id: job.id, title: job.title, status: job.status, slots: job.slots || [], timeZone: job.timeZone || 'Asia/Tokyo',
+        revision: job.revision, lastRuns: (runs.items || []).map((r) => ({ id: r.id, status: r.status, startedAt: r.startedAt, finishedAt: r.finishedAt, summary: String(r.resultSummary || '').slice(0, 300) })),
+      });
+    }
+    return { jobs };
+  }
+
+  // Index every record of the canonical store as haul, and let the store's own state (e.g. a 好き in Discover)
+  // decide the haul status when the adapter is authoritative. Writes only when something is missing or differs.
+  async function syncCanonical(sub, adapter) {
+    let rows;
+    try { rows = await adapter.list(); } catch (error) { return { records: new Map(), error: String(error?.message || error).slice(0, 200) }; }
+    const records = new Map(rows.map((r) => [r.ref, r.record]));
+    const haul = await haulOf(sub.id);
+    const byRef = new Map(haul.filter((h) => h.ref).map((h) => [h.ref, h]));
+    const missing = rows.filter((r) => !byRef.has(r.ref));
+    let changed = false;
+    if (missing.length) {
+      const primary = (sub.loadout || []).filter((g) => g.role === 'primary').map((g) => g.kind + ':' + g.id);
+      const added = [];
+      await db().runTransaction(async (tx) => {
+        const fresh = await loadSub(tx, sub.id);
+        if (fresh.revision !== sub.revision) return; // someone else synced meanwhile
+        fresh.progress = fresh.progress || { confirmedCount: 0, candidateCount: 0 };
+        missing.forEach((r) => {
+          fresh.counters.C = (fresh.counters.C || 0) + 1;
+          const haulId = seqId('C', fresh.counters.C);
+          const item = {
+            id: haulId, submarineId: sub.id, label: r.record.title || r.ref, ref: r.ref, url: r.record.url || '',
+            evidence: r.evidence || '', status: r.status, sortieId: null, foundAt: r.foundAt || now(),
+            decidedAt: r.status === 'candidate' ? null : now(), dojoRef: r.ref, gear: primary, dojoIds: [], importedFrom: 'canonical:' + adapter.where,
+          };
+          put(tx, haulRef(sub.id, haulId), item);
+          if (r.status === 'confirmed') fresh.progress.confirmedCount = (fresh.progress.confirmedCount || 0) + 1;
+          if (r.status === 'candidate') fresh.progress.candidateCount = (fresh.progress.candidateCount || 0) + 1;
+          added.push(item);
+        });
+        logEvent(fresh, 'haul_indexed', missing.length + ' 件を ' + adapter.where + ' から索引', 'sync');
+        saveSub(tx, fresh);
+      });
+      for (const item of added.filter((h) => h.status === 'confirmed')) await mirror(sub, item, true, 'sync');
+      changed = added.length > 0;
+    }
+    if (adapter.authoritative) {
+      for (const h of haul) {
+        const row = rows.find((r) => r.ref === h.ref);
+        if (row && row.status !== h.status) { await decide(sub, h, row.status, '台帳（' + adapter.where + '）の状態に合わせた', 'sync'); changed = true; }
+      }
+    }
+    return { records, changed, error: null };
+  }
+
+  // The user's evaluation of one haul item: an action from the adapter (好き / 応募する / 見送る …) and/or a
+  // comment. The action is written back to the canonical store when it has a field for it, decides the haul
+  // status (mirrored to the 道場) and is kept, with the comment, as feedback the next sortie reads.
+  async function haulFeedback(input) {
+    const id = requireId(input?.submarineId, 'submarineId');
+    authorization(input, 'Feedback on haul');
+    const haulId = text(input.haulId, 20, 'haulId', true);
+    const comment = text(input.comment, 1000, 'comment', false);
+    const actionKey = text(input.action, 30, 'action', false);
+    if (!actionKey && !comment) throw new Error('Give an action, a comment, or both');
+    const sub = value(await subRef(id).get());
+    if (!sub) throw new Error('Submarine not found: ' + id);
+    const haul = value(await haulRef(id, haulId).get());
+    if (!haul) throw new Error('Haul not found: ' + haulId);
+    const adapter = canonical.adapterFor(sub.haulCanonical?.where || 'here');
+    const action = actionKey ? adapter.actions.find((a) => a.key === actionKey) : null;
+    if (actionKey && !action) throw new Error('action must be one of: ' + adapter.actions.map((a) => a.key).join(', '));
+    if (action && adapter.where !== 'here' && haul.ref && haul.ref.startsWith(adapter.where + ':')) {
+      await adapter.apply(haul.ref.slice(adapter.where.length + 1), action.key, comment);
+    }
+    if (action && action.decision !== haul.status) await decide(sub, haul, action.decision, comment || action.label, input.actor || 'user');
+    const entry = { at: now(), action: action ? action.key : '', actionLabel: action ? action.label : '', comment, actor: text(input.actor, 120, 'actor', false) || 'user' };
+    await db().runTransaction(async (tx) => {
+      const fresh = await loadSub(tx, id);
+      const current = value(await tx.get(haulRef(id, haulId)));
+      put(tx, haulRef(id, haulId), { ...current, feedback: [entry, ...(current.feedback || [])].slice(0, 20) });
+      fresh.recentFeedback = [{ ...entry, haulId, label: current.label, ref: current.ref || '' }, ...(fresh.recentFeedback || [])].slice(0, 40);
+      logEvent(fresh, 'haul_feedback', haulId + ': ' + (entry.actionLabel || 'コメント') + (comment ? '「' + comment.slice(0, 80) + '」' : ''), entry.actor);
+      saveSub(tx, fresh);
+    });
+    return get({ id });
   }
 
   async function update(input) {
@@ -422,9 +528,11 @@ function createStore(options) {
     });
     const chartAdds = (Array.isArray(input.chart) ? input.chart.slice(0, 12) : []).map((raw) => cleanChartEntry(raw, sortieId));
     const existing = await haulOf(id);
-    const knownRefs = new Set(existing.map((h) => h.ref).filter(Boolean));
-    const fresh = rawHaul.filter((h) => !h.ref || !knownRefs.has(h.ref));
-    const duplicates = rawHaul.length - fresh.length;
+    const byRef = new Map(existing.filter((h) => h.ref).map((h) => [h.ref, h]));
+    // A record the canonical sync already indexed (no sortie yet) is linked to this sortie, not duplicated.
+    const linkable = rawHaul.filter((h) => h.ref && byRef.has(h.ref) && !byRef.get(h.ref).sortieId && String(byRef.get(h.ref).importedFrom || '').startsWith('canonical:')).map((h) => ({ raw: h, haul: byRef.get(h.ref) }));
+    const fresh = rawHaul.filter((h) => !h.ref || !byRef.has(h.ref));
+    const duplicates = rawHaul.length - fresh.length - linkable.length;
     const reports = Array.isArray(input.dojoReports) ? input.dojoReports : [];
     const dojoResults = [];
     for (const run of sortie.dojoRuns || []) {
@@ -434,7 +542,7 @@ function createStore(options) {
           baseId: run.dojoId, runId: run.runId, actor: input.actor,
           summary: text(report.summary, 2500, 'dojoReports.summary', false) || summary,
           verdicts: Array.isArray(report.verdicts) ? report.verdicts : [],
-          yieldRefs: fresh.map((h, i) => h.ref || ('submarine:' + id + ':' + sortieId + ':' + (i + 1))),
+          yieldRefs: [...fresh.map((h, i) => h.ref || ('submarine:' + id + ':' + sortieId + ':' + (i + 1))), ...linkable.map((l) => l.raw.ref)],
           notMovedReason: text(report.notMovedReason, 1000, 'notMovedReason', false) || text(input.notMovedReason, 1000, 'notMovedReason', false) || '潜水艦の出航で成果も台帳の変化もなかった',
           nextStep: text(report.nextStep, 800, 'nextStep', false),
         });
@@ -460,6 +568,14 @@ function createStore(options) {
         });
         return haulId;
       });
+      linkable.forEach(({ raw, haul }) => {
+        put(tx, haulRef(id, haul.id), {
+          ...haul, sortieId, evidence: raw.evidence || haul.evidence, sourceIds: raw.sourceIds,
+          gear: raw.gear.length ? raw.gear : (sortie.loadout || []).filter((g) => g.role === 'primary').map((g) => g.kind + ':' + g.id),
+          dojoIds: (sortie.dojoRuns || []).map((r) => r.dojoId),
+        });
+        haulIds.push(haul.id);
+      });
       const chartIds = chartAdds.map((entry) => {
         sub.counters.F = (sub.counters.F || 0) + 1;
         const chartId = seqId('F', sub.counters.F);
@@ -467,11 +583,12 @@ function createStore(options) {
         return chartId;
       });
       const moved = haulIds.length > 0 || chartIds.length > 0 || dojoResults.some((r) => r.moved);
+      const newHaul = haulIds.length - linkable.length;
       sub.stalledSorties = moved ? 0 : (sub.stalledSorties || 0) + 1;
       sub.sortieCount = (sub.sortieCount || 0) + 1;
       sub.openSortieId = null;
-      if (confirmedBy === 'measurement') sub.progress.confirmedCount = (sub.progress.confirmedCount || 0) + haulIds.length;
-      else sub.progress.candidateCount = (sub.progress.candidateCount || 0) + haulIds.length;
+      if (confirmedBy === 'measurement') sub.progress.confirmedCount = (sub.progress.confirmedCount || 0) + newHaul;
+      else sub.progress.candidateCount = (sub.progress.candidateCount || 0) + newHaul;
       const finished = {
         ...sortie, status: 'finished', finishedAt: now(), summary, haulIds, chartIds, duplicates, dojoResults, moved,
         notMovedReason: moved ? '' : text(input.notMovedReason, 1000, 'notMovedReason (nothing came back; say why)', true),
@@ -571,16 +688,26 @@ function createStore(options) {
     const status = text(input?.status, 20, 'status', false);
     const limit = Math.min(Math.max(Number(input?.limit) || 200, 1), 500);
     const [snap, subs] = await Promise.all([db().collection(COLLECTIONS.haul).limit(3000).get(), db().collection(COLLECTIONS.subs).limit(200).get()]);
-    const names = new Map(subs.docs.map((doc) => doc.data()).map((s) => [s.id, { name: s.name, hull: s.hull || '' }]));
+    const subList = subs.docs.map((doc) => doc.data());
+    const names = new Map(subList.map((s) => [s.id, { name: s.name, hull: s.hull || '', where: s.haulCanonical?.where || 'here' }]));
+    // Render canonical records (Discover recommendations, job listings) once per store.
+    const records = new Map();
+    const actions = {};
+    for (const where of [...new Set(subList.map((s) => s.haulCanonical?.where || 'here'))]) {
+      const adapter = canonical.adapterFor(where);
+      actions[where] = adapter.actions;
+      if (!canonical.syncable(where)) continue;
+      try { (await adapter.list()).forEach((r) => records.set(r.ref, r.record)); } catch (error) { /* shown without the record */ }
+    }
     const items = snap.docs.map((doc) => doc.data())
       .filter((h) => !status || h.status === status)
       .sort((a, b) => String(b.decidedAt || b.foundAt).localeCompare(String(a.decidedAt || a.foundAt)))
       .slice(0, limit)
-      .map((h) => ({ ...h, submarine: names.get(h.submarineId) || { name: h.submarineId, hull: '' } }));
-    return { items, count: items.length };
+      .map((h) => ({ ...h, record: records.get(h.ref) || null, submarine: names.get(h.submarineId) || { name: h.submarineId, hull: '', where: 'here' } }));
+    return { items, count: items.length, actions };
   }
 
-  return { commission, list: listSubs, get, update, sortieStart, sortieFinish, haulDecide, recordReaction, haulList };
+  return { commission, list: listSubs, get, update, sortieStart, sortieFinish, haulDecide, haulFeedback, recordReaction, haulList };
 }
 
 const store = createStore();

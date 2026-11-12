@@ -510,6 +510,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "submarine_sortie_start") return structured(await submarineStore.sortieStart(args));
   if (name === "submarine_sortie_finish") return structured(await submarineStore.sortieFinish(args));
   if (name === "submarine_haul_decide") return structured(await submarineStore.haulDecide(args));
+  if (name === "submarine_haul_feedback") return structured(await submarineStore.haulFeedback(args));
   if (name === "submarine_haul_list") return structured(await submarineStore.haulList(args));
 
   await ensureAgentData();

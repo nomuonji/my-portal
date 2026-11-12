@@ -67,7 +67,6 @@ import News from './components/News';
 import Idea from './components/Idea';
 import AgentIdeaSpace from './components/AgentIdeaSpace';
 import MetaStrategy from './components/MetaStrategy';
-import PersonalFeed from './components/PersonalFeed';
 import PersonalTaste from './components/PersonalTaste';
 import {AniListOAuthCallback} from './components/AniListConnectPanel';
 import {TraktOAuthCallback} from './components/MediaTasteConnections';
@@ -380,12 +379,12 @@ function App() {
     {
       label: '自分',
       items: [
-        { to: '/discover', label: 'Discover', hint: '好みに合いそうなものを探して厳選', icon: <DiscoveryIcon /> },
+        { to: '/submarines?id=discover', match: ['/discover'], label: 'Discover', hint: 'SS-01 が探した推薦を評価する', icon: <DiscoveryIcon /> },
         { to: '/boards', match: BOARD_PATHS, label: 'ボード', hint: '企画・ビジネス / 興味・趣味 / ネタ・表現 / メモ', icon: <ViewCompactIcon /> },
         { to: '/taste', label: '好みの記録', hint: '好き嫌い / 根拠 / 訂正履歴', icon: <TasteIcon /> },
         { to: '/thinking', label: '思考テーマ', hint: '長期テーマ / Context Store', icon: <PsychologyAltIcon /> },
         { to: '/social-archive', label: 'X投稿アーカイブ', hint: '過去投稿の検索・分類・見返し', icon: <ArchiveIcon /> },
-        { to: '/jobs', label: '仕事DB', hint: 'オンライン仕事 / 報酬 / 応募情報・プライバシー', icon: <JobsIcon /> },
+        { to: '/submarines?id=job-db', match: ['/jobs'], label: '仕事DB', hint: 'SS-02 が探した案件を評価する', icon: <JobsIcon /> },
       ],
     },
     {
@@ -628,7 +627,7 @@ function App() {
                 <Route path="/stockboard" element={<Navigate to="/boards?board=stocks" replace />} />
                 <Route path="/agent-ideas" element={<AgentIdeaSpace />} />
                 <Route path="/meta" element={<MetaStrategy />} />
-                <Route path="/discover" element={<PersonalFeed />} />
+                <Route path="/discover" element={<Navigate to="/submarines?id=discover" replace />} />
                 <Route path="/taste" element={<PersonalTaste />} />
                 <Route path="/anilist/callback" element={<AniListOAuthCallback />} />
                 <Route path="/trakt/callback" element={<TraktOAuthCallback />} />
@@ -637,7 +636,8 @@ function App() {
                 <Route path="/public-cms" element={<PublicCms />} />
                 <Route path="/characters" element={<CharacterLibrary />} />
                 <Route path="/curation-sources" element={<Navigate to="/discover" replace />} />
-                <Route path="/jobs" element={<JobOpportunities />} />
+                <Route path="/jobs" element={<Navigate to="/submarines?id=job-db" replace />} />
+                <Route path="/jobs/ledger" element={<JobOpportunities />} />
                 <Route path="/submarines" element={<Submarines />} />
                 <Route path="/exploration" element={<ExplorationBases />} />
                 <Route path="/outputs" element={<Outputs />} />
