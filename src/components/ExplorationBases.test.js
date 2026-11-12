@@ -50,7 +50,10 @@ const DETAIL = {
     methodHistory: [{ version: 'jobdb-r4', summary: '初版', setAt: '2026-11-11T14:05:01Z', motivatingRunIds: [] }],
     proposals: [],
     runs: [{ id: 'R-001', status: 'finished', moved: true, startedAt: '2026-11-12T01:00:00Z', methodVersion: 'jobdb-r4', objective: '3つの募集元を調べる', summary: '1件候補', targets: [{ hypothesisId: 'H-001', prediction: '不明点が残る' }], verdicts: [{ hypothesisId: 'H-001', result: 'supported', observed: '2件で不明点' }] }],
-    events: [{ seq: 1, createdAt: '2026-11-11T14:05:25Z', type: 'hypothesis_created', itemId: 'H-001', summary: '件数より不明点', actor: 'Claude' }],
+    events: [
+      { seq: 2, createdAt: '2026-11-12T02:00:00Z', type: 'run_finished', runId: 'R-001', summary: '1件候補' },
+      { seq: 1, createdAt: '2026-11-11T14:05:25Z', type: 'hypothesis_created', itemId: 'H-001', summary: '件数より不明点', actor: 'Claude' },
+    ],
   },
 };
 
@@ -83,9 +86,13 @@ test('detail keeps status and decisions on top and puts each part of the base in
   expect(screen.getByText('不明点が残っていない')).toBeInTheDocument();
   expect(screen.queryByText('応募はしない')).not.toBeInTheDocument();
 
-  fireEvent.click(screen.getByRole('tab', { name: /実行記録/ }));
+  // 経過 holds runs and changes to the base in one dated list, without the duplicate run events.
+  fireEvent.click(screen.getByRole('tab', { name: '経過' }));
   expect(screen.getByText('3つの募集元を調べる')).toBeInTheDocument();
   expect(screen.getByText('件数より不明点：当たり')).toBeInTheDocument();
+  expect(screen.getByText('見立てを追加')).toBeInTheDocument();
+  expect(screen.queryByText('実行（進展あり）')).not.toBeInTheDocument();
+  expect(screen.queryByRole('tab', { name: /実行記録|履歴/ })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('tab', { name: /見立て/ }));
   expect(screen.getByText('棄却された仮説')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('tab', { name: /制約/ }));

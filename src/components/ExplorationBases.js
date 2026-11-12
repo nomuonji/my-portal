@@ -10,7 +10,7 @@ import { auth } from '../firebase';
 import { toText } from './jobOpportunityView';
 
 // 探索拠点. Status and anything waiting for the user stay on top; the rest of the base is split into
-// tabs (goal, runs, guesses, constraints, method, history) so each part is read on its own.
+// tabs (goal, timeline, guesses, constraints, method) so each part is read on its own.
 
 const V = {
   ink: 'var(--p-ink)', muted: 'var(--p-muted)', faint: 'var(--p-faint)', rule: 'var(--p-rule)',
@@ -199,7 +199,8 @@ function HypothesisDetail({ item }) {
 }
 
 // ---- Detail page ------------------------------------------------------------
-// Status and decisions on top; then one tab per part. The goal tab is the only place the pass criteria live.
+// Status and decisions on top; then one tab per part. The goal tab is the only place the pass criteria
+// live; 経過 merges the exploration runs and the changes to the base into one dated list.
 
 function Run({ run, hypotheses }) {
   const stalled = run.status === 'finished' && run.moved === false;
@@ -227,9 +228,19 @@ function Run({ run, hypotheses }) {
 }
 
 const TABS = [
-  { key: 'goal', label: 'ゴール' }, { key: 'runs', label: '実行記録' }, { key: 'guesses', label: '見立て' },
-  { key: 'constraints', label: '制約' }, { key: 'method', label: '探索法' }, { key: 'history', label: '履歴' },
+  { key: 'goal', label: 'ゴール' }, { key: 'timeline', label: '経過' }, { key: 'guesses', label: '見立て' },
+  { key: 'constraints', label: '制約' }, { key: 'method', label: '探索法' },
 ];
+// Run start/finish events duplicate the run entries themselves, so the timeline leaves them out.
+const RUN_EVENTS = new Set(['run_started', 'run_finished', 'run_stalled', 'run_abandoned']);
+
+// Explorations (runs) and changes to the base, newest first, in one list.
+function timelineOf(runs, events) {
+  return [
+    ...runs.map((run) => ({ kind: 'run', at: run.startedAt, key: 'run-' + run.id, run })),
+    ...events.filter((event) => !RUN_EVENTS.has(event.type)).map((event) => ({ kind: 'change', at: event.createdAt, key: 'e-' + event.seq, event })),
+  ].sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+}
 
 function BaseDetail({ detail, onDecide, busy }) {
   const [tab, setTab] = useState('goal');
@@ -241,7 +252,7 @@ function BaseDetail({ detail, onDecide, busy }) {
   const closed = hypotheses.filter((item) => item.status !== 'open');
   const constraints = (full.constraints || []).filter((item) => item.status === 'active');
   const runs = full.runs || [];
-  const events = (full.events || []).slice(0, 20);
+  const timeline = timelineOf(runs, full.events || []);
   const url = methodUrl(method?.bodyRef);
   const state = {
     status: base.status, reached: outcome.reached, awaitingCount: awaiting.length,
@@ -291,7 +302,7 @@ function BaseDetail({ detail, onDecide, busy }) {
       <Tabs value={tab} onChange={(_, value) => setTab(value)} variant="scrollable" allowScrollButtonsMobile
         sx={{ mt: 3, borderBottom: '1px solid ' + V.rule, minHeight: 42, '& .MuiTab-root': { minHeight: 42, fontSize: 13.5, fontWeight: 700 } }}>
         {TABS.map((item) => {
-          const count = { runs: runs.length, guesses: open.length, constraints: constraints.length }[item.key];
+          const count = { guesses: open.length, constraints: constraints.length }[item.key];
           return <Tab key={item.key} value={item.key} label={item.label + (count !== undefined ? ' ' + count : '')} />;
         })}
       </Tabs>
@@ -309,7 +320,23 @@ function BaseDetail({ detail, onDecide, busy }) {
       </Box>
       </>)}
 
-      {tab === 'runs' && (runs.length ? runs.map((run) => <Run key={run.id} run={run} hypotheses={hypotheses} />) : <Quiet>まだ一度も実行していません。</Quiet>)}
+      {tab === 'timeline' && (<>
+        <Typography sx={{ fontSize: 12.5, color: V.muted, mb: 1 }}>
+          探索の回（{runs.length}回）と、ゴール・制約・見立て・探索法の変更を、新しい順に並べています。
+        </Typography>
+        {!runs.length && timeline.length > 0 && <Typography sx={{ fontSize: 12.5, color: V.muted, mb: 1 }}>探索はまだ一度も行っていません。下は拠点を整えたときの変更です。</Typography>}
+        {timeline.map((entry) => (entry.kind === 'run'
+          ? <Run key={entry.key} run={entry.run} hypotheses={hypotheses} />
+          : (
+            <Box key={entry.key} sx={{ display: 'grid', gridTemplateColumns: '48px minmax(0,1fr)', columnGap: 1.5, py: 0.7, borderBottom: '1px solid ' + V.rule }}>
+              <Small>{shortDate(entry.at)}</Small>
+              <Typography sx={{ fontSize: 12.5, color: V.muted, lineHeight: 1.6 }}>
+                <b style={{ color: 'var(--p-ink)' }}>{EVENT_LABEL[entry.event.type] || entry.event.type}</b>　{entry.event.summary}
+              </Typography>
+            </Box>
+          )))}
+        {!timeline.length && <Quiet>まだ記録はありません。</Quiet>}
+      </>)}
 
       {tab === 'guesses' && (<>
       {Object.keys(STAGE).map((key) => {
@@ -363,15 +390,6 @@ function BaseDetail({ detail, onDecide, busy }) {
       ) : <Quiet>探索法はまだ設定されていません。</Quiet>}
       </>)}
 
-      {tab === 'history' && (<>
-      {events.map((event) => (
-        <Box key={event.seq} sx={{ display: 'grid', gridTemplateColumns: '64px minmax(0,1fr)', columnGap: 1.5, py: 0.8, borderBottom: '1px solid ' + V.rule }}>
-          <Small>{shortDate(event.createdAt)}</Small>
-          <Typography sx={{ fontSize: 13, lineHeight: 1.6 }}><b>{EVENT_LABEL[event.type] || event.type}</b>　{event.summary}</Typography>
-        </Box>
-      ))}
-      {!events.length && <Quiet>履歴はありません。</Quiet>}
-      </>)}
       </Box>
     </Box>
   );
