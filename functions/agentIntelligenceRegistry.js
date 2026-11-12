@@ -370,7 +370,17 @@ function createRegistry(options) {
       if (rootSnapshot.exists) tx.update(indexRef, index);
       else tx.set(indexRef, index);
     });
-    return getPack({ id: definition.id });
+    const result = await getPack({ id: definition.id });
+    // A Pack trained in a 道場 is used at the version the 道場 released; say so to whoever just made a new one.
+    try {
+      const dojos = await explorationBases.trainersOf({ kind: 'intelligence_pack', id: definition.id });
+      if (dojos.length) {
+        result.dojos = dojos;
+        result.dojoNotice = dojos.map((d) => 'このPackは道場「' + d.title + '」（' + d.baseId + '）で鍛えられている。実行で使うのは v' + d.releasedVersion
+          + '。v' + nextVersion + ' は道場で合格させる（exploration_method_version_set, bodyRef.kind=intelligence_pack, versionNumber=' + nextVersion + '）まで実行には使われない。').join('\n');
+      }
+    } catch (error) { /* the notice is advisory */ }
+    return result;
   }
 
   async function resolveDependency(dep, requested) {

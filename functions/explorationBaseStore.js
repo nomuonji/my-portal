@@ -769,10 +769,21 @@ function createStore(options) {
     return { baseId: id, changed };
   }
 
+  // Which 道場 train this skill or pack, and which version each one releases for execution. Used to tell
+  // whoever edits the skill/pack directly that execution stays on the released version until the 道場 releases more.
+  async function trainersOf(input) {
+    const kind = oneOf(input?.kind, [...TARGET_KINDS], 'kind');
+    const targetId = text(input?.id, 90, 'id', true);
+    const snap = await db().collection(COLLECTIONS.bases).limit(200).get();
+    return snap.docs.map((doc) => doc.data())
+      .filter((base) => base.status !== 'closed' && base.method?.bodyRef?.kind === kind && base.method.bodyRef.location === targetId)
+      .map((base) => ({ baseId: base.id, title: base.title, releasedVersion: base.method.bodyRef.versionNumber || null }));
+  }
+
   // Compact summary used by the Agent Intelligence bundle resolver.
   async function brief(input) { return get({ id: input?.id, view: 'brief' }); }
 
-  return { create, list: listBases, get, brief, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction };
+  return { create, list: listBases, get, brief, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction, trainersOf };
 }
 
 const store = createStore();
