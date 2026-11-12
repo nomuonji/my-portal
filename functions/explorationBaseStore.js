@@ -35,6 +35,7 @@ const PROTOCOL = [
   'Never change the method version during an open run. Bump it only between runs, with the motivating runs and a benchmark result.',
   'The outcome contract and user-owned constraints belong to the user: propose changes, never apply them without authorization.',
   'IDs are never reused. Rejected hypotheses stay in the ledger so the same inference is not repeated.',
+  'When the method is a chat_skill or intelligence_pack target, use exactly the released version (method.target.releasedVersion, body included here), not the latest one. A newer version made outside this base is unverified until it is released here.',
   'Sources (where candidates come from) are a ledger too: record which source a candidate came from (evidence on the source, sourceIds on the achievement) and reject sources that yield nothing, so the next run starts from proven ones.',
 ];
 
@@ -101,17 +102,27 @@ function cleanOutcome(raw) {
     priority: text(input.priority, 300, 'outcome.priority', false),
   };
 }
+// A base trains one target: a Chat Skill or an Intelligence Pack in the DB, pinned to the version this base
+// released. Execution uses that version; the base never holds a second copy of the body.
+const TARGET_KINDS = new Set(['chat_skill', 'intelligence_pack']);
 function cleanMethod(raw, fallbackLocation) {
   const input = plain(raw, 'method');
   const ref = input.bodyRef ? plain(input.bodyRef, 'method.bodyRef') : {};
   const body = text(input.body, 20000, 'method.body', false);
   const bodyRef = {
-    kind: oneOf(ref.kind, ['repo', 'inline', 'document', 'chat_skill', 'hq_method'], 'method.bodyRef.kind', body ? 'inline' : undefined),
+    kind: oneOf(ref.kind, ['repo', 'inline', 'document', 'chat_skill', 'intelligence_pack', 'hq_method'], 'method.bodyRef.kind', body ? 'inline' : undefined),
     // An inline body has no external location; only pointer bodies inherit the previous location.
     location: text(ref.location, 500, 'method.bodyRef.location', false) || ((ref.kind || (body ? 'inline' : '')) === 'inline' ? '' : (fallbackLocation || '')),
     path: text(ref.path, 500, 'method.bodyRef.path', false),
     commit: text(ref.commit, 80, 'method.bodyRef.commit', false),
   };
+  if (TARGET_KINDS.has(bodyRef.kind)) {
+    const versionNumber = Number(ref.versionNumber);
+    if (!Number.isInteger(versionNumber) || versionNumber < 1) throw new Error('method.bodyRef.versionNumber is required for a ' + bodyRef.kind + ' target: the version this base releases');
+    if (!ID_PATTERN.test(bodyRef.location)) throw new Error('method.bodyRef.location must be the ' + bodyRef.kind + ' id');
+    if (body) throw new Error('A ' + bodyRef.kind + ' target keeps its body in the DB; do not pass method.body');
+    bodyRef.versionNumber = versionNumber;
+  }
   if (bodyRef.kind === 'inline' && !body) throw new Error('method.body is required when bodyRef.kind is inline');
   if (bodyRef.kind !== 'inline' && !bodyRef.location) throw new Error('method.bodyRef.location is required unless the body is inline');
   return {
@@ -168,8 +179,34 @@ function ledgerView(items, brief) {
   };
 }
 
+// Loads a pinned version of a target and the latest version number. Required lazily: the intelligence
+// registry itself requires this module.
+async function defaultResolveTarget({ kind, id, versionNumber }) {
+  if (kind === 'chat_skill') {
+    const skills = require('./chatContextRegistry');
+    const history = await skills.skillVersions({ id });
+    const items = history.items || [];
+    const pinned = items.find((item) => Number(item.versionNumber) === versionNumber);
+    if (!pinned) throw new Error('Chat Skill version not found: ' + id + ' v' + versionNumber);
+    const latest = Math.max(...items.map((item) => Number(item.versionNumber) || 0));
+    return { title: pinned.title, latestVersion: latest, body: pinned.body || '' };
+  }
+  if (kind === 'intelligence_pack') {
+    const registry = require('./agentIntelligenceRegistry');
+    const { pack, definition } = await registry.getPack({ id, versionNumber });
+    const parts = (definition.components || []).map((component) => '### ' + component.title + '\n' + (component.summary || '') + '\n'
+      + (component.dependencies || []).map((dep) => '- ' + dep.canonicalRef + (dep.versionNumber ? ' v' + dep.versionNumber : '') + '（' + (dep.requiredness || '') + '）' + (dep.when ? ' ' + dep.when : '')).join('\n'));
+    return {
+      title: definition.title || pack.title, latestVersion: Number(pack.currentVersionNumber) || versionNumber,
+      body: '## ' + (definition.title || id) + ' v' + versionNumber + '\n\n' + (definition.purpose || definition.summary || '') + '\n\n' + parts.join('\n\n'),
+    };
+  }
+  throw new Error('Not a trainable target: ' + kind);
+}
+
 function createStore(options) {
   const getDb = (options && options.getDb) || database;
+  const resolveTarget = (options && options.resolveTarget) || defaultResolveTarget;
   const db = () => getDb();
   const baseRef = (id) => db().collection(COLLECTIONS.bases).doc(id);
   const itemRef = (baseId, id) => db().collection(COLLECTIONS.items).doc(docId(baseId, id));
@@ -211,6 +248,7 @@ function createStore(options) {
     const note = authorization(input, 'Creating an Exploration Base (it fixes the outcome contract)');
     const outcome = cleanOutcome(input.outcome);
     const method = input.method ? cleanMethod(input.method) : null;
+    if (method && TARGET_KINDS.has(method.bodyRef.kind)) await resolveTarget({ kind: method.bodyRef.kind, id: method.bodyRef.location, versionNumber: method.bodyRef.versionNumber });
     const packRefs = Array.isArray(input.packRefs) ? input.packRefs.slice(0, 12).map((raw) => {
       const ref = plain(raw, 'packRef');
       return { packId: text(ref.packId, 80, 'packRef.packId', true), role: text(ref.role, 200, 'packRef.role', false) };
@@ -285,6 +323,22 @@ function createStore(options) {
       warnings.push('Run budget (' + base.outcome.budget.maxRuns + ') is used up without reaching the outcome. Report to the user before running again.');
     }
     if (base.openRunId) warnings.push('Run ' + base.openRunId + ' is still open. Finish it, or take it over if abandoned.');
+    let released = null;
+    const ref = base.method?.bodyRef;
+    if (ref && TARGET_KINDS.has(ref.kind)) {
+      released = { kind: ref.kind, id: ref.location, releasedVersion: ref.versionNumber };
+      try {
+        const resolved = await resolveTarget({ kind: ref.kind, id: ref.location, versionNumber: ref.versionNumber });
+        Object.assign(released, { title: resolved.title, latestVersion: resolved.latestVersion, body: resolved.body });
+        if (resolved.latestVersion > ref.versionNumber) {
+          released.unreleasedNewer = true;
+          warnings.push('The ' + ref.kind + ' ' + ref.location + ' has v' + resolved.latestVersion + ', newer than v' + ref.versionNumber + ' released by this base. It was changed outside this base and is not verified here; keep using v' + ref.versionNumber + ' until it passes the benchmark and is released with exploration_method_version_set.');
+        }
+      } catch (error) {
+        released.error = String(error?.message || error).slice(0, 300);
+        warnings.push('The released target ' + ref.location + ' v' + ref.versionNumber + ' could not be loaded: ' + released.error);
+      }
+    }
     if ((base.proposals || []).some((p) => p.status === 'pending')) warnings.push('There are pending proposals waiting for the user.');
     const result = {
       base: {
@@ -302,7 +356,7 @@ function createStore(options) {
       method: base.method ? {
         title: base.method.title, version: base.method.version, summary: base.method.summary,
         bodyRef: base.method.bodyRef, benchmarkRef: base.method.benchmarkRef || '', setAt: base.method.setAt,
-        ...(base.method.bodyRef?.kind === 'inline' || view === 'full' ? { body: base.method.body || '' } : {}),
+        ...(released ? { target: released, body: released.body || '' } : (base.method.bodyRef?.kind === 'inline' || view === 'full' ? { body: base.method.body || '' } : {})),
         recentChanges: (base.methodHistory || []).slice(-3),
       } : null,
       constraints: Object.fromEntries(CONSTRAINT_OWNERS.map((owner) => [owner, constraints
@@ -412,6 +466,7 @@ function createStore(options) {
       const base = await loadBase(tx, id);
       if (base.openRunId) throw new Error('Run ' + base.openRunId + ' is open. The method version cannot change during a run; finish the run first.');
       const method = cleanMethod(input.method, base.method?.bodyRef?.location);
+      if (TARGET_KINDS.has(method.bodyRef.kind)) await resolveTarget({ kind: method.bodyRef.kind, id: method.bodyRef.location, versionNumber: method.bodyRef.versionNumber });
       if ((base.methodHistory || []).some((entry) => entry.version === method.version)) {
         throw new Error('Method version label already used: ' + method.version + '. Version labels are never reused.');
       }
@@ -716,4 +771,4 @@ function createStore(options) {
 }
 
 const store = createStore();
-module.exports = { ...store, createStore, COLLECTIONS, STAGES, PROTOCOL };
+module.exports = { ...store, createStore, defaultResolveTarget, COLLECTIONS, STAGES, PROTOCOL };

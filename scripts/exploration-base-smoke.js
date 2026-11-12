@@ -244,3 +244,27 @@ test('a like in the app is a confirmed achievement, and withdrawing it declines 
   assert.equal(brief.outcome.confirmed.length, 1); // re-confirmed, not duplicated
   assert.deepEqual(await store.recordUserReaction({ ...like, baseId: 'missing-base' }), { baseId: 'missing-base', changed: false });
 });
+
+test('a base trains a DB skill or pack and releases one pinned version', async () => {
+  const db = new MemoryDb();
+  const versions = { 'discover-curation': { 1: 'Version one body of the curation skill.', 2: 'Version two body, edited outside the base.' } };
+  const resolveTarget = async ({ kind, id, versionNumber }) => {
+    const known = versions[id];
+    if (kind !== 'chat_skill' || !known || !known[versionNumber]) throw new Error('not found ' + id + ' v' + versionNumber);
+    return { title: id, latestVersion: Math.max(...Object.keys(known).map(Number)), body: known[versionNumber] };
+  };
+  const store = createStore({ getDb: () => db, resolveTarget });
+  const skillMethod = (versionNumber) => ({ title: 'Curation', version: 'disc-s' + versionNumber, summary: 'Skill v' + versionNumber, bodyRef: { kind: 'chat_skill', location: 'discover-curation', versionNumber } });
+  await assert.rejects(store.create({ id: 'test-base', title: 'T', summary: 'S', outcome, method: { ...skillMethod(1), bodyRef: { kind: 'chat_skill', location: 'discover-curation' } }, ...auth }), /versionNumber/);
+  await assert.rejects(store.create({ id: 'test-base', title: 'T', summary: 'S', outcome, method: skillMethod(9), ...auth }), /not found/);
+  await store.create({ id: 'test-base', title: 'T', summary: 'S', outcome, method: skillMethod(1), ...auth });
+  let brief = await store.get({ id: 'test-base' });
+  assert.equal(brief.method.target.releasedVersion, 1);
+  assert.equal(brief.method.body, 'Version one body of the curation skill.');
+  assert.ok(brief.warnings.some((w) => /newer than v1/.test(w)));
+  assert.equal(brief.method.target.unreleasedNewer, true);
+  await store.setMethodVersion({ baseId: 'test-base', method: skillMethod(2), noBenchmarkReason: 'user decided in chat', userAuthorized: true, authorizationNote: 'User said: release v2' });
+  brief = await store.get({ id: 'test-base' });
+  assert.equal(brief.method.body, 'Version two body, edited outside the base.');
+  assert.ok(!brief.warnings.some((w) => /newer than/.test(w)));
+});

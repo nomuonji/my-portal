@@ -134,3 +134,16 @@ test('sources have their own tab, ordered by how well they are verified', async 
   expect(screen.getByText('選んだ17件が全部スキップ')).toBeInTheDocument();
   expect(screen.getByText('外した')).toBeInTheDocument();
 });
+
+test('a skill target shows which version execution uses and flags a newer unreleased one', async () => {
+  const skill = { ...DETAIL, method: { title: '選書', version: 'disc-s1', summary: 's', setAt: '2026-11-12T01:00:00Z',
+    bodyRef: { kind: 'chat_skill', location: 'discover-curation', versionNumber: 1 },
+    target: { kind: 'chat_skill', id: 'discover-curation', title: 'Discover 選書', releasedVersion: 1, latestVersion: 3, unreleasedNewer: true },
+    body: '## 手順\n\n1. 読む' } };
+  global.fetch = jest.fn((url) => Promise.resolve({ ok: true, json: () => Promise.resolve(String(url).includes('exploration_bases') ? LIST : skill) }));
+  renderAt('id=job-base');
+  fireEvent.click(await screen.findByRole('tab', { name: '探索法' }));
+  expect(screen.getByText('Discover 選書')).toBeInTheDocument();
+  expect(screen.getByText(/v3 が拠点の外で作られています/)).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: '手順' })).toBeInTheDocument();
+});

@@ -44,8 +44,9 @@ const method = {
     bodyRef: {
       type: 'object',
       properties: {
-        kind: { type: 'string', enum: ['repo', 'inline', 'document', 'chat_skill', 'hq_method'] },
-        location: string('Repo full name, document URL or ID.', 500),
+        kind: { type: 'string', enum: ['chat_skill', 'intelligence_pack', 'inline', 'repo', 'document', 'hq_method'], description: 'Prefer chat_skill or intelligence_pack: the base then trains that DB skill/pack and releases one pinned version of it.' },
+        location: string('chat_skill / intelligence_pack: its id. Otherwise repo full name, document URL or ID.', 500),
+        versionNumber: { type: 'integer', minimum: 1, description: 'chat_skill / intelligence_pack: the version this base releases for execution.' },
         path: string('Path inside the repo.', 500),
         commit: string('Commit of this version, when known.', 80),
       },
@@ -154,7 +155,7 @@ const tools = [
   },
   {
     name: 'exploration_method_version_set',
-    description: 'Register a new version of the exploration method (pointer or inline body). Refused while a run is open. After the first version it requires motivatingRunIds (finished runs that justify it) — or userAuthorized with authorizationNote when the user decided the change — and benchmark.passed=true, or noBenchmarkReason. Prefer an inline body (bodyRef.kind=inline): the base then holds the method text itself. Version labels are never reused. One insight from one run is a ledger entry, not a method version.',
+    description: 'Release a new version of what this base trains: point at a Chat Skill or Intelligence Pack version in the DB (bodyRef.kind chat_skill / intelligence_pack, location = id, versionNumber), or an inline/pointer body for older bases. Refused while a run is open. After the first version it requires motivatingRunIds (finished runs that justify it) — or userAuthorized with authorizationNote when the user decided the change — and benchmark.passed=true, or noBenchmarkReason. Prefer an inline body (bodyRef.kind=inline): the base then holds the method text itself. Version labels are never reused. One insight from one run is a ledger entry, not a method version.',
     inputSchema: {
       type: 'object',
       properties: {

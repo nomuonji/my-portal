@@ -125,8 +125,10 @@ async function upsertSkill(input) {
 async function skillVersions(input={}) {
  const id=safeString(input.id,90);
  if(!id)throw new Error('Skill id required');
- const snap=await db().collection(SKILL_VERSIONS).limit(250).get();
- const items=snap.docs.map(d=>({...d.data(),id:d.id})).filter(d=>d.id.startsWith(id+'__'))
+ // Query by the skill id stored on each version; scanning the whole collection silently missed versions
+ // once it held more than 250 documents.
+ const snap=await db().collection(SKILL_VERSIONS).where('id','==',id).limit(500).get();
+ const items=snap.docs.map(d=>({...d.data(),docId:d.id})).filter(d=>d.docId.startsWith(id+'__'))
   .sort((a,b)=>Number(b.versionNumber)-Number(a.versionNumber)).slice(0,30)
   .map(d=>({...summary(d),versionNumber:d.versionNumber,changeReason:d.changeReason||'',body:d.body}));
  return {skillId:id,items};
