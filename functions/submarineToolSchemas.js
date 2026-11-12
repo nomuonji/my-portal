@@ -155,6 +155,15 @@ const tools = [
     },
   },
   {
+    name: 'submarine_haul_feedback',
+    description: 'Record the user\'s evaluation of one haul item: an action (personal_feed: loved / saved / skipped; job_opportunities: apply / consider / pass; otherwise confirmed / candidate / declined) and/or a comment. The action is written back to the canonical store where it has a field (Discover feedback), decides the haul status (mirrored to the 道場), and the comment is kept as feedback the next sortie reads. Only for what the user actually said: userAuthorized + authorizationNote.',
+    inputSchema: {
+      type: 'object',
+      properties: { submarineId, haulId: string('C-nnn.', 20), action: string('Action key from submarine_get actions.', 30), comment: string('The user\'s words.', 1000), userAuthorized, authorizationNote, actor },
+      required: ['submarineId', 'haulId', 'userAuthorized', 'authorizationNote'], additionalProperties: false,
+    },
+  },
+  {
     name: 'submarine_haul_list',
     description: 'Haul across the whole fleet, newest first: what every submarine brought back, with its status.',
     inputSchema: { type: 'object', properties: { status: { type: 'string', enum: ['candidate', 'confirmed', 'declined'] }, limit: { type: 'integer', minimum: 1, maximum: 500 } }, additionalProperties: false },

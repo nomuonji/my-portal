@@ -172,3 +172,73 @@ test('the fleet manifest commissions missing submarines once, with their 道場 
   assert.equal((await fleetModule.ensureFleet(stub)).settled, true);
   assert.deepEqual(fleetModule.FLEET.map((s) => s.hull), ['SS-01', 'SS-02', 'SS-03', 'SS-04', 'SS-05']);
 });
+
+function fakeFeed() {
+  const items = new Map([
+    ['a', { id: 'a', title: 'Foot bath', url: 'https://x/a', reason: 'local find', feedback: 'loved', revision: 2 }],
+    ['b', { id: 'b', title: 'Meme history', url: 'https://x/b', reason: 'meme', feedback: 'new', revision: 1 }],
+  ]);
+  const calls = [];
+  return {
+    calls, items,
+    adapter: {
+      where: 'personal_feed', authoritative: true,
+      actions: [{ key: 'loved', label: '好き', decision: 'confirmed' }, { key: 'saved', label: 'あとで', decision: 'candidate' }, { key: 'skipped', label: '興味なし', decision: 'declined' }],
+      async list() {
+        const st = { loved: 'confirmed', skipped: 'declined' };
+        return [...items.values()].map((i) => ({ id: i.id, ref: 'personal_feed:' + i.id, record: { title: i.title, url: i.url, reason: i.reason, state: i.feedback }, status: st[i.feedback] || 'candidate', evidence: i.reason }));
+      },
+      async apply(id, action, note) { calls.push([id, action, note]); items.get(id).feedback = action; },
+    },
+  };
+}
+
+test('a canonical store is indexed as haul, its state decides status, and feedback writes back and is kept', async () => {
+  const db = new MemoryDb();
+  const dojo = dojoModule.createStore({ getDb: () => db, resolveTarget });
+  await dojo.create({ id: 'finder-dojo', title: 'Finder 道場', summary: 'Trains finder', outcome, ...auth,
+    method: { title: 'Finder', version: 'f1', summary: 'v1', bodyRef: { kind: 'chat_skill', location: 'finder', versionNumber: 1 } } });
+  const feed = fakeFeed();
+  const { createCanonical } = require('../functions/submarineCanonical');
+  const subs = createStore({ getDb: () => db, dojo, resolveTarget, canonical: createCanonical({ personal_feed: feed.adapter }) });
+  await subs.commission({ id: 'disc', name: 'D', summary: 'S', loadout: [{ kind: 'chat_skill', id: 'finder' }], mission: outcome, haulCanonical: { where: 'personal_feed' }, ...auth });
+  let sub = await subs.get({ id: 'disc' });
+  assert.equal(sub.haul.confirmed.length, 1, 'a loved recommendation came aboard confirmed');
+  assert.equal(sub.haul.awaiting.length, 1);
+  assert.equal(sub.haul.awaiting[0].record.reason, 'meme', 'haul shows the canonical record');
+  assert.equal(sub.actions[0].key, 'loved');
+  let base = await dojo.get({ id: 'finder-dojo' });
+  assert.ok(base.outcome.confirmed.some((a) => a.ref === 'personal_feed:a'), 'mirrored to the 道場');
+  sub = await subs.get({ id: 'disc' });
+  assert.equal(sub.haul.awaiting.length + sub.haul.confirmed.length, 2, 'a second read does not index twice');
+
+  const b = sub.haul.awaiting[0];
+  await assert.rejects(subs.haulFeedback({ submarineId: 'disc', haulId: b.id, action: 'loved' }), /owned by the user/);
+  await assert.rejects(subs.haulFeedback({ submarineId: 'disc', haulId: b.id, action: 'nope', ...auth }), /action must be one of/);
+  sub = await subs.haulFeedback({ submarineId: 'disc', haulId: b.id, action: 'skipped', comment: '前提知識が要る', ...auth });
+  assert.deepEqual(feed.calls[0], ['b', 'skipped', '前提知識が要る'], 'written back to the feed');
+  assert.equal(sub.haul.declinedCount, 1);
+  assert.equal(sub.recentFeedback[0].comment, '前提知識が要る');
+  assert.equal(sub.recentFeedback[0].actionLabel, '興味なし');
+  sub = await subs.haulFeedback({ submarineId: 'disc', haulId: b.id, comment: 'やっぱり惜しい', ...auth });
+  assert.equal(sub.recentFeedback.length, 2, 'a comment alone is kept too');
+
+  // The feed changed elsewhere (e.g. the old Discover page): the next read follows it.
+  feed.items.get('a').feedback = 'skipped';
+  sub = await subs.get({ id: 'disc' });
+  assert.equal(sub.haul.confirmed.length, 0);
+  base = await dojo.get({ id: 'finder-dojo' });
+  assert.ok(!base.outcome.confirmed.some((x) => x.ref === 'personal_feed:a'), 'the 道場 follows the withdrawal');
+
+  // A new record added during a sortie is linked to it rather than counted as a duplicate.
+  const s = await subs.sortieStart({ submarineId: 'disc', objective: 'find' });
+  feed.items.set('c', { id: 'c', title: 'New find', url: 'https://x/c', reason: 'r', feedback: 'new', revision: 1 });
+  await subs.get({ id: 'disc' });
+  const back = await subs.sortieFinish({ submarineId: 'disc', sortieId: s.sortieId, summary: 'one', haul: [{ label: 'New find', ref: 'personal_feed:c', evidence: 'passes' }] });
+  assert.equal(back.sortie.haulCount, 1);
+  assert.equal(back.sortie.duplicates, 0);
+  assert.equal(back.brief.haul.awaiting.find((h) => h.ref === 'personal_feed:c').sortieId, s.sortieId);
+  const all = await subs.haulList({});
+  assert.ok(all.items.every((h) => h.record), 'the fleet view renders canonical records');
+  assert.equal(all.actions.personal_feed[0].key, 'loved');
+});
