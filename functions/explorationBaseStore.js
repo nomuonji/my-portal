@@ -301,7 +301,7 @@ function createStore(options) {
     const items = snap.docs.map((doc) => doc.data())
       .filter((base) => !status || base.status === status)
       .map((base) => ({
-        id: base.id, title: base.title, summary: base.summary, status: base.status,
+        id: base.id, title: base.title, summary: base.summary, status: base.status, revision: Number(base.revision) || 0,
         projectIds: base.projectIds || [], packRefs: base.packRefs || [],
         outcome: base.outcome ? { statement: base.outcome.statement, target: base.outcome.target, deadline: base.outcome.deadline } : null,
         confirmedCount: base.progress?.confirmedCount || 0,
@@ -827,6 +827,43 @@ function createStore(options) {
     return { baseId: id, changed };
   }
 
+  async function remove(input = {}) {
+    if (input.confirm !== true) throw new Error('Explicit confirmation required');
+    const id = requireBaseId(input?.id);
+    const expectedRevision = Number(input.expectedRevision);
+    if (!Number.isInteger(expectedRevision) || expectedRevision < 0) throw new Error('A valid expectedRevision is required');
+    const database = db();
+    const ref = database.collection(COLLECTIONS.bases).doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) throw new Error('Exploration Base not found: ' + id);
+    const base = snap.data();
+    if ((Number(base.revision) || 0) !== expectedRevision) throw new Error('Exploration Base revision conflict; reload before deleting');
+    if (base.status !== 'closed') throw new Error('Only closed Exploration Bases can be permanently deleted');
+    if (base.openRunId) throw new Error('Cannot delete an Exploration Base with an open run: ' + base.openRunId);
+    const [items, runs, events] = await Promise.all([
+      database.collection(COLLECTIONS.items).where('baseId', '==', id).limit(1001).get(),
+      database.collection(COLLECTIONS.runs).where('baseId', '==', id).limit(501).get(),
+      database.collection(COLLECTIONS.events).where('baseId', '==', id).limit(2001).get(),
+    ]);
+    if (items.docs.length > 1000 || runs.docs.length > 500 || events.docs.length > 2000) {
+      throw new Error('This Exploration Base has too much history for a single cleanup operation; no records were deleted');
+    }
+    if (runs.docs.some(doc => doc.data().status === 'open')) {
+      throw new Error('Cannot delete an Exploration Base while a run is still open');
+    }
+    // Closed bases are immutable. Delete their owned ledger/run/event records, then the base itself.
+    for (const group of [items.docs, runs.docs, events.docs]) {
+      for (let i = 0; i < group.length; i += 25) {
+        await Promise.all(group.slice(i, i + 25).map(doc => doc.ref.delete()));
+      }
+    }
+    await ref.delete();
+    return {
+      id, title: base.title, deleted: true,
+      deletedItems: items.docs.length, deletedRuns: runs.docs.length, deletedEvents: events.docs.length,
+    };
+  }
+
   // Which 道場 train this skill or pack, and which version each one releases for execution. Used to tell
   // whoever edits the skill/pack directly that execution stays on the released version until the 道場 releases more.
   async function trainersOf(input) {
@@ -841,7 +878,7 @@ function createStore(options) {
   // Compact summary used by the Agent Intelligence bundle resolver.
   async function brief(input) { return get({ id: input?.id, view: 'brief' }); }
 
-  return { create, list: listBases, get, brief, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, trainersOf };
+  return { create, list: listBases, get, remove, brief, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, trainersOf };
 }
 
 const store = createStore();

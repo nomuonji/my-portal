@@ -57,6 +57,7 @@ import {
   StyleOutlined as CardsIcon,
   ExploreOutlined as ExplorationIcon,
   Radar as SubmarineIcon,
+  DeleteSweep as CleanupIcon,
 } from '@mui/icons-material';
 
 import Memo from './components/Memo';
@@ -92,6 +93,7 @@ import ExplorationBases from './components/ExplorationBases';
 import Submarines from './components/Submarines';
 import PageErrorBoundary from './components/PageErrorBoundary';
 import Outputs from './components/Outputs';
+import CleanupCenter from './components/CleanupCenter';
 
 import getAppTheme, { fonts } from './theme';
 
@@ -180,6 +182,7 @@ function App() {
     if (path.startsWith('/exploration')) return 'スキル錬成道場';
     if (path.startsWith('/submarines')) return 'Project Submarine';
     if (path.startsWith('/outputs')) return 'アウトプットDB';
+    if (path.startsWith('/cleanup')) return '削除センター';
     if (path.startsWith('/ideaboard') || path.startsWith('/idea')) return 'アイデア';
     if (path.startsWith('/hobbyboard') || path.startsWith('/hobby')) return '趣味';
     if (path.startsWith('/stockboard') || path.startsWith('/stock')) return 'ストック';
@@ -387,6 +390,7 @@ function App() {
         { to: '/meta', label: 'プロジェクト提案', hint: '戦略・次の一手', icon: <MetaIcon /> },
         { to: '/exploration', label: 'スキル錬成道場', hint: '鍛えているスキルと版 / ゴール / 見立て / 情報源 / 経過', icon: <ExplorationIcon /> },
         { to: '/agent-ideas', label: 'Agent Ideas', hint: 'Portalと同じ構造でAIが補充', icon: <SmartToyIcon /> },
+        { to: '/cleanup', label: '削除センター', hint: 'アーカイブ・停止済みレコードの完全削除', icon: <CleanupIcon /> },
       ],
     },
     {
@@ -632,6 +636,7 @@ function App() {
                 <Route path="/submarines" element={<Submarines />} />
                 <Route path="/exploration" element={<ExplorationBases />} />
                 <Route path="/outputs" element={<Outputs />} />
+                <Route path="/cleanup" element={<CleanupCenter />} />
                 <Route path="/thinking" element={<ThinkingWorkspace />} />
                 <Route path="/feature-requests" element={<FeatureRequests />} />
                 <Route path="/project" element={<Project />} />
