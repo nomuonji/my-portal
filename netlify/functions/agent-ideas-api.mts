@@ -204,10 +204,10 @@ export default async (request: Request) => {
       if (resource === "runs") {
         return json({ items: await listCollection(store.COLLECTIONS.runs, 150), databaseId: store.DATABASE_ID });
       }
-      if (resource === "chat_skills") return json(await chatContext.listSkills());
+      if (resource === "chat_skills") return json(await chatContext.listSkills({ includeArchived: url.searchParams.get("includeArchived") === "true" }));
       if (resource === "chat_skill") return json(await chatContext.getSkill({ id:url.searchParams.get("id")||"" }));
       if (resource === "chat_skill_versions") return json(await chatContext.skillVersions({ id:url.searchParams.get("id")||"" }));
-      if (resource === "contexts") return json(await contextRegistry.list({projectId:url.searchParams.get("projectId")||undefined,domain:url.searchParams.get("domain")||undefined}));
+      if (resource === "contexts") return json(await contextRegistry.list({projectId:url.searchParams.get("projectId")||undefined,domain:url.searchParams.get("domain")||undefined,includeArchived:url.searchParams.get("includeArchived")==="true"}));
       if (resource === "context") return json(await contextRegistry.get({id:url.searchParams.get("id")||""}));
       if (resource === "context_history") return json(await contextRegistry.listEvents({contextId:url.searchParams.get("id")||""}));
       if (resource === "world_map") {
@@ -423,6 +423,10 @@ export default async (request: Request) => {
           nextActions: body.nextActions || [],
         }));
       }
+      if (action === "cleanup_exploration_base") return json(await explorationBaseStore.remove({id:body.id,expectedRevision:body.expectedRevision,confirm:body.confirm===true}));
+      if (action === "cleanup_chat_skill") return json(await chatContext.removeSkill({id:body.id,expectedRevision:body.expectedRevision,confirm:body.confirm===true}));
+      if (action === "cleanup_context") return json(await contextRegistry.remove({id:body.id,expectedRevision:body.expectedRevision,confirm:body.confirm===true}));
+      if (action === "cleanup_routine_job") return json(await routineStore.remove({id:body.id,expectedRevision:body.expectedRevision,confirm:body.confirm===true}));
       if (action === "chat_skill_upsert") return json(await chatContext.upsertSkill({skill:body.skill,expectedRevision:body.expectedRevision,changeReason:body.changeReason,confirm:body.confirm===true}));
       if (action === "context_save") return json(await contextRegistry.save({id:body.id,context:body.context,expectedRevision:body.expectedRevision,confirm:body.confirm===true}));
       if (action === "context_event_create") return json(await contextRegistry.addEvent({contextId:body.contextId,kind:body.kind,summary:body.summary,detail:body.detail,source:body.source||"portal-ui",sourceUrl:body.sourceUrl,idempotencyKey:body.idempotencyKey,confirm:body.confirm===true}));
