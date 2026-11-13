@@ -156,4 +156,24 @@ async function addEvent(input={}) {
  const snap=await ref.get();
  return {id:ref.id,...snap.data(),createdAt:iso(snap.data().createdAt)};
 }
-module.exports={list,get,save,listEvents,addEvent,migrateLegacy,clean,legacyDoc,projectHints};
+async function remove(input={}) {
+ if(input.confirm!==true)throw new Error('confirm=true required');
+ const id=txt(input.id,160);
+ if(!/^[a-z0-9A-Z][a-zA-Z0-9_-]{0,159}$/.test(id))throw new Error('Invalid context id');
+ const expected=Number(input.expectedRevision);
+ if(!Number.isInteger(expected)||expected<0)throw new Error('Expected revision must be a nonnegative integer');
+ const ref=db().collection(CONTEXTS).doc(id);
+ const snap=await ref.get();
+ if(!snap.exists)throw new Error('Context not found: '+id);
+ const current=snap.data();
+ if((Number(current.revision)||0)!==expected)throw new Error('Context revision conflict; reload before deleting');
+ if(current.status!=='archived')throw new Error('Only archived Contexts can be permanently deleted');
+ const events=await db().collection(EVENTS).where('contextId','==',id).limit(1001).get();
+ if(events.docs.length>1000)throw new Error('More than 1000 Context events found; deletion needs a reviewed batch');
+ for(let i=0;i<events.docs.length;i+=25) {
+  await Promise.all(events.docs.slice(i,i+25).map(doc=>doc.ref.delete()));
+ }
+ await ref.delete();
+ return {id,title:current.title,deletedEvents:events.docs.length,deleted:true,legacySourcesPreserved:true};
+}
+module.exports={list,get,save,remove,listEvents,addEvent,migrateLegacy,clean,legacyDoc,projectHints};
