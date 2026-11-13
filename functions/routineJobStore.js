@@ -191,4 +191,24 @@ async function runs(input = {}) {
     .map(run=>({...run,stalled:run.status==='running' && Date.now()-Date.parse(run.startedAt)>3*60*60*1000}));
   return { items, readLimit:scanLimit };
 }
-module.exports = { list, upsert, due, claim, finish, runs, RUNNER_SLOTS, MAX_JOBS_PER_TICK, candidate, validateSlots, validateCapacity, slotLoadsFor, jst };
+async function remove(input = {}) {
+  if (input.confirm !== true) throw new Error('Explicit confirmation required');
+  const id = validId(text(input.id, 80));
+  const expectedRevision = Number(input.expectedRevision);
+  if (!Number.isInteger(expectedRevision) || expectedRevision < 1) throw new Error('A valid expectedRevision is required');
+  const database = db(), ref = database.collection(JOBS).doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) throw new Error('Routine job not found: ' + id);
+  const job = snap.data();
+  if (Number(job.revision) !== expectedRevision) throw new Error('Routine job revision mismatch; reload before deleting');
+  if (job.status !== 'paused') throw new Error('Only paused routine jobs can be permanently deleted');
+  const history = await database.collection(RUNS).where('jobId', '==', id).limit(501).get();
+  if (history.docs.length > 500) throw new Error('More than 500 routine-job runs found; deletion needs a reviewed batch');
+  if (history.docs.some(doc => doc.data().status === 'running')) {
+    throw new Error('A routine-job run is still running; finish it before deleting the job');
+  }
+  // Keep completed/failed run receipts as an audit trail; remove only the schedule definition.
+  await ref.delete();
+  return { id, title: job.title, preservedRunHistory: history.docs.length, deleted: true };
+}
+module.exports = { list, upsert, remove, due, claim, finish, runs, RUNNER_SLOTS, MAX_JOBS_PER_TICK, candidate, validateSlots, validateCapacity, slotLoadsFor, jst };
