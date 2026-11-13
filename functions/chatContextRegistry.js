@@ -76,11 +76,11 @@ async function upgradeNavigationContextRoute() {
      createdAt:FieldValue.serverTimestamp()});
  });
 }
-async function listSkills() {
+async function listSkills(input={}) {
  await bootstrapSkills();
  await upgradeNavigationContextRoute();
  const snap=await db().collection(SKILLS).limit(250).get();
- return {items:snap.docs.map(d=>summary({id:d.id,...d.data()})).filter(s=>s.status!=='archived').sort((a,b)=>a.title.localeCompare(b.title)),
+ return {items:snap.docs.map(d=>summary({id:d.id,...d.data()})).filter(s=>input.includeArchived===true||s.status!=='archived').sort((a,b)=>a.title.localeCompare(b.title)),
   sourceOfTruth:'My Portal DB / chatSkills',
   notInstalledWarning:'Saving a skill in My Portal does not install it in ChatGPT. ChatGPT Skill installation is a separate user/product action.'};
 }
@@ -180,4 +180,27 @@ async function createNote(input) {
  const snapshot=await ref.get();
  return serializeNote(snapshot);
 }
-module.exports={listSkills,getSkill,upsertSkill,skillVersions,listNotes,createNote,cleanSkill};
+async function removeSkill(input={}) {
+ if(input.confirm!==true)throw new Error('Explicit confirmation required');
+ const id=safeString(input.id,90);
+ if(!/^[a-z][a-z0-9-]*$/.test(id))throw new Error('Skill id must be kebab-case');
+ const expected=Number(input.expectedRevision);
+ if(!Number.isInteger(expected)||expected<0)throw new Error('expectedRevision must be a nonnegative integer');
+ const ref=db().collection(SKILLS).doc(id);
+ const snap=await ref.get();
+ if(!snap.exists)throw new Error('Skill not found: '+id);
+ const current=snap.data();
+ if((Number(current.revision)||0)!==expected)throw new Error('Skill revision conflict; reload before deleting');
+ if(current.status!=='archived')throw new Error('Only archived Skills can be permanently deleted');
+ // Do not remove a Skill still carried by any active or paused dojo.
+ const trainers=await require('./explorationBaseStore').trainersOf({kind:'chat_skill',id});
+ if(trainers.length)throw new Error('Skill is still used by a non-closed dojo: '+trainers.map(x=>x.baseId).join(', '));
+ const versions=await db().collection(SKILL_VERSIONS).where('id','==',id).limit(501).get();
+ if(versions.docs.length>500)throw new Error('More than 500 Skill versions found; deletion needs a reviewed batch');
+ for(let i=0;i<versions.docs.length;i+=25) {
+  await Promise.all(versions.docs.slice(i,i+25).map(doc=>doc.ref.delete()));
+ }
+ await ref.delete();
+ return {id,title:current.title,deletedVersions:versions.docs.length,deleted:true};
+}
+module.exports={listSkills,getSkill,upsertSkill,skillVersions,removeSkill,listNotes,createNote,cleanSkill};
