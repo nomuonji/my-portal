@@ -57,6 +57,7 @@ const DETAIL = {
   },
 };
 
+const AWAITING = { items: [] };
 let posted;
 beforeEach(() => {
   posted = null;
@@ -65,6 +66,7 @@ beforeEach(() => {
       posted = JSON.parse(options.body);
       return Promise.resolve({ ok: true, json: () => Promise.resolve(DETAIL) });
     }
+    if (String(url).includes('resource=exploration_awaiting_trials')) return Promise.resolve({ ok: true, json: () => Promise.resolve(AWAITING) });
     const body = String(url).includes('resource=exploration_bases') ? LIST : DETAIL;
     return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
   });
@@ -188,4 +190,16 @@ test('the 道場 shows the pass rate by version, what waits for the user and the
   expect(screen.getByText('母親の推薦で口説く男')).toBeInTheDocument();
   expect(screen.getByText(/合格。いいね/)).toBeInTheDocument();
   expect(screen.getByText(/前の版 v44 の 60% を下回っている/)).toBeInTheDocument();
+});
+
+test('samples waiting for the user are rated from the list with one press and an optional line', async () => {
+  AWAITING.items = [{ baseId: 'buzz', baseTitle: 'バズ投稿道場', id: 'T-031', label: '母親の推薦で口説く男', body: '本文そのもの', createdAt: '2026-11-15T01:00:00Z' }];
+  renderAt('');
+  expect(await screen.findByText('評価待ちの見本 1件')).toBeInTheDocument();
+  expect(screen.getByText('本文そのもの')).toBeInTheDocument();
+  expect(screen.getByText('バズ投稿道場')).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('母親の推薦で口説く男 への一言'), { target: { value: '話者が変' } });
+  fireEvent.click(screen.getByRole('button', { name: 'ボツ' }));
+  await waitFor(() => expect(posted).toEqual({ action: 'exploration_trial_rate', baseId: 'buzz', id: 'T-031', verdict: 'fail', comment: '話者が変' }));
+  AWAITING.items = [];
 });
