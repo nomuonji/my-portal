@@ -167,6 +167,12 @@ function summarizeMethod(p) {
   };
 }
 function summarizeExplorationBase(p) {
+  // The loop summary is cached on the base when a trial is rated or a run ends; until then, derive it from
+  // the haul evaluations already on the base so World Home never shows an empty pass rate.
+  let loop = p.loop;
+  if (!loop) {
+    try { const { loopView, loopSummary } = require('./explorationLoop'); loop = loopSummary(loopView({ trials: [], feedbackLog: p.feedbackLog, base: p })); } catch { loop = null; }
+  }
   return {
     id: p.id, title: safeText(p.title, 220), status: safeText(p.status, 40),
     summary: safeText(p.summary, 400), projectIds: safeArray(p.projectIds, 20),
@@ -174,9 +180,9 @@ function summarizeExplorationBase(p) {
     trains: ['chat_skill', 'intelligence_pack'].includes(p.method?.bodyRef?.kind) && p.method.bodyRef.versionNumber
       ? { kind: p.method.bodyRef.kind, id: safeText(p.method.bodyRef.location, 90), releasedVersion: Number(p.method.bodyRef.versionNumber) } : null,
     // A 道場 is measured by the pass rate of what its released version produces; there is no count target.
-    passRate: p.loop?.passRate ?? null, rated: Number(p.loop?.rated) || 0,
-    currentVersionPassRate: p.loop?.currentPassRate ?? null, currentVersionRated: Number(p.loop?.currentRated) || 0,
-    awaitingRating: Number(p.loop?.awaiting) || 0,
+    passRate: loop?.passRate ?? null, rated: Number(loop?.rated) || 0,
+    currentVersionPassRate: loop?.currentPassRate ?? null, currentVersionRated: Number(loop?.currentRated) || 0,
+    awaitingRating: Number(loop?.awaiting) || 0,
     stalledRuns: Number(p.stalledRuns) || 0,
   };
 }
