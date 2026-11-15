@@ -20,6 +20,7 @@ const ID_PATTERN = /^[a-z][a-z0-9-]{1,79}$/;
 const STAGES = ['conjecture', 'observed', 'reproduced', 'yielded_candidate', 'yielded_outcome'];
 const WIN_STAGES = new Set(['yielded_candidate', 'yielded_outcome']);
 const HYPOTHESIS_STATUS = ['open', 'rejected', 'retired'];
+const PIPELINE_STAGES = ['source', 'selection', 'transform', 'voice', 'gate', 'audience', 'unknown'];
 // Sources (where material comes from) climb the same ladder as hypotheses: tried and seen relevant material,
 // useful in two runs, produced a candidate, produced a confirmed achievement. Rejected = tried and useless.
 const LEDGER_KINDS = { hypothesis: 'H', source: 'S' };
@@ -31,6 +32,8 @@ const OPEN_RUN_TTL_MS = 12 * 60 * 60 * 1000;
 const STALL_WARNING_AT = 3;
 const PROTOCOL = [
   'Read this base before exploring; do not rely on memory of an earlier version.',
+  'exploration_run_start: read loop.refinement, compare competing explanations, and precommit a discriminating experimentDesign (changed stage, controls, expected difference, falsification) where possible. An exploratory probe may have no design.',
+  'Forecast calibration and hypothesis ranking are advisory, not proof or automatic method release. Do not inflate predictedPass to bypass a domain-specific quality gate.',
   'exploration_run_start: declare which hypotheses this run tests and the predicted result before measuring.',
   'During the run, write every changed fixed point with the runId (exploration_item_upsert).',
   'exploration_run_finish: give a verdict per declared hypothesis. A run that moved no fixed point is recorded as stalled.',
@@ -252,8 +255,8 @@ function cleanEvidence(raw, runId) {
 }
 function hypothesisBrief(item) {
   return {
-    id: item.id, title: item.title, stage: item.stage, statement: item.statement,
-    limits: item.limits || '', evidenceCount: (item.evidence || []).length,
+    id: item.id, title: item.title, stage: item.stage, pipelineStage: item.pipelineStage || 'unknown', statement: item.statement,
+    revisionCount: (item.revisionHistory || []).length, limits: item.limits || '', evidenceCount: (item.evidence || []).length,
     counterexampleCount: (item.counterexamples || []).length, legacyIds: item.legacyIds || [],
   };
 }
@@ -669,6 +672,8 @@ function createStore(options) {
     if (kind === 'hypothesis') {
       if (creating || raw.statement !== undefined) item.statement = text(raw.statement, 1500, 'hypothesis.statement', true);
       if (creating || raw.mechanism !== undefined) item.mechanism = text(raw.mechanism, 2000, 'hypothesis.mechanism (why it would hold)', true);
+      if (raw.pipelineStage !== undefined) item.pipelineStage = oneOf(raw.pipelineStage, PIPELINE_STAGES, 'hypothesis.pipelineStage');
+      if (creating) item.pipelineStage = item.pipelineStage || 'unknown';
     } else {
       if (creating || raw.locator !== undefined) item.locator = text(raw.locator, 600, 'source.locator (URL, query or tool call that reaches it)', true);
       if (creating || raw.coverage !== undefined) item.coverage = text(raw.coverage, 1500, 'source.coverage (what it yields and why it is worth trying)', true);
@@ -698,6 +703,20 @@ function createStore(options) {
         if (status !== 'open' && !reason) throw new Error('Rejecting or retiring a ' + kind + ' requires a reason.');
         if (status === 'open' && !reason) throw new Error('Reopening a ' + kind + ' requires a reason.');
         item.status = status; item.statusReason = reason; item.statusChangedAt = now();
+      }
+    }
+    // Preserve actual changes to a hypothesis, not just its latest wording. A rating/evidence
+    // append is not a hypothesis revision, and does not erase earlier versions of the claim.
+    if (!creating && kind === 'hypothesis') {
+      const fields = ['title', 'statement', 'mechanism', 'limits', 'pipelineStage', 'stage', 'status'];
+      const modified = fields.filter((field) => (item[field] || '') !== (prior[field] || ''));
+      if (modified.length) {
+        item.revisionHistory = [...(prior.revisionHistory || []), {
+          at: now(), runId: runId || null, changedFields: modified,
+          reason: reason || 'Reason not supplied',
+          before: Object.fromEntries(modified.map((field) => [field, prior[field] || ''])),
+          after: Object.fromEntries(modified.map((field) => [field, item[field] || ''])),
+        }].slice(-12);
       }
     }
     return { item, change: creating ? 'created' : (item.stage !== previousStage ? 'stage:' + previousStage + '>' + item.stage : (raw.status && raw.status !== prior.status ? 'status:' + raw.status : 'updated')), reason };
@@ -799,13 +818,34 @@ function createStore(options) {
       }
       const probe = text(input.unknownTerritoryProbe, 800, 'unknownTerritoryProbe', false);
       if (!cleanTargets.length && !probe) throw new Error('Declare at least one target hypothesis with a prediction, or unknownTerritoryProbe describing what unexplored area this run observes.');
+      let experimentDesign = null;
+      if (input.experimentDesign !== undefined) {
+        const d = plain(input.experimentDesign, 'experimentDesign');
+        const contrasted = list(d.contrastedHypothesisIds, 6, 20);
+        if (!contrasted.length) throw new Error('experimentDesign.contrastedHypothesisIds requires a competing hypothesis.');
+        if (!cleanTargets.length) throw new Error('experimentDesign requires a declared target hypothesis.');
+        for (const hid of contrasted) {
+          if (cleanTargets.some((t) => t.hypothesisId === hid)) throw new Error('experimentDesign must contrast a distinct hypothesis: ' + hid);
+          const other = value(await tx.get(itemRef(id, hid)));
+          if (!other || other.kind !== 'hypothesis' || other.status !== 'open') throw new Error('Competing hypothesis not open: ' + hid);
+        }
+        experimentDesign = {
+          contrastedHypothesisIds: contrasted,
+          changedStage: oneOf(d.changedStage, PIPELINE_STAGES.filter((x) => x !== 'unknown'), 'experimentDesign.changedStage'),
+          intervention: text(d.intervention, 900, 'experimentDesign.intervention', true),
+          comparison: text(d.comparison, 900, 'experimentDesign.comparison', true),
+          controls: text(d.controls, 900, 'experimentDesign.controls', true),
+          expectedDifference: text(d.expectedDifference, 900, 'experimentDesign.expectedDifference', true),
+          refutingObservation: text(d.refutingObservation, 900, 'experimentDesign.refutingObservation', true),
+        };
+      }
       base.counters.R = (base.counters.R || 0) + 1;
       runId = seqId('R', base.counters.R);
       const run = {
         id: runId, baseId: id, status: 'open', startedAt: now(), actor: text(input.actor, 120, 'actor', false) || 'agent',
         objective: text(input.objective, 800, 'objective', true),
         methodVersion: base.method.version, outcomeRevision: base.outcome.revision,
-        targets: cleanTargets, unknownTerritoryProbe: probe,
+        targets: cleanTargets, unknownTerritoryProbe: probe, ...(experimentDesign ? { experimentDesign } : {}),
       };
       put(tx, runRef(id, runId), run);
       base.openRunId = runId;
