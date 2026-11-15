@@ -542,7 +542,7 @@ test('samples waiting for the user are listed across 道場, oldest first, and l
   assert.deepEqual(waiting.items.map((t) => t.id), ['T-002']);
 });
 
-test('common dojo stores a falsifiable, stage-isolated experiment without modifying its user's outcome', async () => {
+test('common dojo stores a falsifiable, stage-isolated experiment without changing user-owned outcomes', async () => {
   const store = await setup();
   await store.upsertItems({ baseId: 'test-base', kind: 'hypothesis', items: [
     { ...hypothesis, pipelineStage: 'source' },
