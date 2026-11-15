@@ -406,7 +406,7 @@ test('three user non-passes cannot be cleared by a ceremonial run or self-PASS',
   };
   await assert.rejects(store.finishRun({
     baseId: 'test-base', runId: second.runId, summary: 'Fake analysis',
-    failureAnalysis: { ...valid, caseRefs: ['T-001', 'T-002', 'T-999'] },
+    failureAnalysis: { ...valid, caseRefs: ['T-001', 'T-998', 'T-999'] },
     notMovedReason: 'Investigating',
   }), /real, user-rated non-pass/);
   await assert.rejects(store.finishRun({
