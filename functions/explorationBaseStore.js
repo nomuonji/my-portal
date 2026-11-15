@@ -88,6 +88,32 @@ function authorization(input, what) {
 
 // Evidence audit for a failed batch. This verifies provenance and contradictory hypotheses,
 // NOT that an agent has correctly diagnosed the causal mechanism. Only user ratings count.
+// Compatibility with MCP clients whose tool schema was pinned before failureAnalysis
+// was added. The compact audit is transported inside the legacy summary field, but
+// runs through EXACTLY the same server-side evidence validation as the native field.
+// This is not a skip or a weaker gate; malformed envelopes fail closed.
+const LEGACY_FAILURE_ANALYSIS_PREFIX = 'failureAnalysis:v1:';
+function unpackFailureAnalysis(input) {
+  const summary = text(input?.summary, 2500, 'summary', true);
+  if (!summary.startsWith(LEGACY_FAILURE_ANALYSIS_PREFIX)) {
+    return { summary, failureAnalysis: input?.failureAnalysis || null };
+  }
+  if (input?.failureAnalysis) throw new Error('Cannot send failureAnalysis in both the direct field and the legacy summary envelope.');
+  let payload;
+  try {
+    payload = plain(JSON.parse(summary.slice(LEGACY_FAILURE_ANALYSIS_PREFIX.length)), 'legacy failureAnalysis payload');
+  } catch (error) {
+    throw new Error('Invalid legacy failureAnalysis envelope: ' + error.message);
+  }
+  if (Object.keys(payload).some((key) => key !== 'summary' && key !== 'failureAnalysis')) {
+    throw new Error('Unknown legacy failureAnalysis envelope field');
+  }
+  return {
+    summary: text(payload.summary, 2500, 'legacy summary', true),
+    failureAnalysis: plain(payload.failureAnalysis, 'legacy failureAnalysis'),
+  };
+}
+
 function cleanFailureAnalysis(raw, entries) {
   const input = plain(raw, 'failureAnalysis');
   const recent = entries.filter((e) => e.verdict === 'fail' || e.verdict === 'partial').slice(-LIMITS.failStreak);
@@ -792,6 +818,7 @@ function createStore(options) {
   async function finishRun(input) {
     const id = requireBaseId(input?.baseId);
     const runId = text(input?.runId, 20, 'runId', true);
+    const finishData = unpackFailureAnalysis(input);
     let summary;
     const trials = await loadTrials(id);
     await db().runTransaction(async (tx) => {
@@ -814,8 +841,8 @@ function createStore(options) {
           observed: text(raw.observed, 1200, 'verdict.observed (what was actually measured)', true),
         };
       });
-      const failureAnalysis = input.failureAnalysis
-        ? cleanFailureAnalysis(input.failureAnalysis, ratedEntries(trials, base.feedbackLog))
+      const failureAnalysis = finishData.failureAnalysis
+        ? cleanFailureAnalysis(finishData.failureAnalysis, ratedEntries(trials, base.feedbackLog))
         : null;
       const achievements = (Array.isArray(input.achievements) ? input.achievements.slice(0, 20) : []).map((rawAchievement) => {
         const raw = plain(rawAchievement, 'achievement');
@@ -843,7 +870,7 @@ function createStore(options) {
       base.openRunId = null;
       const finished = {
         ...run, status: 'finished', finishedAt: now(),
-        summary: text(input.summary, 2500, 'summary', true),
+        summary: finishData.summary,
         verdicts, achievementIds: achievements.map((a) => a.id), failureAnalysis,
         movedItemIds: [...new Set(itemChanges)], yieldRefs, moved,
         notMovedReason: moved ? '' : text(input.notMovedReason, 1000, 'notMovedReason (this run changed no fixed point; say why and what that implies)', true),
