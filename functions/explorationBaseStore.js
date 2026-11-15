@@ -6,6 +6,7 @@
 // ledger, constraints and the run log.
 
 const { getDocumentDb } = require('./documentDb');
+const { loopView, loopSummary, VERDICTS: TRIAL_VERDICTS, FAIL_STAGES, LIMITS } = require('./explorationLoop');
 
 const DEFAULT_DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTIONS = Object.freeze({
@@ -13,6 +14,7 @@ const COLLECTIONS = Object.freeze({
   items: 'explorationBaseItems',
   runs: 'explorationBaseRuns',
   events: 'explorationBaseEvents',
+  trials: 'explorationBaseTrials',
 });
 const ID_PATTERN = /^[a-z][a-z0-9-]{1,79}$/;
 const STAGES = ['conjecture', 'observed', 'reproduced', 'yielded_candidate', 'yielded_outcome'];
@@ -38,6 +40,10 @@ const PROTOCOL = [
   'When the method is a chat_skill or intelligence_pack target, use exactly the released version (method.target.releasedVersion, body included here), not the latest one. A newer version made outside this base is unverified until it is released here.',
   'Sources (where candidates come from) are a ledger too: record which source a candidate came from (evidence on the source, sourceIds on the achievement) and reject sources that yield nothing, so the next run starts from proven ones.',
   'When a submarine (Project Submarine) carries this skill/pack, its sortie opens and closes the run here. What it finds is the submarine\'s haul; a haul the user confirms comes back here as an achievement.',
+  'The measure of a 道場 is the pass rate of what its released version produces, by version (loop). There is no count target. Read loop.nextActions first.',
+  'Every sample shown to the user is a trial: exploration_trial_record before showing it, with the hypotheses it tests and the predicted chance of passing. A sample tied to no hypothesis teaches nothing and is refused.',
+  'When the user reacts, exploration_trial_rate with their own words. The rating lands on the version and on each hypothesis the trial tested, so a rated hypothesis can no longer be closed as inconclusive.',
+  'A new version waits until the released one has enough ratings to be compared (loop.gates). After consecutive non-passes, finish the run and re-derive hypotheses from sourcing and selection before the next sample.',
   'feedback holds what the user said about each thing the gear produced (action and comment), grouped by the version that produced it. Read it before proposing a new version and cite it as the reason; a version is better only if the user said so more often, not if self-scores rose.',
 ];
 
@@ -82,18 +88,23 @@ function authorization(input, what) {
 
 function cleanOutcome(raw) {
   const input = plain(raw, 'outcome');
-  const target = input.target ? plain(input.target, 'outcome.target') : {};
-  const min = Number(target.min);
-  if (!Number.isInteger(min) || min < 1) throw new Error('outcome.target.min must be a positive integer');
-  const max = target.max === undefined || target.max === null ? null : Number(target.max);
-  if (max !== null && (!Number.isInteger(max) || max < min)) throw new Error('outcome.target.max must be an integer >= min');
+  // A count target is optional: a 道場 is measured by its pass rate. Missions of submarines may still set one.
+  let target = null;
+  if (input.target) {
+    const raw = plain(input.target, 'outcome.target');
+    const min = Number(raw.min);
+    if (!Number.isInteger(min) || min < 1) throw new Error('outcome.target.min must be a positive integer');
+    const max = raw.max === undefined || raw.max === null ? null : Number(raw.max);
+    if (max !== null && (!Number.isInteger(max) || max < min)) throw new Error('outcome.target.max must be an integer >= min');
+    target = { min, max };
+  }
   const budget = input.budget ? plain(input.budget, 'outcome.budget') : {};
   const maxRuns = budget.maxRuns === undefined || budget.maxRuns === null ? null : Number(budget.maxRuns);
   if (maxRuns !== null && (!Number.isInteger(maxRuns) || maxRuns < 1)) throw new Error('outcome.budget.maxRuns must be a positive integer');
   return {
     statement: text(input.statement, 1200, 'outcome.statement', true),
     unit: text(input.unit, 300, 'outcome.unit', true),
-    target: { min, max },
+    target,
     acceptance: text(input.acceptance, 1500, 'outcome.acceptance', true),
     confirmedBy: oneOf(input.confirmedBy, ['user', 'measurement'], 'outcome.confirmedBy', 'user'),
     finalIndicator: text(input.finalIndicator, 800, 'outcome.finalIndicator', false),
@@ -228,6 +239,7 @@ function createStore(options) {
   const baseRef = (id) => db().collection(COLLECTIONS.bases).doc(id);
   const itemRef = (baseId, id) => db().collection(COLLECTIONS.items).doc(docId(baseId, id));
   const runRef = (baseId, id) => db().collection(COLLECTIONS.runs).doc(docId(baseId, id));
+  const trialRef = (baseId, id) => db().collection(COLLECTIONS.trials).doc(docId(baseId, id));
   const eventRef = (baseId, seq) => db().collection(COLLECTIONS.events).doc(docId(baseId, 'E' + String(seq).padStart(6, '0')));
 
   // JSON round-trip drops undefined fields, which Firestore refuses.
@@ -312,6 +324,7 @@ function createStore(options) {
         awaitingCount: (base.progress?.achievements || []).filter((a) => a.status === 'candidate').length,
         pendingProposalCount: (base.proposals || []).filter((p) => p.status === 'pending').length,
         lastRun: (base.lastRuns || [])[0] || null, // newest first
+        loop: base.loop || loopSummary(loopView({ trials: [], feedbackLog: base.feedbackLog, base })),
         updatedAt: base.updatedAt,
       }))
       .sort((a, b) => String(a.title).localeCompare(String(b.title)));
@@ -323,23 +336,40 @@ function createStore(options) {
     return snap.docs.map((doc) => doc.data()).sort((a, b) => String(a.id).localeCompare(String(b.id)));
   }
 
+  async function loadTrials(baseId) {
+    const snap = await db().collection(COLLECTIONS.trials).where('baseId', '==', baseId).limit(3000).get();
+    return snap.docs.map((doc) => doc.data()).sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  }
+  // Cache the loop summary on the base so the list and World Home need no extra reads.
+  async function refreshLoop(baseId) {
+    const [trials, items] = await Promise.all([loadTrials(baseId), loadItems(baseId)]);
+    let view = null;
+    await db().runTransaction(async (tx) => {
+      const base = value(await tx.get(baseRef(baseId)));
+      if (!base) return;
+      view = loopView({ trials, feedbackLog: base.feedbackLog, base, hypotheses: items.filter((item) => item.kind === 'hypothesis') });
+      base.loop = loopSummary(view);
+      put(tx, baseRef(baseId), base);
+    });
+    return view;
+  }
+
   async function get(input) {
     const id = requireBaseId(input?.id);
     const view = oneOf(input?.view, ['brief', 'full'], 'view', 'brief');
     const base = value(await baseRef(id).get());
     if (!base) throw new Error('Exploration Base not found: ' + id);
-    const items = await loadItems(id);
+    const [items, trials] = await Promise.all([loadItems(id), loadTrials(id)]);
     const hypotheses = items.filter((item) => item.kind === 'hypothesis');
     const constraints = items.filter((item) => item.kind === 'constraint');
     const sources = items.filter((item) => item.kind === 'source');
-    const target = base.outcome?.target || {};
     const confirmed = base.progress?.confirmedCount || 0;
     const warnings = [];
     if ((base.stalledRuns || 0) >= STALL_WARNING_AT) {
       warnings.push(base.stalledRuns + ' consecutive runs moved no fixed point. Stop measuring and re-examine: is the constraint set satisfiable, is the method measuring the outcome, is the outcome still the right one? Report which constraint binds.');
     }
-    if (base.outcome?.budget?.maxRuns && (base.runCount || 0) >= base.outcome.budget.maxRuns && confirmed < (target.min || 1)) {
-      warnings.push('Run budget (' + base.outcome.budget.maxRuns + ') is used up without reaching the outcome. Report to the user before running again.');
+    if (base.outcome?.budget?.maxRuns && (base.runCount || 0) >= base.outcome.budget.maxRuns) {
+      warnings.push('Run budget (' + base.outcome.budget.maxRuns + ') is used up. Report to the user before running again.');
     }
     if (base.openRunId) warnings.push('Run ' + base.openRunId + ' is still open. Finish it, or take it over if abandoned.');
     let released = null;
@@ -371,7 +401,6 @@ function createStore(options) {
       outcome: {
         ...base.outcome,
         confirmedCount: confirmed,
-        reached: confirmed >= (target.min || 1),
         awaitingConfirmation: (base.progress?.achievements || []).filter((a) => a.status === 'candidate'),
         confirmed: (base.progress?.achievements || []).filter((a) => a.status === 'confirmed'),
       },
@@ -390,6 +419,7 @@ function createStore(options) {
         runCount: base.runCount || 0, stalledRuns: base.stalledRuns || 0,
         openRunId: base.openRunId || null, lastRuns: base.lastRuns || [],
       },
+      loop: loopView({ trials, feedbackLog: base.feedbackLog, base, hypotheses }),
       feedback: feedbackView(base.feedbackLog || [], base.method?.bodyRef?.versionNumber || null),
       proposals: (base.proposals || []).filter((p) => p.status === 'pending'),
       warnings,
@@ -407,6 +437,7 @@ function createStore(options) {
         methodHistory: base.methodHistory || [],
         proposals: base.proposals || [],
         runs: runs.docs.map((doc) => doc.data()).sort((a, b) => String(b.id).localeCompare(String(a.id))).slice(0, 50),
+        trials: trials.slice().sort((a, b) => String(b.ratedAt || b.createdAt || '').localeCompare(String(a.ratedAt || a.createdAt || ''))).slice(0, 120),
         events: events.docs.map((doc) => doc.data()).sort((a, b) => b.seq - a.seq).slice(0, eventLimit),
       };
     }
@@ -485,6 +516,7 @@ function createStore(options) {
 
   async function setMethodVersion(input) {
     const id = requireBaseId(input?.baseId);
+    const trials = await loadTrials(id);
     await db().runTransaction(async (tx) => {
       const base = await loadBase(tx, id);
       if (base.openRunId) throw new Error('Run ' + base.openRunId + ' is open. The method version cannot change during a run; finish the run first.');
@@ -505,6 +537,13 @@ function createStore(options) {
           if (!run || run.status !== 'finished') throw new Error('Motivating run not found or not finished: ' + runId);
         }
       }
+      // A version is compared by what the user said about its output. Replacing one that has too few ratings
+      // leaves nothing to compare, so it waits — unless the user directed the change.
+      const loop = loopView({ trials, feedbackLog: base.feedbackLog, base });
+      if (base.method && loop.gates.usesTrials && !loop.gates.canReleaseNewVersion && !userDirected) {
+        throw new Error('The released version has ' + loop.current.rated + ' rated trial(s); a new version needs ' + LIMITS.minRatedPerVersion
+          + ' so the two can be compared by pass rate. Keep the insight in the hypothesis ledger and show more samples from the released version, or pass userAuthorized with authorizationNote when the user directed this change.');
+      }
       const rawBenchmark = input.benchmark ? plain(input.benchmark, 'benchmark') : null;
       const noBenchmarkReason = text(input.noBenchmarkReason, 600, 'noBenchmarkReason', false);
       if (base.method && !(rawBenchmark && rawBenchmark.passed === true) && noBenchmarkReason.length < 8) {
@@ -518,11 +557,13 @@ function createStore(options) {
       base.method = { ...method, setAt: at };
       base.methodHistory = [...(base.methodHistory || []), {
         version: method.version, summary: method.summary, setAt: at, motivatingRunIds: motivating, benchmark,
+        replaced: base.method ? { version: loop.current.version, rated: loop.current.rated, pass: loop.current.pass, passRate: loop.current.passRate } : null,
         ...(userDirected ? { authorizationNote: userDirected } : {}),
       }].slice(-100);
       pushEvent(tx, base, { type: 'method_version_set', summary: method.version + ': ' + method.summary, actor: input.actor, detail: { motivatingRunIds: motivating, benchmark, bodyRef: method.bodyRef, authorizationNote: userDirected || undefined } });
       saveBase(tx, base);
     });
+    await refreshLoop(id);
     return get({ id });
   }
 
@@ -685,6 +726,7 @@ function createStore(options) {
     const id = requireBaseId(input?.baseId);
     const runId = text(input?.runId, 20, 'runId', true);
     let summary;
+    const trials = await loadTrials(id);
     await db().runTransaction(async (tx) => {
       const base = await loadBase(tx, id);
       requireOpenRun(base, runId);
@@ -694,6 +736,11 @@ function createStore(options) {
       const verdicts = run.targets.map((target) => {
         const raw = rawVerdicts.find((entry) => entry && entry.hypothesisId === target.hypothesisId);
         if (!raw) throw new Error('Missing verdict for declared hypothesis ' + target.hypothesisId);
+        // The user's rating of a trial that tested this hypothesis is the measurement: it decides the verdict.
+        const rated = trials.filter((t) => t.runId === runId && t.status === 'rated' && t.verdict !== 'withdrawn' && (t.hypothesisIds || []).includes(target.hypothesisId));
+        if (raw.result === 'inconclusive' && rated.length) {
+          throw new Error('Hypothesis ' + target.hypothesisId + ' was tested by rated trial(s) ' + rated.map((t) => t.id + ':' + t.verdict).join(', ') + ' in this run. Give supported or contradicted against the prediction, not inconclusive.');
+        }
         return {
           hypothesisId: target.hypothesisId, prediction: target.prediction,
           result: oneOf(raw.result, VERDICTS, 'verdict.result'),
@@ -720,7 +767,7 @@ function createStore(options) {
       // Finds a submarine brought back with this run's gear count as movement too; they are decided on the
       // submarine and mirrored here as achievements once the user confirms them.
       const yieldRefs = list(input.yieldRefs, 30, 600);
-      const moved = itemChanges.length > 0 || achievements.length > 0 || yieldRefs.length > 0;
+      const moved = itemChanges.length > 0 || achievements.length > 0 || yieldRefs.length > 0 || (run.trialIds || []).length > 0;
       base.stalledRuns = moved ? 0 : (base.stalledRuns || 0) + 1;
       base.runCount = (base.runCount || 0) + 1;
       base.openRunId = null;
@@ -744,6 +791,7 @@ function createStore(options) {
       pushEvent(tx, base, { type: moved ? 'run_finished' : 'run_stalled', runId, summary: summary.summary, actor: input.actor, detail: { verdicts: summary.verdicts, achievementIds: summary.achievementIds } });
       saveBase(tx, base);
     });
+    await refreshLoop(id);
     return { run: summary, brief: await get({ id }) };
   }
 
@@ -824,7 +872,143 @@ function createStore(options) {
       saveBase(tx, base);
       changed = true;
     });
+    if (changed) await refreshLoop(id).catch(() => null);
     return { baseId: id, changed };
+  }
+
+  // Register samples before the user sees them. Each one names the hypotheses it tests and the predicted chance
+  // of passing, so that the user's one-word rating settles something. backfill=true imports past samples with
+  // their version and rating as they were.
+  async function recordTrials(input) {
+    const id = requireBaseId(input?.baseId);
+    if (!Array.isArray(input.trials) || !input.trials.length) throw new Error('trials must be a non-empty array');
+    if (input.trials.length > 30) throw new Error('At most 30 trials per call');
+    const backfill = input.backfill === true;
+    const [existing, items] = await Promise.all([loadTrials(id), loadItems(id)]);
+    const hypotheses = new Map(items.filter((item) => item.kind === 'hypothesis').map((item) => [item.id, item]));
+    const created = [];
+    const skipped = [];
+    await db().runTransaction(async (tx) => {
+      const base = await loadBase(tx, id);
+      const runId = requireOpenRun(base, text(input.runId, 20, 'runId', false));
+      const run = runId ? value(await tx.get(runRef(id, runId))) : null;
+      const fresh = input.trials.map((raw) => plain(raw, 'trial')).filter((raw) => {
+        const ref = text(raw.ref, 600, 'trial.ref', false);
+        const duplicate = ref && existing.find((t) => t.ref === ref);
+        if (duplicate) skipped.push({ ref, id: duplicate.id });
+        return !duplicate;
+      });
+      if (!backfill && fresh.length) {
+        const loop = loopView({ trials: existing, feedbackLog: base.feedbackLog, base });
+        if (loop.awaiting.length + fresh.length > LIMITS.maxAwaiting) {
+          throw new Error(loop.awaiting.length + ' trial(s) are still waiting for the user (' + loop.awaiting.map((t) => t.id).join(', ') + '). At most ' + LIMITS.maxAwaiting + ' may wait: get them rated, or withdraw stale ones with exploration_trial_rate verdict=withdrawn, before showing more.');
+        }
+        if (loop.gates.researchDueBeforeNextTrial) {
+          throw new Error('The last ' + loop.failStreak + ' rated samples did not pass. Finish the run with a verdict per hypothesis, then finish a run that re-derives the hypotheses from sourcing and selection (not wording) before recording new trials.');
+        }
+      }
+      fresh.forEach((raw) => {
+        const hypothesisIds = list(raw.hypothesisIds, 10, 20);
+        hypothesisIds.forEach((hid) => {
+          const hypothesis = hypotheses.get(hid);
+          if (!hypothesis) throw new Error('Hypothesis not found: ' + hid);
+          if (!backfill && hypothesis.status !== 'open') throw new Error('Hypothesis ' + hid + ' is ' + hypothesis.status + '; a trial tests open hypotheses.');
+        });
+        if (!backfill && !hypothesisIds.length) throw new Error('trial.hypothesisIds is required: name the hypothesis this sample tests (register it first with exploration_item_upsert). A sample tied to no hypothesis settles nothing when it is rated.');
+        const predicted = raw.predictedPass === undefined || raw.predictedPass === null ? null : Number(raw.predictedPass);
+        if (predicted !== null && !(predicted >= 0 && predicted <= 1)) throw new Error('trial.predictedPass must be between 0 and 1');
+        if (!backfill && predicted === null) throw new Error('trial.predictedPass is required: the chance (0-1) that the user passes this sample, stated before they see it.');
+        base.counters.T = (base.counters.T || 0) + 1;
+        const at = now();
+        const trial = {
+          id: seqId('T', base.counters.T), baseId: id, kind: 'trial', runId: runId || (backfill ? text(raw.runId, 20, 'trial.runId', false) || null : null),
+          methodVersion: (backfill && text(raw.methodVersion, 60, 'trial.methodVersion', false)) || base.method?.version || null,
+          version: backfill && Number.isInteger(raw.version) ? raw.version : (backfill && raw.version === null ? null : (base.method?.bodyRef?.versionNumber ?? null)),
+          label: text(raw.label, 300, 'trial.label', true), body: text(raw.body, 4000, 'trial.body', false),
+          ref: text(raw.ref, 600, 'trial.ref', false), hypothesisIds, sourceIds: list(raw.sourceIds, 10, 20),
+          predictedPass: predicted, predictionNote: text(raw.predictionNote, 600, 'trial.predictionNote', false),
+          status: 'awaiting', verdict: null, createdAt: (backfill && text(raw.shownAt, 40, 'trial.shownAt', false)) || at,
+          backfilled: backfill || undefined, actor: text(input.actor, 120, 'actor', false) || 'agent',
+        };
+        if (raw.rating !== undefined) {
+          if (!backfill) throw new Error('trial.rating is only for backfill. Record the trial, show it, then exploration_trial_rate with what the user said.');
+          Object.assign(trial, cleanRating(plain(raw.rating, 'trial.rating'), true));
+        }
+        put(tx, trialRef(id, trial.id), trial);
+        created.push({ id: trial.id, label: trial.label, version: trial.version, status: trial.status, verdict: trial.verdict });
+      });
+      if (!created.length) return;
+      if (run) put(tx, runRef(id, runId), { ...run, trialIds: [...new Set([...(run.trialIds || []), ...created.map((t) => t.id)])] });
+      pushEvent(tx, base, { type: backfill ? 'trials_backfilled' : 'trials_recorded', runId, actor: input.actor, summary: created.length + ' 件: ' + created.map((t) => t.label).join(' / ').slice(0, 600), detail: { trialIds: created.map((t) => t.id) } });
+      saveBase(tx, base);
+    });
+    const loop = created.length ? await refreshLoop(id) : null;
+    return { baseId: id, created, skipped, loop: loop ? loopSummary(loop) : undefined };
+  }
+
+  // The user's words are the rating. A verdict without them would be the agent grading itself.
+  function cleanRating(raw, backfill) {
+    const verdict = oneOf(raw.verdict, TRIAL_VERDICTS, 'rating.verdict');
+    const userWords = text(raw.userWords, 1500, 'rating.userWords', false);
+    if (verdict !== 'withdrawn' && !userWords) throw new Error('rating.userWords is required: quote what the user said about this sample. Self-scores and silence are not ratings.');
+    const reason = text(raw.reason, 600, 'rating.reason', false);
+    if (verdict === 'withdrawn' && !reason) throw new Error('rating.reason is required to withdraw a trial (why it will not be rated).');
+    return {
+      status: 'rated', verdict, userWords, withdrawReason: verdict === 'withdrawn' ? reason : undefined,
+      failStage: raw.failStage ? oneOf(raw.failStage, FAIL_STAGES, 'rating.failStage') : '',
+      failStageNote: text(raw.failStageNote, 600, 'rating.failStageNote', false),
+      ratedAt: (backfill && text(raw.ratedAt, 40, 'rating.ratedAt', false)) || now(),
+    };
+  }
+
+  async function rateTrials(input) {
+    const id = requireBaseId(input?.baseId);
+    if (!Array.isArray(input.ratings) || !input.ratings.length) throw new Error('ratings must be a non-empty array');
+    if (input.ratings.length > 30) throw new Error('At most 30 ratings per call');
+    const rated = [];
+    await db().runTransaction(async (tx) => {
+      const base = await loadBase(tx, id);
+      // Firestore transactions read first: load every trial and every hypothesis they touch, then write.
+      const loaded = [];
+      for (const rawRating of input.ratings) {
+        const raw = plain(rawRating, 'rating');
+        const trialId = text(raw.id, 20, 'rating.id (T-nnn)', true);
+        const trial = value(await tx.get(trialRef(id, trialId)));
+        if (!trial) throw new Error('Trial not found: ' + trialId);
+        loaded.push({ trial, rating: cleanRating(raw, false) });
+      }
+      const touched = new Map();
+      for (const { trial } of loaded) {
+        for (const hid of trial.hypothesisIds || []) {
+          if (!touched.has(hid)) touched.set(hid, value(await tx.get(itemRef(id, hid))));
+        }
+      }
+      loaded.forEach(({ trial, rating }) => {
+        const previous = trial.status === 'rated' ? { verdict: trial.verdict, userWords: trial.userWords, ratedAt: trial.ratedAt } : null;
+        const next = { ...trial, ...rating, ratingHistory: previous ? [previous, ...(trial.ratingHistory || [])].slice(0, 5) : trial.ratingHistory };
+        put(tx, trialRef(id, trial.id), next);
+        if (rating.verdict !== 'withdrawn') {
+          (trial.hypothesisIds || []).forEach((hid) => {
+            const item = touched.get(hid);
+            if (!item) return;
+            const line = trial.id + ' ' + ({ pass: '合格', partial: '惜しい', fail: 'ボツ' })[rating.verdict] + '：' + trial.label + ' — 本人「' + rating.userWords.slice(0, 300) + '」';
+            if (rating.verdict === 'pass') {
+              item.evidence = [...(item.evidence || []), { type: 'candidate', ref: line.slice(0, 600), source: trial.ref || '', date: rating.ratedAt.slice(0, 10), runId: trial.runId || null }].slice(-60);
+              if (item.stage === 'conjecture') item.stage = 'observed';
+            } else {
+              item.counterexamples = [...new Set([...(item.counterexamples || []), line.slice(0, 800)])].slice(-40);
+            }
+            item.updatedAt = now();
+          });
+        }
+        rated.push({ id: trial.id, label: trial.label, verdict: rating.verdict, version: trial.version, hypothesisIds: trial.hypothesisIds || [] });
+      });
+      touched.forEach((item, hid) => { if (item) put(tx, itemRef(id, hid), item); });
+      pushEvent(tx, base, { type: 'trials_rated', actor: input.actor, summary: rated.map((t) => t.id + ':' + t.verdict).join(', '), detail: { rated } });
+      saveBase(tx, base);
+    });
+    const loop = await refreshLoop(id);
+    return { baseId: id, rated, loop };
   }
 
   async function remove(input = {}) {
@@ -840,10 +1024,11 @@ function createStore(options) {
     if ((Number(base.revision) || 0) !== expectedRevision) throw new Error('Exploration Base revision conflict; reload before deleting');
     if (base.status !== 'closed') throw new Error('Only closed Exploration Bases can be permanently deleted');
     if (base.openRunId) throw new Error('Cannot delete an Exploration Base with an open run: ' + base.openRunId);
-    const [items, runs, events] = await Promise.all([
+    const [items, runs, events, trialDocs] = await Promise.all([
       database.collection(COLLECTIONS.items).where('baseId', '==', id).limit(1001).get(),
       database.collection(COLLECTIONS.runs).where('baseId', '==', id).limit(501).get(),
       database.collection(COLLECTIONS.events).where('baseId', '==', id).limit(2001).get(),
+      database.collection(COLLECTIONS.trials).where('baseId', '==', id).limit(3000).get(),
     ]);
     if (items.docs.length > 1000 || runs.docs.length > 500 || events.docs.length > 2000) {
       throw new Error('This Exploration Base has too much history for a single cleanup operation; no records were deleted');
@@ -852,7 +1037,7 @@ function createStore(options) {
       throw new Error('Cannot delete an Exploration Base while a run is still open');
     }
     // Closed bases are immutable. Delete their owned ledger/run/event records, then the base itself.
-    for (const group of [items.docs, runs.docs, events.docs]) {
+    for (const group of [items.docs, runs.docs, events.docs, trialDocs.docs]) {
       for (let i = 0; i < group.length; i += 25) {
         await Promise.all(group.slice(i, i + 25).map(doc => doc.ref.delete()));
       }
@@ -878,7 +1063,7 @@ function createStore(options) {
   // Compact summary used by the Agent Intelligence bundle resolver.
   async function brief(input) { return get({ id: input?.id, view: 'brief' }); }
 
-  return { create, list: listBases, get, remove, brief, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, trainersOf };
+  return { create, list: listBases, get, remove, brief, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, recordTrials, rateTrials, refreshLoop, trainersOf };
 }
 
 const store = createStore();

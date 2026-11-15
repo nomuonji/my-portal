@@ -500,6 +500,8 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "exploration_item_upsert") return structured(await explorationBaseStore.upsertItems(args));
   if (name === "exploration_run_start") return structured(await explorationBaseStore.startRun(args));
   if (name === "exploration_run_finish") return structured(await explorationBaseStore.finishRun(args));
+  if (name === "exploration_trial_record") return structured(await explorationBaseStore.recordTrials(args));
+  if (name === "exploration_trial_rate") return structured(await explorationBaseStore.rateTrials(args));
   if (name === "submarine_list") {
     await submarineFleet.ensureFleet(submarineStore, { actor: "MCP" }).catch(() => null);
     return structured(await submarineStore.list(args));

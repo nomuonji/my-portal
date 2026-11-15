@@ -173,8 +173,10 @@ function summarizeExplorationBase(p) {
     methodVersion: safeText(p.method?.version, 60) || null,
     trains: ['chat_skill', 'intelligence_pack'].includes(p.method?.bodyRef?.kind) && p.method.bodyRef.versionNumber
       ? { kind: p.method.bodyRef.kind, id: safeText(p.method.bodyRef.location, 90), releasedVersion: Number(p.method.bodyRef.versionNumber) } : null,
-    targetMin: Number(p.outcome?.target?.min) || null,
-    confirmedCount: Number(p.progress?.confirmedCount) || 0,
+    // A 道場 is measured by the pass rate of what its released version produces; there is no count target.
+    passRate: p.loop?.passRate ?? null, rated: Number(p.loop?.rated) || 0,
+    currentVersionPassRate: p.loop?.currentPassRate ?? null, currentVersionRated: Number(p.loop?.currentRated) || 0,
+    awaitingRating: Number(p.loop?.awaiting) || 0,
     stalledRuns: Number(p.stalledRuns) || 0,
   };
 }

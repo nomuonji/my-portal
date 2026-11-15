@@ -182,7 +182,7 @@ test('runs declare predictions, lock the method, and report movement', async () 
   await assert.rejects(store.setOutcome({ baseId: 'test-base', confirmAchievements: [{ id: 'A-001', decision: 'confirmed' }] }), /owned by the user/);
   const confirmed = await store.setOutcome({ baseId: 'test-base', confirmAchievements: [{ id: 'A-001', decision: 'confirmed' }], ...auth });
   assert.equal(confirmed.outcome.confirmedCount, 1);
-  assert.equal(confirmed.outcome.reached, false);
+  assert.equal(confirmed.outcome.reached, undefined, 'a 道場 has no count target to reach');
   const full = await store.get({ id: 'test-base', view: 'full' });
   assert.equal(full.full.runs.length, 2);
   assert.ok(full.full.events.some((event) => event.type === 'run_stalled'));
@@ -290,3 +290,106 @@ test('trainersOf lists the bases that train a skill and the version each release
   assert.deepEqual(await store.trainersOf({ kind: 'chat_skill', id: 'my-skill' }), [{ baseId: 'test-base', title: 'Dojo', releasedVersion: 2 }]);
   assert.deepEqual(await store.trainersOf({ kind: 'chat_skill', id: 'other' }), []);
 });
+
+test('a 道場 is measured by pass rate per version, and needs no count target', async () => {
+  const db = new MemoryDb();
+  const store = createStore({ getDb: () => db });
+  const { target, ...noTarget } = outcome;
+  await store.create({ id: 'test-base', title: 'T', summary: 'S', outcome: noTarget, method, ...auth });
+  const brief = await store.get({ id: 'test-base' });
+  assert.equal(brief.outcome.target, null);
+  assert.equal(brief.loop.metric, 'pass_rate');
+  assert.equal(brief.loop.overall.passRate, null);
+  const listed = await store.list({});
+  assert.equal(listed.items[0].loop.rated, 0);
+});
+
+test('a trial names its hypothesis and prediction before the user rates it', async () => {
+  const store = await setup();
+  await store.upsertItems({ baseId: 'test-base', kind: 'hypothesis', items: [hypothesis, { ...hypothesis, title: 'Second' }] });
+  const { runId } = await store.startRun({ baseId: 'test-base', objective: 'Show two samples', targets: [{ hypothesisId: 'H-001', prediction: 'the sample passes' }] });
+  await assert.rejects(store.recordTrials({ baseId: 'test-base', runId, trials: [{ label: 'No hypothesis', predictedPass: 0.6 }] }), /hypothesisIds is required/);
+  await assert.rejects(store.recordTrials({ baseId: 'test-base', runId, trials: [{ label: 'No prediction', hypothesisIds: ['H-001'] }] }), /predictedPass is required/);
+  await assert.rejects(store.recordTrials({ baseId: 'test-base', runId, trials: [{ label: 'Rated at birth', hypothesisIds: ['H-001'], predictedPass: 0.5, rating: { verdict: 'pass', userWords: 'ok' } }] }), /only for backfill/);
+  const recorded = await store.recordTrials({ baseId: 'test-base', runId, trials: [
+    { label: 'Sample A', body: 'text A', ref: 'out-a', hypothesisIds: ['H-001'], predictedPass: 0.7 },
+    { label: 'Sample B', ref: 'out-b', hypothesisIds: ['H-001', 'H-002'], predictedPass: 0.6 },
+  ] });
+  assert.deepEqual(recorded.created.map((t) => t.id), ['T-001', 'T-002']);
+  assert.equal(recorded.loop.awaiting, 2);
+  const again = await store.recordTrials({ baseId: 'test-base', runId, trials: [{ label: 'Sample A', ref: 'out-a', hypothesisIds: ['H-001'], predictedPass: 0.7 }] });
+  assert.deepEqual(again.skipped, [{ ref: 'out-a', id: 'T-001' }], 'the same output is not recorded twice');
+
+  await assert.rejects(store.rateTrials({ baseId: 'test-base', ratings: [{ id: 'T-001', verdict: 'pass' }] }), /userWords is required/);
+  const rated = await store.rateTrials({ baseId: 'test-base', ratings: [
+    { id: 'T-001', verdict: 'pass', userWords: 'めっちゃいい。合格' },
+    { id: 'T-002', verdict: 'fail', userWords: 'ボツ。つまらない', failStage: 'transform' },
+  ] });
+  assert.equal(rated.loop.overall.passRate, 0.5);
+  assert.equal(rated.loop.current.rated, 2);
+  assert.equal(rated.loop.calibration.hitRate, 0.5, 'both were predicted to pass; one did');
+  assert.deepEqual(rated.loop.hypotheses.map((h) => [h.id, h.pass, h.fail]), [['H-001', 1, 1], ['H-002', 0, 1]]);
+  assert.equal(rated.loop.failStages.transform, 1);
+
+  const full = await store.get({ id: 'test-base', view: 'full' });
+  const h1 = full.full.hypotheses.find((h) => h.id === 'H-001');
+  assert.equal(h1.stage, 'observed', 'a pass is evidence on the hypothesis');
+  assert.equal(h1.evidence.at(-1).type, 'candidate');
+  assert.equal(h1.counterexamples.length, 1);
+  assert.equal(full.full.trials.length, 2);
+
+  // The rating is the measurement, so the hypothesis cannot be closed as inconclusive.
+  await assert.rejects(store.finishRun({ baseId: 'test-base', runId, summary: 'Two samples', verdicts: [{ hypothesisId: 'H-001', result: 'inconclusive', observed: 'unsure' }] }), /not inconclusive/);
+  const finished = await store.finishRun({ baseId: 'test-base', runId, summary: 'Two samples', verdicts: [{ hypothesisId: 'H-001', result: 'supported', observed: '1 of 2 passed' }] });
+  assert.equal(finished.run.moved, true);
+  const listed = await store.list({});
+  assert.equal(listed.items[0].loop.passRate, 0.5);
+});
+
+test('a version is not replaced before it has enough ratings, unless the user directs it', async () => {
+  const store = await setup();
+  await store.upsertItems({ baseId: 'test-base', kind: 'hypothesis', items: [hypothesis] });
+  const first = await store.startRun({ baseId: 'test-base', objective: 'One sample', targets: [{ hypothesisId: 'H-001', prediction: 'passes' }] });
+  await store.recordTrials({ baseId: 'test-base', runId: first.runId, trials: [{ label: 'A', hypothesisIds: ['H-001'], predictedPass: 0.6 }] });
+  await store.rateTrials({ baseId: 'test-base', ratings: [{ id: 'T-001', verdict: 'fail', userWords: 'ボツ' }] });
+  await store.finishRun({ baseId: 'test-base', runId: first.runId, summary: 'One', verdicts: [{ hypothesisId: 'H-001', result: 'contradicted', observed: 'failed' }] });
+  const next = { ...method, version: 'm-v2', summary: 'Patched after one rejection' };
+  await assert.rejects(store.setMethodVersion({ baseId: 'test-base', method: next, motivatingRunIds: ['R-001'], noBenchmarkReason: 'none yet, first loop' }), /has 1 rated trial/);
+  const directed = await store.setMethodVersion({ baseId: 'test-base', method: next, noBenchmarkReason: 'none yet, first loop', userAuthorized: true, authorizationNote: 'User: change the sourcing step' });
+  assert.equal(directed.method.version, 'm-v2');
+  const full = await store.get({ id: 'test-base', view: 'full' });
+  assert.deepEqual(full.full.methodHistory.at(-1).replaced, { version: 'm-v1', rated: 1, pass: 0, passRate: 0 });
+});
+
+test('consecutive non-passes stop new samples until a run re-derives the hypotheses', async () => {
+  const store = await setup();
+  await store.upsertItems({ baseId: 'test-base', kind: 'hypothesis', items: [hypothesis] });
+  const first = await store.startRun({ baseId: 'test-base', objective: 'Three samples', targets: [{ hypothesisId: 'H-001', prediction: 'passes' }] });
+  const trial = (label) => ({ label, hypothesisIds: ['H-001'], predictedPass: 0.6 });
+  await store.recordTrials({ baseId: 'test-base', runId: first.runId, trials: [trial('A'), trial('B'), trial('C')] });
+  const rated = await store.rateTrials({ baseId: 'test-base', ratings: ['T-001', 'T-002', 'T-003'].map((id) => ({ id, verdict: 'fail', userWords: 'ボツ' })) });
+  assert.equal(rated.loop.failStreak, 3);
+  assert.equal(rated.loop.gates.researchDueBeforeNextTrial, true);
+  assert.ok(rated.loop.nextActions.some((line) => line.includes('H-001') && line.includes('棄却')));
+  await assert.rejects(store.recordTrials({ baseId: 'test-base', runId: first.runId, trials: [trial('D')] }), /did not pass/);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await store.finishRun({ baseId: 'test-base', runId: first.runId, summary: 'All failed', verdicts: [{ hypothesisId: 'H-001', result: 'contradicted', observed: '0 of 3' }] });
+  const second = await store.startRun({ baseId: 'test-base', objective: 'New sourcing hypothesis', unknownTerritoryProbe: 'another source' });
+  const ok = await store.recordTrials({ baseId: 'test-base', runId: second.runId, trials: [trial('D')] });
+  assert.equal(ok.created.length, 1);
+});
+
+test('past samples are backfilled with the version and rating they had', async () => {
+  const store = await setup();
+  const done = await store.recordTrials({ baseId: 'test-base', backfill: true, trials: [
+    { label: 'Old pass', ref: 'out-1', version: 44, methodVersion: 'old-v4', shownAt: '2026-11-14T06:00:00.000Z', rating: { verdict: 'pass', userWords: '初の合格', ratedAt: '2026-11-14T06:26:00.000Z' } },
+    { label: 'Old fail', ref: 'out-2', version: 44, methodVersion: 'old-v4', rating: { verdict: 'fail', userWords: 'ボツ', ratedAt: '2026-11-14T07:00:00.000Z' } },
+    { label: 'Newer fail', ref: 'out-3', version: 50, methodVersion: 'old-v6', rating: { verdict: 'fail', userWords: 'つまんない', ratedAt: '2026-11-15T01:00:00.000Z' } },
+  ] });
+  assert.equal(done.created.length, 3);
+  const brief = await store.get({ id: 'test-base' });
+  assert.deepEqual(brief.loop.byVersion.map((g) => [g.version, g.rated, g.passRate]), [['v50', 1, 0], ['v44', 2, 0.5]]);
+  assert.equal(brief.loop.overall.passRate, round3(1 / 3));
+  assert.equal(brief.loop.calibration, null, 'backfilled samples carry no prediction');
+});
+function round3(value) { return Math.round(value * 1000) / 1000; }

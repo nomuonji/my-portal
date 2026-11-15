@@ -1,0 +1,135 @@
+'use strict';
+
+// The improvement loop of a スキル錬成道場, as numbers. A trial is one sample shown to the user, registered
+// with the hypotheses it tests and the predicted chance of passing before the user rates it. The pass rate
+// per released version is the measure of the 道場; there is no count target.
+
+const VERDICTS = ['pass', 'partial', 'fail', 'withdrawn'];
+const FAIL_STAGES = ['source', 'selection', 'transform', 'voice', 'gate', 'unknown'];
+// AI-provisional thresholds. They shape pacing, not what counts as a pass.
+const LIMITS = Object.freeze({
+  maxAwaiting: 6,          // unrated samples allowed before new ones are refused
+  minRatedPerVersion: 3,   // ratings a released version needs before the next version
+  failStreak: 3,           // consecutive non-passes that force a finished run before the next sample
+  hypothesisMinTrials: 3,  // ratings before a hypothesis is called dead or winning
+});
+
+const round = (value) => Math.round(value * 1000) / 1000;
+const rateOf = (pass, rated) => (rated ? round(pass / rated) : null);
+const versionKey = (entry) => (entry.version === null || entry.version === undefined ? (entry.methodVersion || 'unknown') : 'v' + entry.version);
+
+// Trials plus the evaluations of submarine haul (feedbackLog), one entry per rated thing.
+function ratedEntries(trials, feedbackLog) {
+  const seen = new Set();
+  const entries = [];
+  trials.filter((t) => t.status === 'rated' && t.verdict !== 'withdrawn').forEach((t) => {
+    if (t.ref) seen.add(t.ref);
+    entries.push({
+      id: t.id, kind: 'trial', label: t.label, verdict: t.verdict, at: t.ratedAt || t.createdAt, version: t.version ?? null,
+      methodVersion: t.methodVersion || null, predictedPass: typeof t.predictedPass === 'number' ? t.predictedPass : null,
+      hypothesisIds: t.hypothesisIds || [], userWords: t.userWords || '', failStage: t.failStage || '',
+    });
+  });
+  (feedbackLog || []).forEach((f) => {
+    if (seen.has(f.ref) || (f.decision !== 'confirmed' && f.decision !== 'declined')) return;
+    entries.push({
+      id: f.haulId || f.ref, kind: 'haul', label: f.label, verdict: f.decision === 'confirmed' ? 'pass' : 'fail', at: f.at,
+      version: f.version ?? null, methodVersion: null, predictedPass: null, hypothesisIds: [], userWords: f.comment || f.actionLabel || '', failStage: '',
+    });
+  });
+  return entries.sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
+}
+
+function tally(entries) {
+  const pass = entries.filter((e) => e.verdict === 'pass').length;
+  const partial = entries.filter((e) => e.verdict === 'partial').length;
+  const fail = entries.filter((e) => e.verdict === 'fail').length;
+  const rated = pass + partial + fail;
+  return { rated, pass, partial, fail, passRate: rateOf(pass, rated) };
+}
+
+function failStreakOf(entries) {
+  let streak = 0;
+  for (let i = entries.length - 1; i >= 0 && entries[i].verdict !== 'pass'; i -= 1) streak += 1;
+  return streak;
+}
+
+// Everything the 道場 shows about its loop. `base` supplies the released version and the last finished run.
+function loopView({ trials, feedbackLog, base, hypotheses }) {
+  const entries = ratedEntries(trials || [], feedbackLog);
+  const awaiting = (trials || []).filter((t) => t.status === 'awaiting');
+  const releasedNumber = base?.method?.bodyRef?.versionNumber ?? null;
+  const currentKey = releasedNumber !== null ? 'v' + releasedNumber : (base?.method?.version || 'unknown');
+
+  const groups = new Map();
+  entries.forEach((e) => { const key = versionKey(e); groups.set(key, [...(groups.get(key) || []), e]); });
+  const byVersion = [...groups.entries()].map(([key, list]) => ({
+    version: key, released: key === currentKey, ...tally(list), lastRatedAt: list[list.length - 1].at,
+  })).sort((a, b) => String(b.lastRatedAt || '').localeCompare(String(a.lastRatedAt || '')));
+  const current = byVersion.find((g) => g.released) || { version: currentKey, released: true, ...tally([]) };
+  // The version to beat: the most recently rated earlier version with enough ratings to compare.
+  const previous = byVersion.find((g) => !g.released && g.rated >= LIMITS.minRatedPerVersion) || null;
+
+  const predicted = entries.filter((e) => e.predictedPass !== null);
+  const hits = predicted.filter((e) => (e.predictedPass >= 0.5) === (e.verdict === 'pass')).length;
+  const calibration = predicted.length ? {
+    predicted: predicted.length, hitRate: round(hits / predicted.length),
+    meanPredictedPass: round(predicted.reduce((sum, e) => sum + e.predictedPass, 0) / predicted.length),
+    actualPassRate: rateOf(predicted.filter((e) => e.verdict === 'pass').length, predicted.length),
+  } : null;
+
+  const byHypothesis = new Map();
+  entries.forEach((e) => e.hypothesisIds.forEach((id) => byHypothesis.set(id, [...(byHypothesis.get(id) || []), e])));
+  const titles = new Map((hypotheses || []).map((h) => [h.id, h]));
+  const scoreboard = [...byHypothesis.entries()].map(([id, list]) => ({
+    id, title: titles.get(id)?.title || '', status: titles.get(id)?.status || 'open', ...tally(list),
+  })).sort((a, b) => b.rated - a.rated || String(a.id).localeCompare(String(b.id)));
+
+  const failStages = {};
+  entries.filter((e) => e.verdict !== 'pass' && e.failStage).forEach((e) => { failStages[e.failStage] = (failStages[e.failStage] || 0) + 1; });
+
+  const failStreak = failStreakOf(entries);
+  const lastRatedAt = entries.length ? entries[entries.length - 1].at : null;
+  const lastRunAt = (base?.lastRuns || [])[0]?.finishedAt || null;
+  const researchDue = failStreak >= LIMITS.failStreak && !(lastRunAt && lastRatedAt && String(lastRunAt) > String(lastRatedAt));
+  const usesTrials = (trials || []).length > 0;
+  const canRelease = !usesTrials || current.rated >= LIMITS.minRatedPerVersion;
+
+  const nextActions = [];
+  if (awaiting.length) nextActions.push('評価待ちの見本が ' + awaiting.length + ' 件ある。新しい見本より先に、本人の評価をもらう。');
+  if (researchDue) nextActions.push(failStreak + ' 回続けて合格が出ていない。次の見本の前に、runを閉じて判定を付け、仕入れ・選別から仮説を立て直すrunを終える。');
+  scoreboard.filter((h) => h.status === 'open' && h.rated >= LIMITS.hypothesisMinTrials && h.pass === 0)
+    .forEach((h) => nextActions.push(h.id + ' は ' + h.rated + ' 回試して合格 0。棄却する（exploration_item_upsert status=rejected）。'));
+  scoreboard.filter((h) => h.status === 'open' && h.rated >= LIMITS.hypothesisMinTrials && h.passRate >= 0.6)
+    .forEach((h) => nextActions.push(h.id + ' は合格率 ' + Math.round(h.passRate * 100) + '%（' + h.rated + ' 回）。勝ち筋としてスキル本文に入れる候補。'));
+  if (usesTrials && !canRelease) nextActions.push('いまの版の評価は ' + current.rated + ' 件。' + LIMITS.minRatedPerVersion + ' 件たまるまで版を上げない。');
+  if (previous && current.rated >= LIMITS.minRatedPerVersion && current.passRate < previous.passRate) {
+    nextActions.push('いまの版の合格率 ' + Math.round(current.passRate * 100) + '% は、前の版 ' + previous.version + ' の ' + Math.round(previous.passRate * 100) + '% を下回っている。増やした規則を疑う。');
+  }
+
+  return {
+    metric: 'pass_rate',
+    overall: tally(entries),
+    recent: tally(entries.slice(-10)),
+    current, previous, byVersion,
+    awaiting: awaiting.map((t) => ({ id: t.id, label: t.label, createdAt: t.createdAt, hypothesisIds: t.hypothesisIds || [], predictedPass: t.predictedPass ?? null })),
+    calibration, hypotheses: scoreboard.slice(0, 20), failStages, failStreak,
+    gates: { ...LIMITS, usesTrials, ratedOnCurrent: current.rated, canReleaseNewVersion: canRelease, researchDueBeforeNextTrial: researchDue },
+    lastRated: entries.slice(-8).reverse().map((e) => ({ id: e.id, label: e.label, verdict: e.verdict, version: versionKey(e), at: e.at, userWords: e.userWords })),
+    nextActions,
+  };
+}
+
+// What the list and World Home carry: small enough to cache on the base document.
+function loopSummary(view) {
+  return {
+    rated: view.overall.rated, pass: view.overall.pass, passRate: view.overall.passRate,
+    recentRated: view.recent.rated, recentPassRate: view.recent.passRate,
+    currentVersion: view.current.version, currentRated: view.current.rated, currentPassRate: view.current.passRate,
+    previousVersion: view.previous?.version || null, previousPassRate: view.previous?.passRate ?? null,
+    awaiting: view.awaiting.length, failStreak: view.failStreak,
+    hitRate: view.calibration?.hitRate ?? null,
+  };
+}
+
+module.exports = { loopView, loopSummary, ratedEntries, VERDICTS, FAIL_STAGES, LIMITS };

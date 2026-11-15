@@ -23,7 +23,7 @@ jest.mock('../firebase', () => ({
 }));
 
 const LIST = { items: [
-  { id: 'job-base', title: '仕事DB探索', status: 'active', target: { kind: 'chat_skill', id: 'discover-curation', versionNumber: 1 }, outcome: { statement: '応募する案件を見つける', target: { min: 1, max: 3 } }, confirmedCount: 0, methodVersion: 'jobdb-r4', runCount: 1, stalledRuns: 0, openRunId: null, awaitingCount: 0, lastRun: { finishedAt: '2026-11-12T02:00:00Z', moved: true } },
+  { id: 'job-base', title: '仕事DB探索', status: 'active', target: { kind: 'chat_skill', id: 'discover-curation', versionNumber: 1 }, outcome: { statement: '応募する案件を見つける', target: { min: 1, max: 3 } }, confirmedCount: 0, loop: { rated: 8, pass: 3, passRate: 0.375, currentVersion: 'v1', currentRated: 4, currentPassRate: 0.5, awaiting: 0, failStreak: 0 }, methodVersion: 'jobdb-r4', runCount: 1, stalledRuns: 0, openRunId: null, awaitingCount: 0, lastRun: { finishedAt: '2026-11-12T02:00:00Z', moved: true } },
   { id: 'kw-base', title: 'お宝KW探索', status: 'active', outcome: { statement: '書く語を2〜3本', target: { min: 2, max: 3 } }, confirmedCount: 0, methodVersion: 'tsk-v25', runCount: 0, stalledRuns: 3, openRunId: null },
 ] };
 
@@ -78,6 +78,11 @@ test('lists bases with a one-line status and progress', async () => {
   expect(screen.getByText(/discover-curation/)).toHaveTextContent('v1');
   expect(screen.getByText('3 回続けて進展がありません。進め方の見直しが必要です')).toBeInTheDocument();
   expect(screen.getByText(/最後の実行は/)).toBeInTheDocument();
+  // The measure is the pass rate of the version in use, not a count against a target.
+  expect(screen.getByText('50%')).toBeInTheDocument();
+  expect(screen.getByText('合格率（いまの版・4件）')).toBeInTheDocument();
+  expect(screen.getByText('合格率（評価はまだありません）')).toBeInTheDocument();
+  expect(screen.queryByText('確定した成果')).not.toBeInTheDocument();
 });
 
 test('detail keeps status and decisions on top and puts each part of the base in its own tab', async () => {
@@ -161,4 +166,26 @@ test('the 道場 shows the user\'s evaluations grouped by the version that produ
   expect(screen.getByText('判断したもののうち成果 67%')).toBeInTheDocument();
   expect(screen.getByText(/前提知識が要る/)).toBeInTheDocument();
   expect(screen.getByText('版の記録なし')).toBeInTheDocument();
+});
+
+test('the 道場 shows the pass rate by version, what waits for the user and the last ratings', () => {
+  const { LoopPanel } = require('./ExplorationBases');
+  render(<LoopPanel loop={{
+    byVersion: [
+      { version: 'v52', released: true, rated: 4, pass: 1, partial: 1, fail: 2, passRate: 0.25 },
+      { version: 'v44', released: false, rated: 5, pass: 3, partial: 0, fail: 2, passRate: 0.6 },
+    ],
+    calibration: { predicted: 4, hitRate: 0.5 },
+    awaiting: [{ id: 'T-020', label: '母親の推薦で口説く男' }],
+    lastRated: [{ id: 'T-019', label: '辞めた会社のLINEグループ', verdict: 'pass', at: '2026-11-15T01:00:00Z', userWords: '合格。いいね' }],
+    nextActions: ['いまの版の合格率 25% は、前の版 v44 の 60% を下回っている。増やした規則を疑う。'],
+  }} />);
+  expect(screen.getByText('v52（いまの版）')).toBeInTheDocument();
+  expect(screen.getByText('25%')).toBeInTheDocument();
+  expect(screen.getByText('60%')).toBeInTheDocument();
+  expect(screen.getByText('惜しい 1')).toBeInTheDocument();
+  expect(screen.getByText(/AIの事前予測が当たった割合 50%/)).toBeInTheDocument();
+  expect(screen.getByText('母親の推薦で口説く男')).toBeInTheDocument();
+  expect(screen.getByText(/合格。いいね/)).toBeInTheDocument();
+  expect(screen.getByText(/前の版 v44 の 60% を下回っている/)).toBeInTheDocument();
 });
