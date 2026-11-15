@@ -974,6 +974,108 @@ function createStore(options) {
     return { baseId: id, changed };
   }
 
+  // The Buzz Editorial Harness protects production drafts; the 道場 trial path was
+  // unprotected. This focused preflight closes that gap for text-first standalone
+  // buzz posts, without changing the gates of other exploration bases.
+  // Existing MCP tool schemas may not yet expose editorialScreen. In that case
+  // predictionNote accepts screen:v1:<compact JSON> with identical validation.
+  const BUZZ_SCREEN_PREFIX = 'screen:v1:';
+  function cleanBuzzScreen(raw, sourceItems, previousTrials) {
+    const note = text(raw.predictionNote, 600, 'trial.predictionNote', false);
+    let packet = raw.editorialScreen;
+    if (packet && note.startsWith(BUZZ_SCREEN_PREFIX)) {
+      throw new Error('Buzz 道場: supply editorialScreen or the screen:v1 predictionNote envelope, not both.');
+    }
+    if (!packet) {
+      if (!note.startsWith(BUZZ_SCREEN_PREFIX)) {
+        throw new Error('Buzz 道場: a pre-submission screening packet is required before showing a standalone post (editorialScreen or screen:v1 predictionNote).');
+      }
+      try { packet = JSON.parse(note.slice(BUZZ_SCREEN_PREFIX.length)); }
+      catch (error) { throw new Error('Buzz 道場: invalid screen:v1 JSON: ' + error.message); }
+    }
+    const data = plain(packet, 'editorialScreen');
+    if (data.format !== 'standalone') {
+      throw new Error('Buzz 道場: native quote/repost practice is retired by the user. New trial format must be standalone.');
+    }
+    const rawBody = text(raw.body, 4000, 'trial.body', false);
+    if (rawBody.length < 25) {
+      throw new Error('Buzz 道場: selected standalone text must be included in trial.body (25+ characters).');
+    }
+    const predicted = Number(raw.predictedPass);
+    // An AI probability is not an independent verdict, but presenting its own
+    // <60% candidates as "quality-passed" wastes the user's limited reviews.
+    // This provisional cap is a pacing gate, not a claim of calibrated success.
+    if (!Number.isFinite(predicted) || predicted < 0.6) {
+      throw new Error('Buzz 道場: predictedPass below provisional pre-submission confidence floor 0.60; keep this candidate internal and improve sourcing, selection or review instead of sending it to the user.');
+    }
+    const pool = Array.isArray(data.pool) ? data.pool : [];
+    if (pool.length < 3 || pool.length > 12) {
+      throw new Error('Buzz 道場: compare 3-12 materially different candidates, and record why most were rejected before submitting one.');
+    }
+    const knownSources = new Map(sourceItems.filter((item) => item.kind === 'source' && item.status === 'open').map((item) => [item.id, item]));
+    const selected = [];
+    const rejected = [];
+    const sourceIds = new Set();
+    const titles = new Set();
+    const reviewedPool = pool.map((entry) => {
+      const row = plain(entry, 'editorialScreen.pool entry');
+      const title = text(row.title, 100, 'candidate.title', true);
+      const sourceId = text(row.sourceId, 20, 'candidate.sourceId', true);
+      const decision = oneOf(row.decision, ['selected', 'rejected'], 'candidate.decision');
+      const reason = text(row.reason, 350, 'candidate.reason', true);
+      if (reason.length < 10) throw new Error('Buzz 道場: each candidate needs a concrete rejection/selection reason (10+ characters).');
+      if (titles.has(title)) throw new Error('Buzz 道場: duplicate candidate in comparison pool: ' + title);
+      titles.add(title);
+      const source = knownSources.get(sourceId);
+      if (!source || source.stage === 'conjecture') {
+        throw new Error('Buzz 道場: source is not an observed active source in this base: ' + sourceId);
+      }
+      sourceIds.add(sourceId);
+      (decision === 'selected' ? selected : rejected).push(title);
+      return { title, sourceId, decision, reason };
+    });
+    if (selected.length !== 1 || rejected.length < 2 || sourceIds.size < 2) {
+      throw new Error('Buzz 道場: exactly one selected candidate, at least two rejected candidates and at least two observed source lanes are required.');
+    }
+    const selectedSource = reviewedPool.find((item) => item.decision === 'selected').sourceId;
+    if (!list(raw.sourceIds, 10, 20).includes(selectedSource)) {
+      throw new Error('Buzz 道場: selected candidate source must appear in trial.sourceIds.');
+    }
+    const positiveCaseId = text(data.positiveCaseId, 20, 'editorialScreen.positiveCaseId', true);
+    const negativeCaseIds = list(data.negativeCaseIds, 5, 20);
+    const actualPass = previousTrials.find((t) => t.id === positiveCaseId && t.status === 'rated' && t.verdict === 'pass' && t.body);
+    if (!actualPass) {
+      throw new Error('Buzz 道場: positiveCaseId must cite a real user-accepted previous text, not an AI self-PASS.');
+    }
+    const actualNegatives = negativeCaseIds.filter((id) =>
+      previousTrials.some((t) => t.id === id && t.status === 'rated' && t.verdict === 'fail' && t.body));
+    if (actualNegatives.length < 2) {
+      throw new Error('Buzz 道場: negativeCaseIds must cite two real rejected texts for contrast.');
+    }
+    const readerQuote = text(data.readerQuote, 120, 'editorialScreen.readerQuote', true);
+    if (readerQuote.length < 8 || !rawBody.includes(readerQuote)) {
+      throw new Error('Buzz 道場: readerQuote must point to an actual 8+ character span in the submitted text.');
+    }
+    const distinctValue = text(data.distinctValue, 300, 'editorialScreen.distinctValue', true);
+    const strongestObjection = text(data.strongestObjection, 300, 'editorialScreen.strongestObjection', true);
+    if (distinctValue.length < 12 || strongestObjection.length < 12) {
+      throw new Error('Buzz 道場: spell out an original reader benefit and a concrete hostile reading (12+ characters each); self-ratings alone are not evidence.');
+    }
+    return {
+      format: 'standalone',
+      pool: reviewedPool,
+      positiveCaseId,
+      negativeCaseIds,
+      readerQuote,
+      distinctValue,
+      strongestObjection,
+      candidateCount: pool.length,
+      rejectedCount: rejected.length,
+      sourceLaneCount: sourceIds.size,
+      reviewer: 'agent_screen_only_unverified',
+    };
+  }
+
   // Register samples before the user sees them. Each one names the hypotheses it tests and the predicted chance
   // of passing, so that the user's one-word rating settles something. backfill=true imports past samples with
   // their version and rating as they were.
@@ -984,6 +1086,7 @@ function createStore(options) {
     const backfill = input.backfill === true;
     const [existing, items] = await Promise.all([loadTrials(id), loadItems(id)]);
     const hypotheses = new Map(items.filter((item) => item.kind === 'hypothesis').map((item) => [item.id, item]));
+    const sourceItems = items.filter((item) => item.kind === 'source');
     const created = [];
     const skipped = [];
     await db().runTransaction(async (tx) => {
@@ -1016,6 +1119,8 @@ function createStore(options) {
         const predicted = raw.predictedPass === undefined || raw.predictedPass === null ? null : Number(raw.predictedPass);
         if (predicted !== null && !(predicted >= 0 && predicted <= 1)) throw new Error('trial.predictedPass must be between 0 and 1');
         if (!backfill && predicted === null) throw new Error('trial.predictedPass is required: the chance (0-1) that the user passes this sample, stated before they see it.');
+        const editorialScreen = (!backfill && id === 'viral-post-method-discovery')
+          ? cleanBuzzScreen(raw, sourceItems, existing) : null;
         base.counters.T = (base.counters.T || 0) + 1;
         const at = now();
         const trial = {
@@ -1025,6 +1130,7 @@ function createStore(options) {
           label: text(raw.label, 300, 'trial.label', true), body: text(raw.body, 4000, 'trial.body', false),
           ref: text(raw.ref, 600, 'trial.ref', false), hypothesisIds, sourceIds: list(raw.sourceIds, 10, 20),
           predictedPass: predicted, predictionNote: text(raw.predictionNote, 600, 'trial.predictionNote', false),
+          ...(editorialScreen ? { format: editorialScreen.format, editorialScreen } : {}),
           status: 'awaiting', verdict: null, createdAt: (backfill && text(raw.shownAt, 40, 'trial.shownAt', false)) || at,
           backfilled: backfill || undefined, actor: text(input.actor, 120, 'actor', false) || 'agent',
         };

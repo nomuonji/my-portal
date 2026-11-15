@@ -446,6 +446,73 @@ test('three user non-passes cannot be cleared by a ceremonial run or self-PASS',
   assert.equal(ok.created.length, 1);
 });
 
+test('buzz dojo blocks low-confidence, one-shot, invented-reference or unscreened samples', async () => {
+  const db = new MemoryDb();
+  const store = createStore({ getDb: () => db });
+  const baseId = 'viral-post-method-discovery';
+  await store.create({ id: baseId, title: 'Buzz Dojo', summary: 'Standalone quality gate', outcome, method, ...auth });
+  await store.upsertItems({
+    baseId, kind: 'source', items: [
+      { title: 'Real world source', locator: 'https://example.com/source-a',
+        coverage: 'Observed everyday event', stage: 'observed', addEvidence: [{ type: 'observation', ref: 'real confirmed case' }] },
+      { title: 'Different source', locator: 'https://example.com/source-b',
+        coverage: 'Observed forum anecdotes', stage: 'observed', addEvidence: [{ type: 'observation', ref: 'different observed source' }] },
+    ],
+  });
+  await store.upsertItems({ baseId, kind: 'hypothesis', items: [hypothesis] });
+  await store.recordTrials({
+    baseId, backfill: true, trials: [
+      { label: 'Human accepted', body: 'This genuinely different accepted standalone has a distinctive reader moment.',
+        rating: { verdict: 'pass', userWords: '合格' } },
+      { label: 'Human rejected A', body: 'This explanation did not work for the reader as an actual stand-alone post.',
+        rating: { verdict: 'fail', userWords: 'ボツ' } },
+      { label: 'Human rejected B', body: 'The second example was too dry and easy to predict for the audience.',
+        rating: { verdict: 'fail', userWords: 'つまらない' } },
+    ],
+  });
+  const { runId } = await store.startRun({
+    baseId, objective: 'Compare multiple upstream sources before producing the next standalone post',
+    targets: [{ hypothesisId: 'H-001', prediction: 'One evaluated post could be accepted' }],
+  });
+  const body = '当事者だけが気づく小さな面倒に、予想外の二段目が突然出てくる。だからそこが笑える。';
+  const audit = {
+    format: 'standalone',
+    pool: [
+      { title: 'Unexpected second step', sourceId: 'S-001', decision: 'selected', reason: '人物の操作と追加の帰結が本文に具体的にある' },
+      { title: 'Obvious recap', sourceId: 'S-001', decision: 'rejected', reason: '元ニュースの要約を口語化しただけで独立した発見がない' },
+      { title: 'Contrived quote', sourceId: 'S-002', decision: 'rejected', reason: '引用カードを読まなければ意味が通らず単独稿にならない' },
+    ],
+    positiveCaseId: 'T-001', negativeCaseIds: ['T-002', 'T-003'],
+    readerQuote: '予想外の二段目が', distinctValue: '単なる出典紹介でなく、当事者の事情への新しい見え方がある',
+    strongestObjection: '作者の説明を外すと読み手に二段目の具体像が伝わらないかもしれない',
+  };
+  const trial = { label: 'Novel standalone', body, sourceIds: ['S-001'], hypothesisIds: ['H-001'],
+    predictedPass: 0.64, predictionNote: 'Tentative, not an externally verified verdict.' };
+  await assert.rejects(store.recordTrials({ baseId, runId, trials: [trial] }), /screening packet is required/);
+  await assert.rejects(store.recordTrials({ baseId, runId, trials: [{ ...trial, predictedPass: 0.42, editorialScreen: audit }] }), /confidence floor 0.60/);
+  await assert.rejects(store.recordTrials({ baseId, runId, trials: [{ ...trial, editorialScreen: { ...audit, format: 'quote' } }] }), /standalone/);
+  await assert.rejects(store.recordTrials({ baseId, runId, trials: [{ ...trial, editorialScreen: { ...audit, positiveCaseId: 'T-003' } }] }), /real user-accepted previous text/);
+  await assert.rejects(store.recordTrials({ baseId, runId, trials: [{ ...trial, editorialScreen: { ...audit, negativeCaseIds: ['T-002','T-999'] } }] }), /two real rejected texts/);
+  await assert.rejects(store.recordTrials({ baseId, runId, trials: [{ ...trial, editorialScreen: { ...audit, pool: audit.pool.slice(0, 2) } }] }), /compare 3-12/);
+  await assert.rejects(store.recordTrials({ baseId, runId, trials: [{ ...trial, editorialScreen: { ...audit, pool: audit.pool.map(x => ({ ...x, sourceId: 'S-001' })) } }] }), /two observed source lanes/);
+  const envelope = 'screen:v1:' + JSON.stringify(audit);
+  assert.ok(envelope.length <= 600, 'old MCP clients must have a usable envelope');
+  const accepted = await store.recordTrials({ baseId, runId, trials: [{ ...trial, predictionNote: envelope }] });
+  assert.equal(accepted.created.length, 1);
+  assert.equal(accepted.loop.screening.considered, 3);
+  assert.equal(accepted.loop.screening.rejectedBeforeUser, 2);
+  const full = await store.get({ id: baseId, view: 'full' });
+  const t = full.full.trials.find(t => t.id === accepted.created[0].id);
+  assert.equal(t.editorialScreen.format, 'standalone');
+  assert.equal(t.editorialScreen.reviewer, 'agent_screen_only_unverified');
+  await store.rateTrials({ baseId, ratings: [{ id: t.id, verdict: 'fail', userWords: 'ボツ' }] });
+  const after = await store.get({ id: baseId });
+  assert.deepEqual(after.loop.screening, {
+    submitted: 1, considered: 3, rejectedBeforeUser: 2,
+    rated: 1, userPass: 0, passRate: 0,
+  });
+});
+
 test('past samples are backfilled with the version and rating they had', async () => {
   const store = await setup();
   const done = await store.recordTrials({ baseId: 'test-base', backfill: true, trials: [
