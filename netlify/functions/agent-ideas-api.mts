@@ -349,16 +349,24 @@ export default async (request: Request) => {
         }));
       }
       if (action === "exploration_trial_rate") {
-        // The signed-in owner rating a sample on the 道場 screen is the user's own rating. The button they pressed
-        // and anything they typed are their words.
-        const verdict = ["pass", "partial", "fail"].includes(body.verdict) ? body.verdict : "";
-        if (!verdict) return json({ error: "verdict must be pass, partial or fail" }, 400);
-        const label = { pass: "合格", partial: "惜しい", fail: "ボツ" }[verdict];
-        const comment = String(body.comment || "").trim().slice(0, 1000);
+        // A single click and a staged batch share the same underlying per-base transaction.
+        // Each submitted choice is the signed-in owner's explicit rating; unselected rows are not sent.
+        const inputs = Array.isArray(body.ratings) ? body.ratings : [body];
+        if (!inputs.length || inputs.length > 30) return json({ error: "ratings must contain 1 to 30 items" }, 400);
+        const ids = new Set();
+        const labels = { pass: "合格", partial: "惜しい", fail: "ボツ" };
+        const ratings = [];
+        for (const input of inputs) {
+          const id = String(input?.id || "").trim();
+          const verdict = input?.verdict;
+          if (!id || !Object.hasOwn(labels, verdict)) return json({ error: "Each rating needs an id and pass, partial or fail verdict" }, 400);
+          if (ids.has(id)) return json({ error: "Duplicate trial id in batch: " + id }, 400);
+          ids.add(id);
+          const comment = String(input?.comment || "").trim().slice(0, 1000);
+          ratings.push({ id, verdict, userWords: labels[verdict] + (comment ? "：" + comment : "") + "（道場画面）" });
+        }
         return json(await explorationBaseStore.rateTrials({
-          baseId: body.baseId,
-          ratings: [{ id: body.id, verdict, userWords: label + (comment ? "：" + comment : "") + "（道場画面）" }],
-          actor: "My Portal UI",
+          baseId: body.baseId, ratings, actor: "My Portal UI",
         }));
       }
       if (action === "exploration_achievement_decide") {
