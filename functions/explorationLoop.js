@@ -78,6 +78,18 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
     actualPassRate: rateOf(predicted.filter((e) => e.verdict === 'pass').length, predicted.length),
   } : null;
 
+  // End-to-end efficiency, kept distinct from author self-scores:
+  // candidate ideas screened internally vs ideas shown vs actual user passes.
+  const screenedTrials = (trials || []).filter((t) => t.editorialScreen?.pool?.length);
+  const screening = {
+    submitted: screenedTrials.length,
+    considered: screenedTrials.reduce((n, t) => n + t.editorialScreen.candidateCount, 0),
+    rejectedBeforeUser: screenedTrials.reduce((n, t) => n + t.editorialScreen.rejectedCount, 0),
+    rated: screenedTrials.filter((t) => t.status === 'rated').length,
+    userPass: screenedTrials.filter((t) => t.status === 'rated' && t.verdict === 'pass').length,
+  };
+  screening.passRate = rateOf(screening.userPass, screening.rated);
+
   const byHypothesis = new Map();
   entries.forEach((e) => e.hypothesisIds.forEach((id) => byHypothesis.set(id, [...(byHypothesis.get(id) || []), e])));
   const titles = new Map((hypotheses || []).map((h) => [h.id, h]));
@@ -116,7 +128,7 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
     recent: tally(entries.slice(-10)),
     current, previous, byVersion,
     awaiting: awaiting.map((t) => ({ id: t.id, label: t.label, body: t.body || '', ref: t.ref || '', createdAt: t.createdAt, hypothesisIds: t.hypothesisIds || [], predictedPass: t.predictedPass ?? null })),
-    calibration, hypotheses: scoreboard.slice(0, 20), failStages, failStreak,
+    calibration, screening, hypotheses: scoreboard.slice(0, 20), failStages, failStreak,
     gates: { ...LIMITS, usesTrials, ratedOnCurrent: current.rated, canReleaseNewVersion: canRelease, researchDueBeforeNextTrial: researchDue },
     lastRated: entries.slice(-8).reverse().map((e) => ({ id: e.id, label: e.label, verdict: e.verdict, version: versionKey(e), at: e.at, userWords: e.userWords })),
     nextActions,
@@ -132,6 +144,7 @@ function loopSummary(view) {
     previousVersion: view.previous?.version || null, previousPassRate: view.previous?.passRate ?? null,
     awaiting: view.awaiting.length, failStreak: view.failStreak,
     hitRate: view.calibration?.hitRate ?? null,
+    screening: view.screening,
   };
 }
 
