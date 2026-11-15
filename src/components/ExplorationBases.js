@@ -296,16 +296,22 @@ function timelineOf(runs, events) {
 
 const VERDICT_LABEL = { pass: '合格', partial: '惜しい', fail: 'ボツ' };
 
-// Rate samples where they are read: the sample itself, one optional line, and one press. Nothing else to open.
-export function RateTrials({ items, onRate, busyId, showBase = false }) {
+// Stage verdicts across several examples and send one batch. Leaving rows unselected is allowed.
+export function RateTrials({ items, onRate, onRateBatch, busyId, showBase = false }) {
   const [comments, setComments] = useState({});
+  const [selections, setSelections] = useState({});
   if (!items?.length) return null;
+  const batchMode = Boolean(onRateBatch) && items.length > 1;
+  const busy = Boolean(busyId);
+  const selectedRows = batchMode ? items.filter((trial) => selections[trial.baseId + ':' + trial.id]).map((trial) => {
+    const key = trial.baseId + ':' + trial.id;
+    return { baseId: trial.baseId, id: trial.id, verdict: selections[key], comment: (comments[key] || '').trim(), key };
+  }) : [];
   return (
     <Box>
       {items.map((t) => {
         const key = t.baseId + ':' + t.id;
         const comment = comments[key] || '';
-        const busy = busyId === key;
         return (
           <Box key={key} sx={{ py: 1.6, borderBottom: '1px solid ' + V.rule }}>
             {showBase && t.baseTitle && <Typography sx={{ fontSize: 11.5, color: V.accent, fontWeight: 800, mb: 0.3 }}>{t.baseTitle}</Typography>}
@@ -318,22 +324,47 @@ export function RateTrials({ items, onRate, busyId, showBase = false }) {
                 inputProps={{ maxLength: 500, 'aria-label': t.label + ' への一言' }} sx={{ flex: 1 }} />
               <Stack direction="row" gap={0.8}>
                 {['pass', 'partial', 'fail'].map((verdict) => (
-                  <Button key={verdict} size="small" disabled={busy} variant={verdict === 'pass' ? 'contained' : 'outlined'}
+                  <Button key={verdict} size="small" disabled={busy}
+                    aria-pressed={batchMode ? selections[key] === verdict : undefined}
+                    variant={batchMode ? (selections[key] === verdict ? 'contained' : 'outlined') : (verdict === 'pass' ? 'contained' : 'outlined')}
                     color={verdict === 'fail' ? 'inherit' : 'primary'}
-                    onClick={() => onRate(t, verdict, comment.trim())}>{VERDICT_LABEL[verdict]}</Button>
+                    onClick={() => batchMode
+                      ? setSelections((all) => ({ ...all, [key]: all[key] === verdict ? undefined : verdict }))
+                      : onRate(t, verdict, comment.trim())}>{VERDICT_LABEL[verdict]}</Button>
                 ))}
               </Stack>
             </Stack>
           </Box>
         );
       })}
+      {batchMode && (
+        <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between" gap={1.2} sx={{ mt: 2 }}>
+          <Stack direction="row" gap={1} alignItems="center">
+            <Button size="small" color="inherit" disabled={busy} onClick={() => setSelections((old) => ({
+              ...old, ...Object.fromEntries(items.map((t) => [t.baseId + ':' + t.id, 'fail'])),
+            }))}>全件ボツを選択</Button>
+            <Button size="small" color="inherit" disabled={busy || !selectedRows.length} onClick={() => setSelections({})}>選択解除</Button>
+          </Stack>
+          <Button variant="contained" disabled={busy || !selectedRows.length}
+            onClick={async () => {
+              const savedKeys = await onRateBatch(selectedRows);
+              if (savedKeys?.length) {
+                setSelections((old) => {
+                  const next = { ...old };
+                  savedKeys.forEach((key) => { delete next[key]; });
+                  return next;
+                });
+              }
+            }}>{busyId === 'batch' ? '保存中…' : '選択した ' + selectedRows.length + ' 件をまとめて保存'}</Button>
+        </Stack>
+      )}
     </Box>
   );
 }
 
 // The improvement loop in one block: pass rate by version, what is waiting for the user, and what the last
 // ratings were. A version is better only when the user passed more of what it produced.
-export function LoopPanel({ loop, baseId, onRate, busyId }) {
+export function LoopPanel({ loop, baseId, onRate, onRateBatch, busyId }) {
   if (!loop) return null;
   const versions = loop.byVersion || [];
   const awaiting = loop.awaiting || [];
@@ -366,7 +397,7 @@ export function LoopPanel({ loop, baseId, onRate, busyId }) {
         <Box sx={{ mt: 1.5 }}>
           <Typography sx={{ fontSize: 13, fontWeight: 800 }}>評価待ちの見本 {awaiting.length}件</Typography>
           {onRate
-            ? <RateTrials items={awaiting.map((t) => ({ ...t, baseId }))} onRate={onRate} busyId={busyId} />
+            ? <RateTrials items={awaiting.map((t) => ({ ...t, baseId }))} onRate={onRate} onRateBatch={onRateBatch} busyId={busyId} />
             : awaiting.map((t) => <Typography key={t.id} sx={{ fontSize: 13, color: V.muted, lineHeight: 1.7 }}>{t.label}</Typography>)}
           <Typography sx={{ fontSize: 12, color: V.faint, mt: 0.5 }}>チャットで一言伝えても同じように記録されます。</Typography>
         </Box>
@@ -418,7 +449,7 @@ export function VersionFeedback({ feedback }) {
   );
 }
 
-function BaseDetail({ detail, onDecide, busy, onRate, busyId }) {
+function BaseDetail({ detail, onDecide, busy, onRate, onRateBatch, busyId }) {
   const [tab, setTab] = useState('goal');
   const { base, outcome = {}, method, full = {}, position = {} } = detail;
   const awaiting = outcome.awaitingConfirmation || [];
@@ -458,7 +489,7 @@ function BaseDetail({ detail, onDecide, busy, onRate, busyId }) {
         } : null} />
       </Box>
 
-      {detail.loop ? <LoopPanel loop={detail.loop} baseId={base.id} onRate={onRate} busyId={busyId} /> : <VersionFeedback feedback={detail.feedback} />}
+      {detail.loop ? <LoopPanel loop={detail.loop} baseId={base.id} onRate={onRate} onRateBatch={onRateBatch} busyId={busyId} /> : <VersionFeedback feedback={detail.feedback} />}
 
       {(awaiting.length > 0 || proposals.length > 0) && (
         <>
@@ -684,6 +715,38 @@ export default function ExplorationBases() {
     }
   };
 
+  // One transaction per 道場; on the all-dojos screen, save each base separately and
+  // report partial failures rather than resending already successful ratings.
+  const rateBatch = async (rows) => {
+    if (!rows.length) return [];
+    setRatingKey('batch');
+    setError('');
+    const groups = new Map();
+    rows.forEach(({ baseId, id, verdict, comment, key }) => {
+      if (!groups.has(baseId)) groups.set(baseId, []);
+      groups.get(baseId).push({ id, verdict, comment, key });
+    });
+    const savedKeys = [];
+    const failures = [];
+    try {
+      for (const [baseId, group] of groups) {
+        try {
+          await api('', { action: 'exploration_trial_rate', baseId,
+            ratings: group.map(({ id, verdict, comment }) => ({ id, verdict, comment })) });
+          savedKeys.push(...group.map(({ key }) => key));
+        } catch (err) {
+          failures.push(baseId + '：' + (err.message || '保存に失敗'));
+        }
+      }
+      if (savedKeys.length) setNotice(savedKeys.length + '件の評価をまとめて保存しました');
+      if (failures.length) setError('保存できなかった道場があります。未保存の選択だけ残しています。' + failures.join(' / '));
+      await Promise.all([loadList(), selectedId ? loadDetail(selectedId) : Promise.resolve()]);
+      return savedKeys;
+    } finally {
+      setRatingKey('');
+    }
+  };
+
   const decide = async () => {
     if (!decision) return;
     setBusy(true);
@@ -732,7 +795,7 @@ export default function ExplorationBases() {
             {awaiting.length > 0 && (
               <Box sx={{ mb: 3 }}>
                 <Heading aside={<Small>見本を読んで押すだけで、その版の合格率と仮説に入ります</Small>}>評価待ちの見本 {awaiting.length}件</Heading>
-                <RateTrials items={awaiting} onRate={rate} busyId={ratingKey} showBase />
+                <RateTrials items={awaiting} onRate={rate} onRateBatch={rateBatch} busyId={ratingKey} showBase />
               </Box>
             )}
             <BaseList items={items} onOpen={open} />
@@ -740,7 +803,7 @@ export default function ExplorationBases() {
         ) : detailLoading && !detail ? (
           <Box sx={{ display: 'grid', placeItems: 'center', py: 7 }}><CircularProgress /></Box>
         ) : detail ? (
-          <BaseDetail detail={detail} busy={busy} onRate={rate} busyId={ratingKey} onDecide={(item, value) => { setDecision({ item, value }); setNote(''); }} />
+          <BaseDetail detail={detail} busy={busy} onRate={rate} onRateBatch={rateBatch} busyId={ratingKey} onDecide={(item, value) => { setDecision({ item, value }); setNote(''); }} />
         ) : null}
       </Box>
 
