@@ -15,6 +15,7 @@ const outcome = {
     unit: string('What counts as one achievement (e.g. one keyword the user decided to write).', 300),
     target: {
       type: 'object',
+      description: 'Optional count target. Leave it out for a 道場: it is measured by the pass rate of its released version, not by a count.',
       properties: { min: { type: 'integer', minimum: 1 }, max: { type: 'integer', minimum: 1 } },
       required: ['min'], additionalProperties: false,
     },
@@ -31,7 +32,7 @@ const outcome = {
     stopConditions: strings('When to stop and report instead of running again.', 12),
     priority: string('How important this exploration is relative to other work.', 300),
   },
-  required: ['statement', 'unit', 'target', 'acceptance'],
+  required: ['statement', 'unit', 'acceptance'],
   additionalProperties: false,
 };
 const method = {
@@ -104,7 +105,7 @@ const tools = [
   },
   {
     name: 'exploration_base_get',
-    description: 'Read an Exploration Base. Call this first in every exploration run. view=brief returns the fixed points in one call: outcome contract and progress, active method version, constraints grouped by owner, hypothesis and source ledgers by stage (including rejected ones), last runs, warnings and the run protocol. view=full adds item details, method history, runs and the event log.',
+    description: 'Read an Exploration Base. Call this first in every exploration run. view=brief returns the fixed points in one call: outcome contract and progress, active method version, constraints grouped by owner, hypothesis and source ledgers by stage (including rejected ones), last runs, warnings and the run protocol, and loop: the pass rate by released version, samples waiting for the user, how often the predicted verdict matched, the score of each hypothesis and nextActions (read these first). view=full adds item details, method history, runs and the event log.',
     inputSchema: {
       type: 'object',
       properties: { id: baseId, view: { type: 'string', enum: ['brief', 'full'] }, eventLimit: { type: 'integer', minimum: 1, maximum: 300 } },
@@ -155,7 +156,7 @@ const tools = [
   },
   {
     name: 'exploration_method_version_set',
-    description: 'Release a new version of what this base trains: point at a Chat Skill or Intelligence Pack version in the DB (bodyRef.kind chat_skill / intelligence_pack, location = id, versionNumber), or an inline/pointer body for older bases. Refused while a run is open. After the first version it requires motivatingRunIds (finished runs that justify it) — or userAuthorized with authorizationNote when the user decided the change — and benchmark.passed=true, or noBenchmarkReason. Prefer an inline body (bodyRef.kind=inline): the base then holds the method text itself. Version labels are never reused. One insight from one run is a ledger entry, not a method version.',
+    description: 'Release a new version of what this base trains: point at a Chat Skill or Intelligence Pack version in the DB (bodyRef.kind chat_skill / intelligence_pack, location = id, versionNumber), or an inline/pointer body for older bases. Refused while a run is open. After the first version it requires motivatingRunIds (finished runs that justify it) — or userAuthorized with authorizationNote when the user decided the change — and benchmark.passed=true, or noBenchmarkReason. When the base records trials, the released version also needs loop.gates.minRatedPerVersion rated trials first (so the two versions can be compared by pass rate) unless the user directed the change. Prefer an inline body (bodyRef.kind=inline): the base then holds the method text itself. Version labels are never reused. One insight from one run is a ledger entry, not a method version.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -202,7 +203,7 @@ const tools = [
   },
   {
     name: 'exploration_run_finish',
-    description: 'Close the open run: a verdict (supported / contradicted / inconclusive, with what was measured) for every declared hypothesis, achievements found, and a summary. The server counts which fixed points the run moved; a run that moved none must give notMovedReason and is recorded as stalled. Achievements stay candidates until the user confirms them when the outcome is user-confirmed.',
+    description: 'Close the open run: a verdict (supported / contradicted / inconclusive, with what was measured) for every declared hypothesis, achievements found, and a summary. A hypothesis tested by a trial the user rated in this run cannot be inconclusive. The server counts which fixed points the run moved; a run that moved none must give notMovedReason and is recorded as stalled. Achievements stay candidates until the user confirms them when the outcome is user-confirmed.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -221,6 +222,78 @@ const tools = [
         actor,
       },
       required: ['baseId', 'runId', 'summary'], additionalProperties: false,
+    },
+  },
+  {
+    name: 'exploration_trial_record',
+    description: 'Register samples (trials) BEFORE the user sees them: every sample shown for evaluation in a 道場 goes through here. Each trial names the open hypotheses it tests (hypothesisIds) and predictedPass, the chance 0-1 that the user passes it, so the rating settles a hypothesis and scores the self-check. Refused when too many trials are still unrated, or after consecutive non-passes until a run that re-derives the hypotheses has finished (see loop.gates in exploration_base_get). Pass runId when a run is open. backfill=true imports past samples with their own version, date and rating; it skips refs already recorded.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        baseId, runId: string('The open run these samples belong to.', 20),
+        trials: {
+          type: 'array', minItems: 1, maxItems: 30,
+          items: {
+            type: 'object',
+            properties: {
+              label: string('Short name of the sample (first words of the post, the keyword, the title).', 300),
+              body: string('The sample itself, as shown.', 4000),
+              ref: string('Where the sample lives (Output ID, haul ref, URL). Used to avoid recording it twice.', 600),
+              hypothesisIds: strings('H-nnn this sample tests. Required unless backfill.', 10),
+              sourceIds: strings('S-nnn the material came from.', 10),
+              predictedPass: { type: 'number', minimum: 0, maximum: 1, description: 'Chance the user passes it, stated before showing. Required unless backfill.' },
+              predictionNote: string('Why that chance.', 600),
+              version: { type: ['integer', 'null'], description: 'backfill only: skill/pack version that produced it.' },
+              methodVersion: string('backfill only: method version label at the time.', 60),
+              runId: string('backfill only: the run it was shown in.', 20),
+              shownAt: string('backfill only: ISO time it was shown.', 40),
+              rating: {
+                type: 'object', description: 'backfill only: the rating the user gave at the time.',
+                properties: {
+                  verdict: { type: 'string', enum: ['pass', 'partial', 'fail', 'withdrawn'] },
+                  userWords: string('What the user said, quoted.', 1500),
+                  failStage: { type: 'string', enum: ['source', 'selection', 'transform', 'voice', 'gate', 'unknown'] },
+                  failStageNote: string('Why that stage (agent guess unless the user said it).', 600),
+                  reason: string('Why withdrawn.', 600),
+                  ratedAt: string('ISO time of the rating.', 40),
+                },
+                required: ['verdict'], additionalProperties: false,
+              },
+            },
+            required: ['label'], additionalProperties: false,
+          },
+        },
+        backfill: { type: 'boolean', description: 'Import past samples as they were. Skips the hypothesis, prediction and pacing checks.' },
+        actor,
+      },
+      required: ['baseId', 'trials'], additionalProperties: false,
+    },
+  },
+  {
+    name: 'exploration_trial_rate',
+    description: 'Record what the user said about trials. verdict: pass (the user accepted it), partial (close, e.g. "60点" / "惜しい"), fail, or withdrawn (never shown or no longer relevant; needs reason). userWords must quote the user: a self-score is not a rating. The rating is added to the pass rate of the version that produced the sample and to each hypothesis the trial tested (a pass as evidence, a non-pass as a counterexample). failStage is where the pipeline lost it (source, selection, transform, voice, gate); mark it unknown unless the user said why. Returns the updated loop with nextActions.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        baseId,
+        ratings: {
+          type: 'array', minItems: 1, maxItems: 30,
+          items: {
+            type: 'object',
+            properties: {
+              id: string('T-nnn.', 20),
+              verdict: { type: 'string', enum: ['pass', 'partial', 'fail', 'withdrawn'] },
+              userWords: string('What the user said, quoted. Required unless withdrawn.', 1500),
+              failStage: { type: 'string', enum: ['source', 'selection', 'transform', 'voice', 'gate', 'unknown'] },
+              failStageNote: string('Why that stage (agent guess unless the user said it).', 600),
+              reason: string('Why withdrawn.', 600),
+            },
+            required: ['id', 'verdict'], additionalProperties: false,
+          },
+        },
+        actor,
+      },
+      required: ['baseId', 'ratings'], additionalProperties: false,
     },
   },
 ];

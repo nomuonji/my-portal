@@ -66,11 +66,6 @@ function shortDate(value) {
   return new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric' }).format(date);
 }
 
-function targetText(target) {
-  if (!target) return '—';
-  return target.max && target.max !== target.min ? target.min + '〜' + target.max : String(target.min);
-}
-
 function methodUrl(bodyRef) {
   const location = String(bodyRef?.location || '').replace(/^github:/, '').trim();
   if (/^https?:\/\//.test(location)) return location;
@@ -84,9 +79,10 @@ function methodUrl(bodyRef) {
 export function statusOf(state) {
   if (state.status === 'paused') return { text: '一時停止中です', color: V.faint };
   if (state.status === 'closed') return { text: 'この探索は終了しています', color: V.faint };
-  if (state.reached) return { text: '目標に届きました', color: V.green };
+  if (state.loop?.awaiting > 0) return { text: 'あなたの評価を待っている見本が ' + state.loop.awaiting + ' 件あります', color: V.accent };
   if (state.awaitingCount > 0) return { text: 'あなたの判断を待っている候補が ' + state.awaitingCount + ' 件あります', color: V.accent };
   if (state.pendingProposalCount > 0) return { text: 'ゴールの変更提案が ' + state.pendingProposalCount + ' 件届いています', color: V.accent };
+  if (state.loop?.failStreak >= 3) return { text: state.loop.failStreak + ' 回続けて合格が出ていません。仕入れ方から見直しています', color: V.pink };
   if (state.stalledRuns >= 3) return { text: state.stalledRuns + ' 回続けて進展がありません。進め方の見直しが必要です', color: V.pink };
   if (state.openRunId) return { text: 'いま探索を実行しています', color: V.blue };
   if (!state.runCount) return { text: 'まだ一度も実行していません', color: V.faint };
@@ -111,13 +107,23 @@ function Status({ state, size = 14 }) {
   );
 }
 
-function Progress({ confirmed, target, big = false }) {
+const percent = (rate) => (rate === null || rate === undefined ? '—' : Math.round(rate * 100) + '%');
+
+// The measure of a 道場: how often the user passes what the version in use produces. No count target.
+// `loop` is the summary carried by the list (rated, passRate, currentVersion, currentRated, currentPassRate).
+export function PassRate({ loop, big = false }) {
+  const rated = loop?.rated || 0;
+  const onCurrent = loop?.currentRated || 0;
+  // The version in use is what matters; until it has ratings, show the rate across all versions.
+  const shown = onCurrent > 0 ? loop.currentPassRate : (rated > 0 ? loop.passRate : null);
   return (
     <Box sx={{ textAlign: { xs: 'left', md: 'right' } }}>
-      <Typography sx={{ fontSize: big ? 34 : 24, fontWeight: 900, lineHeight: 1, letterSpacing: '-0.02em' }}>
-        {confirmed}<Typography component="span" sx={{ fontSize: big ? 18 : 14, color: V.muted, fontWeight: 700 }}> / {targetText(target)}</Typography>
+      <Typography sx={{ fontSize: big ? 34 : 24, fontWeight: 900, lineHeight: 1, letterSpacing: '-0.02em' }}>{percent(shown)}</Typography>
+      <Typography sx={{ fontSize: 11.5, color: V.muted, mt: 0.5 }}>
+        {!rated ? '合格率（評価はまだありません）'
+          : onCurrent > 0 ? '合格率（いまの版・' + onCurrent + '件）' : '合格率（全部の版・' + rated + '件）'}
       </Typography>
-      <Typography sx={{ fontSize: 11.5, color: V.muted, mt: 0.5 }}>確定した成果</Typography>
+      {onCurrent > 0 && rated > onCurrent && <Typography sx={{ fontSize: 11.5, color: V.faint, mt: 0.2 }}>全部の版では {percent(loop.passRate)}（{rated}件）</Typography>}
     </Box>
   );
 }
@@ -288,6 +294,61 @@ function timelineOf(runs, events) {
   ].sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
 }
 
+const VERDICT_LABEL = { pass: '合格', partial: '惜しい', fail: 'ボツ' };
+
+// The improvement loop in one block: pass rate by version, what is waiting for the user, and what the last
+// ratings were. A version is better only when the user passed more of what it produced.
+export function LoopPanel({ loop }) {
+  if (!loop) return null;
+  const versions = loop.byVersion || [];
+  const awaiting = loop.awaiting || [];
+  const lastRated = loop.lastRated || [];
+  const calibration = loop.calibration;
+  if (!versions.length && !awaiting.length) return null;
+  return (
+    <Box sx={{ mt: 2.5 }}>
+      <Heading aside={<Small>見本への一言と、潜水艦の成果への評価を、作った版ごとに数えています</Small>}>合格率（版ごと）</Heading>
+      {versions.map((g) => (
+        <Stack key={g.version} direction="row" gap={1.5} alignItems="baseline" flexWrap="wrap" sx={{ py: 1, borderBottom: '1px solid ' + V.rule }}>
+          <Typography sx={{ fontSize: 14.5, fontWeight: 850, minWidth: 150 }}>{g.version}{g.released ? '（いまの版）' : ''}</Typography>
+          <Typography sx={{ fontSize: 14.5, fontWeight: 850 }}>{percent(g.passRate)}</Typography>
+          <Typography sx={{ fontSize: 13, color: V.green, fontWeight: 800 }}>合格 {g.pass}</Typography>
+          {g.partial > 0 && <Typography sx={{ fontSize: 13, color: V.amber, fontWeight: 800 }}>惜しい {g.partial}</Typography>}
+          <Typography sx={{ fontSize: 13, color: V.faint, fontWeight: 800 }}>ボツ {g.fail}</Typography>
+        </Stack>
+      ))}
+      {calibration && (
+        <Typography sx={{ fontSize: 12.5, color: V.muted, mt: 1 }}>
+          AIの事前予測が当たった割合 {percent(calibration.hitRate)}（{calibration.predicted}件）。これが上がるほど、出す前に自分でボツを落とせています。
+        </Typography>
+      )}
+      {(loop.nextActions || []).length > 0 && (
+        <Box sx={{ mt: 1.2 }}>
+          {loop.nextActions.map((line) => <Typography key={line} sx={{ fontSize: 12.5, color: V.muted, lineHeight: 1.7 }}>・{line}</Typography>)}
+        </Box>
+      )}
+      {awaiting.length > 0 && (
+        <Box sx={{ mt: 1.5 }}>
+          <Typography sx={{ fontSize: 13, fontWeight: 800 }}>評価待ちの見本</Typography>
+          {awaiting.map((t) => <Typography key={t.id} sx={{ fontSize: 13, color: V.muted, lineHeight: 1.7 }}>{t.label}</Typography>)}
+          <Typography sx={{ fontSize: 12, color: V.faint, mt: 0.3 }}>チャットで一言（良い／ボツ／ここが嫌）ください。</Typography>
+        </Box>
+      )}
+      {lastRated.length > 0 && (
+        <Box sx={{ mt: 1.5 }}>
+          <Typography sx={{ fontSize: 13, fontWeight: 800 }}>直近の評価</Typography>
+          {lastRated.map((t) => (
+            <Typography key={t.id + String(t.at)} sx={{ fontSize: 12.5, color: V.muted, lineHeight: 1.7 }}>
+              <b style={{ color: t.verdict === 'pass' ? 'var(--p-green)' : undefined }}>{VERDICT_LABEL[t.verdict] || t.verdict}</b>　{t.label}
+              {t.userWords ? <span style={{ color: 'var(--p-faint)' }}>　「{t.userWords}」</span> : null}
+            </Typography>
+          ))}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
 // What the user said about things this 道場's gear produced, grouped by the version that produced them.
 // This is the evidence for releasing a new version: a version is better when the user said so more often.
 export function VersionFeedback({ feedback }) {
@@ -333,7 +394,7 @@ function BaseDetail({ detail, onDecide, busy }) {
   const timeline = timelineOf(runs, full.events || []);
   const url = methodUrl(method?.bodyRef);
   const state = {
-    status: base.status, reached: outcome.reached, awaitingCount: awaiting.length,
+    status: base.status, loop: detail.loop ? { awaiting: (detail.loop.awaiting || []).length, failStreak: detail.loop.failStreak } : null, awaitingCount: awaiting.length,
     pendingProposalCount: proposals.length, stalledRuns: position.stalledRuns, openRunId: position.openRunId,
     runCount: position.runCount, lastRun: (position.lastRuns || [])[0],
   };
@@ -354,10 +415,13 @@ function BaseDetail({ detail, onDecide, busy }) {
           <Status state={state} size={15} />
           {state.lastRun?.nextStep && <Typography sx={{ fontSize: 13, color: V.muted, mt: 0.6, pl: 2 }}>次の一手：{state.lastRun.nextStep}</Typography>}
         </Box>
-        <Progress confirmed={outcome.confirmedCount || 0} target={outcome.target} big />
+        <PassRate big loop={detail.loop ? {
+          rated: detail.loop.overall.rated, passRate: detail.loop.overall.passRate,
+          currentRated: detail.loop.current.rated, currentPassRate: detail.loop.current.passRate,
+        } : null} />
       </Box>
 
-      <VersionFeedback feedback={detail.feedback} />
+      {detail.loop ? <LoopPanel loop={detail.loop} /> : <VersionFeedback feedback={detail.feedback} />}
 
       {(awaiting.length > 0 || proposals.length > 0) && (
         <>
@@ -378,7 +442,7 @@ function BaseDetail({ detail, onDecide, busy }) {
             <Box key={proposal.id} sx={{ py: 1.3, borderBottom: '1px solid ' + V.rule }}>
               <Typography sx={{ fontSize: 14, fontWeight: 800 }}>ゴールの変更提案</Typography>
               <Typography sx={{ fontSize: 13, mt: 0.3, lineHeight: 1.6 }}>{proposal.reason}</Typography>
-              {proposal.proposed?.statement && <Typography sx={{ fontSize: 13, color: V.muted, mt: 0.3 }}>提案：{proposal.proposed.statement}（目標 {targetText(proposal.proposed.target)}）</Typography>}
+              {proposal.proposed?.statement && <Typography sx={{ fontSize: 13, color: V.muted, mt: 0.3 }}>提案：{proposal.proposed.statement}</Typography>}
               <Typography sx={{ fontSize: 12, color: V.faint, mt: 0.3 }}>採否はチャットで伝えてください。</Typography>
             </Box>
           ))}
@@ -509,7 +573,7 @@ function BaseList({ items, onOpen }) {
             <Typography sx={{ fontSize: 13.5, color: V.muted, mt: 0.3, lineHeight: 1.6 }}>{base.outcome?.statement}</Typography>
             <Box sx={{ mt: 0.8 }}><Status state={base} size={13} /></Box>
           </Box>
-          <Progress confirmed={base.confirmedCount} target={base.outcome?.target} />
+          <PassRate loop={base.loop} />
         </Box>
       ))}
     </Box>
