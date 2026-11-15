@@ -80,6 +80,7 @@ const item = {
     title: string('Hypothesis: short name.', 160),
     statement: string('Hypothesis: the claim. Constraint: the rule.', 1500),
     mechanism: string('Hypothesis: why it would hold (required on create).', 2000),
+    pipelineStage: { type: 'string', enum: ['source', 'selection', 'transform', 'voice', 'gate', 'audience', 'unknown'], description: 'Hypothesis only: which part of the full sourcing-to-evaluation pipeline is under test. Not the evidence maturity stage.' },
     limits: string('Hypothesis/source: where it does not apply.', 1500),
     locator: string('Source: URL, search query or tool call that reaches it (required on create).', 600),
     coverage: string('Source: what it yields for this outcome and why it is worth trying (required on create).', 1500),
@@ -105,7 +106,7 @@ const tools = [
   },
   {
     name: 'exploration_base_get',
-    description: 'Read an Exploration Base. Call this first in every exploration run. view=brief returns the fixed points in one call: outcome contract and progress, active method version, constraints grouped by owner, hypothesis and source ledgers by stage (including rejected ones), last runs, warnings and the run protocol, and loop: the pass rate by released version, samples waiting for the user, how often the predicted verdict matched, the score of each hypothesis and nextActions (read these first). view=full adds item details, method history, runs and the event log.',
+    description: 'Read an Exploration Base before each run. loop.refinement provides calibrated forecast error, smoothed hypothesis estimates, uncertainty and a competing-hypothesis contrast; advisory, not proof. Read nextActions and design a discriminating test before generating outputs. view=full adds item details, immutable revision history, runs and events.',
     inputSchema: {
       type: 'object',
       properties: { id: baseId, view: { type: 'string', enum: ['brief', 'full'] }, eventLimit: { type: 'integer', minimum: 1, maximum: 300 } },
@@ -185,7 +186,7 @@ const tools = [
   },
   {
     name: 'exploration_run_start',
-    description: 'Open an exploration run. Declare the hypotheses under test with the result you predict before measuring, and/or the unexplored area you will observe. Pins the method version. Only one run is open per base. Returns the runId and the current brief.',
+    description: 'Open an exploration run. Read loop.refinement first, declare the tested hypothesis and forecast before observing outcomes. When testing a known competing explanation, supply experimentDesign with a distinct alternative and controlled difference; legacy exploratory probes may omit it. Pins method version.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -195,6 +196,21 @@ const tools = [
           items: { type: 'object', properties: { hypothesisId: string('H-nnn.', 20), prediction: string('Expected measurement, stated before measuring.', 800) }, required: ['hypothesisId', 'prediction'], additionalProperties: false },
         },
         unknownTerritoryProbe: string('Area outside the known hypotheses this run will observe.', 800),
+        experimentDesign: {
+          type: 'object',
+          description: 'Optional but recommended common-dojo discriminator. Identifies which pipeline stage changes, holds other factors comparable, and states a falsifying observation before experimentation. It cannot claim causality from one trial.',
+          properties: {
+            contrastedHypothesisIds: strings('Distinct open competing hypotheses, not repeated target IDs.', 6),
+            changedStage: { type: 'string', enum: ['source', 'selection', 'transform', 'voice', 'gate', 'audience'] },
+            intervention: string('What changes in this experimental arm.', 900),
+            comparison: string('Which baseline or alternative approach is compared.', 900),
+            controls: string('What source/selection/voice/measurement conditions stay comparable.', 900),
+            expectedDifference: string('Predicted observable difference between target and competing hypotheses.', 900),
+            refutingObservation: string('Which outcome would reject the favored explanation.', 900),
+          },
+          required: ['contrastedHypothesisIds', 'changedStage', 'intervention', 'comparison', 'controls', 'expectedDifference', 'refutingObservation'],
+          additionalProperties: false,
+        },
         takeover: { type: 'boolean', description: 'Abandon a stale open run and start a new one.' },
         actor,
       },

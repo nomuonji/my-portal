@@ -1,5 +1,7 @@
 'use strict';
 
+const { refinementView } = require('./hypothesisRefinement');
+
 // The improvement loop of a スキル錬成道場, as numbers. A trial is one sample shown to the user, registered
 // with the hypotheses it tests and the predicted chance of passing before the user rates it. The pass rate
 // per released version is the measure of the 道場; there is no count target.
@@ -97,6 +99,7 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
     id, title: titles.get(id)?.title || '', status: titles.get(id)?.status || 'open', ...tally(list),
   })).sort((a, b) => b.rated - a.rated || String(a.id).localeCompare(String(b.id)));
 
+  const refinement = refinementView(entries, hypotheses || []);
   const failStages = {};
   entries.filter((e) => e.verdict !== 'pass' && e.failStage).forEach((e) => { failStages[e.failStage] = (failStages[e.failStage] || 0) + 1; });
 
@@ -128,7 +131,7 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
     recent: tally(entries.slice(-10)),
     current, previous, byVersion,
     awaiting: awaiting.map((t) => ({ id: t.id, label: t.label, body: t.body || '', ref: t.ref || '', createdAt: t.createdAt, hypothesisIds: t.hypothesisIds || [], predictedPass: t.predictedPass ?? null })),
-    calibration, screening, hypotheses: scoreboard.slice(0, 20), failStages, failStreak,
+    calibration, screening, refinement, hypotheses: scoreboard.slice(0, 20), failStages, failStreak,
     gates: { ...LIMITS, usesTrials, ratedOnCurrent: current.rated, canReleaseNewVersion: canRelease, researchDueBeforeNextTrial: researchDue },
     lastRated: entries.slice(-8).reverse().map((e) => ({ id: e.id, label: e.label, verdict: e.verdict, version: versionKey(e), at: e.at, userWords: e.userWords })),
     nextActions,

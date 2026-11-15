@@ -370,6 +370,7 @@ export function LoopPanel({ loop, baseId, onRate, onRateBatch, busyId }) {
   const awaiting = loop.awaiting || [];
   const lastRated = loop.lastRated || [];
   const calibration = loop.calibration;
+  const refinement = loop.refinement;
   if (!versions.length && !awaiting.length) return null;
   return (
     <Box sx={{ mt: 2.5 }}>
@@ -387,6 +388,45 @@ export function LoopPanel({ loop, baseId, onRate, onRateBatch, busyId }) {
         <Typography sx={{ fontSize: 12.5, color: V.muted, mt: 1 }}>
           AIの事前予測が当たった割合 {percent(calibration.hitRate)}（{calibration.predicted}件）。これが上がるほど、出す前に自分でボツを落とせています。
         </Typography>
+      )}
+      {refinement && (
+        <Box sx={{ mt: 1.5, px: 1.5, py: 1.3, border: '1px solid ' + V.rule, borderRadius: 1.5 }}>
+          <Typography sx={{ fontSize: 13.5, fontWeight: 800, mb: 0.5 }}>次の仮説を選ぶための診断</Typography>
+          {refinement.calibration?.count > 0 && (
+            <Typography sx={{ fontSize: 12.5, color: V.muted, lineHeight: 1.7 }}>
+              事前予測 {refinement.calibration.count}件：
+              平均予測 {percent(refinement.calibration.meanPrediction)} ／ 実際の合格 {percent(refinement.calibration.actualPassRate)}。
+              {refinement.calibration.meanBias > 0
+                ? ' 平均で ' + Math.round(refinement.calibration.meanBias * 100) + 'ポイント楽観的です。'
+                : refinement.calibration.meanBias < 0
+                  ? ' 平均で ' + Math.round(-refinement.calibration.meanBias * 100) + 'ポイント慎重です。'
+                  : ' 平均予測と結果は一致しています。'}
+              {refinement.calibration.suggestedAdjustment !== null && refinement.calibration.suggestedAdjustment !== undefined &&
+                ' 次回予測の補正参考値 ' + (refinement.calibration.suggestedAdjustment > 0 ? '+' : '') + Math.round(refinement.calibration.suggestedAdjustment * 100) + 'ポイント。'}
+            </Typography>
+          )}
+          {refinement.hypotheses?.length > 0 && (
+            <Box sx={{ mt: 0.8 }}>
+              <Typography sx={{ fontSize: 12.5, fontWeight: 800 }}>検証を優先したい仮説（未確定）</Typography>
+              {refinement.hypotheses.slice(0, 3).map((h) => (
+                <Typography key={h.id} sx={{ fontSize: 12.5, color: V.muted, lineHeight: 1.7 }}>
+                  ・{h.title}（{h.rated}件評価、縮約推定 {percent(h.predictedPass)}）
+                </Typography>
+              ))}
+            </Box>
+          )}
+          {refinement.contrast && (
+            <Typography sx={{ fontSize: 12.5, color: V.muted, mt: 0.6, lineHeight: 1.7 }}>
+              次の比較：{refinement.contrast.hypothesisIds.join(' と ')}。
+              {refinement.contrast.confounded
+                ? ' 検証工程や評価対象が重なっているため、同じ試作品への採点だけで原因を特定できません。'
+                : ' 同じ条件を保ち、変更する工程を一つに絞って検証します。'}
+            </Typography>
+          )}
+          <Typography sx={{ fontSize: 11.5, color: V.faint, mt: 0.5 }}>
+            自動計算は仮説の優先順位付けのみ。本人の採否と因果の検証は別です。
+          </Typography>
+        </Box>
       )}
       {(loop.nextActions || []).length > 0 && (
         <Box sx={{ mt: 1.2 }}>

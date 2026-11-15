@@ -47,6 +47,47 @@ Pacing the server enforces (thresholds are in `functions/explorationLoop.js` and
 - A hypothesis tested by a rated trial in a run cannot be closed as `inconclusive`.
 - When a base records trials, the released version needs 3 rated trials before a new version replaces it, unless the user directed the change. The replaced version's pass rate is stored in the method history.
 
+## Hypothesis Refinement Loop (shared by every dojo)
+
+The server now returns `loop.refinement` alongside the existing per-version pass rate.
+It is **advisory**, never a user evaluation or automatic method promotion.
+
+1. **Prediction calibration:** Rated, precommitted forecasts are compared with user pass/fail
+   (`partial` counts as non-pass). Read `calibration.meanBias` (positive = overconfident),
+   `brier` and `baselineBrier` (smaller is better), and the conservatively shrunk
+   `suggestedAdjustment` (available after five rated forecasts). The original
+   `predictedPass` and each user rating stay unchanged; the adjustment is not a way
+   to evade a domain-specific submission threshold. Small samples have high uncertainty.
+2. **Competing hypotheses:** Open hypotheses are ranked for further investigation
+   using sparse-data-smoothed pass estimates and uncertainty. The rank is **not**
+   a claim that the first hypothesis is the best idea. `loop.refinement.contrast`
+   gives two proposed explanations and flags shared rated trials or unclassified
+   pipeline stages as `confounded`. A shared trial is *not* independent evidence
+   for two causes.
+3. **Experimental design:** Tag a hypothesis using `exploration_item_upsert`
+   `pipelineStage: source|selection|transform|voice|gate|audience|unknown`.
+   For a discriminating trial, `exploration_run_start.experimentDesign` supplies:
+   `contrastedHypothesisIds`, `changedStage`, `intervention`,
+   `comparison`, `controls`, `expectedDifference`, and `refutingObservation`.
+   The backend checks those fields, the existence of distinct open alternatives,
+   and preserves the design in the run **before results**. Legacy runs, exploratory
+   probes and existing schedules may omit the design; they are not retroactively
+   claimed to be controlled experiments.
+4. **Revision lineage:** Meaningful edits to a hypothesis's title, claim, mechanism,
+   limits, pipeline stage, evidence maturity, or status append a bounded
+   `revisionHistory` snapshot (previous/next fields, reason and run ID).
+   Appending evidence or a user's rating alone does not rewrite the claim.
+5. **Next step:** After each user evaluation, inspect calibration *and* actual
+   positive/negative examples, compare at least two causal alternatives, and
+   precommit which observation would refute the favorite explanation. Do not
+   simply negate a failed wording pattern. Evaluate changes with subsequent
+   user-rated cases, preserving the same outcome contract and quality gates.
+
+This is shared infrastructure for buzz posts, keyword discovery, SEO, video ideas,
+Discover, and other Exploration Bases. Topic-specific evidence checks and acceptance
+requirements stay in their respective operators and skills. A server-suggested
+ranking is not proof of causality and does not launch autonomous experiments.
+
 ## What stays elsewhere
 
 Measured data (keyword demand, SERPs, job listings) stays in its operator. The base records where it is in `canonicalData` and refers to records by ID. A method body kept in a repository stays there with its code and tests; the base holds the pointer.

@@ -541,3 +541,51 @@ test('samples waiting for the user are listed across 道場, oldest first, and l
   waiting = await store.awaitingTrials({});
   assert.deepEqual(waiting.items.map((t) => t.id), ['T-002']);
 });
+
+test('common dojo stores a falsifiable, stage-isolated experiment without changing user-owned outcomes', async () => {
+  const store = await setup();
+  await store.upsertItems({ baseId: 'test-base', kind: 'hypothesis', items: [
+    { ...hypothesis, pipelineStage: 'source' },
+    { ...hypothesis, title: 'Writing voice might be the cause', pipelineStage: 'voice' },
+  ] });
+  const design = {
+    contrastedHypothesisIds: ['H-002'], changedStage: 'source',
+    intervention: 'Collect firsthand remarks rather than completed editorials.',
+    comparison: 'Use the same natural-language form with editorial sources.',
+    controls: 'Same reader audience, sample length, user rating and time window.',
+    expectedDifference: 'User pass rate should improve in the source-only arm.',
+    refutingObservation: 'Source-only arm does no better than the matched comparison.',
+  };
+  await assert.rejects(store.startRun({
+    baseId: 'test-base', objective: 'Bad duplicated alternatives',
+    targets: [{ hypothesisId: 'H-001', prediction: 'pass' }],
+    experimentDesign: { ...design, contrastedHypothesisIds: ['H-001'] },
+  }), /distinct hypothesis/);
+  const { runId } = await store.startRun({
+    baseId: 'test-base', objective: 'Compare sourcing while holding voice stable',
+    targets: [{ hypothesisId: 'H-001', prediction: 'more user approvals' }],
+    experimentDesign: design,
+  });
+  const full = await store.get({ id: 'test-base', view: 'full' });
+  const run = full.full.runs.find((r) => r.id === runId);
+  assert.deepEqual(run.experimentDesign, design, 'the precommitted comparison is recoverable for later causal audit');
+  assert.equal(full.outcome.statement, outcome.statement, 'user-owned outcome is not modified');
+});
+
+test('revisions retain the previous claim; adding new evidence is not a new hypothesis', async () => {
+  const store = await setup();
+  await store.upsertItems({ baseId: 'test-base', kind: 'hypothesis', items: [{ ...hypothesis, pipelineStage: 'unknown' }] });
+  await store.upsertItems({ baseId: 'test-base', kind: 'hypothesis', items: [
+    { id: 'H-001', statement: 'Natural observed exchanges might be stronger sources.', pipelineStage: 'source',
+      reason: 'User rejected artificial source recaps' },
+  ] });
+  await store.upsertItems({ baseId: 'test-base', kind: 'hypothesis', items: [
+    { id: 'H-001', addEvidence: [{ type: 'observation', ref: 'Observed live customer exchange' }] },
+  ] });
+  const full = await store.get({ id: 'test-base', view: 'full' });
+  const item = full.full.hypotheses.find((h) => h.id === 'H-001');
+  assert.equal(item.revisionHistory.length, 1);
+  assert.equal(item.revisionHistory[0].before.statement, hypothesis.statement);
+  assert.equal(item.revisionHistory[0].after.pipelineStage, 'source');
+  assert.equal(item.revisionHistory[0].reason, 'User rejected artificial source recaps');
+});
