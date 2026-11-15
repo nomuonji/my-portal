@@ -361,21 +361,73 @@ test('a version is not replaced before it has enough ratings, unless the user di
   assert.deepEqual(full.full.methodHistory.at(-1).replaced, { version: 'm-v1', rated: 1, pass: 0, passRate: 0 });
 });
 
-test('consecutive non-passes stop new samples until a run re-derives the hypotheses', async () => {
+test('three user non-passes cannot be cleared by a ceremonial run or self-PASS', async () => {
   const store = await setup();
   await store.upsertItems({ baseId: 'test-base', kind: 'hypothesis', items: [hypothesis] });
   const first = await store.startRun({ baseId: 'test-base', objective: 'Three samples', targets: [{ hypothesisId: 'H-001', prediction: 'passes' }] });
-  const trial = (label) => ({ label, hypothesisIds: ['H-001'], predictedPass: 0.6 });
+  const trial = (label) => ({ label, hypothesisIds: ['H-001'], predictedPass: 0.65 });
   await store.recordTrials({ baseId: 'test-base', runId: first.runId, trials: [trial('A'), trial('B'), trial('C')] });
   const rated = await store.rateTrials({ baseId: 'test-base', ratings: ['T-001', 'T-002', 'T-003'].map((id) => ({ id, verdict: 'fail', userWords: 'ボツ' })) });
   assert.equal(rated.loop.failStreak, 3);
   assert.equal(rated.loop.gates.researchDueBeforeNextTrial, true);
-  assert.ok(rated.loop.nextActions.some((line) => line.includes('H-001') && line.includes('棄却')));
   await assert.rejects(store.recordTrials({ baseId: 'test-base', runId: first.runId, trials: [trial('D')] }), /did not pass/);
   await new Promise((resolve) => setTimeout(resolve, 5));
-  await store.finishRun({ baseId: 'test-base', runId: first.runId, summary: 'All failed', verdicts: [{ hypothesisId: 'H-001', result: 'contradicted', observed: '0 of 3' }] });
-  const second = await store.startRun({ baseId: 'test-base', objective: 'New sourcing hypothesis', unknownTerritoryProbe: 'another source' });
-  const ok = await store.recordTrials({ baseId: 'test-base', runId: second.runId, trials: [trial('D')] });
+  await store.finishRun({ baseId: 'test-base', runId: first.runId, summary: 'All failed; no analysis', verdicts: [{ hypothesisId: 'H-001', result: 'contradicted', observed: '0 of 3' }] });
+  const afterCeremonialRun = await store.get({ id: 'test-base' });
+  assert.equal(afterCeremonialRun.loop.gates.researchDueBeforeNextTrial, true, 'closing a run without diagnosis must NOT clear the gate');
+  const next = { ...method, version: 'm-v2', summary: 'Moved to new method without a diagnosis' };
+  await assert.rejects(store.setMethodVersion({
+    baseId: 'test-base', method: next, motivatingRunIds: [first.runId], benchmark: { passed: true, ref: 'self review' },
+  }), /Cannot release.*failureAnalysis/);
+
+  const second = await store.startRun({ baseId: 'test-base', objective: 'Investigate source versus gate errors', unknownTerritoryProbe: 'Compare real negative evidence and alternatives' });
+  await assert.rejects(store.recordTrials({ baseId: 'test-base', runId: second.runId, trials: [trial('D')] }), /did not pass/);
+  const valid = {
+    caseRefs: ['T-001', 'T-002', 'T-003'],
+    contrastRefs: ['https://example.org/real-success-comparator'],
+    alternatives: [
+      { stage: 'source', claim: 'The first source family missed actual user needs entirely.',
+        forEvidence: 'All three failures used source family A with no user acceptance.',
+        againstEvidence: 'The user gave no reasons, so source quality is still uncertain.',
+        falsification: 'A second user-scored batch from source A passes without changing the copy.' },
+      { stage: 'gate', claim: 'The AI quality review accepted an irrelevant or weak finished sample.',
+        forEvidence: 'AI predicted 0.65 but the user rejected each of the three examples.',
+        againstEvidence: 'The source materials themselves may have offered no useful value.',
+        falsification: 'Independent human blind review also passes but later users still reject.' },
+    ],
+    uncertainty: 'The user only said ボツ; no motive for any rejection was explicitly stated or confirmed.',
+    falsePositiveAudit: 'Three predictions of 0.65 were false positives: the agent quality gate was not calibrated.',
+    nextTest: {
+      sourcingChange: 'Compare first-person observational sources with official documents.',
+      selectionChange: 'Reject candidates that offer no independently visible reader reaction.',
+      predictedDifference: 'In a blinded next batch, source mix will yield a higher accepted proportion.',
+      refutingObservation: 'All user-rated samples still fail despite distinct source and gate checks.',
+    },
+  };
+  await assert.rejects(store.finishRun({
+    baseId: 'test-base', runId: second.runId, summary: 'Fake analysis',
+    failureAnalysis: { ...valid, caseRefs: ['T-001', 'T-002', 'T-999'] },
+    notMovedReason: 'Investigating',
+  }), /real, user-rated non-pass/);
+  await assert.rejects(store.finishRun({
+    baseId: 'test-base', runId: second.runId, summary: 'One explanation only',
+    failureAnalysis: { ...valid, alternatives: valid.alternatives.slice(0, 1) },
+    notMovedReason: 'Investigating',
+  }), /competing explanations/);
+  await assert.rejects(store.finishRun({
+    baseId: 'test-base', runId: second.runId, summary: 'No false-positive audit',
+    failureAnalysis: { ...valid, falsePositiveAudit: '' }, notMovedReason: 'Investigating',
+  }), /falsePositiveAudit/);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await store.finishRun({
+    baseId: 'test-base', runId: second.runId, summary: 'Actual comparisons with alternatives and uncertainty',
+    failureAnalysis: valid, notMovedReason: 'Research completed but no user-approved output yet',
+  });
+  const afterAudit = await store.get({ id: 'test-base' });
+  assert.equal(afterAudit.loop.gates.researchDueBeforeNextTrial, false, 'only the evidence-audited run clears the gate');
+  assert.equal(afterAudit.position.lastRuns[0].failureAnalysisRecorded, true);
+  const third = await store.startRun({ baseId: 'test-base', objective: 'Compare two new paths', unknownTerritoryProbe: 'New experiment' });
+  const ok = await store.recordTrials({ baseId: 'test-base', runId: third.runId, trials: [trial('D')] });
   assert.equal(ok.created.length, 1);
 });
 
