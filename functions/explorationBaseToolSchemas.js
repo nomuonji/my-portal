@@ -254,7 +254,7 @@ const tools = [
   },
   {
     name: 'exploration_trial_record',
-    description: 'Register samples (trials) BEFORE the user sees them: every sample shown for evaluation in a 道場 goes through here. Each trial names the open hypotheses it tests (hypothesisIds) and predictedPass, the chance 0-1 that the user passes it, so the rating settles a hypothesis and scores the self-check. Refused when too many trials are still unrated, or after consecutive non-passes until a run that re-derives the hypotheses has finished (see loop.gates in exploration_base_get). Pass runId when a run is open. backfill=true imports past samples with their own version, date and rating; it skips refs already recorded.',
+    description: 'Record user-facing trials before presenting. Buzz-post dojo adds an enforced early rejection screen: 3+ candidate pool, 2+ rejected, 2+ observed sourcing lanes, accepted/rejected human-rated precedent, exact passage from the proposed copy, concrete hostile objection, and a provisional confidence floor of 0.60. Native quote practice is retired. Use editorialScreen or, from clients with the older MCP schema, screen:v1:<compact JSON> inside predictionNote (up to 600 characters). Other dojos are unchanged. A screen is an AI-only gate, NOT independent approval or a promise of engagement.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -270,7 +270,27 @@ const tools = [
               hypothesisIds: strings('H-nnn this sample tests. Required unless backfill.', 10),
               sourceIds: strings('S-nnn the material came from.', 10),
               predictedPass: { type: 'number', minimum: 0, maximum: 1, description: 'Chance the user passes it, stated before showing. Required unless backfill.' },
-              predictionNote: string('Why that chance.', 600),
+              predictionNote: string('Why that chance. For the viral-post-method-discovery dojo, an older MCP client MUST use screen:v1:<compact JSON> with the same structure as editorialScreen and <=600 characters.', 600),
+              editorialScreen: {
+                type: 'object',
+                description: 'Buzz dojo ONLY. Enforced pre-submission screening; agent assertion is not a human rating. For old clients, encode this object as screen:v1:<JSON> in predictionNote.',
+                properties: {
+                  format: { type: 'string', enum: ['standalone'] },
+                  pool: { type: 'array', minItems: 3, maxItems: 12, items: { type: 'object', properties: {
+                    title: string('Candidate premise (short, distinct).', 100),
+                    sourceId: string('Observed source S-nnn from this dojo.', 20),
+                    decision: { type: 'string', enum: ['selected', 'rejected'] },
+                    reason: string('Specific reason selected or rejected; not a numeric self-score.', 350),
+                  }, required: ['title', 'sourceId', 'decision', 'reason'], additionalProperties: false } },
+                  positiveCaseId: string('Actual previously user-accepted text T-nnn.', 20),
+                  negativeCaseIds: strings('2+ actual previously user-rejected texts T-nnn.', 5),
+                  readerQuote: string('Exact 8+ character phrase present in the submitted text.', 120),
+                  distinctValue: string('New reader payoff beyond source recap; 12+ characters.', 300),
+                  strongestObjection: string('Strongest hostile reading from a skeptical reader; 12+ characters.', 300),
+                },
+                required: ['format', 'pool', 'positiveCaseId', 'negativeCaseIds', 'readerQuote', 'distinctValue', 'strongestObjection'],
+                additionalProperties: false,
+              },
               version: { type: ['integer', 'null'], description: 'backfill only: skill/pack version that produced it.' },
               methodVersion: string('backfill only: method version label at the time.', 60),
               runId: string('backfill only: the run it was shown in.', 20),
