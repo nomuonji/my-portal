@@ -130,7 +130,8 @@ function cleanFailureAnalysis(raw, entries) {
   });
   if (stages.size < 2) throw new Error('failureAnalysis needs alternatives across at least two causal stages. Changing wording to its opposite is not a second explanation.');
   const next = plain(input.nextTest, 'failureAnalysis.nextTest');
-  const falsePositive = recent.some((e) => cases.includes(e.id) && Number(e.predictedPass) >= 0.5);
+  // Audit every false-positive in the recent loss streak, including ones deliberately omitted from caseRefs.
+  const falsePositive = recent.some((e) => Number(e.predictedPass) >= 0.5);
   const falsePositiveAudit = text(input.falsePositiveAudit, 1200, 'failureAnalysis.falsePositiveAudit', false);
   if (falsePositive && falsePositiveAudit.length < 20) {
     throw new Error('failureAnalysis.falsePositiveAudit must investigate why AI quality/PASS prediction was wrong before the next batch.');
