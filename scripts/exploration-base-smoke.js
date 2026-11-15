@@ -483,7 +483,7 @@ test('buzz dojo blocks low-confidence, one-shot, invented-reference or unscreene
       { title: 'Contrived quote', sourceId: 'S-002', decision: 'rejected', reason: '引用カードを読まなければ意味が通らず単独稿にならない' },
     ],
     positiveCaseId: 'T-001', negativeCaseIds: ['T-002', 'T-003'],
-    readerQuote: '予想外の二段目', distinctValue: '単なる出典紹介でなく、当事者の事情への新しい見え方がある',
+    readerQuote: '予想外の二段目が', distinctValue: '単なる出典紹介でなく、当事者の事情への新しい見え方がある',
     strongestObjection: '作者の説明を外すと読み手に二段目の具体像が伝わらないかもしれない',
   };
   const trial = { label: 'Novel standalone', body, sourceIds: ['S-001'], hypothesisIds: ['H-001'],
