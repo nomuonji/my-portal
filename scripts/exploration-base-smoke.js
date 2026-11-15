@@ -418,12 +418,27 @@ test('three user non-passes cannot be cleared by a ceremonial run or self-PASS',
     baseId: 'test-base', runId: second.runId, summary: 'No false-positive audit',
     failureAnalysis: { ...valid, falsePositiveAudit: '' }, notMovedReason: 'Investigating',
   }), /falsePositiveAudit/);
+  // An old MCP client may only expose summary (not failureAnalysis). The versioned
+  // envelope must obey the identical hard gate; it may never silently unlock the run.
+  const envelope = (failureAnalysis) => 'failureAnalysis:v1:' + JSON.stringify({
+    summary: 'Actual comparisons with alternatives and uncertainty', failureAnalysis,
+  });
+  await assert.rejects(store.finishRun({
+    baseId: 'test-base', runId: second.runId,
+    summary: envelope({ ...valid, caseRefs: ['T-001', 'T-998', 'T-999'] }),
+    notMovedReason: 'Invalid historical case',
+  }), /real, user-rated non-pass/);
+  await assert.rejects(store.finishRun({
+    baseId: 'test-base', runId: second.runId, summary: 'failureAnalysis:v1:garbled',
+    notMovedReason: 'Invalid JSON',
+  }), /Invalid legacy failureAnalysis envelope/);
   await new Promise((resolve) => setTimeout(resolve, 5));
   await store.finishRun({
-    baseId: 'test-base', runId: second.runId, summary: 'Actual comparisons with alternatives and uncertainty',
-    failureAnalysis: valid, notMovedReason: 'Research completed but no user-approved output yet',
+    baseId: 'test-base', runId: second.runId, summary: envelope(valid),
+    notMovedReason: 'Research completed but no user-approved output yet',
   });
   const afterAudit = await store.get({ id: 'test-base' });
+  assert.equal(afterAudit.position.lastRuns[0].summary, 'Actual comparisons with alternatives and uncertainty');
   assert.equal(afterAudit.loop.gates.researchDueBeforeNextTrial, false, 'only the evidence-audited run clears the gate');
   assert.equal(afterAudit.position.lastRuns[0].failureAnalysisRecorded, true);
   const third = await store.startRun({ baseId: 'test-base', objective: 'Compare two new paths', unknownTerritoryProbe: 'New experiment' });
