@@ -203,7 +203,7 @@ const tools = [
   },
   {
     name: 'exploration_run_finish',
-    description: 'Close the open run: a verdict (supported / contradicted / inconclusive, with what was measured) for every declared hypothesis, achievements found, and a summary. A hypothesis tested by a trial the user rated in this run cannot be inconclusive. The server counts which fixed points the run moved; a run that moved none must give notMovedReason and is recorded as stalled. Achievements stay candidates until the user confirms them when the outcome is user-confirmed.',
+    description: 'Close the run with observed verdicts. If 3+ consecutive non-passes, a mere finished run does NOT clear the next-trial gate: provide failureAnalysis with at least two real rated failures, an accepted/external positive comparator, two competing explanations with for/against evidence and falsification, acknowledged uncertainty, false-positive gate diagnosis when applicable, and a discriminating next test. Each claim remains a hypothesis, not proven causality. Ratings remain the user\'s alone.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -215,6 +215,34 @@ const tools = [
         achievements: {
           type: 'array', maxItems: 20,
           items: { type: 'object', properties: { label: string('The achievement (e.g. the keyword).', 300), ref: string('ID in the canonical operator data.', 600), evidence: string('How each acceptance check was met.', 2000), hypothesisIds: strings('Hypotheses that led to it.', 10), sourceIds: strings('Sources it came from (S-nnn).', 10) }, required: ['label', 'evidence'], additionalProperties: false },
+        },
+        failureAnalysis: {
+          type: 'object',
+          description: 'Evidence audit after 3+ consecutive non-passes. This is NOT a claim that causes have been proved. Without it, new trial/release remains blocked.',
+          properties: {
+            caseRefs: strings('At least two actual recent user-rated non-pass IDs (trial/haul) from this dojo.', 12),
+            contrastRefs: strings('Accepted user-rated trial/haul IDs or public HTTPS URLs with a real positive example.', 12),
+            alternatives: {
+              type: 'array', minItems: 2, maxItems: 6,
+              items: { type: 'object', properties: {
+                stage: { type: 'string', enum: ['source', 'selection', 'transform', 'voice', 'gate', 'audience', 'unknown'] },
+                claim: string('One falsifiable candidate cause, not a concluded fact.', 750),
+                forEvidence: string('Concrete observations that favor this alternative.', 950),
+                againstEvidence: string('A counterexample, a missing measurement or observation arguing against it.', 950),
+                falsification: string('Observable result that would reject this cause.', 950),
+              }, required: ['stage', 'claim', 'forEvidence', 'againstEvidence', 'falsification'], additionalProperties: false },
+            },
+            uncertainty: string('What cannot be inferred from the observed user feedback; do not invent rejection reasons.', 1200),
+            falsePositiveAudit: string('Where the agent PASS/quality prediction failed on the rejected samples (mandatory if it assigned >=0.5 to any cited failure).', 1200),
+            nextTest: { type: 'object', properties: {
+              sourcingChange: string('What changes upstream in evidence collection/source selection.', 900),
+              selectionChange: string('What changes in evaluation/choice before generating output.', 900),
+              predictedDifference: string('A measurable precommitted outcome.', 900),
+              refutingObservation: string('What observed result would refute this intervention.', 900),
+            }, required: ['sourcingChange', 'selectionChange', 'predictedDifference', 'refutingObservation'], additionalProperties: false },
+          },
+          required: ['caseRefs', 'contrastRefs', 'alternatives', 'uncertainty', 'nextTest'],
+          additionalProperties: false,
         },
         notMovedReason: string('Required when the run changed no fixed point.', 1000),
         costNote: string('Paid calls, quota used.', 400),
