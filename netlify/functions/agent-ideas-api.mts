@@ -178,6 +178,7 @@ export default async (request: Request) => {
         limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 100, 1), 100),
         scanLimit: 1000,
       }));
+      if (resource === "exploration_awaiting_trials") return json(await explorationBaseStore.awaitingTrials({ limit: Number(url.searchParams.get("limit")) || 60 }));
       if (resource === "exploration_bases") return json(await explorationBaseStore.list({ status: url.searchParams.get("status") || undefined }));
       if (resource === "exploration_base") return json(await explorationBaseStore.get({
         id: url.searchParams.get("id") || "",
@@ -345,6 +346,19 @@ export default async (request: Request) => {
         return json(await submarineStore.haulDecide({
           submarineId: body.submarineId, haulId: body.haulId, decision, note,
           userAuthorized: true, authorizationNote: "My Portal の潜水艦画面で本人が判断（" + day + "）" + (note ? "：" + note : ""), actor: "My Portal UI",
+        }));
+      }
+      if (action === "exploration_trial_rate") {
+        // The signed-in owner rating a sample on the 道場 screen is the user's own rating. The button they pressed
+        // and anything they typed are their words.
+        const verdict = ["pass", "partial", "fail"].includes(body.verdict) ? body.verdict : "";
+        if (!verdict) return json({ error: "verdict must be pass, partial or fail" }, 400);
+        const label = { pass: "合格", partial: "惜しい", fail: "ボツ" }[verdict];
+        const comment = String(body.comment || "").trim().slice(0, 1000);
+        return json(await explorationBaseStore.rateTrials({
+          baseId: body.baseId,
+          ratings: [{ id: body.id, verdict, userWords: label + (comment ? "：" + comment : "") + "（道場画面）" }],
+          actor: "My Portal UI",
         }));
       }
       if (action === "exploration_achievement_decide") {

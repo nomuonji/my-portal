@@ -296,9 +296,44 @@ function timelineOf(runs, events) {
 
 const VERDICT_LABEL = { pass: '合格', partial: '惜しい', fail: 'ボツ' };
 
+// Rate samples where they are read: the sample itself, one optional line, and one press. Nothing else to open.
+export function RateTrials({ items, onRate, busyId, showBase = false }) {
+  const [comments, setComments] = useState({});
+  if (!items?.length) return null;
+  return (
+    <Box>
+      {items.map((t) => {
+        const key = t.baseId + ':' + t.id;
+        const comment = comments[key] || '';
+        const busy = busyId === key;
+        return (
+          <Box key={key} sx={{ py: 1.6, borderBottom: '1px solid ' + V.rule }}>
+            {showBase && t.baseTitle && <Typography sx={{ fontSize: 11.5, color: V.accent, fontWeight: 800, mb: 0.3 }}>{t.baseTitle}</Typography>}
+            <Typography sx={{ fontSize: 14.5, fontWeight: 800, lineHeight: 1.5 }}>{t.label}</Typography>
+            {t.body && <Typography sx={{ fontSize: 14, lineHeight: 1.8, mt: 0.6, whiteSpace: 'pre-line', background: V.accentSoft, px: 1.2, py: 0.8 }}>{t.body}</Typography>}
+            {/^https?:\/\//.test(t.ref || '') && <Link href={t.ref} target="_blank" rel="noreferrer" sx={{ fontSize: 12, display: 'inline-block', mt: 0.4 }}>元の場所を開く</Link>}
+            <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mt: 1 }}>
+              <TextField size="small" placeholder="一言（任意）：ここが嫌、など" value={comment} disabled={busy}
+                onChange={(event) => setComments((all) => ({ ...all, [key]: event.target.value }))}
+                inputProps={{ maxLength: 500, 'aria-label': t.label + ' への一言' }} sx={{ flex: 1 }} />
+              <Stack direction="row" gap={0.8}>
+                {['pass', 'partial', 'fail'].map((verdict) => (
+                  <Button key={verdict} size="small" disabled={busy} variant={verdict === 'pass' ? 'contained' : 'outlined'}
+                    color={verdict === 'fail' ? 'inherit' : 'primary'}
+                    onClick={() => onRate(t, verdict, comment.trim())}>{VERDICT_LABEL[verdict]}</Button>
+                ))}
+              </Stack>
+            </Stack>
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
+
 // The improvement loop in one block: pass rate by version, what is waiting for the user, and what the last
 // ratings were. A version is better only when the user passed more of what it produced.
-export function LoopPanel({ loop }) {
+export function LoopPanel({ loop, baseId, onRate, busyId }) {
   if (!loop) return null;
   const versions = loop.byVersion || [];
   const awaiting = loop.awaiting || [];
@@ -329,9 +364,11 @@ export function LoopPanel({ loop }) {
       )}
       {awaiting.length > 0 && (
         <Box sx={{ mt: 1.5 }}>
-          <Typography sx={{ fontSize: 13, fontWeight: 800 }}>評価待ちの見本</Typography>
-          {awaiting.map((t) => <Typography key={t.id} sx={{ fontSize: 13, color: V.muted, lineHeight: 1.7 }}>{t.label}</Typography>)}
-          <Typography sx={{ fontSize: 12, color: V.faint, mt: 0.3 }}>チャットで一言（良い／ボツ／ここが嫌）ください。</Typography>
+          <Typography sx={{ fontSize: 13, fontWeight: 800 }}>評価待ちの見本 {awaiting.length}件</Typography>
+          {onRate
+            ? <RateTrials items={awaiting.map((t) => ({ ...t, baseId }))} onRate={onRate} busyId={busyId} />
+            : awaiting.map((t) => <Typography key={t.id} sx={{ fontSize: 13, color: V.muted, lineHeight: 1.7 }}>{t.label}</Typography>)}
+          <Typography sx={{ fontSize: 12, color: V.faint, mt: 0.5 }}>チャットで一言伝えても同じように記録されます。</Typography>
         </Box>
       )}
       {lastRated.length > 0 && (
@@ -381,7 +418,7 @@ export function VersionFeedback({ feedback }) {
   );
 }
 
-function BaseDetail({ detail, onDecide, busy }) {
+function BaseDetail({ detail, onDecide, busy, onRate, busyId }) {
   const [tab, setTab] = useState('goal');
   const { base, outcome = {}, method, full = {}, position = {} } = detail;
   const awaiting = outcome.awaitingConfirmation || [];
@@ -421,7 +458,7 @@ function BaseDetail({ detail, onDecide, busy }) {
         } : null} />
       </Box>
 
-      {detail.loop ? <LoopPanel loop={detail.loop} /> : <VersionFeedback feedback={detail.feedback} />}
+      {detail.loop ? <LoopPanel loop={detail.loop} baseId={base.id} onRate={onRate} busyId={busyId} /> : <VersionFeedback feedback={detail.feedback} />}
 
       {(awaiting.length > 0 || proposals.length > 0) && (
         <>
@@ -592,13 +629,19 @@ export default function ExplorationBases() {
   const [decision, setDecision] = useState(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [awaiting, setAwaiting] = useState([]);
+  const [ratingKey, setRatingKey] = useState('');
 
   const loadList = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const data = await api('?resource=exploration_bases');
+      const [data, waiting] = await Promise.all([
+        api('?resource=exploration_bases'),
+        api('?resource=exploration_awaiting_trials').catch(() => ({ items: [] })),
+      ]);
       setItems(Array.isArray(data.items) ? data.items : []);
+      setAwaiting(Array.isArray(waiting.items) ? waiting.items : []);
     } catch (err) {
       setError('道場を読み込めません: ' + err.message);
     } finally {
@@ -624,6 +667,22 @@ export default function ExplorationBases() {
   useEffect(() => { loadDetail(selectedId); }, [loadDetail, selectedId]);
 
   const open = (id) => setParams(id ? { id } : {});
+
+  const rate = async (trial, verdict, comment) => {
+    const key = trial.baseId + ':' + trial.id;
+    setRatingKey(key);
+    setError('');
+    try {
+      await api('', { action: 'exploration_trial_rate', baseId: trial.baseId, id: trial.id, verdict, comment });
+      setNotice(trial.label + ' を「' + VERDICT_LABEL[verdict] + '」で記録しました');
+      setAwaiting((all) => all.filter((t) => t.baseId + ':' + t.id !== key));
+      await Promise.all([selectedId ? loadDetail(selectedId) : null, loadList()]);
+    } catch (err) {
+      setError(err.message || '保存に失敗しました');
+    } finally {
+      setRatingKey('');
+    }
+  };
 
   const decide = async () => {
     if (!decision) return;
@@ -669,11 +728,19 @@ export default function ExplorationBases() {
         {loading && !items.length && !selectedId ? (
           <Box sx={{ display: 'grid', placeItems: 'center', py: 7 }}><CircularProgress /></Box>
         ) : !selectedId ? (
-          <BaseList items={items} onOpen={open} />
+          <>
+            {awaiting.length > 0 && (
+              <Box sx={{ mb: 3 }}>
+                <Heading aside={<Small>見本を読んで押すだけで、その版の合格率と仮説に入ります</Small>}>評価待ちの見本 {awaiting.length}件</Heading>
+                <RateTrials items={awaiting} onRate={rate} busyId={ratingKey} showBase />
+              </Box>
+            )}
+            <BaseList items={items} onOpen={open} />
+          </>
         ) : detailLoading && !detail ? (
           <Box sx={{ display: 'grid', placeItems: 'center', py: 7 }}><CircularProgress /></Box>
         ) : detail ? (
-          <BaseDetail detail={detail} busy={busy} onDecide={(item, value) => { setDecision({ item, value }); setNote(''); }} />
+          <BaseDetail detail={detail} busy={busy} onRate={rate} busyId={ratingKey} onDecide={(item, value) => { setDecision({ item, value }); setNote(''); }} />
         ) : null}
       </Box>
 

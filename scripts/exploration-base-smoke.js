@@ -393,3 +393,17 @@ test('past samples are backfilled with the version and rating they had', async (
   assert.equal(brief.loop.calibration, null, 'backfilled samples carry no prediction');
 });
 function round3(value) { return Math.round(value * 1000) / 1000; }
+
+test('samples waiting for the user are listed across 道場, oldest first, and leave the list once rated', async () => {
+  const store = await setup();
+  await store.upsertItems({ baseId: 'test-base', kind: 'hypothesis', items: [hypothesis] });
+  const { runId } = await store.startRun({ baseId: 'test-base', objective: 'Two samples', targets: [{ hypothesisId: 'H-001', prediction: 'one passes' }] });
+  await store.recordTrials({ baseId: 'test-base', runId, trials: [{ label: 'First', body: 'text one', hypothesisIds: ['H-001'], predictedPass: 0.5 }] });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await store.recordTrials({ baseId: 'test-base', runId, trials: [{ label: 'Second', hypothesisIds: ['H-001'], predictedPass: 0.5 }] });
+  let waiting = await store.awaitingTrials({});
+  assert.deepEqual(waiting.items.map((t) => [t.baseTitle, t.id, t.body]), [['Test', 'T-001', 'text one'], ['Test', 'T-002', '']]);
+  await store.rateTrials({ baseId: 'test-base', ratings: [{ id: 'T-001', verdict: 'pass', userWords: '合格（道場画面）' }] });
+  waiting = await store.awaitingTrials({});
+  assert.deepEqual(waiting.items.map((t) => t.id), ['T-002']);
+});

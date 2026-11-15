@@ -1011,6 +1011,21 @@ function createStore(options) {
     return { baseId: id, rated, loop };
   }
 
+  // Samples waiting for the user across every 道場, oldest first, so they can be rated in one place.
+  async function awaitingTrials(input) {
+    const max = Math.min(Math.max(Number(input?.limit) || 60, 1), 200);
+    const [snap, bases] = await Promise.all([
+      db().collection(COLLECTIONS.trials).where('status', '==', 'awaiting').limit(500).get(),
+      db().collection(COLLECTIONS.bases).limit(200).get(),
+    ]);
+    const titles = new Map(bases.docs.map((doc) => doc.data()).filter((b) => b.status !== 'closed').map((b) => [b.id, b.title]));
+    const items = snap.docs.map((doc) => doc.data()).filter((t) => titles.has(t.baseId))
+      .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
+      .slice(0, max)
+      .map((t) => ({ baseId: t.baseId, baseTitle: titles.get(t.baseId), id: t.id, label: t.label, body: t.body || '', ref: t.ref || '', createdAt: t.createdAt, version: t.version ?? null }));
+    return { items, count: items.length };
+  }
+
   async function remove(input = {}) {
     if (input.confirm !== true) throw new Error('Explicit confirmation required');
     const id = requireBaseId(input?.id);
@@ -1063,7 +1078,7 @@ function createStore(options) {
   // Compact summary used by the Agent Intelligence bundle resolver.
   async function brief(input) { return get({ id: input?.id, view: 'brief' }); }
 
-  return { create, list: listBases, get, remove, brief, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, recordTrials, rateTrials, refreshLoop, trainersOf };
+  return { create, list: listBases, get, remove, brief, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, recordTrials, rateTrials, awaitingTrials, refreshLoop, trainersOf };
 }
 
 const store = createStore();

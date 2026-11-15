@@ -112,7 +112,7 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
     overall: tally(entries),
     recent: tally(entries.slice(-10)),
     current, previous, byVersion,
-    awaiting: awaiting.map((t) => ({ id: t.id, label: t.label, createdAt: t.createdAt, hypothesisIds: t.hypothesisIds || [], predictedPass: t.predictedPass ?? null })),
+    awaiting: awaiting.map((t) => ({ id: t.id, label: t.label, body: t.body || '', ref: t.ref || '', createdAt: t.createdAt, hypothesisIds: t.hypothesisIds || [], predictedPass: t.predictedPass ?? null })),
     calibration, hypotheses: scoreboard.slice(0, 20), failStages, failStreak,
     gates: { ...LIMITS, usesTrials, ratedOnCurrent: current.rated, canReleaseNewVersion: canRelease, researchDueBeforeNextTrial: researchDue },
     lastRated: entries.slice(-8).reverse().map((e) => ({ id: e.id, label: e.label, verdict: e.verdict, version: versionKey(e), at: e.at, userWords: e.userWords })),
