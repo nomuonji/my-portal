@@ -6,7 +6,7 @@
 // ledger, constraints and the run log.
 
 const { getDocumentDb } = require('./documentDb');
-const { loopView, loopSummary, VERDICTS: TRIAL_VERDICTS, FAIL_STAGES, LIMITS } = require('./explorationLoop');
+const { loopView, loopSummary, ratedEntries, VERDICTS: TRIAL_VERDICTS, FAIL_STAGES, LIMITS } = require('./explorationLoop');
 
 const DEFAULT_DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTIONS = Object.freeze({
@@ -43,7 +43,7 @@ const PROTOCOL = [
   'The measure of a 道場 is the pass rate of what its released version produces, by version (loop). There is no count target. Read loop.nextActions first.',
   'Every sample shown to the user is a trial: exploration_trial_record before showing it, with the hypotheses it tests and the predicted chance of passing. A sample tied to no hypothesis teaches nothing and is refused.',
   'When the user reacts, exploration_trial_rate with their own words. The rating lands on the version and on each hypothesis the trial tested, so a rated hypothesis can no longer be closed as inconclusive.',
-  'A new version waits until the released one has enough ratings to be compared (loop.gates). After consecutive non-passes, finish the run and re-derive hypotheses from sourcing and selection before the next sample.',
+  'A new version waits until the released one has enough ratings to be compared (loop.gates). Three consecutive non-passes require a research run with a structured failureAnalysis: two actual failed examples, a confirmed pass or externally verifiable positive contrast, two competing causes with contradictory evidence and falsification, uncertainty, and a discriminating next test. A mere finished run or agent self-score never clears the gate.',
   'feedback holds what the user said about each thing the gear produced (action and comment), grouped by the version that produced it. Read it before proposing a new version and cite it as the reason; a version is better only if the user said so more often, not if self-scores rose.',
 ];
 
@@ -84,6 +84,70 @@ function authorization(input, what) {
     throw new Error(what + ' is owned by the user. Pass userAuthorized=true with authorizationNote quoting where the user approved it, or record it as a proposal instead.');
   }
   return note;
+}
+
+// Evidence audit for a failed batch. This verifies provenance and contradictory hypotheses,
+// NOT that an agent has correctly diagnosed the causal mechanism. Only user ratings count.
+function cleanFailureAnalysis(raw, entries) {
+  const input = plain(raw, 'failureAnalysis');
+  const recent = entries.filter((e) => e.verdict === 'fail' || e.verdict === 'partial').slice(-LIMITS.failStreak);
+  const cases = list(input.caseRefs, 12, 120);
+  if (cases.length < 2 || cases.filter((id) => recent.some((e) => e.id === id)).length < 2) {
+    throw new Error('failureAnalysis.caseRefs must cite at least two recent, real, user-rated non-pass IDs. Agent scores or invented refs do not count.');
+  }
+  const comparisons = list(input.contrastRefs, 12, 600);
+  if (!comparisons.length) throw new Error('failureAnalysis.contrastRefs requires at least one real accepted example or externally verifiable positive contrast.');
+  comparisons.forEach((ref) => {
+    const recorded = entries.find((e) => e.id === ref);
+    if (recorded) {
+      if (recorded.verdict !== 'pass') throw new Error('failureAnalysis.contrastRefs points to a non-pass: ' + ref);
+    } else if (!/^https:\/\/[^\s]+/.test(ref)) {
+      throw new Error('failureAnalysis.contrastRefs must cite a real rated pass ID or public HTTPS evidence URL: ' + ref);
+    }
+  });
+  const alternativeInputs = Array.isArray(input.alternatives) ? input.alternatives : [];
+  if (alternativeInputs.length < 2 || alternativeInputs.length > 6) {
+    throw new Error('failureAnalysis.alternatives needs 2 to 6 competing explanations, not a single opposite-sounding conclusion.');
+  }
+  const stages = new Set();
+  const substantial = (v, max, label, min = 20) => {
+    const result = text(v, max, label, true);
+    if (result.length < min) throw new Error(label + ' must describe observable evidence/conditions, not an empty label (min ' + min + ' chars).');
+    return result;
+  };
+  const allowedStages = ['source', 'selection', 'transform', 'voice', 'gate', 'audience', 'unknown'];
+  const alternatives = alternativeInputs.map((entry, i) => {
+    const a = plain(entry, 'failureAnalysis.alternatives[' + i + ']');
+    const stage = oneOf(a.stage, allowedStages, 'failureAnalysis.alternatives.stage');
+    stages.add(stage);
+    return {
+      stage,
+      claim: substantial(a.claim, 750, 'failureAnalysis.alternatives.claim'),
+      forEvidence: substantial(a.forEvidence, 950, 'failureAnalysis.alternatives.forEvidence'),
+      againstEvidence: substantial(a.againstEvidence, 950, 'failureAnalysis.alternatives.againstEvidence'),
+      falsification: substantial(a.falsification, 950, 'failureAnalysis.alternatives.falsification'),
+    };
+  });
+  if (stages.size < 2) throw new Error('failureAnalysis needs alternatives across at least two causal stages. Changing wording to its opposite is not a second explanation.');
+  const next = plain(input.nextTest, 'failureAnalysis.nextTest');
+  // Audit every false-positive in the recent loss streak, including ones deliberately omitted from caseRefs.
+  const falsePositive = recent.some((e) => Number(e.predictedPass) >= 0.5);
+  const falsePositiveAudit = text(input.falsePositiveAudit, 1200, 'failureAnalysis.falsePositiveAudit', false);
+  if (falsePositive && falsePositiveAudit.length < 20) {
+    throw new Error('failureAnalysis.falsePositiveAudit must investigate why AI quality/PASS prediction was wrong before the next batch.');
+  }
+  return {
+    caseRefs: cases, contrastRefs: comparisons, alternatives,
+    uncertainty: substantial(input.uncertainty, 1200, 'failureAnalysis.uncertainty'),
+    falsePositiveAudit,
+    nextTest: {
+      sourcingChange: substantial(next.sourcingChange, 900, 'failureAnalysis.nextTest.sourcingChange'),
+      selectionChange: substantial(next.selectionChange, 900, 'failureAnalysis.nextTest.selectionChange'),
+      predictedDifference: substantial(next.predictedDifference, 900, 'failureAnalysis.nextTest.predictedDifference'),
+      refutingObservation: substantial(next.refutingObservation, 900, 'failureAnalysis.nextTest.refutingObservation'),
+    },
+    status: 'hypotheses_unverified',
+  };
 }
 
 function cleanOutcome(raw) {
@@ -544,6 +608,9 @@ function createStore(options) {
         throw new Error('The released version has ' + loop.current.rated + ' rated trial(s); a new version needs ' + LIMITS.minRatedPerVersion
           + ' so the two can be compared by pass rate. Keep the insight in the hypothesis ledger and show more samples from the released version, or pass userAuthorized with authorizationNote when the user directed this change.');
       }
+      if (base.method && loop.gates.researchDueBeforeNextTrial && !userDirected) {
+        throw new Error('Cannot release a revised Skill/Pack after consecutive non-passes without a finished research run recording verified failureAnalysis; a changed label or noBenchmarkReason is not evidence.');
+      }
       const rawBenchmark = input.benchmark ? plain(input.benchmark, 'benchmark') : null;
       const noBenchmarkReason = text(input.noBenchmarkReason, 600, 'noBenchmarkReason', false);
       if (base.method && !(rawBenchmark && rawBenchmark.passed === true) && noBenchmarkReason.length < 8) {
@@ -747,6 +814,9 @@ function createStore(options) {
           observed: text(raw.observed, 1200, 'verdict.observed (what was actually measured)', true),
         };
       });
+      const failureAnalysis = input.failureAnalysis
+        ? cleanFailureAnalysis(input.failureAnalysis, ratedEntries(trials, base.feedbackLog))
+        : null;
       const achievements = (Array.isArray(input.achievements) ? input.achievements.slice(0, 20) : []).map((rawAchievement) => {
         const raw = plain(rawAchievement, 'achievement');
         base.counters.A = (base.counters.A || 0) + 1;
@@ -774,7 +844,7 @@ function createStore(options) {
       const finished = {
         ...run, status: 'finished', finishedAt: now(),
         summary: text(input.summary, 2500, 'summary', true),
-        verdicts, achievementIds: achievements.map((a) => a.id),
+        verdicts, achievementIds: achievements.map((a) => a.id), failureAnalysis,
         movedItemIds: [...new Set(itemChanges)], yieldRefs, moved,
         notMovedReason: moved ? '' : text(input.notMovedReason, 1000, 'notMovedReason (this run changed no fixed point; say why and what that implies)', true),
         costNote: text(input.costNote, 400, 'costNote', false),
@@ -785,6 +855,7 @@ function createStore(options) {
         id: runId, finishedAt: finished.finishedAt, methodVersion: run.methodVersion, objective: run.objective,
         summary: finished.summary.slice(0, 400), moved, movedItemIds: finished.movedItemIds,
         verdicts: verdicts.map((v) => v.hypothesisId + ':' + v.result), achievementIds: finished.achievementIds, yieldCount: yieldRefs.length,
+        failureAnalysisRecorded: Boolean(failureAnalysis),
         nextStep: finished.nextStep,
       };
       base.lastRuns = [summary, ...(base.lastRuns || [])].slice(0, 5);

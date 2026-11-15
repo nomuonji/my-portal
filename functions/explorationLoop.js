@@ -90,14 +90,17 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
 
   const failStreak = failStreakOf(entries);
   const lastRatedAt = entries.length ? entries[entries.length - 1].at : null;
-  const lastRunAt = (base?.lastRuns || [])[0]?.finishedAt || null;
-  const researchDue = failStreak >= LIMITS.failStreak && !(lastRunAt && lastRatedAt && String(lastRunAt) > String(lastRatedAt));
+  // A completed run alone is not research. Only a structured, evidence-referenced
+  // postmortem made AFTER the latest non-pass clears the resourcing/revision gate.
+  const diagnosticRun = (base?.lastRuns || []).find((run) => run.failureAnalysisRecorded === true
+    && run.finishedAt && lastRatedAt && String(run.finishedAt) >= String(lastRatedAt));
+  const researchDue = failStreak >= LIMITS.failStreak && !diagnosticRun;
   const usesTrials = (trials || []).length > 0;
   const canRelease = !usesTrials || current.rated >= LIMITS.minRatedPerVersion;
 
   const nextActions = [];
   if (awaiting.length) nextActions.push('評価待ちの見本が ' + awaiting.length + ' 件ある。新しい見本より先に、本人の評価をもらう。');
-  if (researchDue) nextActions.push(failStreak + ' 回続けて合格が出ていない。次の見本の前に、runを閉じて判定を付け、仕入れ・選別から仮説を立て直すrunを終える。');
+  if (researchDue) nextActions.push(failStreak + ' 回続けて合格が出ていない。次の見本・方法版の更新前に、実例の否定的評価と対照例、異なる原因仮説2つ、各反証条件、不確実性を failureAnalysis に記録した研究runを終了する。単なるrun完了では解除しない。');
   scoreboard.filter((h) => h.status === 'open' && h.rated >= LIMITS.hypothesisMinTrials && h.pass === 0)
     .forEach((h) => nextActions.push(h.id + ' は ' + h.rated + ' 回試して合格 0。棄却する（exploration_item_upsert status=rejected）。'));
   scoreboard.filter((h) => h.status === 'open' && h.rated >= LIMITS.hypothesisMinTrials && h.passRate >= 0.6)
