@@ -523,8 +523,59 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
       id: p.id, name: p.name, status: p.status, description: p.description,
     }));
     return {
-      content: [{ type: "text", text: "Opened My Portal Workspace. Select a Project and Context in the app." }],
+      content: [{ type: "text", text: "Opened My Portal Workspace. Select a Skill Dojo or a Project and Context in the app." }],
       structuredContent: { projects },
+    };
+  }
+  if (name === "portal_workspace_dojos") {
+    const data = await explorationBaseStore.list({ status: "active" });
+    const dojos = (data.items || []).map((b: any) => ({
+      id: b.id,
+      title: b.title,
+      summary: b.summary,
+      status: b.status,
+      methodVersion: b.methodVersion,
+      skillId: b.target?.id || null,
+      runCount: b.runCount ?? 0,
+      openRunId: b.openRunId || null,
+      awaitingCount: b.awaitingCount ?? 0,
+      updatedAt: b.updatedAt || null,
+    }));
+    return {
+      content: [{ type: "text", text: "Loaded " + dojos.length + " active Skill Dojos." }],
+      structuredContent: { dojos },
+    };
+  }
+  if (name === "portal_workspace_dojo") {
+    if (typeof args.id !== "string" || !/^[a-z0-9-]{1,80}$/.test(args.id)) {
+      throw new Error("A valid Skill Dojo id is required.");
+    }
+    const d = await explorationBaseStore.get({ id: args.id, view: "brief" });
+    const lastRun = d.position?.lastRuns?.[0] || null;
+    const dojo = {
+      id: d.base?.id || args.id,
+      title: d.base?.title || args.id,
+      summary: d.base?.summary || "",
+      status: d.base?.status || "unknown",
+      outcome: d.outcome?.statement || "",
+      methodVersion: d.method?.version || null,
+      skillTitle: d.method?.target?.title || d.method?.title || null,
+      runCount: d.position?.runCount ?? 0,
+      openRunId: d.position?.openRunId || null,
+      rated: d.loop?.overall?.rated ?? null,
+      passRate: d.loop?.overall?.passRate ?? null,
+      awaitingCount: Math.max(Array.isArray(d.loop?.awaiting) ? d.loop.awaiting.length : 0, Array.isArray(d.outcome?.awaitingConfirmation) ? d.outcome.awaitingConfirmation.length : 0),
+      warnings: Array.isArray(d.warnings) ? d.warnings.slice(0, 4).map(String) : [],
+      lastRun: lastRun ? {
+        id: lastRun.id || null,
+        summary: String(lastRun.summary || "").slice(0, 1400),
+        nextStep: String(lastRun.nextStep || "").slice(0, 650),
+      } : null,
+      nextActions: Array.isArray(d.loop?.nextActions) ? d.loop.nextActions.slice(0, 3).map((s: any) => String(s).slice(0, 500)) : [],
+    };
+    return {
+      content: [{ type: "text", text: "Loaded Skill Dojo " + dojo.id }],
+      structuredContent: { dojo },
     };
   }
   if (name === "portal_workspace_contexts") {
