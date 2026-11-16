@@ -1,35 +1,31 @@
-# My Portal Workspace (ChatGPT MCP Apps)
+# My Portal Workspace — ChatGPT MCP Apps
 
-An authenticated, **read-only** sidebar for **スキル道場** (the default tab) and **Projects / Context** (preserved).
+The authenticated sidebar **スキル道場** is an interactive *training workbench*; the original **Projects / Context** tab remains available. Existing OAuth and the `ui://my-portal/workspace.html` entrypoint remain unchanged.
 
-## Compatibility: why the Skill Dojo tab uses an existing tool
+## Skill Dojo workbench
 
-ChatGPT may cache the MCP `tools/list` schema across a connection even when the deployed MCP Apps HTML resource changes. The initial Dojo UI implementation used two new tool names, `portal_workspace_dojos` and `portal_workspace_dojo`. With a cached older schema, the UI showed `Unknown tool` after a successful deploy.
+- **道場一覧 / 検索 / フィルタ**: all active dojos, those with pending trial/outcome evaluations, and those showing a sustained failure streak. Summary data comes from the established `portal_workspace_open({})` tool, backed by `exploration_base_list({status:"active"})`. Display counts distinguish **見本の評価待ち** (`loop.awaiting`) from **成果の確認待ち** (`outcome.awaitingConfirmation`).
+- **進行状況**: method version, currently released skill, number of runs, ratings, pass rate, current/previous skill performance (with sample sizes), outstanding run / warnings, whether research is required before the next sample, previous run and proposed next action.
+- **錬成を進める**: choose research/hypothesis verification, evidence-backed sample generation, or failure/calibration analysis. A selection becomes an explicit `ui/update-model-context` handoff; training starts **only after the user submits the message**. When the canonical dojo gate requires research, sample generation is disabled in the selector.
+- **見本を評価**: expands up to five pending trial samples from `exploration_base_get({id,view:"brief"})`. Shows the real trial body and a source link when safe. The user explicitly clicks 合格 / 惜しい / ボツ, optionally adds a short note, and then **この評価を保存**. This calls the existing `exploration_trial_rate` with the exact trial ID, a verbatim representation of the user's selected verdict/note, and `failStage:"unknown"`. The app then reads back `exploration_base_get` to verify that the trial has left the awaiting queue before showing success or updating stats. A tool error never counts as a rating. If the write may have committed but readback failed, saving that trial is blocked until the user explicitly refreshes, to avoid accidental duplicate feedback.
+- **成果の確認待ち**: distinct from trials; it remains a **conversation handoff** so the existing confirmation flow, provenance, and user-approval gates are preserved. Never call `exploration_trial_rate` to confirm an unrelated outcome.
+- **仮説・改善**: display current hypothesis candidates and their historical rating counts without treating self-scoring as success. Pick one hypothesis to include its ID in an investigation handoff.
+- **手動更新** refreshes the currently selected dojo. Selection state is ephemeral in the iframe. No scheduled job, background agent, or Work Item is created.
 
-**Current implementation:** the existing registered `portal_workspace_open({})` now projects both `projects` and `dojos` in one authenticated, read-only response. The UI does not call any new tool names and therefore does not depend on plugin-schema refresh to load the Dojo tab.
+## MCP compatibility
 
-The projection is built from existing `explorationBaseStore.list({status:"active"})` entries, including the released method/Skill references, user-rating counts, pass rate, pending evaluations, open run ID, last run summary and next action. The detailed canonical data remains available through normal `exploration_base_get({id,view:"brief"})` in the assistant after conversation handoff. The client never fetches or writes Firestore directly.
+The initial Dojo UI called two new app-only tool names, which existing ChatGPT connections cached as unknown. To prevent recurrence, the global app still uses the **registered** `portal_workspace_open` and `portal_workspace_contexts`. This workbench also calls the already-existing registered `exploration_base_get` and `exploration_trial_rate` tools inside the same authenticated MCP session. No additional MCP tool name is introduced. `exploration_trial_rate` is an explicit write, invoked only on the user's confirmation in the UI. All data remains in its canonical dojo store.
 
-The original `portal_workspace_contexts({projectId})` still provides concise Context summaries under Projects / Context.
+The inline vanilla JS app uses standard MCP Apps `ui/initialize`, `tools/call`, and `ui/update-model-context`. It does not contact Netlify or Firestore via browser `fetch`, expose secrets, or add build dependencies. Failed detail calls fall back to a list summary with conversation handoff, rather than silently displaying invented records.
 
-## UI behavior and authorization
+## Verification
 
-- Pick a dojo to inspect its status and latest training result.
-- **錬成を続ける** and **評価待ちを確認** only call `ui/update-model-context` with the selected dojo ID and an instruction. The assistant starts after the user submits the conversation message.
-- All training, scoring and method release rules remain with the canonical `exploration_*` tools. UI selection does not create a training run or mark a candidate as accepted.
-- The pass rate is `未評価` when no rating exists. The list snapshot is intentionally concise; the agent must reopen the selected dojo for execution.
-- No new database, scheduled job, Work Item, OAuth scope, API billing or model runtime is added.
+1. Parse the embedded HTML JavaScript and check tool call names against the registered MCP actions.
+2. Use representative dojo snapshots including a dojo with pending trials, a dojo that requires research before another sample, and one with an outcome awaiting confirmation.
+3. Exercise the mock iframe bridge in a DOM harness: choose the keyword dojo, view three real pending trial bodies, select a verdict and note, simulate `exploration_trial_rate`, read back the changed queue, and confirm that only the chosen trial disappears. Separately exercise hypothesis selection/handoff and the original Context tab.
+4. Run the production Netlify preview and CI checks; merge only after suitable checks. After deployment, reopen My Portal Workspace in ChatGPT to refresh its HTML resource.
+5. For live acceptance, submit **an actual rating intentionally** in the UI, then independently confirm it appears in `exploration_base_get`. Do **not** perform a write to production merely as a smoke test.
 
-## Checks
+## Rules of evidence
 
-1. Verify the app UI script parses and only calls `portal_workspace_open` / `portal_workspace_contexts`.
-2. Verify `portal_workspace_open` returns `projects` and `dojos`, with bounded text and correct `awaitingCount` / `loop.passRate` projection, including genuinely unrated dojos.
-3. Deploy through Netlify, reopen the ChatGPT sidebar app, and confirm the Dojo tab lists the existing active bases without the old `Unknown tool` error.
-4. Select a dojo and check counts against `exploration_base_get({id,view:"brief"})`, then test the handoff buttons.
-5. Switch to Projects / Context and check its selection / handoff flow. A missing resource URI should still return MCP `-32002`.
-
-If the host renders a previously cached HTML resource, close and reopen My Portal Workspace; refresh the ChatGPT plugin only if the old resource remains active after redeploy.
-
-## Security
-
-This app is authenticated through the existing MCP OAuth. All displayed data is a read-only projection from the My Portal service. Project/Context and Dojo choices are attached to a conversation only when the user explicitly clicks the button. No user rating, irreversible release or publication is performed from the iframe.
+All percentages are computed by the canonical server and include their evaluated sample sizes, not invented AI self-assessments. The user selects the verdict. AI may investigate and prepare samples, but may not forge user approval or loosen dojo stopping criteria. Repo branch changes alone do not prove a Netlify deployment or host rendering.
