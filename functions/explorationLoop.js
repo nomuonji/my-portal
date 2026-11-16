@@ -4,7 +4,7 @@ const { refinementView } = require('./hypothesisRefinement');
 
 // The improvement loop of a スキル錬成道場, as numbers. A trial is one sample shown to the user, registered
 // with the hypotheses it tests and the predicted chance of passing before the user rates it. The pass rate
-// per released version is the measure of the 道場; there is no count target.
+// per released version measures user-reviewed dojos; measurement-confirmed dojos use external evidence.
 
 const VERDICTS = ['pass', 'partial', 'fail', 'withdrawn'];
 const FAIL_STAGES = ['source', 'selection', 'transform', 'voice', 'gate', 'unknown'];
@@ -109,8 +109,10 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
   // postmortem made AFTER the latest non-pass clears the resourcing/revision gate.
   const diagnosticRun = (base?.lastRuns || []).find((run) => run.failureAnalysisRecorded === true
     && run.finishedAt && lastRatedAt && String(run.finishedAt) >= String(lastRatedAt));
-  const researchDue = failStreak >= LIMITS.failStreak && !diagnosticRun;
-  const usesTrials = (trials || []).length > 0;
+  const measurementMode = base?.outcome?.confirmedBy === 'measurement';
+  const researchDue = !measurementMode && failStreak >= LIMITS.failStreak && !diagnosticRun;
+  // Historical withdrawn/rated samples must not require new human ratings in an evidence-led dojo.
+  const usesTrials = !measurementMode && (trials || []).length > 0;
   const canRelease = !usesTrials || current.rated >= LIMITS.minRatedPerVersion;
 
   const nextActions = [];
@@ -126,13 +128,13 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
   }
 
   return {
-    metric: 'pass_rate',
+    metric: measurementMode ? 'measured_outcome' : 'pass_rate',
     overall: tally(entries),
     recent: tally(entries.slice(-10)),
     current, previous, byVersion,
     awaiting: awaiting.map((t) => ({ id: t.id, label: t.label, body: t.body || '', ref: t.ref || '', createdAt: t.createdAt, hypothesisIds: t.hypothesisIds || [], predictedPass: t.predictedPass ?? null })),
     calibration, screening, refinement, hypotheses: scoreboard.slice(0, 20), failStages, failStreak,
-    gates: { ...LIMITS, usesTrials, ratedOnCurrent: current.rated, canReleaseNewVersion: canRelease, researchDueBeforeNextTrial: researchDue },
+    gates: { ...LIMITS, measurementMode, usesTrials, ratedOnCurrent: current.rated, canReleaseNewVersion: canRelease, researchDueBeforeNextTrial: researchDue },
     lastRated: entries.slice(-8).reverse().map((e) => ({ id: e.id, label: e.label, verdict: e.verdict, version: versionKey(e), at: e.at, userWords: e.userWords })),
     nextActions,
   };

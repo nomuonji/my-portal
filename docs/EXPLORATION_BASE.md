@@ -47,6 +47,15 @@ Pacing the server enforces (thresholds are in `functions/explorationLoop.js` and
 - A hypothesis tested by a rated trial in a run cannot be closed as `inconclusive`.
 - When a base records trials, the released version needs 3 rated trials before a new version replaces it, unless the user directed the change. The replaced version's pass rate is stored in the method history.
 
+## Measurement-confirmed dojos (no human pass/fail)
+
+When `outcome.confirmedBy === 'measurement'`, the evidence source is the measured external result, **not** the user's subjective pass rate. These dojos still register forecasts before inspecting outcomes, keep counterexamples and missingness, and never treat an agent's self-grade as a measurement.
+
+- Old, withdrawn editorial trials remain in the audit log; they do not create a requirement to collect new human ratings.
+- Releasing a revised Skill/Pack without an explicit user-directed change requires **at least two distinct finished runs with recorded evidence movement** and a `benchmark.passed=true` containing an actual reference and case description. The run log alone does not prove causal independence, so the agent must inspect provenance and controls.
+- User-confirmed dojos keep the existing `minRatedPerVersion`, failure-analysis and other rating gates unchanged. Changing a dojo's outcome contract still needs the user's explicit authorization.
+- A case-classification benchmark is not a Google indexing-forecast benchmark. Report the distinction; prospective accuracy requires later labels from unexposed URLs.
+
 ## Hypothesis Refinement Loop (shared by every dojo)
 
 The server now returns `loop.refinement` alongside the existing per-version pass rate.

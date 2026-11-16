@@ -630,8 +630,25 @@ function createStore(options) {
           if (!run || run.status !== 'finished') throw new Error('Motivating run not found or not finished: ' + runId);
         }
       }
-      // A version is compared by what the user said about its output. Replacing one that has too few ratings
-      // leaves nothing to compare, so it waits — unless the user directed the change.
+      // Measured-outcome bases validate against real measurements, not former user trial ratings.
+      // Preserve the original rating gate for every user-confirmed dojo.
+      const measurementMode = base.outcome?.confirmedBy === 'measurement';
+      if (base.method && measurementMode && !userDirected) {
+        const distinctRuns = [...new Set(motivating)];
+        if (distinctRuns.length < 2) {
+          throw new Error('A measurement-based method revision needs two distinct finished evidence-bearing runs.');
+        }
+        for (const runId of distinctRuns) {
+          const run = value(await tx.get(runRef(id, runId)));
+          if (!run?.moved || !(run.movedItemIds || []).length) {
+            throw new Error('Measurement run lacks recorded evidence movement: ' + runId);
+          }
+        }
+        if (input.benchmark?.passed !== true || !String(input.benchmark.ref || '').trim() || !String(input.benchmark.cases || '').trim()) {
+          throw new Error('A measurement-based method revision requires a passed, referenced case benchmark.');
+        }
+      }
+      // User-reviewed dojos still compare the released version with actual user-rated samples.
       const loop = loopView({ trials, feedbackLog: base.feedbackLog, base });
       if (base.method && loop.gates.usesTrials && !loop.gates.canReleaseNewVersion && !userDirected) {
         throw new Error('The released version has ' + loop.current.rated + ' rated trial(s); a new version needs ' + LIMITS.minRatedPerVersion

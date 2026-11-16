@@ -346,6 +346,74 @@ test('a trial names its hypothesis and prediction before the user rates it', asy
   assert.equal(listed.items[0].loop.passRate, 0.5);
 });
 
+test('measured-outcome dojos release from two evidence-bearing runs, not legacy user ratings', async () => {
+  const db = new MemoryDb();
+  const store = createStore({ getDb: () => db });
+  await store.create({
+    id: 'test-base', title: 'Measured SEO', summary: 'GSC observations',
+    outcome: { ...outcome, confirmedBy: 'measurement' }, method, ...auth,
+  });
+  await store.upsertItems({ baseId: 'test-base', kind: 'hypothesis', items: [hypothesis] });
+
+  const first = await store.startRun({
+    baseId: 'test-base', objective: 'Audit cache classifications',
+    targets: [{ hypothesisId: 'H-001', prediction: 'Misclassified URLs exist' }],
+  });
+  // A withdrawn, outdated editorial sample must not block a measurement-only dojo.
+  await store.recordTrials({
+    baseId: 'test-base', runId: first.runId,
+    trials: [{ label: 'Obsolete editorial review', hypothesisIds: ['H-001'], predictedPass: 0.5 }],
+  });
+  await store.rateTrials({
+    baseId: 'test-base', ratings: [{ id: 'T-001', verdict: 'withdrawn', reason: 'Outcome changed to external measurement' }],
+  });
+  await store.upsertItems({
+    baseId: 'test-base', runId: first.runId, kind: 'hypothesis',
+    items: [{ id: 'H-001', stage: 'observed', addEvidence: [{ ref: 'GSC cache identified mislabeled category URLs' }] }],
+  });
+  await store.finishRun({
+    baseId: 'test-base', runId: first.runId, summary: 'Measured categories',
+    verdicts: [{ hypothesisId: 'H-001', result: 'supported', observed: 'Mislabeled category URLs' }],
+  });
+
+  const next = { ...method, version: 'm-v2', summary: 'Require exact page types' };
+  const benchmark = { passed: true, ref: 'Measured URL fixture', cases: 'Category URLs remain separate from articles' };
+  await assert.rejects(
+    store.setMethodVersion({ baseId: 'test-base', method: next, motivatingRunIds: [first.runId], benchmark }),
+    /two distinct finished evidence-bearing runs/,
+  );
+
+  const second = await store.startRun({
+    baseId: 'test-base', objective: 'Verify routes in repository',
+    targets: [{ hypothesisId: 'H-001', prediction: 'Static routes confirm the categories' }],
+  });
+  await store.upsertItems({
+    baseId: 'test-base', runId: second.runId, kind: 'hypothesis',
+    items: [{ id: 'H-001', stage: 'reproduced', addEvidence: [{ ref: 'GitHub Astro category route matches classified URLs' }] }],
+  });
+  await store.finishRun({
+    baseId: 'test-base', runId: second.runId, summary: 'Confirmed dynamic route',
+    verdicts: [{ hypothesisId: 'H-001', result: 'supported', observed: 'Route implementation matches observed URLs' }],
+  });
+  const motivatingRunIds = [first.runId, second.runId];
+  await assert.rejects(
+    store.setMethodVersion({ baseId: 'test-base', method: next, motivatingRunIds, noBenchmarkReason: 'Need more data' }),
+    /passed, referenced case benchmark/,
+  );
+  await assert.rejects(
+    store.setMethodVersion({ baseId: 'test-base', method: next, motivatingRunIds, benchmark: { passed: true } }),
+    /passed, referenced case benchmark/,
+  );
+  const updated = await store.setMethodVersion({ baseId: 'test-base', method: next, motivatingRunIds, benchmark });
+  assert.equal(updated.method.version, 'm-v2');
+  assert.equal(updated.loop.metric, 'measured_outcome');
+  assert.equal(updated.loop.gates.measurementMode, true);
+  assert.equal(updated.loop.gates.usesTrials, false);
+  assert.equal(updated.loop.current.rated, 0, 'no user rating was fabricated');
+  const full = await store.get({ id: 'test-base', view: 'full' });
+  assert.deepEqual(full.full.methodHistory.at(-1).motivatingRunIds, motivatingRunIds);
+});
+
 test('a version is not replaced before it has enough ratings, unless the user directs it', async () => {
   const store = await setup();
   await store.upsertItems({ baseId: 'test-base', kind: 'hypothesis', items: [hypothesis] });
