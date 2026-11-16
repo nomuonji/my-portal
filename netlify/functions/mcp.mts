@@ -563,6 +563,72 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
     if (typeof args.projectId !== "string" || !args.projectId.trim() || args.projectId.length > 140) {
       throw new Error("A valid projectId is required.");
     }
+    // MCP Apps may cache tools/list. Keep the established tool name and
+    // route a reserved, read-only dojo prefix to a small server-side projection.
+    if (args.projectId.startsWith("dojo:")) {
+      const id = args.projectId.slice(5);
+      if (!/^[a-z0-9-]{1,80}$/.test(id)) throw new Error("Invalid dojo ID");
+      const d = await explorationBaseStore.get({ id, view: "brief" });
+      const loop = d.loop || {};
+      const hypotheses = Array.isArray(loop.refinement?.hypotheses)
+        ? loop.refinement.hypotheses
+        : (Array.isArray(loop.hypotheses) ? loop.hypotheses : []);
+      const outcome = d.outcome || {};
+      const lastRun = d.position?.lastRuns?.[0] || null;
+      const compact = {
+        base: { id: d.base?.id || id, title: d.base?.title || id, summary: String(d.base?.summary || "").slice(0, 1000) },
+        outcome: {
+          statement: String(outcome.statement || "").slice(0, 700),
+          pendingCount: Array.isArray(outcome.awaitingConfirmation) ? outcome.awaitingConfirmation.length : 0,
+        },
+        method: {
+          version: d.method?.version || null,
+          title: d.method?.title || null,
+          target: d.method?.target ? { title: d.method.target.title || null, releasedVersion: d.method.target.releasedVersion ?? null } : null,
+        },
+        position: {
+          runCount: d.position?.runCount ?? 0,
+          openRunId: d.position?.openRunId || null,
+          lastRuns: lastRun ? [{
+            id: lastRun.id || null,
+            summary: String(lastRun.summary || "").slice(0, 1700),
+            nextStep: String(lastRun.nextStep || "").slice(0, 900),
+          }] : [],
+        },
+        loop: {
+          overall: { rated: loop.overall?.rated ?? null, passRate: loop.overall?.passRate ?? null },
+          current: loop.current ? {
+            version: loop.current.version || null, rated: loop.current.rated ?? 0,
+            passRate: loop.current.passRate ?? null,
+          } : null,
+          previous: loop.previous ? {
+            version: loop.previous.version || null, rated: loop.previous.rated ?? 0,
+            passRate: loop.previous.passRate ?? null,
+          } : null,
+          awaiting: (Array.isArray(loop.awaiting) ? loop.awaiting : []).slice(0, 6).map((t: any) => ({
+            id: t.id, label: String(t.label || "").slice(0, 300),
+            body: String(t.body || "").slice(0, 4000),
+            ref: String(t.ref || "").slice(0, 600),
+          })),
+          gates: {
+            researchDueBeforeNextTrial: !!loop.gates?.researchDueBeforeNextTrial,
+            minRatedPerVersion: loop.gates?.minRatedPerVersion ?? null,
+            usesTrials: !!loop.gates?.usesTrials,
+          },
+          refinement: { hypotheses: hypotheses.slice(0, 6).map((h: any) => ({
+            id: h.id, title: String(h.title || h.statement || "").slice(0, 300),
+            rated: h.rated ?? null, pass: h.pass ?? null,
+            readiness: h.readiness || null,
+          })) },
+          nextActions: (Array.isArray(loop.nextActions) ? loop.nextActions : []).slice(0, 3).map((x: any) => String(x).slice(0, 650)),
+        },
+        warnings: (Array.isArray(d.warnings) ? d.warnings : []).slice(0, 4).map((x: any) => String(x).slice(0, 700)),
+      };
+      return {
+        content: [{ type: "text", text: "Loaded condensed Skill Dojo " + id }],
+        structuredContent: { dojo: compact },
+      };
+    }
     const data = await contextRegistry.list({ projectId: args.projectId });
     const contexts = (data.items || []).map((c: any) => ({
       id: c.id, title: c.title, summary: c.summary, status: c.status,
