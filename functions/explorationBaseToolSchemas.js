@@ -106,10 +106,10 @@ const tools = [
   },
   {
     name: 'exploration_base_get',
-    description: 'Read an Exploration Base before each run. loop.refinement provides calibrated forecast error, smoothed hypothesis estimates, uncertainty and a competing-hypothesis contrast; advisory, not proof. Read nextActions and design a discriminating test before generating outputs. view=full adds item details, immutable revision history, runs and events.',
+    description: 'Read an Exploration Base before each run. loop.refinement provides calibrated forecast error, smoothed hypothesis estimates, uncertainty and a competing-hypothesis contrast; advisory, not proof. Read nextActions and design a discriminating test before generating outputs. view=state refreshes the loop, gates, pending evaluations and pinned method pointer without reloading its body or ledgers; use brief for the initial load or after a method/contract change. view=full adds item details, immutable revision history, runs and events.',
     inputSchema: {
       type: 'object',
-      properties: { id: baseId, view: { type: 'string', enum: ['brief', 'full'] }, eventLimit: { type: 'integer', minimum: 1, maximum: 300 } },
+      properties: { id: baseId, view: { type: 'string', enum: ['state', 'brief', 'full'] }, eventLimit: { type: 'integer', minimum: 1, maximum: 300 } },
       required: ['id'], additionalProperties: false,
     },
   },
@@ -186,7 +186,7 @@ const tools = [
   },
   {
     name: 'exploration_run_start',
-    description: 'Open an exploration run. Read loop.refinement first, declare the tested hypothesis and forecast before observing outcomes. When testing a known competing explanation, supply experimentDesign with a distinct alternative and controlled difference; legacy exploratory probes may omit it. Pins method version.',
+    description: 'Open an exploration run. Read loop.refinement first, declare the tested hypothesis and forecast before observing outcomes. When testing a known competing explanation, supply experimentDesign with a distinct alternative and controlled difference; legacy exploratory probes may omit it. Pins method version. Prefer responseMode=compact after loading the base; returns run ID and pinned versions without a redundant full brief.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -212,6 +212,7 @@ const tools = [
           additionalProperties: false,
         },
         takeover: { type: 'boolean', description: 'Abandon a stale open run and start a new one.' },
+        responseMode: { type: 'string', enum: ['brief', 'compact'], description: 'compact returns the committed run receipt only; brief (default) also reloads the base.' },
         actor,
       },
       required: ['baseId', 'objective'], additionalProperties: false,
@@ -219,7 +220,7 @@ const tools = [
   },
   {
     name: 'exploration_run_finish',
-    description: 'Close the run with observed verdicts. If 3+ consecutive non-passes, a mere finished run does NOT clear the next-trial gate: provide failureAnalysis with at least two real rated failures, an accepted/external positive comparator, two competing explanations with for/against evidence and falsification, acknowledged uncertainty, false-positive gate diagnosis when applicable, and a discriminating next test. Each claim remains a hypothesis, not proven causality. Ratings remain the user\'s alone.',
+    description: 'Close the run with observed verdicts. If 3+ consecutive non-passes, a mere finished run does NOT clear the next-trial gate: provide failureAnalysis with at least two real rated failures, an accepted/external positive comparator, two competing explanations with for/against evidence and falsification, acknowledged uncertainty, false-positive gate diagnosis when applicable, and a discriminating next test. Each claim remains a hypothesis, not proven causality. Ratings remain the user\'s alone. Prefer responseMode=compact to return the committed run and refreshed loop (including nextActions) without reloading the entire base.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -263,6 +264,7 @@ const tools = [
         notMovedReason: string('Required when the run changed no fixed point.', 1000),
         costNote: string('Paid calls, quota used.', 400),
         nextStep: string('What the next run should do.', 800),
+        responseMode: { type: 'string', enum: ['brief', 'compact'], description: 'compact returns run and refreshed loop; brief (default) also reloads the base.' },
         actor,
       },
       required: ['baseId', 'runId', 'summary'], additionalProperties: false,
