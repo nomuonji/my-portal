@@ -164,7 +164,7 @@ export function Post({ item, actions = [], onFeedback, busy, now }) {
   );
 }
 
-const TABS = [{ key: 'candidate', label: '評価待ち' }, { key: 'decided', label: '評価済み' }];
+const TABS = [{ key: 'candidate', label: '評価待ち' }, { key: 'confirmed', label: '採用済み' }, { key: 'decided', label: '評価済み' }];
 
 export default function HaulTimeline({ fleet = [], fixedSub = '', initialSub = '', onSubChange, onNotice, onError }) {
   const [tab, setTab] = useState('candidate');
@@ -218,7 +218,7 @@ export default function HaulTimeline({ fleet = [], fixedSub = '', initialSub = '
       const result = await api('', { action: 'submarine_haul_feedback', submarineId: item.submarineId, haulId: item.id, feedbackAction: key || '', comment: comment || '', light: true });
       const updated = { ...item, ...(result.haul || {}), record: item.record, submarine: item.submarine };
       if (key && item.record?.kind === 'discover') updated.record = { ...item.record, state: key };
-      const leaves = (tab === 'candidate' && updated.status !== 'candidate') || (tab === 'decided' && updated.status === 'candidate');
+      const leaves = tab === 'decided' ? updated.status === 'candidate' : updated.status !== tab;
       setItems((prev) => (leaves ? prev.filter((h) => !(h.submarineId === item.submarineId && h.id === item.id)) : prev.map((h) => (h.submarineId === item.submarineId && h.id === item.id ? updated : h))));
       if (item.status !== updated.status) {
         setCounts((prev) => {
@@ -235,7 +235,9 @@ export default function HaulTimeline({ fleet = [], fixedSub = '', initialSub = '
     } finally { setBusy(false); }
   };
 
-  const waitingTotal = Object.values(counts).reduce((sum, c) => sum + (c.candidate || 0), 0);
+  const tabCount = (status) => fixedSub || sub
+    ? counts[fixedSub || sub]?.[status] || 0
+    : Object.values(counts).reduce((sum, c) => sum + (c[status] || 0), 0);
   const subsWithItems = fleet.filter((s) => s.status !== 'decommissioned');
 
   return (
@@ -247,21 +249,21 @@ export default function HaulTimeline({ fleet = [], fixedSub = '', initialSub = '
               sx={{
                 flex: 1, borderRadius: 0, py: 1.4, fontSize: 14.5, fontWeight: tab === t.key ? 800 : 600, color: tab === t.key ? V.ink : V.muted,
                 borderBottom: '3px solid ' + (tab === t.key ? V.accent : 'transparent'),
-              }}>{t.label}{t.key === 'candidate' && waitingTotal ? ' ' + waitingTotal : ''}</Button>
+              }}>{t.label}{t.key !== 'decided' && tabCount(t.key) ? ' ' + tabCount(t.key) : ''}</Button>
           ))}
         </Stack>
         {!fixedSub && (
           <Stack direction="row" gap={0.75} sx={{ px: 2, py: 1, overflowX: 'auto', scrollbarWidth: 'none', '&::-webkit-scrollbar': { display: 'none' } }} aria-label="艦で絞り込む">
             {[{ id: '', name: 'すべて' }, ...subsWithItems].map((s) => {
               const active = sub === s.id;
-              const n = s.id ? counts[s.id]?.candidate || 0 : 0;
+              const n = s.id && tab !== 'decided' ? counts[s.id]?.[tab] || 0 : 0;
               return (
                 <Button key={s.id || 'all'} size="small" onClick={() => pickSub(s.id)} aria-pressed={active}
                   sx={{
                     flexShrink: 0, minHeight: 30, borderRadius: 999, px: 1.4, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap',
                     color: active ? 'var(--p-paper, #fff)' : V.ink, background: active ? V.ink : 'transparent', border: '1px solid ' + (active ? V.ink : V.rule),
                     '&:hover': { background: active ? V.ink : 'var(--p-sunken)' },
-                  }}>{s.name}{tab === 'candidate' && n ? ' ' + n : ''}</Button>
+                  }}>{s.name}{n ? ' ' + n : ''}</Button>
               );
             })}
           </Stack>
@@ -274,7 +276,7 @@ export default function HaulTimeline({ fleet = [], fixedSub = '', initialSub = '
       ))}
       {loaded && !items.length && !loading && (
         <Typography sx={{ fontSize: 14, color: V.muted, textAlign: 'center', py: 6 }}>
-          {tab === 'candidate' ? '評価待ちはありません。' : 'まだありません。'}
+          {tab === 'candidate' ? '評価待ちはありません。' : tab === 'confirmed' ? '採用済みの成果はありません。' : 'まだありません。'}
         </Typography>
       )}
       <Box ref={sentinel} sx={{ display: 'grid', placeItems: 'center', py: 2, minHeight: 40 }}>
