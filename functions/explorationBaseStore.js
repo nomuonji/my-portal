@@ -449,7 +449,7 @@ function createStore(options) {
 
   async function get(input) {
     const id = requireBaseId(input?.id);
-    const view = oneOf(input?.view, ['brief', 'full'], 'view', 'brief');
+    const view = oneOf(input?.view, ['state', 'brief', 'full'], 'view', 'brief');
     const base = value(await baseRef(id).get());
     if (!base) throw new Error('Exploration Base not found: ' + id);
     const [items, trials] = await Promise.all([loadItems(id), loadTrials(id)]);
@@ -467,6 +467,21 @@ function createStore(options) {
     if (base.openRunId) warnings.push('Run ' + base.openRunId + ' is still open. Finish it, or take it over if abandoned.');
     let released = null;
     const ref = base.method?.bodyRef;
+    // State is a refresh, not the initial method/contract load. It deliberately
+    // skips resolving the released skill body and sending the complete ledgers.
+    if (view === 'state') {
+      if (ref && TARGET_KINDS.has(ref.kind) && !ref.versionNumber) warnings.push('No released target version is pinned. Read view=brief before executing.');
+      if ((base.proposals || []).some((p) => p.status === 'pending')) warnings.push('There are pending proposals waiting for the user.');
+      return {
+        base: { id: base.id, title: base.title, status: base.status, revision: base.revision, updatedAt: base.updatedAt },
+        method: base.method ? { version: base.method.version, bodyRef: ref } : null,
+        outcome: { revision: base.outcome?.revision, confirmedCount: confirmed, awaitingConfirmation: (base.progress?.achievements || []).filter((a) => a.status === 'candidate').map(({ id, label, ref }) => ({ id, label, ref })) },
+        position: { runCount: base.runCount || 0, stalledRuns: base.stalledRuns || 0, openRunId: base.openRunId || null, lastRuns: (base.lastRuns || []).slice(0, 1) },
+        loop: loopView({ trials, feedbackLog: base.feedbackLog, base, hypotheses }),
+        warnings,
+        note: 'Refresh only. Use view=brief if the method or contract changed, or to load constraints, ledgers and the released body.',
+      };
+    }
     if (ref && TARGET_KINDS.has(ref.kind) && !ref.versionNumber) {
       // Set before versions were pinned: it points at the skill/pack but releases no version.
       warnings.push('The method points at ' + ref.kind + ' ' + ref.location + ' without a released version, so execution would follow whatever its latest version is. Release a version with exploration_method_version_set (bodyRef.versionNumber).');
@@ -811,7 +826,9 @@ function createStore(options) {
 
   async function startRun(input) {
     const id = requireBaseId(input?.baseId);
+    const responseMode = oneOf(input?.responseMode, ['brief', 'compact'], 'responseMode', 'brief');
     let runId;
+    let receipt;
     await db().runTransaction(async (tx) => {
       const base = await loadBase(tx, id);
       if (base.status !== 'active') throw new Error('Exploration Base is ' + base.status + '; runs start only on an active base.');
@@ -866,15 +883,18 @@ function createStore(options) {
       };
       put(tx, runRef(id, runId), run);
       base.openRunId = runId;
+      receipt = { runId, methodVersion: run.methodVersion, outcomeRevision: run.outcomeRevision };
       pushEvent(tx, base, { type: 'run_started', runId, summary: run.objective, actor: input.actor, detail: { targets: cleanTargets, methodVersion: run.methodVersion } });
       saveBase(tx, base);
     });
+    if (responseMode === 'compact') return receipt;
     return { runId, brief: await get({ id }) };
   }
 
   async function finishRun(input) {
     const id = requireBaseId(input?.baseId);
     const runId = text(input?.runId, 20, 'runId', true);
+    const responseMode = oneOf(input?.responseMode, ['brief', 'compact'], 'responseMode', 'brief');
     const finishData = unpackFailureAnalysis(input);
     let summary;
     const trials = await loadTrials(id);
@@ -946,7 +966,8 @@ function createStore(options) {
       pushEvent(tx, base, { type: moved ? 'run_finished' : 'run_stalled', runId, summary: summary.summary, actor: input.actor, detail: { verdicts: summary.verdicts, achievementIds: summary.achievementIds } });
       saveBase(tx, base);
     });
-    await refreshLoop(id);
+    const loop = await refreshLoop(id);
+    if (responseMode === 'compact') return { run: summary, loop };
     return { run: summary, brief: await get({ id }) };
   }
 

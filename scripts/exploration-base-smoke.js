@@ -657,3 +657,29 @@ test('revisions retain the previous claim; adding new evidence is not a new hypo
   assert.equal(item.revisionHistory[0].after.pipelineStage, 'source');
   assert.equal(item.revisionHistory[0].reason, 'User rejected artificial source recaps');
 });
+
+
+test('compact dojo workflow avoids redundant target resolution and preserves authoritative loop', async () => {
+  const db = new MemoryDb();
+  let resolutions = 0;
+  const store = createStore({ getDb: () => db, resolveTarget: async () => { resolutions += 1; return { title: 'Skill', latestVersion: 1, body: 'Long skill body '.repeat(1000) }; } });
+  await store.create({ id: 'test-base', title: 'T', summary: 'S', outcome, method: { ...method, bodyRef: { kind: 'chat_skill', location: 'test-skill', versionNumber: 1 } }, ...auth });
+  const before = await store.get({ id: 'test-base' });
+  const count = resolutions;
+  const run = await store.startRun({ baseId: 'test-base', objective: 'Observe', unknownTerritoryProbe: 'New material', responseMode: 'compact' });
+  assert.equal(run.methodVersion, before.method.version);
+  assert.equal(run.outcomeRevision, before.outcome.revision);
+  assert.equal(run.brief, undefined);
+  const state = await store.get({ id: 'test-base', view: 'state' });
+  assert.equal(state.position.openRunId, run.runId);
+  assert.equal(state.method.bodyRef.versionNumber, 1);
+  assert.equal(state.method.body, undefined);
+  assert.equal(state.protocol, undefined);
+  const done = await store.finishRun({ baseId: 'test-base', runId: run.runId, summary: 'No new data', notMovedReason: 'No signal', responseMode: 'compact' });
+  assert.equal(done.brief, undefined);
+  assert.equal(resolutions, count, 'compact calls must not resolve the skill body again');
+  const full = await store.get({ id: 'test-base' });
+  assert.deepEqual(done.loop, full.loop);
+  assert.equal(full.position.openRunId, null);
+  assert.ok(JSON.stringify(state).length < JSON.stringify(before).length / 2, 'refresh payload must be materially smaller');
+});
