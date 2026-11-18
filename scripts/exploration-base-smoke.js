@@ -322,6 +322,10 @@ test('a trial names its hypothesis and prediction before the user rates it', asy
   const sampleB = waiting.items.find((t) => t.id === 'T-002');
   assert.equal(sampleB.imageUrl, 'https://thumbnail.image.rakuten.co.jp/b.jpg', 'the picture reaches the rating card');
   assert.equal(sampleB.ref, 'https://item.rakuten.co.jp/shop/b/');
+  const pictured = await store.recordTrials({ baseId: 'test-base', trials: [{ label: 'Sample A', ref: 'out-a', imageUrl: 'https://example.com/a.png' }] });
+  assert.deepEqual(pictured.imaged, [{ ref: 'out-a', id: 'T-001', imageUrl: 'https://example.com/a.png' }], 'a waiting sample gets its picture by re-recording the same ref');
+  assert.equal(pictured.created.length, 0);
+  assert.equal((await store.awaitingTrials({})).items.find((t) => t.id === 'T-001').imageUrl, 'https://example.com/a.png');
   const again = await store.recordTrials({ baseId: 'test-base', runId, trials: [{ label: 'Sample A', ref: 'out-a', hypothesisIds: ['H-001'], predictedPass: 0.7 }] });
   assert.deepEqual(again.skipped, [{ ref: 'out-a', id: 'T-001' }], 'the same output is not recorded twice');
 

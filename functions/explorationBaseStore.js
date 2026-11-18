@@ -1173,6 +1173,7 @@ function createStore(options) {
     const sourceItems = items.filter((item) => item.kind === 'source');
     const created = [];
     const skipped = [];
+    const imaged = [];
     await db().runTransaction(async (tx) => {
       const base = await loadBase(tx, id);
       const runId = requireOpenRun(base, text(input.runId, 20, 'runId', false));
@@ -1180,8 +1181,16 @@ function createStore(options) {
       const fresh = input.trials.map((raw) => plain(raw, 'trial')).filter((raw) => {
         const ref = text(raw.ref, 600, 'trial.ref', false);
         const duplicate = ref && existing.find((t) => t.ref === ref);
-        if (duplicate) skipped.push({ ref, id: duplicate.id });
-        return !duplicate;
+        if (!duplicate) return true;
+        // Re-recording a waiting sample with a picture adds the picture; nothing else about it changes.
+        const picture = imageUrl(raw.imageUrl);
+        if (picture && duplicate.status === 'awaiting' && duplicate.imageUrl !== picture) {
+          put(tx, trialRef(id, duplicate.id), { ...duplicate, imageUrl: picture, updatedAt: now() });
+          imaged.push({ ref, id: duplicate.id, imageUrl: picture });
+        } else {
+          skipped.push({ ref, id: duplicate.id });
+        }
+        return false;
       });
       if (!backfill && fresh.length) {
         const loop = loopView({ trials: existing, feedbackLog: base.feedbackLog, base });
@@ -1225,13 +1234,14 @@ function createStore(options) {
         put(tx, trialRef(id, trial.id), trial);
         created.push({ id: trial.id, label: trial.label, version: trial.version, status: trial.status, verdict: trial.verdict });
       });
-      if (!created.length) return;
+      if (imaged.length) pushEvent(tx, base, { type: 'trial_images_added', runId, actor: input.actor, summary: imaged.length + ' 件の見本に画像を追加: ' + imaged.map((t) => t.id).join(', '), detail: { trialIds: imaged.map((t) => t.id) } });
+      if (!created.length) { if (imaged.length) saveBase(tx, base); return; }
       if (run) put(tx, runRef(id, runId), { ...run, trialIds: [...new Set([...(run.trialIds || []), ...created.map((t) => t.id)])] });
       pushEvent(tx, base, { type: backfill ? 'trials_backfilled' : 'trials_recorded', runId, actor: input.actor, summary: created.length + ' 件: ' + created.map((t) => t.label).join(' / ').slice(0, 600), detail: { trialIds: created.map((t) => t.id) } });
       saveBase(tx, base);
     });
     const loop = created.length ? await refreshLoop(id) : null;
-    return { baseId: id, created, skipped, loop: loop ? loopSummary(loop) : undefined };
+    return { baseId: id, created, skipped, imaged, loop: loop ? loopSummary(loop) : undefined };
   }
 
   // The user's words are the rating. A verdict without them would be the agent grading itself.

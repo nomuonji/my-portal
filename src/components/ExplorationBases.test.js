@@ -204,6 +204,15 @@ test('samples waiting for the user are rated from the list with one press and an
   AWAITING.items = [];
 });
 
+test('image URLs written in a sample body are shown as pictures, not as text', async () => {
+  AWAITING.items = [{ baseId: 'fc', baseTitle: 'キャッチー商品道場', id: 'T-050', label: 'ロールアイス', body: '3180円。\nhttps://image.rakuten.co.jp/shop/cabinet/a.jpg', createdAt: '2026-11-18T20:24:33Z' }];
+  renderAt('');
+  expect(await screen.findByAltText('ロールアイス の画像')).toHaveAttribute('src', 'https://image.rakuten.co.jp/shop/cabinet/a.jpg');
+  expect(screen.getByText('3180円。')).toBeInTheDocument();
+  expect(screen.queryByText(/cabinet\/a\.jpg/)).not.toBeInTheDocument();
+  AWAITING.items = [];
+});
+
 test('a product sample shows its picture and a clear button to the product page', async () => {
   AWAITING.items = [{ baseId: 'fc', baseTitle: 'キャッチー商品道場', id: 'T-041', label: '卓上真空成形機', body: '15万8000円', ref: 'https://item.rakuten.co.jp/ayard/mayku_formbox/', imageUrl: 'https://thumbnail.image.rakuten.co.jp/formbox.jpg', createdAt: '2026-11-18T20:24:33Z' }];
   renderAt('');
