@@ -1,6 +1,7 @@
 import { cert, getApp, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { initializeFirestore } from "firebase-admin/firestore";
+import * as consumerModelStoreImport from "../../functions/consumerModelStore.js";
 import * as storeImport from "../../functions/agentIdeasStoreAgentDb.js";
 import * as documentDbImport from "../../functions/documentDb.js";
 import * as contextStoreImport from "../../functions/contextStore.js";
@@ -20,6 +21,7 @@ import * as explorationBaseStoreImport from "../../functions/explorationBaseStor
 import * as submarineStoreImport from "../../functions/submarineStore.js";
 import * as submarineFleetImport from "../../functions/submarineFleet.js";
 
+const consumerModels: any = (consumerModelStoreImport as any).default ?? consumerModelStoreImport;
 const store: any = (storeImport as any).default ?? storeImport;
 const contextStore: any = (contextStoreImport as any).default ?? contextStoreImport;
 const worldMap: any = (worldMapImport as any).default ?? worldMapImport;
@@ -179,6 +181,8 @@ export default async (request: Request) => {
         scanLimit: 1000,
       }));
       if (resource === "exploration_awaiting_trials") return json(await explorationBaseStore.awaitingTrials({ limit: Number(url.searchParams.get("limit")) || 60 }));
+      if (resource === "consumer_models") return json(await consumerModels.list());
+      if (resource === "consumer_model") return json(await consumerModels.get({id:url.searchParams.get("id")||"",version:url.searchParams.get("version")||undefined}));
       if (resource === "exploration_bases") return json(await explorationBaseStore.list({ status: url.searchParams.get("status") || undefined }));
       if (resource === "exploration_base") return json(await explorationBaseStore.get({
         id: url.searchParams.get("id") || "",

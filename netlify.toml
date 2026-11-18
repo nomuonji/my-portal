@@ -6,6 +6,10 @@
   NODE_VERSION = "22"
   CI = "false"
 
+# Owner-authorized, one-time exact-copy import. The persisted marker makes later builds no-ops.
+[context.production.environment]
+  CONSUMER_MODEL_SNAPSHOT_IMPORT = "2026-11-18"
+
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"

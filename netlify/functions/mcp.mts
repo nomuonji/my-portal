@@ -1,6 +1,8 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { initializeFirestore } from "firebase-admin/firestore";
+import * as consumerModelStoreImport from "../../functions/consumerModelStore.js";
+import * as consumerModelToolsImport from "../../functions/consumerModelToolSchemas.js";
 import * as agentStoreImport from "../../functions/agentIdeasStoreAgentDb.js";
 import * as portalStoreImport from "../../functions/portalStore.js";
 import * as agentToolsImport from "../../functions/agentIdeasToolSchemas.js";
@@ -96,7 +98,9 @@ const worldMapTools: any = (worldMapToolsImport as any).default ?? worldMapTools
 const contextToolsModule: any = (contextToolsImport as any).default ?? contextToolsImport;
 const linearBridge: any = (linearBridgeImport as any).default ?? linearBridgeImport;
 const migration: any = (migrationImport as any).default ?? migrationImport;
-const TOOLS: any[] = [...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...worldMapTools.TOOLS, ...chatContextTools.TOOLS, ...contextRegistryTools.TOOLS, ...portalToolsModule.TOOLS, ...jobOpportunityToolsModule.TOOLS, ...metaTools.TOOLS, ...personalFeedTools.TOOLS, ...discoverReaderTools.TOOLS, ...personalTasteTools.TOOLS, ...routineTools.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...outputToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS, ...agentIntelligenceTools.TOOLS, ...explorationBaseTools.TOOLS, ...submarineTools.TOOLS, ...workspaceApp.TOOLS];
+const consumerModels: any = (consumerModelStoreImport as any).default ?? consumerModelStoreImport;
+const consumerModelTools: any = (consumerModelToolsImport as any).default ?? consumerModelToolsImport;
+const TOOLS: any[] = [...consumerModelTools.TOOLS, ...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...worldMapTools.TOOLS, ...chatContextTools.TOOLS, ...contextRegistryTools.TOOLS, ...portalToolsModule.TOOLS, ...jobOpportunityToolsModule.TOOLS, ...metaTools.TOOLS, ...personalFeedTools.TOOLS, ...discoverReaderTools.TOOLS, ...personalTasteTools.TOOLS, ...routineTools.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...outputToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS, ...agentIntelligenceTools.TOOLS, ...explorationBaseTools.TOOLS, ...submarineTools.TOOLS, ...workspaceApp.TOOLS];
 
 const SERVER_NAME = "my-portal";
 const SERVER_VERSION = "1.25.0-netlify";
@@ -485,6 +489,11 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "agent_profile_list") return structured(await agentIntelligenceRegistry.listProfiles(args));
   if (name === "agent_profile_get") return structured(await agentIntelligenceRegistry.getProfile(args));
   if (name === "agent_profile_version_create") return structured(await agentIntelligenceRegistry.createProfileVersion(args));
+  if (name === "consumer_model_list") return structured(await consumerModels.list(args));
+  if (name === "consumer_model_get") return structured(await consumerModels.get(args));
+  if (name === "consumer_model_seed_files") return structured(await consumerModels.seedFiles(args));
+  if (name === "consumer_model_migration_status") return structured(await consumerModels.migrationStatus(args));
+  if (name === "consumer_model_import_keywords_snapshot") return structured(await consumerModels.importSnapshot(args));
   if (name === "intelligence_pack_list") return structured(await agentIntelligenceRegistry.listPacks(args));
   if (name === "intelligence_pack_get") return structured(await agentIntelligenceRegistry.getPack(args));
   if (name === "intelligence_pack_version_create") return structured(await agentIntelligenceRegistry.createPackVersion(args));
