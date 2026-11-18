@@ -203,3 +203,11 @@ test('samples waiting for the user are rated from the list with one press and an
   await waitFor(() => expect(posted).toEqual({ action: 'exploration_trial_rate', baseId: 'buzz', id: 'T-031', verdict: 'fail', comment: '話者が変' }));
   AWAITING.items = [];
 });
+
+test('a product sample shows its picture and a clear button to the product page', async () => {
+  AWAITING.items = [{ baseId: 'fc', baseTitle: 'キャッチー商品道場', id: 'T-041', label: '卓上真空成形機', body: '15万8000円', ref: 'https://item.rakuten.co.jp/ayard/mayku_formbox/', imageUrl: 'https://thumbnail.image.rakuten.co.jp/formbox.jpg', createdAt: '2026-11-18T20:24:33Z' }];
+  renderAt('');
+  expect(await screen.findByAltText('卓上真空成形機 の画像')).toHaveAttribute('src', 'https://thumbnail.image.rakuten.co.jp/formbox.jpg');
+  expect(screen.getByRole('link', { name: '商品ページを開く（item.rakuten.co.jp）' })).toHaveAttribute('href', 'https://item.rakuten.co.jp/ayard/mayku_formbox/');
+  AWAITING.items = [];
+});

@@ -296,6 +296,14 @@ function timelineOf(runs, events) {
 
 const VERDICT_LABEL = { pass: '合格', partial: '惜しい', fail: 'ボツ' };
 
+// Name the link by where it goes, so a product page reads as one.
+function linkLabel(url) {
+  let host = '';
+  try { host = new URL(url).hostname.replace(/^www\./, ''); } catch (error) { return 'リンクを開く'; }
+  if (/(^|\.)(rakuten\.co\.jp|amazon\.co\.jp|amazon\.com|shopping\.yahoo\.co\.jp|amzn\.to|a\.r10\.to|hb\.afl\.rakuten\.co\.jp)$/.test(host)) return '商品ページを開く（' + host + '）';
+  return 'リンクを開く（' + host + '）';
+}
+
 // Stage verdicts across several examples and send one batch. Leaving rows unselected is allowed.
 export function RateTrials({ items, onRate, onRateBatch, busyId, showBase = false }) {
   const [comments, setComments] = useState({});
@@ -317,7 +325,15 @@ export function RateTrials({ items, onRate, onRateBatch, busyId, showBase = fals
             {showBase && t.baseTitle && <Typography sx={{ fontSize: 11.5, color: V.accent, fontWeight: 800, mb: 0.3 }}>{t.baseTitle}</Typography>}
             <Typography sx={{ fontSize: 14.5, fontWeight: 800, lineHeight: 1.5 }}>{t.label}</Typography>
             {t.body && <Typography sx={{ fontSize: 14, lineHeight: 1.8, mt: 0.6, whiteSpace: 'pre-line', background: V.accentSoft, px: 1.2, py: 0.8 }}>{t.body}</Typography>}
-            {/^https?:\/\//.test(t.ref || '') && <Link href={t.ref} target="_blank" rel="noreferrer" sx={{ fontSize: 12, display: 'inline-block', mt: 0.4 }}>元の場所を開く</Link>}
+            {/^https:\/\//.test(t.imageUrl || '') && (
+              <Box component="img" src={t.imageUrl} alt={t.label + ' の画像'} loading="lazy" referrerPolicy="no-referrer"
+                sx={{ display: 'block', mt: 0.8, maxWidth: '100%', width: 240, maxHeight: 240, objectFit: 'contain', background: V.accentSoft, borderRadius: 1 }} />
+            )}
+            {/^https?:\/\//.test(t.ref || '') && (
+              <Button component="a" href={t.ref} target="_blank" rel="noreferrer" size="small" variant="outlined" sx={{ mt: 0.8 }}>
+                {linkLabel(t.ref)}
+              </Button>
+            )}
             <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mt: 1 }}>
               <TextField size="small" placeholder="一言（任意）：ここが嫌、など" value={comment} disabled={busy}
                 onChange={(event) => setComments((all) => ({ ...all, [key]: event.target.value }))}

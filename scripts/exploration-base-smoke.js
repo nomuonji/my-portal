@@ -313,10 +313,15 @@ test('a trial names its hypothesis and prediction before the user rates it', asy
   await assert.rejects(store.recordTrials({ baseId: 'test-base', runId, trials: [{ label: 'Rated at birth', hypothesisIds: ['H-001'], predictedPass: 0.5, rating: { verdict: 'pass', userWords: 'ok' } }] }), /only for backfill/);
   const recorded = await store.recordTrials({ baseId: 'test-base', runId, trials: [
     { label: 'Sample A', body: 'text A', ref: 'out-a', hypothesisIds: ['H-001'], predictedPass: 0.7 },
-    { label: 'Sample B', ref: 'out-b', hypothesisIds: ['H-001', 'H-002'], predictedPass: 0.6 },
+    { label: 'Sample B', ref: 'https://item.rakuten.co.jp/shop/b/', imageUrl: 'https://thumbnail.image.rakuten.co.jp/b.jpg', hypothesisIds: ['H-001', 'H-002'], predictedPass: 0.6 },
   ] });
   assert.deepEqual(recorded.created.map((t) => t.id), ['T-001', 'T-002']);
   assert.equal(recorded.loop.awaiting, 2);
+  await assert.rejects(store.recordTrials({ baseId: 'test-base', runId, trials: [{ label: 'Bad image', imageUrl: 'javascript:alert(1)', hypothesisIds: ['H-001'], predictedPass: 0.5 }] }), /imageUrl must be a public https URL/);
+  const waiting = await store.awaitingTrials({});
+  const sampleB = waiting.items.find((t) => t.id === 'T-002');
+  assert.equal(sampleB.imageUrl, 'https://thumbnail.image.rakuten.co.jp/b.jpg', 'the picture reaches the rating card');
+  assert.equal(sampleB.ref, 'https://item.rakuten.co.jp/shop/b/');
   const again = await store.recordTrials({ baseId: 'test-base', runId, trials: [{ label: 'Sample A', ref: 'out-a', hypothesisIds: ['H-001'], predictedPass: 0.7 }] });
   assert.deepEqual(again.skipped, [{ ref: 'out-a', id: 'T-001' }], 'the same output is not recorded twice');
 
