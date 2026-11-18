@@ -57,6 +57,12 @@ function text(value, max, label, required) {
   if (required && !result) throw new Error(label + ' is required');
   return result;
 }
+// Optional picture of a sample (product photo, thumbnail). Only public HTTPS URLs are kept.
+function imageUrl(value) {
+  const url = text(value, 1000, 'trial.imageUrl', false);
+  if (url && !/^https:\/\/[^\s]+$/.test(url)) throw new Error('trial.imageUrl must be a public https URL');
+  return url;
+}
 function list(value, maxItems, maxLength) {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.map((item) => text(item, maxLength, 'array item', false)).filter(Boolean))].slice(0, maxItems);
@@ -1206,7 +1212,7 @@ function createStore(options) {
           methodVersion: (backfill && text(raw.methodVersion, 60, 'trial.methodVersion', false)) || base.method?.version || null,
           version: backfill && Number.isInteger(raw.version) ? raw.version : (backfill && raw.version === null ? null : (base.method?.bodyRef?.versionNumber ?? null)),
           label: text(raw.label, 300, 'trial.label', true), body: text(raw.body, 4000, 'trial.body', false),
-          ref: text(raw.ref, 600, 'trial.ref', false), hypothesisIds, sourceIds: list(raw.sourceIds, 10, 20),
+          ref: text(raw.ref, 600, 'trial.ref', false), imageUrl: imageUrl(raw.imageUrl), hypothesisIds, sourceIds: list(raw.sourceIds, 10, 20),
           predictedPass: predicted, predictionNote: text(raw.predictionNote, 600, 'trial.predictionNote', false),
           ...(editorialScreen ? { format: editorialScreen.format, editorialScreen } : {}),
           status: 'awaiting', verdict: null, createdAt: (backfill && text(raw.shownAt, 40, 'trial.shownAt', false)) || at,
@@ -1304,7 +1310,7 @@ function createStore(options) {
     const items = snap.docs.map((doc) => doc.data()).filter((t) => titles.has(t.baseId))
       .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
       .slice(0, max)
-      .map((t) => ({ baseId: t.baseId, baseTitle: titles.get(t.baseId), id: t.id, label: t.label, body: t.body || '', ref: t.ref || '', createdAt: t.createdAt, version: t.version ?? null }));
+      .map((t) => ({ baseId: t.baseId, baseTitle: titles.get(t.baseId), id: t.id, label: t.label, body: t.body || '', ref: t.ref || '', imageUrl: t.imageUrl || '', createdAt: t.createdAt, version: t.version ?? null }));
     return { items, count: items.length };
   }
 

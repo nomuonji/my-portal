@@ -284,7 +284,8 @@ const tools = [
             properties: {
               label: string('Short name of the sample (first words of the post, the keyword, the title).', 300),
               body: string('The sample itself, as shown.', 4000),
-              ref: string('Where the sample lives (Output ID, haul ref, URL). Used to avoid recording it twice.', 600),
+              ref: string('Where the sample lives (Output ID, haul ref, URL). Used to avoid recording it twice. An https URL is shown to the user as a link button on the rating card: for a product, pass the product page URL here.', 600),
+              imageUrl: string('Optional public https URL of a picture the user needs to judge the sample (product photo, thumbnail). Shown on the rating card. Pass it for every product sample.', 1000),
               hypothesisIds: strings('H-nnn this sample tests. Required unless backfill.', 10),
               sourceIds: strings('S-nnn the material came from.', 10),
               predictedPass: { type: 'number', minimum: 0, maximum: 1, description: 'Chance the user passes it, stated before showing. Required unless backfill.' },
