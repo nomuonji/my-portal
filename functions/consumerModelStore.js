@@ -196,4 +196,67 @@ async function seedFiles(_input={},database=db()){
   const s=await database.collection(SEED_FILES).get();
   return {files:s.docs.map(d=>{const {rawJson,...metadata}=d.data();return metadata;}),note:'Repository seed material only; local SQLite state not yet verified.'};
 }
-module.exports={list,get,seedFiles,migrationStatus,importSnapshot,validateRecords,copyExactly,encode,loadSnapshot};
+
+// Consumer model authorship belongs to My Portal. All edits create immutable versions.
+async function save(input={},database=db()){
+  if(input.confirm!==true)throw new Error('Explicit model registration/change approval required');
+  const raw=input.model;
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('model is required');
+  const id=assertId(raw.id);
+  if(!VERSION.test(raw.version||'')||!String(raw.name||'').trim()||!String(raw.summary||'').trim()||!raw.definition||!Array.isArray(raw.variables)||!raw.variables.length||!Array.isArray(raw.researchProcedure)||!raw.researchProcedure.length)throw new Error('Model needs version, name, summary, definition, variables and research procedure');
+  if(!['active','paused','archived'].includes(raw.status))throw new Error('Invalid status');
+  if((raw.personas||[]).some(p=>p.isComposite!==true))throw new Error('Only composite personas allowed');
+  if((raw.seeds||[]).some(s=>!s.template?.includes('{item}')))throw new Error('Angles need {item}');
+  if((raw.searchEvidence||[]).some(e=>!e.keyword||!['self','surrounding','unknown'].includes(e.side)||!e.source||!e.measuredAt))throw new Error('Search evidence needs provenance and side');
+  if((raw.voices||[]).some(v=>!v.url||!v.observedAt||!v.quote||v.quote.length>125||!['fits','partial','contradicts'].includes(v.fit)))throw new Error('Voice needs provenance, fit and short quote');
+  const aliasIds=[...new Set(raw.aliases||[])];
+  if(aliasIds.length>10||aliasIds.includes(id))throw new Error('Invalid aliases');
+  aliasIds.forEach(assertId);
+  const ref=database.collection(ROOT).doc(id), versionRef=ref.collection('versions').doc(raw.version);
+  const timestamp=new Date().toISOString();
+  const result=await database.runTransaction(async tx=>{
+    const [current,frozen,ownAlias]=await Promise.all([tx.get(ref),tx.get(versionRef),tx.get(database.collection(ALIASES).doc(id))]);
+    const previous=current.exists?current.data():null;
+    if(ownAlias.exists)throw new Error('Model id collides with alias');
+    if(previous&&input.expectedRevision!==previous.revision)throw new Error('Revision mismatch');
+    if(!previous&&input.expectedRevision!=null)throw new Error('Model does not exist');
+    if(frozen.exists)throw new Error('Version already exists; choose a new version');
+    const changeReason=String(input.changeReason||'').trim();
+    if(!changeReason)throw new Error('changeReason required');
+    const oldAliases=previous?.aliases||[];
+    const checks=[];
+    for(const alias of new Set([...aliasIds,...oldAliases])){
+      const ar=database.collection(ALIASES).doc(assertId(alias));
+      const [as,ms]=await Promise.all([tx.get(ar),tx.get(database.collection(ROOT).doc(alias))]);
+      if(as.exists&&as.data().modelId!==id)throw new Error('Alias owned by another model');
+      if(aliasIds.includes(alias)&&ms.exists)throw new Error('Alias collides with model');
+      checks.push({alias,ar,as});
+    }
+    const model={...raw,id,slug:id,aliases:aliasIds,revision:(previous?.revision||0)+1,createdAt:previous?.createdAt||timestamp,updatedAt:timestamp,updatedBy:'my-portal',provenance:{...(raw.provenance||{}),lastChangeReason:changeReason}};
+    tx.set(ref,model);tx.set(versionRef,{...model,frozenAt:timestamp,changeReason});
+    for(const {alias,ar,as} of checks){if(aliasIds.includes(alias))tx.set(ar,{alias,modelId:id,updatedAt:timestamp});else if(as.exists)tx.delete(ar);}
+    return model;
+  });
+  const checked=await ref.get();
+  if(!checked.exists||encode(checked.data())!==encode(result))throw new Error('Model readback mismatch');
+  return result;
+}
+async function registerFlappe(database=db()){
+  const ref=database.collection(ROOT).doc('flappe-consumer');
+  const current=await ref.get();
+  if(current.exists)return {id:'flappe-consumer',version:current.data().version,status:'already registered'};
+  const s=await database.collection('ideas').doc('4rOs0nAOiXGuUjJZO7UW').get();
+  if(!s.exists||s.data().type!=='consumer-model-registration-staging'||s.data().attributes?.registrationKey!=='flappe-consumer-0.1')throw new Error('Missing approved flappe model staging');
+  const model=JSON.parse(s.data().attributes.payloadJson);
+  if(model.id!=='flappe-consumer'||model.version!=='0.1')throw new Error('Unexpected registration payload');
+  return save({confirm:true,model,changeReason:'Owner-requested original article-based unvalidated audience model'},database);
+}
+async function recordLegacyWaiver(database=db()){
+  const ref=database.collection(MIGRATIONS).doc(MIGRATION_ID);
+  await database.runTransaction(async tx=>{
+    const s=await tx.get(ref);if(!s.exists||!s.data().firestoreSnapshotVerified)throw new Error('Initial migration not verified');
+    if(!s.data().legacySqliteRequirementWaived)tx.set(ref,{...s.data(),legacySqliteRequirementWaived:true,legacySqliteDecision:'2026-11-18 owner approved treating unverified local SQLite as legacy; preserve originals, no claim of row-level migration'});
+  });
+}
+
+module.exports={list,get,seedFiles,migrationStatus,importSnapshot,validateRecords,copyExactly,encode,loadSnapshot,save,registerFlappe,recordLegacyWaiver};

@@ -32,3 +32,6 @@ The importer does not support merging with pre-existing divergent records.
   before changing the World Home route and retiring old write access.
 - Do not delete originals until verified cutover; retain an inert rollback snapshot.
 - The new UI and MCP are read-only research access during migration, not proof of cutover.
+
+## Owner-approved scope revision (2026-11-18)
+The unverified local SQLite rows are legacy and no longer a blocking requirement. Preserve them if available; do not claim their contents were copied. Future model authoring uses My Portal's revision-checked save and immutable versions. The approved flappe-consumer v0.1 is seeded from a private DB staging record; it is an unvalidated interpretation of a single anonymous article, not demographic evidence. Keywords cutover remains a separate verified step.
