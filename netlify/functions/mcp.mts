@@ -489,6 +489,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
   if (name === "agent_profile_list") return structured(await agentIntelligenceRegistry.listProfiles(args));
   if (name === "agent_profile_get") return structured(await agentIntelligenceRegistry.getProfile(args));
   if (name === "agent_profile_version_create") return structured(await agentIntelligenceRegistry.createProfileVersion(args));
+  if (name === "consumer_model_save") return structured(await consumerModels.save(args));
   if (name === "consumer_model_list") return structured(await consumerModels.list(args));
   if (name === "consumer_model_get") return structured(await consumerModels.get(args));
   if (name === "consumer_model_seed_files") return structured(await consumerModels.seedFiles(args));
