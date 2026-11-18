@@ -26,3 +26,8 @@ run(process.execPath, ['scripts/turso-transaction-smoke.js']);
 // Windows, so invoke it without a shell. npm is a command shim on Windows and
 // needs the shell to resolve npm.cmd from PATH.
 run('npm', ['run', 'build'], { shell: process.platform === 'win32' });
+
+// Explicit, one-time, production-only import authorized by the owner. No source deletion or cutover.
+if (process.env.CONTEXT === 'production' && process.env.CONSUMER_MODEL_SNAPSHOT_IMPORT === '2026-11-18') {
+  run(process.execPath, ['scripts/consumer-model-migration.js']);
+}

@@ -90,6 +90,7 @@ import GlobalFlashcardManagement from './components/GlobalFlashcardManagement';
 import PublicCms from './components/PublicCms';
 import CharacterLibrary from './components/CharacterLibrary';
 import ExplorationBases from './components/ExplorationBases';
+import ConsumerModels from './components/ConsumerModels';
 import Submarines from './components/Submarines';
 import PageErrorBoundary from './components/PageErrorBoundary';
 import Outputs from './components/Outputs';
@@ -179,6 +180,7 @@ function App() {
     if (path.startsWith('/social-archive')) return 'X投稿アーカイブ';
     if (path.startsWith('/public-cms')) return 'Public CMS';
     if (path.startsWith('/characters')) return 'キャラクターDB';
+    if (path.startsWith('/consumer-models')) return 'Consumer Models';
     if (path.startsWith('/exploration')) return 'スキル錬成道場';
     if (path.startsWith('/submarines')) return 'Project Submarine';
     if (path.startsWith('/outputs')) return 'アウトプットDB';
@@ -388,6 +390,7 @@ function App() {
       items: [
         { to: '/dashboard', label: 'Agent HQ', hint: '実行キュー / Agents / 再開地点', icon: <DashboardIcon /> },
         { to: '/meta', label: 'プロジェクト提案', hint: '戦略・次の一手', icon: <MetaIcon /> },
+        { to: '/consumer-models', label: 'Consumer Models', hint: '消費者の考え方・人物像・市場観測・版履歴', icon: <ExplorationIcon /> },
         { to: '/exploration', label: 'スキル錬成道場', hint: '鍛えているスキルと版 / ゴール / 見立て / 情報源 / 経過', icon: <ExplorationIcon /> },
         { to: '/agent-ideas', label: 'Agent Ideas', hint: 'Portalと同じ構造でAIが補充', icon: <SmartToyIcon /> },
         { to: '/cleanup', label: '削除センター', hint: 'アーカイブ・停止済みレコードの完全削除', icon: <CleanupIcon /> },
@@ -634,6 +637,7 @@ function App() {
                 <Route path="/curation-sources" element={<Navigate to="/submarines" replace />} />
                 <Route path="/jobs/*" element={<Navigate to="/submarines?sub=job-db" replace />} />
                 <Route path="/submarines" element={<Submarines />} />
+                <Route path="/consumer-models" element={<ConsumerModels />} />
                 <Route path="/exploration" element={<ExplorationBases />} />
                 <Route path="/outputs" element={<Outputs />} />
                 <Route path="/cleanup" element={<CleanupCenter />} />
