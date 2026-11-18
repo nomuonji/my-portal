@@ -296,6 +296,17 @@ function timelineOf(runs, events) {
 
 const VERDICT_LABEL = { pass: '合格', partial: '惜しい', fail: 'ボツ' };
 
+// Pictures a card shows: the sample's imageUrl, then any image URLs written in its body.
+const IMAGE_URL = /https:\/\/[^\s"'<>()]+?\.(?:jpe?g|png|webp|gif|avif)(?:\?[^\s"'<>()]*)?/gi;
+export function cardImages(trial) {
+  const urls = [trial.imageUrl, ...String(trial.body || '').match(IMAGE_URL) || []]
+    .filter((url) => /^https:\/\//.test(url || ''));
+  return [...new Set(urls)].slice(0, 4);
+}
+function bodyWithoutImages(body) {
+  return String(body || '').replace(IMAGE_URL, '').replace(/[ \t]+\n/g, '\n').trim();
+}
+
 // Name the link by where it goes, so a product page reads as one.
 function linkLabel(url) {
   let host = '';
@@ -324,11 +335,17 @@ export function RateTrials({ items, onRate, onRateBatch, busyId, showBase = fals
           <Box key={key} sx={{ py: 1.6, borderBottom: '1px solid ' + V.rule }}>
             {showBase && t.baseTitle && <Typography sx={{ fontSize: 11.5, color: V.accent, fontWeight: 800, mb: 0.3 }}>{t.baseTitle}</Typography>}
             <Typography sx={{ fontSize: 14.5, fontWeight: 800, lineHeight: 1.5 }}>{t.label}</Typography>
-            {t.body && <Typography sx={{ fontSize: 14, lineHeight: 1.8, mt: 0.6, whiteSpace: 'pre-line', background: V.accentSoft, px: 1.2, py: 0.8 }}>{t.body}</Typography>}
-            {/^https:\/\//.test(t.imageUrl || '') && (
-              <Box component="img" src={t.imageUrl} alt={t.label + ' の画像'} loading="lazy" referrerPolicy="no-referrer"
-                sx={{ display: 'block', mt: 0.8, maxWidth: '100%', width: 240, maxHeight: 240, objectFit: 'contain', background: V.accentSoft, borderRadius: 1 }} />
+            {cardImages(t).length > 0 && (
+              <Stack direction="row" gap={1} sx={{ mt: 0.8, flexWrap: 'wrap' }}>
+                {cardImages(t).map((src, index) => (
+                  <Box key={src} component="a" href={src} target="_blank" rel="noreferrer" sx={{ display: 'block', lineHeight: 0 }}>
+                    <Box component="img" src={src} alt={t.label + ' の画像' + (index ? ' ' + (index + 1) : '')} loading="lazy" referrerPolicy="no-referrer"
+                      sx={{ maxWidth: '100%', width: 240, maxHeight: 240, objectFit: 'contain', background: V.accentSoft, borderRadius: 1 }} />
+                  </Box>
+                ))}
+              </Stack>
             )}
+            {bodyWithoutImages(t.body) && <Typography sx={{ fontSize: 14, lineHeight: 1.8, mt: 0.6, whiteSpace: 'pre-line', background: V.accentSoft, px: 1.2, py: 0.8 }}>{bodyWithoutImages(t.body)}</Typography>}
             {/^https?:\/\//.test(t.ref || '') && (
               <Button component="a" href={t.ref} target="_blank" rel="noreferrer" size="small" variant="outlined" sx={{ mt: 0.8 }}>
                 {linkLabel(t.ref)}
