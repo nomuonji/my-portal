@@ -582,24 +582,75 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
     // MCP Apps may cache tools/list. Keep the established tool name and
     // route a reserved, read-only dojo prefix to a small server-side projection.
     if (args.projectId === "dojo:__queue" || args.projectId === "dojo:__dispatch") {
-      const listed = await explorationBaseStore.list({ status: "active" });
-      const bases: any[] = listed.items || [];
       const queue = args.projectId === "dojo:__queue";
-      const candidates = bases.filter(b => queue ? (b.loop?.awaiting ?? 0) > 0 : !b.openRunId && !(b.loop?.awaiting ?? 0) && (b.awaitingCount ?? 0) < 5);
-      candidates.sort((a,b) => queue ? (b.loop?.awaiting ?? 0) - (a.loop?.awaiting ?? 0) || a.id.localeCompare(b.id) : Number((b.loop?.failStreak ?? 0) >= 3) - Number((a.loop?.failStreak ?? 0) >= 3) || (a.loop?.currentRated ?? 0) - (b.loop?.currentRated ?? 0) || String(a.updatedAt || "").localeCompare(String(b.updatedAt || "")) || a.id.localeCompare(b.id));
-      const selected: any[] = [], releases = new Set<string>();
-      for (const b of candidates) {
-        const key = b.target ? b.target.kind + ":" + b.target.id : b.id;
-        if (!queue && releases.has(key)) continue;
-        selected.push(b); releases.add(key);
-        if (selected.length >= 3) break;
+      const [listed, fleetResult] = await Promise.all([
+        explorationBaseStore.list({ status: "active" }),
+        submarineStore.list({ status: "active" }).then((value:any)=>({value,error:null})).catch((error:any)=>({value:null,error:String(error?.message || error).slice(0,200)})),
+      ]);
+      if (!queue && fleetResult.error) return structured({tasks:[],blocked:[],errors:["潜水艦の状態を取得できません: "+fleetResult.error],limit:3,readOnly:true});
+      const fleet = fleetResult.value || {};
+      const bases: any[] = listed.items || [], ships: any[] = (fleet.items || []).filter((s: any) => (s.loadout || []).some((g: any) => bases.some(b => b.id === g.dojoId)));
+      const linked = (b: any) => ships.filter(s => (s.loadout || []).some((g: any) => g.dojoId === b.id));
+      const errors: string[] = fleetResult.error ? ["潜水艦: "+fleetResult.error] : [];
+      const blocked: any[] = [];
+      await Promise.all(ships.map(async s => {
+        try {Object.assign(s,await submarineStore.workspaceStatus({id:s.id}))}
+        catch(err:any){s.statusUnavailable=true;errors.push(s.id+": "+String(err?.message || err).slice(0,200))}
+      }));
+      const stale = (b: any) => !!b.openRunId && Number.isFinite(Date.parse(b.updatedAt || "")) && Date.now() - Date.parse(b.updatedAt) >= 2 * 60 * 60 * 1000;
+      const candidates = bases.filter(b => {
+        if (queue) return (b.loop?.awaiting ?? 0) > 0;
+        const waiting = linked(b).filter(s => s.statusUnavailable || (s.candidateCount || 0) >= 5 || s.openSortieId);
+        const reason = waiting.length ? waiting.map(s => s.name + "（" + (s.statusUnavailable ? "正本確認不能" : s.openSortieId ? "出航中" : s.candidateCount + "件評価待ち") + "）").join(" / ") :
+          (b.loop?.awaiting ?? 0) > 0 ? "見本の評価待ち" : (b.awaitingCount ?? 0) >= 5 ? "成果の確認待ち" : b.openRunId && !stale(b) ? "実行中 " + b.openRunId : "";
+        if (reason) blocked.push({id:b.id,title:b.title,reason});
+        return !reason;
+      });
+      candidates.sort((a,b) => queue ? (b.loop?.awaiting ?? 0) - (a.loop?.awaiting ?? 0) || a.id.localeCompare(b.id) :
+        Number(stale(b)) - Number(stale(a)) || Number((b.loop?.failStreak ?? 0) >= 3) - Number((a.loop?.failStreak ?? 0) >= 3) ||
+        (a.loop?.currentRated ?? 0) - (b.loop?.currentRated ?? 0) || String(a.updatedAt || "").localeCompare(String(b.updatedAt || "")) || a.id.localeCompare(b.id));
+      if (queue) {
+        const selected = candidates.slice(0, 3);
+        const results = await Promise.allSettled(selected.map(b => invokeTool("portal_workspace_contexts", {projectId:"dojo:"+b.id})));
+        const entries = results.flatMap((r,i) => r.status === "fulfilled" && r.value.structuredContent?.dojo ? [{ ...r.value.structuredContent.dojo, snapshot:{revision:selected[i].revision,target:selected[i].target,methodVersion:selected[i].methodVersion} }] : []);
+        results.forEach((r,i) => {if (r.status === "rejected") errors.push(selected[i].id + ": " + String(r.reason?.message || r.reason).slice(0,200))});
+        // Fetch only a bounded preview per ship; use the canonical actions, not trial verdicts.
+        const pending = ships.filter(s => (s.candidateCount || 0) > 0);
+        const hauls = await Promise.allSettled(pending.map(s => s.statusUnavailable ? Promise.reject(new Error("正本確認不能")) : submarineStore.haulList({submarineId:s.id,status:"candidate",limit:6})));
+        const haulGroups = hauls.flatMap((r,i) => {
+          const s = pending[i];
+          if (r.status === "rejected") {errors.push(s.id + ": " + String(r.reason?.message || r.reason).slice(0,200));return []}
+          const actions = r.value.actionsBySubmarine?.[s.id] || [];
+          const items = (r.value.items || []).map((h: any) => {
+            const record = h.record || {}, details = h.details || {};
+            const parts = [record.summary || details.summary || h.evidence || "", record.reward ? "報酬: "+record.reward : "", record.reason || details.why ? "理由: "+(record.reason || details.why) : "", record.bridge || details.bridge || "", record.firstStep || details.firstStep || "", record.weakness || details.caution ? "注意: "+(record.weakness || details.caution) : "", ...(Array.isArray(record.details) ? record.details.map((d:any)=>String(d.label || "")+": "+String(d.value || "")) : [])].filter(Boolean);
+            return {id:h.id,label:String(h.label || record.title || h.id).slice(0,300),body:parts.join("\n\n").slice(0,4000),ref:String(record.url || h.url || "").slice(0,1600),imageUrl:String(record.thumbnail || record.imageUrl || details.imageUrl || h.imageUrl || "").slice(0,2000),stateLabel:String(record.stateLabel || "").slice(0,80),lastAction:h.feedback?.[0]?.action || null};
+          });
+          return [{id:s.id,title:s.name || s.id,dojoIds:(s.loadout || []).map((g:any)=>g.dojoId).filter(Boolean),count:r.value.total ?? s.candidateCount,actions,items}];
+        });
+        const counts = new Map(haulGroups.map((g:any)=>[g.id,g.count]));
+        return structured({ entries, haulGroups, errors, totalAwaiting:bases.reduce((n,b)=>n+(b.loop?.awaiting ?? 0),0), totalHaulAwaiting:pending.reduce((n,s)=>n+Number(counts.get(s.id) ?? s.candidateCount ?? 0),0), pendingOutcomes:bases.filter(b=>(b.awaitingCount ?? 0)>0).map(b=>({id:b.id,title:b.title,count:b.awaitingCount})) });
       }
-      const results = await Promise.allSettled(selected.map(b => invokeTool("portal_workspace_contexts", {projectId:"dojo:"+b.id})));
-      const entries = results.flatMap((r,i) => r.status === "fulfilled" && r.value.structuredContent?.dojo ? [{ ...r.value.structuredContent.dojo, snapshot: {revision:selected[i].revision, target:selected[i].target, methodVersion:selected[i].methodVersion} }] : []);
-      const errors = results.flatMap((r,i) => r.status === "rejected" ? [selected[i].id + ": " + String(r.reason?.message || r.reason).slice(0,200)] : []);
-      if (queue) return structured({ entries, errors, totalAwaiting:bases.reduce((n,b)=>n+(b.loop?.awaiting ?? 0),0), pendingOutcomes:bases.filter(b=>(b.awaitingCount ?? 0)>0).map(b=>({id:b.id,title:b.title,count:b.awaitingCount})) });
-      const tasks = entries.filter(d=>!d.position.openRunId && !d.loop.awaiting.length && d.outcome.pendingCount < 5).map(d=>({baseId:d.base.id,title:d.base.title,snapshot:d.snapshot,mode:d.loop.gates.researchDueBeforeNextTrial?"research-first":d.loop.gates.usesTrials?"experiment":"measurement",current:d.loop.current,previous:d.loop.previous,nextActions:d.loop.nextActions,hypotheses:d.loop.refinement.hypotheses,warnings:d.warnings}));
-      return structured({ tasks, errors, generatedAt:new Date().toISOString(), limit:3, readOnly:true });
+      const tasks: any[] = [], releases = new Set<string>();
+      // Continue down the ranked list if a live gate invalidates a candidate.
+      for (const b of candidates) {
+        if (tasks.length >= 3) break;
+        const key = b.target ? b.target.kind + ":" + b.target.id : b.id;
+        if (releases.has(key)) continue;
+        try {
+          const liveShips = await Promise.all(linked(b).map(s => submarineStore.workspaceStatus({id:s.id})));
+          const waiting = liveShips.filter(s => s.candidateCount >= 5 || s.openSortieId);
+          if (waiting.length) {blocked.push({id:b.id,title:b.title,reason:waiting.map(w=>w.id).join(" / ")+"：評価待ち・出航中・正本確認不能"});continue}
+          const d = (await invokeTool("portal_workspace_contexts",{projectId:"dojo:"+b.id})).structuredContent?.dojo;
+          if (!d || d.loop.awaiting.length || d.outcome.pendingCount >= 5 || (d.position.openRunId && (!stale(b) || d.position.openRunId !== b.openRunId || d.base.revision !== b.revision))) {
+            blocked.push({id:b.id,title:b.title,reason:"最新ゲートで停止"});continue;
+          }
+          const mode = d.position.openRunId ? "resume" : d.loop.gates.researchDueBeforeNextTrial ? "research-first" : d.loop.gates.usesTrials ? "experiment" : "measurement";
+          tasks.push({baseId:d.base.id,title:d.base.title,snapshot:{revision:d.base.revision,target:b.target,methodVersion:d.method.version},mode,openRunId:d.position.openRunId,current:d.loop.current,previous:d.loop.previous,nextActions:d.loop.nextActions,hypotheses:d.loop.refinement.hypotheses,warnings:d.warnings});
+          releases.add(key);
+        } catch (err: any) {errors.push(b.id+": "+String(err?.message || err).slice(0,200))}
+      }
+      return structured({ tasks, blocked, errors, generatedAt:new Date().toISOString(), limit:3, readOnly:true });
     }
     if (args.projectId.startsWith("dojo:")) {
       const id = args.projectId.slice(5);
@@ -612,7 +663,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
       const outcome = d.outcome || {};
       const lastRun = d.position?.lastRuns?.[0] || null;
       const compact = {
-        base: { id: d.base?.id || id, title: d.base?.title || id, summary: String(d.base?.summary || "").slice(0, 1000) },
+        base: { id: d.base?.id || id, revision: d.base?.revision ?? null, title: d.base?.title || id, summary: String(d.base?.summary || "").slice(0, 1000) },
         outcome: {
           statement: String(outcome.statement || "").slice(0, 700),
           pendingCount: Array.isArray(outcome.awaitingConfirmation) ? outcome.awaitingConfirmation.length : 0,
