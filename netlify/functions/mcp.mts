@@ -385,7 +385,7 @@ async function ensureAgentData() {
   return { legacy, youtubeMethod };
 }
 
-async function invokeTool(name: string, args: Record<string, any> = {}) {
+async function invokeTool(name: string, args: Record<string, any> = {}): Promise<any> {
   ensureFirebaseAdmin();
 
   if (name === "portal_status") return structured(await portalStore.status());
