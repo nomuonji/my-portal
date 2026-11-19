@@ -583,19 +583,25 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
     // route a reserved, read-only dojo prefix to a small server-side projection.
     if (args.projectId === "dojo:__queue" || args.projectId === "dojo:__dispatch") {
       const queue = args.projectId === "dojo:__queue";
-      const [listed, fleet] = await Promise.all([
+      const [listed, fleetResult] = await Promise.all([
         explorationBaseStore.list({ status: "active" }),
-        submarineStore.list({ status: "active" }),
+        submarineStore.list({ status: "active" }).then((value:any)=>({value,error:null})).catch((error:any)=>({value:null,error:String(error?.message || error).slice(0,200)})),
       ]);
+      if (!queue && fleetResult.error) return structured({tasks:[],blocked:[],errors:["潜水艦の状態を取得できません: "+fleetResult.error],limit:3,readOnly:true});
+      const fleet = fleetResult.value || {};
       const bases: any[] = listed.items || [], ships: any[] = (fleet.items || []).filter((s: any) => (s.loadout || []).some((g: any) => bases.some(b => b.id === g.dojoId)));
       const linked = (b: any) => ships.filter(s => (s.loadout || []).some((g: any) => g.dojoId === b.id));
-      const errors: string[] = [];
+      const errors: string[] = fleetResult.error ? ["潜水艦: "+fleetResult.error] : [];
       const blocked: any[] = [];
+      await Promise.all(ships.map(async s => {
+        try {Object.assign(s,await submarineStore.workspaceStatus({id:s.id}))}
+        catch(err:any){s.statusUnavailable=true;errors.push(s.id+": "+String(err?.message || err).slice(0,200))}
+      }));
       const stale = (b: any) => !!b.openRunId && Number.isFinite(Date.parse(b.updatedAt || "")) && Date.now() - Date.parse(b.updatedAt) >= 2 * 60 * 60 * 1000;
       const candidates = bases.filter(b => {
         if (queue) return (b.loop?.awaiting ?? 0) > 0;
-        const waiting = linked(b).filter(s => (s.candidateCount || 0) >= 5 || s.openSortieId);
-        const reason = waiting.length ? waiting.map(s => s.name + "（" + (s.openSortieId ? "出航中" : s.candidateCount + "件評価待ち") + "）").join(" / ") :
+        const waiting = linked(b).filter(s => s.statusUnavailable || (s.candidateCount || 0) >= 5 || s.openSortieId);
+        const reason = waiting.length ? waiting.map(s => s.name + "（" + (s.statusUnavailable ? "正本確認不能" : s.openSortieId ? "出航中" : s.candidateCount + "件評価待ち") + "）").join(" / ") :
           (b.loop?.awaiting ?? 0) > 0 ? "見本の評価待ち" : (b.awaitingCount ?? 0) >= 5 ? "成果の確認待ち" : b.openRunId && !stale(b) ? "実行中 " + b.openRunId : "";
         if (reason) blocked.push({id:b.id,title:b.title,reason});
         return !reason;
@@ -610,7 +616,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
         results.forEach((r,i) => {if (r.status === "rejected") errors.push(selected[i].id + ": " + String(r.reason?.message || r.reason).slice(0,200))});
         // Fetch only a bounded preview per ship; use the canonical actions, not trial verdicts.
         const pending = ships.filter(s => (s.candidateCount || 0) > 0);
-        const hauls = await Promise.allSettled(pending.map(s => submarineStore.haulList({submarineId:s.id,status:"candidate",limit:6})));
+        const hauls = await Promise.allSettled(pending.map(s => s.statusUnavailable ? Promise.reject(new Error("正本確認不能")) : submarineStore.haulList({submarineId:s.id,status:"candidate",limit:6})));
         const haulGroups = hauls.flatMap((r,i) => {
           const s = pending[i];
           if (r.status === "rejected") {errors.push(s.id + ": " + String(r.reason?.message || r.reason).slice(0,200));return []}
@@ -632,9 +638,9 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
         const key = b.target ? b.target.kind + ":" + b.target.id : b.id;
         if (releases.has(key)) continue;
         try {
-          const liveShips = await Promise.all(linked(b).map(s => submarineStore.get({id:s.id,includeBodies:false})));
-          const waiting = liveShips.filter(s => (s.haul?.awaiting || []).length >= 5 || s.position?.openSortieId || (s.warnings || []).some((w:any)=>String(w).startsWith("Could not read the canonical store")));
-          if (waiting.length) {blocked.push({id:b.id,title:b.title,reason:waiting.map(w=>w.submarine?.name || "潜水艦").join(" / ")+"：評価待ち・出航中・正本確認不能"});continue}
+          const liveShips = await Promise.all(linked(b).map(s => submarineStore.workspaceStatus({id:s.id})));
+          const waiting = liveShips.filter(s => s.candidateCount >= 5 || s.openSortieId);
+          if (waiting.length) {blocked.push({id:b.id,title:b.title,reason:waiting.map(w=>w.id).join(" / ")+"：評価待ち・出航中・正本確認不能"});continue}
           const d = (await invokeTool("portal_workspace_contexts",{projectId:"dojo:"+b.id})).structuredContent?.dojo;
           if (!d || d.loop.awaiting.length || d.outcome.pendingCount >= 5 || (d.position.openRunId && (!stale(b) || d.position.openRunId !== b.openRunId || d.base.revision !== b.revision))) {
             blocked.push({id:b.id,title:b.title,reason:"最新ゲートで停止"});continue;
