@@ -91,6 +91,15 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
     userPass: screenedTrials.filter((t) => t.status === 'rated' && t.verdict === 'pass').length,
   };
   screening.passRate = rateOf(screening.userPass, screening.rated);
+  // Pass rate by the pre-registered closing type, so the two kinds of ending can be compared.
+  const closings = {};
+  screenedTrials.filter((t) => t.editorialScreen.closingType).forEach((t) => {
+    const row = closings[t.editorialScreen.closingType] || (closings[t.editorialScreen.closingType] = { submitted: 0, rated: 0, userPass: 0 });
+    row.submitted += 1;
+    if (t.status === 'rated') { row.rated += 1; if (t.verdict === 'pass') row.userPass += 1; }
+  });
+  Object.values(closings).forEach((row) => { row.passRate = rateOf(row.userPass, row.rated); });
+  if (Object.keys(closings).length) screening.byClosingType = closings;
 
   const byHypothesis = new Map();
   entries.forEach((e) => e.hypothesisIds.forEach((id) => byHypothesis.set(id, [...(byHypothesis.get(id) || []), e])));

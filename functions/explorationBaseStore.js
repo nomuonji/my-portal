@@ -1064,6 +1064,9 @@ function createStore(options) {
   // Existing MCP tool schemas may not yet expose editorialScreen. In that case
   // predictionNote accepts screen:v1:<compact JSON> with identical validation.
   const BUZZ_SCREEN_PREFIX = 'screen:v1:';
+  // derived_consequence: the last beat follows directly from the material.
+  // author_added: the author added an analogy, counterfactual, title or other device.
+  const BUZZ_CLOSING_TYPES = ['derived_consequence', 'author_added'];
   function cleanBuzzScreen(raw, sourceItems, previousTrials) {
     const note = text(raw.predictionNote, 600, 'trial.predictionNote', false);
     let packet = raw.editorialScreen;
@@ -1085,13 +1088,10 @@ function createStore(options) {
     if (rawBody.length < 25) {
       throw new Error('Buzz 道場: selected standalone text must be included in trial.body (25+ characters).');
     }
-    const predicted = Number(raw.predictedPass);
-    // An AI probability is not an independent verdict, but presenting its own
-    // <60% candidates as "quality-passed" wastes the user's limited reviews.
-    // This provisional cap is a pacing gate, not a claim of calibrated success.
-    if (!Number.isFinite(predicted) || predicted < 0.6) {
-      throw new Error('Buzz 道場: predictedPass below provisional pre-submission confidence floor 0.60; keep this candidate internal and improve sourcing, selection or review instead of sending it to the user.');
-    }
+    // predictedPass is an honest forecast, not a submission gate. The former 0.60 floor made every
+    // forecast 0.60-0.61 (R-104), so predictions could not tell passes from fails. Submission is now
+    // gated by the screen itself plus a pre-registered classification of how the post closes.
+    const closingType = oneOf(data.closingType, BUZZ_CLOSING_TYPES, 'editorialScreen.closingType');
     const pool = Array.isArray(data.pool) ? data.pool : [];
     if (pool.length < 3 || pool.length > 12) {
       throw new Error('Buzz 道場: compare 3-12 materially different candidates, and record why most were rejected before submitting one.');
@@ -1153,6 +1153,7 @@ function createStore(options) {
       readerQuote,
       distinctValue,
       strongestObjection,
+      closingType,
       candidateCount: pool.length,
       rejectedCount: rejected.length,
       sourceLaneCount: sourceIds.size,

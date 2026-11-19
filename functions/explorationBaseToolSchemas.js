@@ -272,7 +272,7 @@ const tools = [
   },
   {
     name: 'exploration_trial_record',
-    description: 'Record user-facing trials before presenting. Buzz-post dojo adds an enforced early rejection screen: 3+ candidate pool, 2+ rejected, 2+ observed sourcing lanes, accepted/rejected human-rated precedent, exact passage from the proposed copy, concrete hostile objection, and a provisional confidence floor of 0.60. Native quote practice is retired. Use editorialScreen or, from clients with the older MCP schema, screen:v1:<compact JSON> inside predictionNote (up to 600 characters). Other dojos are unchanged. A screen is an AI-only gate, NOT independent approval or a promise of engagement.',
+    description: 'Record user-facing trials before presenting. Buzz-post dojo adds an enforced early rejection screen: 3+ candidate pool, 2+ rejected, 2+ observed sourcing lanes, accepted/rejected human-rated precedent, exact passage from the proposed copy, concrete hostile objection, and a pre-registered closingType (derived_consequence = the last beat follows directly from the material; author_added = the author added an analogy, counterfactual, title or similar). predictedPass is an honest forecast and no longer gates submission. Native quote practice is retired. Use editorialScreen or, from clients with the older MCP schema, screen:v1:<compact JSON> inside predictionNote (up to 600 characters). Other dojos are unchanged. A screen is an AI-only gate, NOT independent approval or a promise of engagement.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -306,8 +306,9 @@ const tools = [
                   readerQuote: string('Exact 8+ character phrase present in the submitted text.', 120),
                   distinctValue: string('New reader payoff beyond source recap; 12+ characters.', 300),
                   strongestObjection: string('Strongest hostile reading from a skeptical reader; 12+ characters.', 300),
+                  closingType: { type: 'string', enum: ['derived_consequence', 'author_added'], description: 'How the post closes, classified before the user sees it: derived_consequence = follows directly from the material; author_added = an analogy, counterfactual, title or other device the author added.' },
                 },
-                required: ['format', 'pool', 'positiveCaseId', 'negativeCaseIds', 'readerQuote', 'distinctValue', 'strongestObjection'],
+                required: ['format', 'pool', 'positiveCaseId', 'negativeCaseIds', 'readerQuote', 'distinctValue', 'strongestObjection', 'closingType'],
                 additionalProperties: false,
               },
               version: { type: ['integer', 'null'], description: 'backfill only: skill/pack version that produced it.' },

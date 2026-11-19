@@ -562,11 +562,14 @@ test('buzz dojo blocks low-confidence, one-shot, invented-reference or unscreene
     positiveCaseId: 'T-001', negativeCaseIds: ['T-002', 'T-003'],
     readerQuote: '予想外の二段目が', distinctValue: '単なる出典紹介でなく、当事者の事情への新しい見え方がある',
     strongestObjection: '作者の説明を外すと読み手に二段目の具体像が伝わらないかもしれない',
+    closingType: 'derived_consequence',
   };
   const trial = { label: 'Novel standalone', body, sourceIds: ['S-001'], hypothesisIds: ['H-001'],
     predictedPass: 0.64, predictionNote: 'Tentative, not an externally verified verdict.' };
   await assert.rejects(store.recordTrials({ baseId, runId, trials: [trial] }), /screening packet is required/);
-  await assert.rejects(store.recordTrials({ baseId, runId, trials: [{ ...trial, predictedPass: 0.42, editorialScreen: audit }] }), /confidence floor 0.60/);
+  const { closingType, ...noClosing } = audit;
+  await assert.rejects(store.recordTrials({ baseId, runId, trials: [{ ...trial, editorialScreen: noClosing }] }), /closingType is required/);
+  await assert.rejects(store.recordTrials({ baseId, runId, trials: [{ ...trial, editorialScreen: { ...audit, closingType: 'punchline' } }] }), /closingType must be one of/);
   await assert.rejects(store.recordTrials({ baseId, runId, trials: [{ ...trial, editorialScreen: { ...audit, format: 'quote' } }] }), /standalone/);
   await assert.rejects(store.recordTrials({ baseId, runId, trials: [{ ...trial, editorialScreen: { ...audit, positiveCaseId: 'T-003' } }] }), /real user-accepted previous text/);
   await assert.rejects(store.recordTrials({ baseId, runId, trials: [{ ...trial, editorialScreen: { ...audit, negativeCaseIds: ['T-002','T-999'] } }] }), /two real rejected texts/);
@@ -574,7 +577,7 @@ test('buzz dojo blocks low-confidence, one-shot, invented-reference or unscreene
   await assert.rejects(store.recordTrials({ baseId, runId, trials: [{ ...trial, editorialScreen: { ...audit, pool: audit.pool.map(x => ({ ...x, sourceId: 'S-001' })) } }] }), /two observed source lanes/);
   const envelope = 'screen:v1:' + JSON.stringify(audit);
   assert.ok(envelope.length <= 600, 'old MCP clients must have a usable envelope');
-  const accepted = await store.recordTrials({ baseId, runId, trials: [{ ...trial, predictionNote: envelope }] });
+  const accepted = await store.recordTrials({ baseId, runId, trials: [{ ...trial, predictedPass: 0.35, predictionNote: envelope }] });
   assert.equal(accepted.created.length, 1);
   assert.equal(accepted.loop.screening.considered, 3);
   assert.equal(accepted.loop.screening.rejectedBeforeUser, 2);
@@ -582,11 +585,14 @@ test('buzz dojo blocks low-confidence, one-shot, invented-reference or unscreene
   const t = full.full.trials.find(t => t.id === accepted.created[0].id);
   assert.equal(t.editorialScreen.format, 'standalone');
   assert.equal(t.editorialScreen.reviewer, 'agent_screen_only_unverified');
+  assert.equal(t.editorialScreen.closingType, 'derived_consequence');
+  assert.equal(t.predictedPass, 0.35, 'an honest low forecast is no longer refused');
   await store.rateTrials({ baseId, ratings: [{ id: t.id, verdict: 'fail', userWords: 'ボツ' }] });
   const after = await store.get({ id: baseId });
   assert.deepEqual(after.loop.screening, {
     submitted: 1, considered: 3, rejectedBeforeUser: 2,
     rated: 1, userPass: 0, passRate: 0,
+    byClosingType: { derived_consequence: { submitted: 1, rated: 1, userPass: 0, passRate: 0 } },
   });
 });
 
