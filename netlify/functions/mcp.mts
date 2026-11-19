@@ -385,7 +385,7 @@ async function ensureAgentData() {
   return { legacy, youtubeMethod };
 }
 
-async function invokeTool(name: string, args: Record<string, any> = {}) {
+async function invokeTool(name: string, args: Record<string, any> = {}): Promise<any> {
   ensureFirebaseAdmin();
 
   if (name === "portal_status") return structured(await portalStore.status());
@@ -540,6 +540,12 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
     }));
     const dojos = (activeBases.items || []).map((b: any) => ({
       id: b.id,
+      revision: b.revision,
+      targetKind: b.target?.kind || null,
+      updatedAt: b.updatedAt || null,
+      currentRated: b.loop?.currentRated ?? 0,
+      currentPassRate: b.loop?.currentPassRate ?? null,
+      previousPassRate: b.loop?.previousPassRate ?? null,
       title: b.title,
       summary: b.summary,
       status: b.status,
@@ -575,6 +581,26 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
     }
     // MCP Apps may cache tools/list. Keep the established tool name and
     // route a reserved, read-only dojo prefix to a small server-side projection.
+    if (args.projectId === "dojo:__queue" || args.projectId === "dojo:__dispatch") {
+      const listed = await explorationBaseStore.list({ status: "active" });
+      const bases: any[] = listed.items || [];
+      const queue = args.projectId === "dojo:__queue";
+      const candidates = bases.filter(b => queue ? (b.loop?.awaiting ?? 0) > 0 : !b.openRunId && !(b.loop?.awaiting ?? 0) && (b.awaitingCount ?? 0) < 5);
+      candidates.sort((a,b) => queue ? (b.loop?.awaiting ?? 0) - (a.loop?.awaiting ?? 0) || a.id.localeCompare(b.id) : Number((b.loop?.failStreak ?? 0) >= 3) - Number((a.loop?.failStreak ?? 0) >= 3) || (a.loop?.currentRated ?? 0) - (b.loop?.currentRated ?? 0) || String(a.updatedAt || "").localeCompare(String(b.updatedAt || "")) || a.id.localeCompare(b.id));
+      const selected: any[] = [], releases = new Set<string>();
+      for (const b of candidates) {
+        const key = b.target ? b.target.kind + ":" + b.target.id : b.id;
+        if (!queue && releases.has(key)) continue;
+        selected.push(b); releases.add(key);
+        if (selected.length >= 3) break;
+      }
+      const results = await Promise.allSettled(selected.map(b => invokeTool("portal_workspace_contexts", {projectId:"dojo:"+b.id})));
+      const entries = results.flatMap((r,i) => r.status === "fulfilled" && r.value.structuredContent?.dojo ? [{ ...r.value.structuredContent.dojo, snapshot: {revision:selected[i].revision, target:selected[i].target, methodVersion:selected[i].methodVersion} }] : []);
+      const errors = results.flatMap((r,i) => r.status === "rejected" ? [selected[i].id + ": " + String(r.reason?.message || r.reason).slice(0,200)] : []);
+      if (queue) return structured({ entries, errors, totalAwaiting:bases.reduce((n,b)=>n+(b.loop?.awaiting ?? 0),0), pendingOutcomes:bases.filter(b=>(b.awaitingCount ?? 0)>0).map(b=>({id:b.id,title:b.title,count:b.awaitingCount})) });
+      const tasks = entries.filter(d=>!d.position.openRunId && !d.loop.awaiting.length && d.outcome.pendingCount < 5).map(d=>({baseId:d.base.id,title:d.base.title,snapshot:d.snapshot,mode:d.loop.gates.researchDueBeforeNextTrial?"research-first":d.loop.gates.usesTrials?"experiment":"measurement",current:d.loop.current,previous:d.loop.previous,nextActions:d.loop.nextActions,hypotheses:d.loop.refinement.hypotheses,warnings:d.warnings}));
+      return structured({ tasks, errors, generatedAt:new Date().toISOString(), limit:3, readOnly:true });
+    }
     if (args.projectId.startsWith("dojo:")) {
       const id = args.projectId.slice(5);
       if (!/^[a-z0-9-]{1,80}$/.test(id)) throw new Error("Invalid dojo ID");
@@ -619,6 +645,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}) {
             id: t.id, label: String(t.label || "").slice(0, 300),
             body: String(t.body || "").slice(0, 4000),
             ref: String(t.ref || "").slice(0, 600),
+            imageUrl: String(t.imageUrl || "").slice(0, 2000),
           })),
           gates: {
             researchDueBeforeNextTrial: !!loop.gates?.researchDueBeforeNextTrial,
@@ -936,7 +963,7 @@ async function handleRpc(message: any) {
           uri: workspaceApp.UI_URI,
           mimeType: "text/html;profile=mcp-app",
           text: workspaceApp.UI_HTML,
-          _meta: { "openai/ui": { preferredDisplayMode: "fullscreen", availableDisplayModes: ["inline", "fullscreen"] } },
+          _meta: { ui: { csp: { resourceDomains: workspaceApp.IMAGE_DOMAINS } }, "openai/widgetCSP": { resource_domains: workspaceApp.IMAGE_DOMAINS }, "openai/ui": { preferredDisplayMode: "fullscreen", availableDisplayModes: ["inline", "fullscreen"] } },
         }],
       },
     };
