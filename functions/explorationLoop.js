@@ -130,7 +130,7 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
   scoreboard.filter((h) => h.status === 'open' && h.rated >= LIMITS.hypothesisMinTrials && h.pass === 0)
     .forEach((h) => nextActions.push(h.id + ' は ' + h.rated + ' 回試して合格 0。棄却する（exploration_item_upsert status=rejected）。'));
   scoreboard.filter((h) => h.status === 'open' && h.rated >= LIMITS.hypothesisMinTrials && h.passRate >= 0.6)
-    .forEach((h) => nextActions.push(h.id + ' は合格率 ' + Math.round(h.passRate * 100) + '%（' + h.rated + ' 回）。勝ち筋としてスキル本文に入れる候補。'));
+    .forEach((h) => nextActions.push(h.id + ' は合格率 ' + Math.round(h.passRate * 100) + '%（' + h.rated + ' 回）。勝ち筋の候補。本文に入れるなら、既存の規則を書き換え・統合して入れる（末尾への追記はしない）。'));
   if (usesTrials && !canRelease) nextActions.push('いまの版の評価は ' + current.rated + ' 件。' + LIMITS.minRatedPerVersion + ' 件たまるまで版を上げない。');
   if (previous && current.rated >= LIMITS.minRatedPerVersion && current.passRate < previous.passRate) {
     nextActions.push('いまの版の合格率 ' + Math.round(current.passRate * 100) + '% は、前の版 ' + previous.version + ' の ' + Math.round(previous.passRate * 100) + '% を下回っている。増やした規則を疑う。');
