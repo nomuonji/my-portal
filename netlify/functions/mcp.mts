@@ -581,13 +581,28 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
     }
     // MCP Apps may cache tools/list. Keep the established tool name and
     // route a reserved, read-only dojo prefix to a small server-side projection.
-    if (args.projectId === "dojo:__queue" || args.projectId === "dojo:__dispatch") {
-      const queue = args.projectId === "dojo:__queue";
+    if (args.projectId === "dojo:__queue") {
+      // Review training trials only. Fleet haul stays on /submarines; no
+      // canonical fleet synchronization or haul reads are needed for this view.
+      const listed = await explorationBaseStore.list({ status: "active" });
+      const bases: any[] = listed.items || [];
+      const selected = bases.filter(b => (b.loop?.awaiting ?? 0) > 0)
+        .sort((a,b) => (b.loop?.awaiting ?? 0) - (a.loop?.awaiting ?? 0) || a.id.localeCompare(b.id)).slice(0,3);
+      const errors: string[] = [];
+      const results = await Promise.allSettled(selected.map(b => invokeTool("portal_workspace_contexts", {projectId:"dojo:"+b.id})));
+      const entries = results.flatMap((r,i) => r.status === "fulfilled" && r.value.structuredContent?.dojo ? [{ ...r.value.structuredContent.dojo, snapshot:{revision:selected[i].revision,target:selected[i].target,methodVersion:selected[i].methodVersion} }] : []);
+      results.forEach((r,i) => {
+        if (r.status === "rejected") errors.push(selected[i].id + ": " + String(r.reason?.message || r.reason).slice(0,200));
+        else if (!r.value.structuredContent?.dojo) errors.push(selected[i].id + ": 道場詳細を取得できません");
+      });
+      return structured({ entries, errors, totalAwaiting:bases.reduce((n,b)=>n+(b.loop?.awaiting ?? 0),0), pendingOutcomes:bases.filter(b=>(b.awaitingCount ?? 0)>0).map(b=>({id:b.id,title:b.title,count:b.awaitingCount})) });
+    }
+    if (args.projectId === "dojo:__dispatch") {
       const [listed, fleetResult] = await Promise.all([
         explorationBaseStore.list({ status: "active" }),
         submarineStore.list({ status: "active" }).then((value:any)=>({value,error:null})).catch((error:any)=>({value:null,error:String(error?.message || error).slice(0,200)})),
       ]);
-      if (!queue && fleetResult.error) return structured({tasks:[],blocked:[],errors:["潜水艦の状態を取得できません: "+fleetResult.error],limit:3,readOnly:true});
+      if (fleetResult.error) return structured({tasks:[],blocked:[],errors:["潜水艦の状態を取得できません: "+fleetResult.error],limit:3,readOnly:true});
       const fleet = fleetResult.value || {};
       const bases: any[] = listed.items || [], ships: any[] = (fleet.items || []).filter((s: any) => (s.loadout || []).some((g: any) => bases.some(b => b.id === g.dojoId)));
       const linked = (b: any) => ships.filter(s => (s.loadout || []).some((g: any) => g.dojoId === b.id));
@@ -599,38 +614,15 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
       }));
       const stale = (b: any) => !!b.openRunId && Number.isFinite(Date.parse(b.updatedAt || "")) && Date.now() - Date.parse(b.updatedAt) >= 2 * 60 * 60 * 1000;
       const candidates = bases.filter(b => {
-        if (queue) return (b.loop?.awaiting ?? 0) > 0;
         const waiting = linked(b).filter(s => s.statusUnavailable || (s.candidateCount || 0) >= 5 || s.openSortieId);
         const reason = waiting.length ? waiting.map(s => s.name + "（" + (s.statusUnavailable ? "正本確認不能" : s.openSortieId ? "出航中" : s.candidateCount + "件評価待ち") + "）").join(" / ") :
           (b.loop?.awaiting ?? 0) > 0 ? "見本の評価待ち" : (b.awaitingCount ?? 0) >= 5 ? "成果の確認待ち" : b.openRunId && !stale(b) ? "実行中 " + b.openRunId : "";
         if (reason) blocked.push({id:b.id,title:b.title,reason});
         return !reason;
       });
-      candidates.sort((a,b) => queue ? (b.loop?.awaiting ?? 0) - (a.loop?.awaiting ?? 0) || a.id.localeCompare(b.id) :
+      candidates.sort((a,b) =>
         Number(stale(b)) - Number(stale(a)) || Number((b.loop?.failStreak ?? 0) >= 3) - Number((a.loop?.failStreak ?? 0) >= 3) ||
         (a.loop?.currentRated ?? 0) - (b.loop?.currentRated ?? 0) || String(a.updatedAt || "").localeCompare(String(b.updatedAt || "")) || a.id.localeCompare(b.id));
-      if (queue) {
-        const selected = candidates.slice(0, 3);
-        const results = await Promise.allSettled(selected.map(b => invokeTool("portal_workspace_contexts", {projectId:"dojo:"+b.id})));
-        const entries = results.flatMap((r,i) => r.status === "fulfilled" && r.value.structuredContent?.dojo ? [{ ...r.value.structuredContent.dojo, snapshot:{revision:selected[i].revision,target:selected[i].target,methodVersion:selected[i].methodVersion} }] : []);
-        results.forEach((r,i) => {if (r.status === "rejected") errors.push(selected[i].id + ": " + String(r.reason?.message || r.reason).slice(0,200))});
-        // Fetch only a bounded preview per ship; use the canonical actions, not trial verdicts.
-        const pending = ships.filter(s => (s.candidateCount || 0) > 0);
-        const hauls = await Promise.allSettled(pending.map(s => s.statusUnavailable ? Promise.reject(new Error("正本確認不能")) : submarineStore.haulList({submarineId:s.id,status:"candidate",limit:6})));
-        const haulGroups = hauls.flatMap((r,i) => {
-          const s = pending[i];
-          if (r.status === "rejected") {errors.push(s.id + ": " + String(r.reason?.message || r.reason).slice(0,200));return []}
-          const actions = r.value.actionsBySubmarine?.[s.id] || [];
-          const items = (r.value.items || []).map((h: any) => {
-            const record = h.record || {}, details = h.details || {};
-            const parts = [record.summary || details.summary || h.evidence || "", record.reward ? "報酬: "+record.reward : "", record.reason || details.why ? "理由: "+(record.reason || details.why) : "", record.bridge || details.bridge || "", record.firstStep || details.firstStep || "", record.weakness || details.caution ? "注意: "+(record.weakness || details.caution) : "", ...(Array.isArray(record.details) ? record.details.map((d:any)=>String(d.label || "")+": "+String(d.value || "")) : [])].filter(Boolean);
-            return {id:h.id,label:String(h.label || record.title || h.id).slice(0,300),body:parts.join("\n\n").slice(0,4000),ref:String(record.url || h.url || "").slice(0,1600),imageUrl:String(record.thumbnail || record.imageUrl || details.imageUrl || h.imageUrl || "").slice(0,2000),stateLabel:String(record.stateLabel || "").slice(0,80),lastAction:h.feedback?.[0]?.action || null};
-          });
-          return [{id:s.id,title:s.name || s.id,dojoIds:(s.loadout || []).map((g:any)=>g.dojoId).filter(Boolean),count:r.value.total ?? s.candidateCount,actions,items}];
-        });
-        const counts = new Map(haulGroups.map((g:any)=>[g.id,g.count]));
-        return structured({ entries, haulGroups, errors, totalAwaiting:bases.reduce((n,b)=>n+(b.loop?.awaiting ?? 0),0), totalHaulAwaiting:pending.reduce((n,s)=>n+Number(counts.get(s.id) ?? s.candidateCount ?? 0),0), pendingOutcomes:bases.filter(b=>(b.awaitingCount ?? 0)>0).map(b=>({id:b.id,title:b.title,count:b.awaitingCount})) });
-      }
       const tasks: any[] = [], releases = new Set<string>();
       // Continue down the ranked list if a live gate invalidates a candidate.
       for (const b of candidates) {
