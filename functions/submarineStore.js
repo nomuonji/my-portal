@@ -302,6 +302,21 @@ function createStore(options) {
     return { items, count: items.length, collection: COLLECTIONS.subs };
   }
 
+  // Lightweight workspace gate: reconcile canonical sources on the same cadence as get(),
+  // without loading gear bodies, confirmed haul records or a full submarine view.
+  async function workspaceStatus(input) {
+    const id = requireId(input?.id, 'id');
+    let sub = value(await subRef(id).get());
+    if (!sub) throw new Error('Submarine not found: ' + id);
+    const where = sub.haulCanonical?.where || 'here';
+    if (canonical.syncable(where) && (!sub.syncedAt || Date.now() - Date.parse(sub.syncedAt) > SYNC_EVERY_MS)) {
+      const synced = await syncCanonical(sub, canonical.adapterFor(where));
+      if (synced.error) throw new Error('Could not read the canonical store ' + where + ': ' + synced.error);
+      sub = value(await subRef(id).get());
+    }
+    return {id, candidateCount: sub.progress?.candidateCount || 0, openSortieId: sub.openSortieId || null};
+  }
+
   async function haulOf(subId, limit) {
     const snap = await db().collection(COLLECTIONS.haul).where('submarineId', '==', subId).limit(limit || 1000).get();
     return snap.docs.map((doc) => doc.data()).sort((a, b) => String(b.id).localeCompare(String(a.id)));
@@ -834,7 +849,7 @@ function createStore(options) {
     return { items, count: items.length, total: matching.length, nextCursor: next, actionsBySubmarine, counts };
   }
 
-  return { commission, list: listSubs, get, update, sortieStart, sortieFinish, haulDecide, haulFeedback, recordReaction, haulList };
+  return { commission, list: listSubs, workspaceStatus, get, update, sortieStart, sortieFinish, haulDecide, haulFeedback, recordReaction, haulList };
 }
 
 const store = createStore();
