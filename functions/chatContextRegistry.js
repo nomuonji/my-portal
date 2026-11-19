@@ -10,6 +10,17 @@ const DB_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const db = () => getDocumentDb(DB_ID);
 const SKILLS = 'chatSkills';
 const SKILL_VERSIONS = 'chatSkillVersions';
+const SKILL_BODY_LIMIT = 45000;
+// Working budget for a skill body. Past it, or when one update adds a lot, the response carries a
+// notice so the editor consolidates rules instead of appending (World Home Agent Guide).
+const SKILL_BODY_BUDGET = 20000;
+const SKILL_GROWTH_NOTICE = 2000;
+function skillSizeNotice(previousLength, nextLength) {
+ const notes=[];
+ if(nextLength>SKILL_BODY_BUDGET)notes.push('本文は '+nextLength+' 字で、目安の '+SKILL_BODY_BUDGET+' 字を超えている。次の更新では、規則の統合・古い規則の削除で純減させる。経緯・引用・個別の稿は道場の台帳と版履歴に置く。');
+ if(previousLength>0&&nextLength-previousLength>SKILL_GROWTH_NOTICE)notes.push('今回の更新で '+(nextLength-previousLength)+' 字増えた。追記ではなく、既存の規則の書き換え・統合で済ませられないか確認する。');
+ return notes.length?{length:nextLength,budget:SKILL_BODY_BUDGET,previousLength,notes}:null;
+}
 const NOTES = 'aiContextNotes';
 function safeString(value, limit=4000) { return String(value??'').trim().slice(0,limit); }
 function safeStrings(value, max=20) { return Array.isArray(value) ? value.slice(0,max).map(x=>safeString(x,180)).filter(Boolean) : []; }
@@ -18,7 +29,10 @@ function cleanSkill(value) {
  if (!/^[a-z][a-z0-9-]*$/.test(id)) throw new Error('Skill id must be kebab-case');
  const title=safeString(value?.title,220);
  if (!title) throw new Error('Skill title required');
- const body=safeString(value?.body,45000);
+ const rawBody=String(value?.body??'').trim();
+ // Refuse instead of truncating: a silent cut once dropped the end of a skill without anyone noticing.
+ if(rawBody.length>SKILL_BODY_LIMIT)throw new Error('Skill body is '+rawBody.length+' characters; the limit is '+SKILL_BODY_LIMIT+'. Consolidate the rules (move history, quotes and per-sample evidence to the dojo ledger) instead of adding more.');
+ const body=rawBody;
  if(!body||body.length<50) throw new Error('Skill body required (full executable instructions)');
  return {
   id,title,summary:safeString(value?.summary,1100),
@@ -121,9 +135,11 @@ async function upsertSkill(input) {
  const expectedRevision=Number(input.expectedRevision);
  if(!Number.isInteger(expectedRevision)||expectedRevision<0)throw new Error('expectedRevision must be a nonnegative integer');
  const ref=db().collection(SKILLS).doc(cleaned.id);
+ let previousLength=0;
  await db().runTransaction(async tx=>{
   const snap=await tx.get(ref);
   const current=snap.exists?snap.data():{};
+  previousLength=String(current.body||'').length;
   const rev=Number(current.revision)||0;
   if(rev!==expectedRevision)throw new Error('Skill revision conflict');
   const next=rev+1;
@@ -134,7 +150,9 @@ async function upsertSkill(input) {
   const versionRef=db().collection(SKILL_VERSIONS).doc(cleaned.id+'__'+String(next).padStart(6,'0'));
   tx.set(versionRef,{...record,versionNumber:next,changeReason:safeString(input.changeReason,800)||'Skill updated',createdAt:FieldValue.serverTimestamp()});
  });
- return getSkill({id:cleaned.id});
+ const saved=await getSkill({id:cleaned.id});
+ const sizeNotice=skillSizeNotice(previousLength,cleaned.body.length);
+ return sizeNotice?{...saved,sizeNotice}:saved;
 }
 async function skillVersions(input={}) {
  const id=safeString(input.id,90);
@@ -203,4 +221,4 @@ async function removeSkill(input={}) {
  await ref.delete();
  return {id,title:current.title,deletedVersions:versions.docs.length,deleted:true};
 }
-module.exports={listSkills,getSkill,upsertSkill,skillVersions,removeSkill,listNotes,createNote,cleanSkill};
+module.exports={listSkills,getSkill,upsertSkill,skillVersions,removeSkill,listNotes,createNote,cleanSkill,skillSizeNotice,SKILL_BODY_LIMIT,SKILL_BODY_BUDGET};
