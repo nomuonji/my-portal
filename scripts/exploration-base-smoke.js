@@ -523,6 +523,61 @@ test('three user non-passes cannot be cleared by a ceremonial run or self-PASS',
   assert.equal(ok.created.length, 1);
 });
 
+test('every evidence-rich dojo refuses a trial that skips positive/negative transfer review', async () => {
+  const store = await setup();
+  await store.upsertItems({ baseId: 'test-base', kind: 'hypothesis', items: [hypothesis] });
+  await store.recordTrials({ baseId: 'test-base', backfill: true, trials: [
+    { label: 'Accepted keyword', body: 'The accepted example had an observable audience and weak search competitors.',
+      hypothesisIds: ['H-001'], rating: { verdict: 'pass', userWords: '合格' } },
+    { label: 'Rejected copycat', body: 'The failed keyword was just the old label copied into a new category.',
+      hypothesisIds: ['H-001'], rating: { verdict: 'fail', userWords: 'ボツ' } },
+    { label: 'Rejected unverified', body: 'The second failed case did not show a concrete search result.',
+      hypothesisIds: ['H-001'], rating: { verdict: 'fail', userWords: 'ボツ' } },
+  ] });
+  const state = await store.get({ id: 'test-base', view: 'state' });
+  assert.equal(state.loop.learning.status, 'contrast_ready');
+  assert.deepEqual(state.loop.learning.acceptedCases.map(x => x.id), ['T-001']);
+  assert.equal(state.loop.learning.rejectedCases.length, 2);
+  const { runId } = await store.startRun({
+    baseId: 'test-base', objective: 'Improve a keyword using verified lessons, not superficial similarity',
+    targets: [{ hypothesisId: 'H-001', prediction: 'The user will accept a genuinely different keyword' }],
+  });
+  const sample = { label: 'New keyword with observed comparison', body: 'A new candidate with observed readers and different actual competition.',
+    hypothesisIds: ['H-001'], predictedPass: 0.48 };
+  await assert.rejects(store.recordTrials({ baseId: 'test-base', runId, trials: [sample] }), /Learning review required/);
+  const learningAudit = {
+    positiveCaseId: 'T-001', negativeCaseId: 'T-002',
+    mechanism: 'Users had a real question and the competing results failed to answer it.',
+    transferCondition: 'The new query has independently observed demand and weak answers.',
+    failureContrast: 'We did not just rename the rejected keyword or invent demand.',
+    fatalRisk: 'The existing SERP may already satisfy users better than our planned content.',
+    riskResolution: 'We checked real results and confirmed what concrete answer is missing.',
+    bodyAnchor: 'observed readers', decision: 'submit',
+  };
+  await assert.rejects(store.recordTrials({ baseId: 'test-base', runId, trials: [
+    { ...sample, learningAudit: { ...learningAudit, positiveCaseId: 'T-002' } },
+  ] }), /actual human-accepted/);
+  await assert.rejects(store.recordTrials({ baseId: 'test-base', runId, trials: [
+    { ...sample, learningAudit: { ...learningAudit, negativeCaseId: 'T-001' } },
+  ] }), /actual human-rejected/);
+  await assert.rejects(store.recordTrials({ baseId: 'test-base', runId, trials: [
+    { ...sample, learningAudit: { ...learningAudit, decision: 'reject' } },
+  ] }), /may not be submitted/);
+  const result = await store.recordTrials({ baseId: 'test-base', runId, trials: [
+    { ...sample, learningAudit },
+  ] });
+  const full = await store.get({ id: 'test-base', view: 'full' });
+  const saved = full.full.trials.find(t => t.id === result.created[0].id);
+  assert.equal(saved.learningAudit.status, 'verified');
+  assert.equal(saved.learningAudit.positiveCaseId, 'T-001');
+  assert.equal(saved.learningAudit.negativeCaseId, 'T-002');
+  assert.equal(full.loop.learning.auditCoverage.verified, 0, 'review coverage counts rated outcomes only');
+  await store.rateTrials({ baseId: 'test-base', ratings: [{ id: saved.id, verdict: 'fail', userWords: 'ボツ' }] });
+  const after = await store.get({ id: 'test-base', view: 'state' });
+  assert.equal(after.loop.learning.auditCoverage.verified, 1);
+  assert.equal(after.loop.learning.promisingHypotheses[0].id, 'H-001');
+});
+
 test('buzz dojo blocks low-confidence, one-shot, invented-reference or unscreened samples', async () => {
   const db = new MemoryDb();
   const store = createStore({ getDb: () => db });
