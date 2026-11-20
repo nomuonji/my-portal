@@ -101,6 +101,37 @@ ranking is not proof of causality and does not launch autonomous experiments.
 
 Measured data (keyword demand, SERPs, job listings) stays in its operator. The base records where it is in `canonicalData` and refers to records by ID. A method body kept in a repository stays there with its code and tests; the base holds the pointer.
 
+## Shared learning transfer (all dojos)
+
+The default loop is **evidence → candidate mechanism → applicability check → submission → human verdict / measured outcome**. A renamed hypothesis or more checklist items do not imply learning. The learning data in exploration_base_get(view=brief|state|full).loop.learning is a casebook shared by every dojo:
+
+- acceptedCases and rejectedCases are actual rated trial texts or explicitly decided submarine haul, with IDs, origins, and tested hypotheses. Source success is not creator success.
+- promisingHypotheses reports only cases with at least three ratings and a smoothed rate (not proof of causality). no_accepted_example and no_rejected_example mean the system lacks a usable human contrast; use independent source or controlled research instead of fabricating one.
+- auditCoverage distinguishes genuinely reviewed trial comparisons from Buzz legacy screening. measuredWins is separate for measurement-confirmed dojos. These are not new success metrics.
+- The loop's nextActions requires comparing successful and failed cases before selecting another sample.
+
+**Pre-submission transfer review.** A new user-facing trial in any trial-based base with at least three prior rated outcomes and both an actual acceptance and rejection must include learningAudit (or legacy learning:v1: JSON in predictionNote, maximum 600 characters) before exploration_trial_record succeeds:
+
+~~~json
+{
+  "positiveCaseId": "T-001",
+  "negativeCaseId": "T-002",
+  "mechanism": "Specific feature that might explain success; a falsifiable hypothesis, not a label",
+  "transferCondition": "Observable facts that make the feature applicable to this candidate",
+  "failureContrast": "Concrete difference from the failed case",
+  "fatalRisk": "Strongest reason this candidate may be rejected",
+  "riskResolution": "Observed evidence resolving that risk",
+  "bodyAnchor": "An exact 8+ character passage in the sample or its label",
+  "decision": "submit"
+}
+~~~
+
+Case IDs are validated against **real past verdicts of the same dojo**; decision=reject, a missing review, or fabricated references are rejected. The server checks citation integrity and field presence, **not humor, market success, or validity of the agent's inference**. An agent must decline submission if the fatal risk remains; a dishonest riskResolution is still a failure of the agent, not a passed human judgment. When evidence is insufficient, the trial may be exploratory; it is not silently treated as transfer of a proven pattern.
+
+**Legacy compatibility:** Buzz's existing enforced screen:v1: format still works and is recorded as status=legacy_buzz_screen, not as a verified learning transfer. New clients should also send learningAudit on Buzz trials when supported. Backfills and measurement-confirmed bases are unaffected by the trial-gate requirement. Submarine haul decisions update the same casebook.
+
+The contract is shared by all domains (social, SEO, keywords, video, products, monetization, work, Discover), but **what constitutes an accepted outcome** remains domain-specific and user-owned. Nothing authorizes changing the mission, relaxing constraints, scheduling jobs, publishing, or creating new versions without the existing release gates.
+
 ## MCP operations
 
 `exploration_base_list`, `exploration_base_get`, `exploration_base_create`, `exploration_outcome_set`, `exploration_method_version_set`, `exploration_item_upsert`, `exploration_run_start`, `exploration_run_finish`, `exploration_trial_record`, `exploration_trial_rate`.

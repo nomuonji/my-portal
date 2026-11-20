@@ -1,6 +1,7 @@
 'use strict';
 
 const { refinementView } = require('./hypothesisRefinement');
+const { learningView } = require('./dojoLearning');
 
 // The improvement loop of a スキル錬成道場, as numbers. A trial is one sample shown to the user, registered
 // with the hypotheses it tests and the predicted chance of passing before the user rates it. The pass rate
@@ -109,6 +110,7 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
   })).sort((a, b) => b.rated - a.rated || String(a.id).localeCompare(String(b.id)));
 
   const refinement = refinementView(entries, hypotheses || []);
+  const learning = learningView(trials || [], feedbackLog || [], hypotheses || [], base?.progress);
   const failStages = {};
   entries.filter((e) => e.verdict !== 'pass' && e.failStage).forEach((e) => { failStages[e.failStage] = (failStages[e.failStage] || 0) + 1; });
 
@@ -125,6 +127,9 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
   const canRelease = !usesTrials || current.rated >= LIMITS.minRatedPerVersion;
 
   const nextActions = [];
+  if (learning.status === 'contrast_ready') {
+    nextActions.push('学習対照: 過去の本人合格/不採用の原文を loop.learning から読み、成立条件と不成立条件を比較してから次の見本を選ぶ。仮説名を貼るだけでは不十分。');
+  }
   if (awaiting.length) nextActions.push('評価待ちの見本が ' + awaiting.length + ' 件ある。新しい見本より先に、本人の評価をもらう。');
   if (researchDue) nextActions.push(failStreak + ' 回続けて合格が出ていない。次の見本・方法版の更新前に、実例の否定的評価と対照例、異なる原因仮説2つ、各反証条件、不確実性を failureAnalysis に記録した研究runを終了する。単なるrun完了では解除しない。');
   scoreboard.filter((h) => h.status === 'open' && h.rated >= LIMITS.hypothesisMinTrials && h.pass === 0)
@@ -142,7 +147,7 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
     recent: tally(entries.slice(-10)),
     current, previous, byVersion,
     awaiting: awaiting.map((t) => ({ id: t.id, label: t.label, body: t.body || '', ref: t.ref || '', imageUrl: t.imageUrl || '', createdAt: t.createdAt, hypothesisIds: t.hypothesisIds || [], predictedPass: t.predictedPass ?? null })),
-    calibration, screening, refinement, hypotheses: scoreboard.slice(0, 20), failStages, failStreak,
+    calibration, screening, learning, refinement, hypotheses: scoreboard.slice(0, 20), failStages, failStreak,
     gates: { ...LIMITS, measurementMode, usesTrials, ratedOnCurrent: current.rated, canReleaseNewVersion: canRelease, researchDueBeforeNextTrial: researchDue },
     lastRated: entries.slice(-8).reverse().map((e) => ({ id: e.id, label: e.label, verdict: e.verdict, version: versionKey(e), at: e.at, userWords: e.userWords })),
     nextActions,
@@ -159,6 +164,12 @@ function loopSummary(view) {
     awaiting: view.awaiting.length, failStreak: view.failStreak,
     hitRate: view.calibration?.hitRate ?? null,
     screening: view.screening,
+    learning: {
+      status: view.learning.status, acceptedCount: view.learning.acceptedCount,
+      rejectedCount: view.learning.rejectedCount,
+      promisingHypotheses: view.learning.promisingHypotheses.slice(0, 3).map(h => ({ id: h.id, rated: h.rated, pass: h.pass, adjustedPassRate: h.adjustedPassRate })),
+      auditCoverage: view.learning.auditCoverage,
+    },
   };
 }
 

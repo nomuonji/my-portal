@@ -272,7 +272,7 @@ const tools = [
   },
   {
     name: 'exploration_trial_record',
-    description: 'Record user-facing trials before presenting. Buzz-post dojo adds an enforced early rejection screen: 3+ candidate pool, 2+ rejected, 2+ observed sourcing lanes, accepted/rejected human-rated precedent, exact passage from the proposed copy, concrete hostile objection, and a pre-registered closingType (derived_consequence = the last beat follows directly from the material; author_added = the author added an analogy, counterfactual, title or similar). predictedPass is an honest forecast and no longer gates submission. Native quote practice is retired. Use editorialScreen or, from clients with the older MCP schema, screen:v1:<compact JSON> inside predictionNote (up to 600 characters). Other dojos are unchanged. A screen is an AI-only gate, NOT independent approval or a promise of engagement.',
+    description: 'Record user-facing trials before presenting. ALL trial-based dojos with 3+ rated results and both an accepted and rejected case require learningAudit: an actual passed/rejected example, the reusable mechanism, transfer conditions, failure contrast, fatal objection and resolution. Old clients can use learning:v1:<compact JSON> in predictionNote (<=600 characters). Buzz-post dojo adds an enforced early rejection screen: 3+ candidate pool, 2+ rejected, 2+ observed sourcing lanes, accepted/rejected human-rated precedent, exact passage from the proposed copy, concrete hostile objection, and a pre-registered closingType (derived_consequence = the last beat follows directly from the material; author_added = the author added an analogy, counterfactual, title or similar). predictedPass is an honest forecast and no longer gates submission. Native quote practice is retired. Use editorialScreen or, from clients with the older MCP schema, screen:v1:<compact JSON> inside predictionNote (up to 600 characters). Other dojos are unchanged. A screen is an AI-only gate, NOT independent approval or a promise of engagement.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -289,7 +289,24 @@ const tools = [
               hypothesisIds: strings('H-nnn this sample tests. Required unless backfill.', 10),
               sourceIds: strings('S-nnn the material came from.', 10),
               predictedPass: { type: 'number', minimum: 0, maximum: 1, description: 'Chance the user passes it, stated before showing. Required unless backfill.' },
-              predictionNote: string('Why that chance. For the viral-post-method-discovery dojo, an older MCP client MUST use screen:v1:<compact JSON> with the same structure as editorialScreen and <=600 characters.', 600),
+              predictionNote: string('Why that chance. Older MCP clients use learning:v1:<compact JSON> for the general learning review, or screen:v1:<compact JSON> for the Buzz-specific screen. Each is limited to 600 characters.', 600),
+              learningAudit: {
+                type: 'object',
+                description: 'All dojos: mandatory for new trial submissions when this dojo has 3+ rated samples including a real pass and fail. The server validates these references against human ratings; it cannot independently judge the proposed mechanism. Buzz old screen:v1 has a limited legacy fallback.',
+                properties: {
+                  positiveCaseId: string('Actual prior user-accepted T-nnn or human-confirmed haul ID from this dojo.', 160),
+                  negativeCaseId: string('Actual prior user-rejected T-nnn or human-declined haul ID from this dojo.', 160),
+                  mechanism: string('Specific feature of the positive case that made it a plausible success, NOT a generic label or proven causal claim.', 700),
+                  transferCondition: string('Concrete observable condition under which that feature also exists in the proposed candidate.', 700),
+                  failureContrast: string('Why the candidate avoids the negative case mechanism, with an observable difference.', 700),
+                  fatalRisk: string('Strongest reason a skeptical reader/user would reject this candidate.', 700),
+                  riskResolution: string('Observed reason that the fatal risk is not present, or why the candidate has been rejected internally.', 700),
+                  bodyAnchor: string('Exact text span (8+ characters) of the candidate/label to which the comparison applies.', 160),
+                  decision: { type: 'string', enum: ['submit', 'reject'], description: 'Rejects may remain internal; only submit can be registered as a user-facing trial.' },
+                },
+                required: ['positiveCaseId', 'negativeCaseId', 'mechanism', 'transferCondition', 'failureContrast', 'fatalRisk', 'riskResolution', 'bodyAnchor', 'decision'],
+                additionalProperties: false,
+              },
               editorialScreen: {
                 type: 'object',
                 description: 'Buzz dojo ONLY. Enforced pre-submission screening; agent assertion is not a human rating. For old clients, encode this object as screen:v1:<JSON> in predictionNote.',

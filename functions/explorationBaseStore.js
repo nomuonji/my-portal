@@ -7,6 +7,7 @@
 
 const { getDocumentDb } = require('./documentDb');
 const { loopView, loopSummary, ratedEntries, VERDICTS: TRIAL_VERDICTS, FAIL_STAGES, LIMITS } = require('./explorationLoop');
+const { validateLearningAudit } = require('./dojoLearning');
 
 const DEFAULT_DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTIONS = Object.freeze({
@@ -1215,6 +1216,16 @@ function createStore(options) {
         if (!backfill && predicted === null) throw new Error('trial.predictedPass is required: the chance (0-1) that the user passes this sample, stated before they see it.');
         const editorialScreen = (!backfill && id === 'viral-post-method-discovery')
           ? cleanBuzzScreen(raw, sourceItems, existing) : null;
+        // Every trial-based dojo with real positive AND negative cases must show
+        // how the successful mechanism transfers, and why the failed case differs.
+        // Buzz's old screen:v1 envelope remains compatible, but is flagged as a
+        // limited comparison rather than an independently verified review.
+        const learningAudit = (!backfill && base.outcome?.confirmedBy !== 'measurement')
+          ? validateLearningAudit(raw, {
+              trials: existing, feedbackLog: base.feedbackLog || [],
+              body: text(raw.body, 4000, 'trial.body', false) || text(raw.label, 300, 'trial.label', false),
+              buzzScreen: editorialScreen,
+            }) : null;
         base.counters.T = (base.counters.T || 0) + 1;
         const at = now();
         const trial = {
@@ -1225,6 +1236,7 @@ function createStore(options) {
           ref: text(raw.ref, 600, 'trial.ref', false), imageUrl: imageUrl(raw.imageUrl), hypothesisIds, sourceIds: list(raw.sourceIds, 10, 20),
           predictedPass: predicted, predictionNote: text(raw.predictionNote, 600, 'trial.predictionNote', false),
           ...(editorialScreen ? { format: editorialScreen.format, editorialScreen } : {}),
+          ...(learningAudit ? { learningAudit } : {}),
           status: 'awaiting', verdict: null, createdAt: (backfill && text(raw.shownAt, 40, 'trial.shownAt', false)) || at,
           backfilled: backfill || undefined, actor: text(input.actor, 120, 'actor', false) || 'agent',
         };
