@@ -168,7 +168,7 @@ https://my-portal-agent.netlify.app/mcp
 
 認証は OAuth 2.1 Authorization Code + PKCE。ChatGPT接続では Client ID Metadata Document (CIMD) を優先し、ChatGPTの固定クライアントメタデータを検証する。これにより再接続のたびに動的な client_id を作る必要がない。
 
-旧Dynamic Client Registration (DCR) client_id は既存接続との後方互換のため受理するが、OAuth discoveryでは新規登録方式として広告しない。
+Gemini など Dynamic Client Registration (DCR) を必要とするクライアント向けに、OAuth discovery の `registration_endpoint` で `/oauth/register` を広告する。DCR は既存の公開PKCEクライアント登録を利用し、登録してもアクセス権は生じない。認可画面で My Portal 専用アクセスキーを要求する。ChatGPT は引き続き CIMD を優先し、既存の DCR client_id も受理する。
 
 Groq など CIMD / DCR を使わず opaque な `client_id` と PKCE で接続する Remote MCP client も受理する。この fallback でも認可画面で Agent Idea Space 専用アクセスキーが必須で、authorization code は `client_id` / `redirect_uri` / resource / PKCE challenge に束縛する。
 
@@ -252,4 +252,4 @@ GET https://my-portal-agent.netlify.app/.well-known/oauth-authorization-server
 GET https://my-portal-agent.netlify.app/.well-known/oauth-protected-resource/mcp
 ```
 
-OAuth metadata では `client_id_metadata_document_supported: true`、PKCE `S256`、`offline_access` が確認できること。healthでは `serverVersion`、tool count、Firestore接続状態に加えて `publicPkceFallback: true` と `directAccessKeyBearer: true` を確認する。
+OAuth metadata では `client_id_metadata_document_supported: true`、`registration_endpoint`（`/oauth/register`）、PKCE `S256`、`offline_access` が確認できること。Gemini のカスタム MCP 接続でクライアント ID / シークレット不要の DCR フローを試すこと。healthでは `serverVersion`、tool count、Firestore接続状態に加えて `publicPkceFallback: true` と `directAccessKeyBearer: true` を確認する。

@@ -328,7 +328,7 @@ function authorizeForm(request: Request, params: Record<string, string>) {
   const hidden = Object.entries(params)
     .map(([key, value]) => `<input type="hidden" name="${escapeHtml(key)}" value="${escapeHtml(value)}">`)
     .join("");
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>My Portal MCP</title><style>body{font-family:system-ui,-apple-system,sans-serif;background:#eef5f8;color:#18324a;margin:0}.card{max-width:34rem;margin:8vh auto;background:#fff;padding:2rem;border:1px solid #d9e7ef;border-radius:16px;box-shadow:0 18px 60px rgba(39,76,99,.13)}h1{margin-top:0}input,button{box-sizing:border-box;width:100%;padding:.8rem;margin:.45rem 0;font:inherit;border-radius:10px}input{border:1px solid #b9cdd9}button{border:0;background:#5577e8;color:white;font-weight:700;cursor:pointer}small{color:#6e8294}</style></head><body><div class="card"><h1>My Portal を接続</h1><p>ChatGPT に、Agent Idea Space と My Portal 本体データの読み書きを許可します。</p><form method="post" action="${origin(request)}/oauth/authorize">${hidden}<label>アクセスキー<input name="access_key" type="password" autocomplete="current-password" required autofocus></label><small>My Portal MCP 用アクセスキーです。</small><button type="submit">許可して接続</button></form></div></body></html>`;
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>My Portal MCP</title><style>body{font-family:system-ui,-apple-system,sans-serif;background:#eef5f8;color:#18324a;margin:0}.card{max-width:34rem;margin:8vh auto;background:#fff;padding:2rem;border:1px solid #d9e7ef;border-radius:16px;box-shadow:0 18px 60px rgba(39,76,99,.13)}h1{margin-top:0}input,button{box-sizing:border-box;width:100%;padding:.8rem;margin:.45rem 0;font:inherit;border-radius:10px}input{border:1px solid #b9cdd9}button{border:0;background:#5577e8;color:white;font-weight:700;cursor:pointer}small{color:#6e8294}</style></head><body><div class="card"><h1>My Portal を接続</h1><p>接続先の AI アシスタントに、Agent Idea Space と My Portal 本体データの読み書きを許可します。</p><form method="post" action="${origin(request)}/oauth/authorize">${hidden}<label>アクセスキー<input name="access_key" type="password" autocomplete="current-password" required autofocus></label><small>My Portal MCP 用アクセスキーです。</small><button type="submit">許可して接続</button></form></div></body></html>`;
 }
 
 async function bodyObject(request: Request): Promise<Record<string, any>> {
@@ -1066,13 +1066,13 @@ async function handleRegister(request: Request) {
   if (authMethod !== "none") return json({ error: "invalid_client_metadata", error_description: "Only public PKCE clients are supported" }, 400);
   const clientId = sign("client", {
     redirectUris: redirectUris.map((url) => url.toString()),
-    clientName: String(body.client_name || "ChatGPT MCP client").slice(0, 200),
+    clientName: String(body.client_name || "My Portal MCP client").slice(0, 200),
   });
   return json({
     client_id: clientId,
     client_id_issued_at: Math.floor(Date.now() / 1000),
     redirect_uris: redirectUris.map((url) => url.toString()),
-    client_name: String(body.client_name || "ChatGPT MCP client").slice(0, 200),
+    client_name: String(body.client_name || "My Portal MCP client").slice(0, 200),
     token_endpoint_auth_method: "none",
     grant_types: ["authorization_code", "refresh_token"],
     response_types: ["code"],
@@ -1238,6 +1238,7 @@ export default async (request: Request) => {
       authorization_response_iss_parameter_supported: true,
       authorization_endpoint: `${base}/oauth/authorize`,
       token_endpoint: `${base}/oauth/token`,
+      registration_endpoint: `${base}/oauth/register`,
       client_id_metadata_document_supported: true,
       response_types_supported: ["code"],
       grant_types_supported: ["authorization_code", "refresh_token"],
@@ -1299,7 +1300,7 @@ export default async (request: Request) => {
       linear: linearBridge.configSummary(),
       oauth: {
         configured: oauthConfigured,
-        clientRegistration: "cimd+public-pkce",
+        clientRegistration: "cimd+dcr+public-pkce",
         cimd: true,
         legacyDcr: true,
         publicPkceFallback: true,
