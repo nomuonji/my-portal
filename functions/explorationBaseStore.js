@@ -1221,8 +1221,14 @@ function createStore(options) {
         if (!duplicate) return true;
         // Keep the original trial and its prediction immutable while allowing
         // an unfinished visual artifact to be completed with a stable HTTPS URL.
-        const picture = imageUrl(raw.imageUrl);
-        const media = publicMediaUrl(raw.mediaUrl);
+        // Older connected MCP clients cannot send imageUrl/mediaUrl until reconnect.
+        // For an existing awaiting ref only, accept a validated artifact URL in
+        // predictionNote without altering the original prediction or case identity.
+        const legacy = String(raw.predictionNote || '').trim();
+        const picture = imageUrl(raw.imageUrl || (legacy.startsWith('artifact:image:')
+          ? legacy.slice('artifact:image:'.length) : ''));
+        const media = publicMediaUrl(raw.mediaUrl || (legacy.startsWith('artifact:media:')
+          ? legacy.slice('artifact:media:'.length) : ''));
         if (duplicate.status === 'awaiting'
           && ((picture && duplicate.imageUrl !== picture) || (media && duplicate.mediaUrl !== media))) {
           put(tx, trialRef(id, duplicate.id), { ...duplicate,
