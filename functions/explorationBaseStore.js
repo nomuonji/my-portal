@@ -1229,7 +1229,7 @@ function createStore(options) {
             imageUrl: picture || duplicate.imageUrl || '',
             mediaUrl: media || duplicate.mediaUrl || '', updatedAt: now() });
           imaged.push({ ref, id: duplicate.id, imageUrl: picture || duplicate.imageUrl || '',
-            mediaUrl: media || duplicate.mediaUrl || '' });
+            ...((media || duplicate.mediaUrl) ? { mediaUrl: media || duplicate.mediaUrl } : {}) });
         } else {
           skipped.push({ ref, id: duplicate.id });
         }
