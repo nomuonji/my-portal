@@ -415,6 +415,7 @@ export function LoopPanel({ loop, baseId, onRate, onRateBatch, busyId }) {
   const awaiting = loop.awaiting || [];
   const lastRated = loop.lastRated || [];
   const calibration = loop.calibration;
+  const negativeLearning = loop.negativeLearning;
   const refinement = loop.refinement;
   if (!versions.length && !awaiting.length) return null;
   return (
@@ -454,6 +455,28 @@ export function LoopPanel({ loop, baseId, onRate, onRateBatch, busyId }) {
           <Typography sx={{ fontSize: 11.5, color: V.faint }}>
             同一標本の基準値は事後的な比較で、将来の予測精度や合格率向上の証明ではありません。
             惜しいは合格予測の判定上は不合格に含みます。売上・再生数の測定とも別です。
+          </Typography>
+        </Box>
+      )}
+      {negativeLearning && (
+        <Box sx={{ mt: 1.5, px: 1.5, py: 1.2, border: '1px solid ' + V.rule, borderRadius: 1.5 }}>
+          <Typography sx={{ fontSize: 13.5, fontWeight: 800, mb: 0.4 }}>ネガティブ仮説・棄却ゲート</Typography>
+          <Typography sx={{ fontSize: 12.5, color: V.muted, lineHeight: 1.7 }}>
+            {negativeLearning.status === 'not_registered'
+              ? '失敗を予測する仮説は未登録。採用・ボツの実例を対照してから、次の錬成で正の仮説と同時に検証します。'
+              : '失敗仮説 ' + negativeLearning.negativeHypotheses + '件 ／ 本人評価まで進んだ事前審査 ' + negativeLearning.reviewed + '件。'}
+          </Typography>
+          <Typography sx={{ fontSize: 12.5, color: V.muted, lineHeight: 1.7 }}>
+            審査を通したのに本人がボツ・惜しいとした見逃し {negativeLearning.clearedButRejected}件 ／
+            内部棄却 {negativeLearning.screenedOutUnverified}件（本人未評価）。
+          </Typography>
+          {negativeLearning.byHypothesis?.filter(h => h.clearedRated > 0).slice(0, 5).map(h => (
+            <Typography key={h.id} sx={{ fontSize: 12, color: V.muted, lineHeight: 1.7 }}>
+              ・{h.title}：通過後評価 {h.clearedRated}件、見逃し {h.missedRisk}件
+            </Typography>
+          ))}
+          <Typography sx={{ fontSize: 11.5, color: V.faint, mt: 0.4 }}>
+            内部棄却は合格率やボツ数に算入しません。ネガティブ仮説の効果は、次に提示した稿の本人採否で検証します。
           </Typography>
         </Box>
       )}
