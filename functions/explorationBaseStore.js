@@ -8,6 +8,7 @@
 const { getDocumentDb } = require('./documentDb');
 const { loopView, loopSummary, ratedEntries, VERDICTS: TRIAL_VERDICTS, FAIL_STAGES, LIMITS } = require('./explorationLoop');
 const { validateLearningAudit } = require('./dojoLearning');
+const { trialArtifactStatus, publicMediaUrl } = require('./dojoArtifactReadiness');
 
 const DEFAULT_DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTIONS = Object.freeze({
@@ -1218,11 +1219,17 @@ function createStore(options) {
         const ref = text(raw.ref, 600, 'trial.ref', false);
         const duplicate = ref && existing.find((t) => t.ref === ref);
         if (!duplicate) return true;
-        // Re-recording a waiting sample with a picture adds the picture; nothing else about it changes.
+        // Keep the original trial and its prediction immutable while allowing
+        // an unfinished visual artifact to be completed with a stable HTTPS URL.
         const picture = imageUrl(raw.imageUrl);
-        if (picture && duplicate.status === 'awaiting' && duplicate.imageUrl !== picture) {
-          put(tx, trialRef(id, duplicate.id), { ...duplicate, imageUrl: picture, updatedAt: now() });
-          imaged.push({ ref, id: duplicate.id, imageUrl: picture });
+        const media = publicMediaUrl(raw.mediaUrl);
+        if (duplicate.status === 'awaiting'
+          && ((picture && duplicate.imageUrl !== picture) || (media && duplicate.mediaUrl !== media))) {
+          put(tx, trialRef(id, duplicate.id), { ...duplicate,
+            imageUrl: picture || duplicate.imageUrl || '',
+            mediaUrl: media || duplicate.mediaUrl || '', updatedAt: now() });
+          imaged.push({ ref, id: duplicate.id, imageUrl: picture || duplicate.imageUrl || '',
+            mediaUrl: media || duplicate.mediaUrl || '' });
         } else {
           skipped.push({ ref, id: duplicate.id });
         }
@@ -1267,7 +1274,8 @@ function createStore(options) {
           methodVersion: (backfill && text(raw.methodVersion, 60, 'trial.methodVersion', false)) || base.method?.version || null,
           version: backfill && Number.isInteger(raw.version) ? raw.version : (backfill && raw.version === null ? null : (base.method?.bodyRef?.versionNumber ?? null)),
           label: text(raw.label, 300, 'trial.label', true), body: text(raw.body, 4000, 'trial.body', false),
-          ref: text(raw.ref, 600, 'trial.ref', false), imageUrl: imageUrl(raw.imageUrl), hypothesisIds, sourceIds: list(raw.sourceIds, 10, 20),
+          ref: text(raw.ref, 600, 'trial.ref', false), imageUrl: imageUrl(raw.imageUrl),
+          mediaUrl: publicMediaUrl(raw.mediaUrl), hypothesisIds, sourceIds: list(raw.sourceIds, 10, 20),
           predictedPass: predicted, predictionNote: text(raw.predictionNote, 600, 'trial.predictionNote', false),
           ...(editorialScreen ? { format: editorialScreen.format, editorialScreen } : {}),
           ...(learningAudit ? { learningAudit } : {}),
@@ -1320,7 +1328,11 @@ function createStore(options) {
         const trialId = text(raw.id, 20, 'rating.id (T-nnn)', true);
         const trial = value(await tx.get(trialRef(id, trialId)));
         if (!trial) throw new Error('Trial not found: ' + trialId);
-        loaded.push({ trial, rating: cleanRating(raw, false) });
+        const rating = cleanRating(raw, false);
+        const artifact = trialArtifactStatus(trial);
+        if (!artifact.ready && rating.verdict !== 'withdrawn')
+          throw new Error('Trial ' + trialId + ' is not reviewable: ' + artifact.reason);
+        loaded.push({ trial, rating });
       }
       const touched = new Map();
       for (const { trial } of loaded) {
@@ -1367,7 +1379,11 @@ function createStore(options) {
     const items = snap.docs.map((doc) => doc.data()).filter((t) => titles.has(t.baseId))
       .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
       .slice(0, max)
-      .map((t) => ({ baseId: t.baseId, baseTitle: titles.get(t.baseId), id: t.id, label: t.label, body: t.body || '', ref: t.ref || '', imageUrl: t.imageUrl || '', createdAt: t.createdAt, version: t.version ?? null }));
+      .map((t) => ({ baseId: t.baseId, baseTitle: titles.get(t.baseId), id: t.id,
+        label: t.label, body: t.body || '', ref: t.ref || '', imageUrl: t.imageUrl || '',
+        mediaUrl: t.mediaUrl || '', reviewStatus: trialArtifactStatus(t).status,
+        reviewReason: trialArtifactStatus(t).reason,
+        createdAt: t.createdAt, version: t.version ?? null }));
     return { items, count: items.length };
   }
 
