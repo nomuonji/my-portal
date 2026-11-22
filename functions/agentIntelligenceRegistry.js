@@ -89,7 +89,10 @@ function normalizeDependencies(value) {
     return {
       resourceType,
       canonicalRef,
-      versionNumber: positiveVersion(dep.versionNumber, 'dependency.versionNumber', true),
+      // Shared Chat Skills are live references, not copied Pack snapshots.
+      // Historical Pack versions retain their previous pins untouched.
+      ...(resourceType === 'chat_skill'
+        ? {} : { versionNumber: positiveVersion(dep.versionNumber, 'dependency.versionNumber', true) }),
       requiredness,
       when: text(dep.when, 800, 'dependency.when', false) || null,
       note: text(dep.note, 1000, 'dependency.note', false) || null,
@@ -391,7 +394,12 @@ function createRegistry(options) {
   }
 
   async function resolveDependency(dep, requested) {
-    const shouldLoad = dep.requiredness === 'required' || requested.has(dep.resourceType + ':' + dep.canonicalRef);
+    // A component explicitly selected by the agent is enough to activate its
+    // recommended Chat Skills. Optional Skills, tools and external resources
+    // remain opt-in, preserving the minimum-sufficient-load policy.
+    const shouldLoad = dep.requiredness === 'required'
+      || (dep.resourceType === 'chat_skill' && dep.requiredness === 'recommended')
+      || requested.has(dep.resourceType + ':' + dep.canonicalRef);
     const base = {
       resourceType: dep.resourceType,
       canonicalRef: dep.canonicalRef,
@@ -413,8 +421,11 @@ function createRegistry(options) {
           .filter((v) => Number.isInteger(v) && v > 0))];
         if (released.length > 1) throw new Error('Conflicting dojo Skill releases: ' + dep.canonicalRef);
         if (released.length) {
-          const history = await chatSkills.skillVersions({ id: dep.canonicalRef });
-          const item = (history.items || []).find((entry) => Number(entry.versionNumber) === released[0]);
+          // Exact document fetch works even after >30 revisions accumulate.
+          const item = typeof chatSkills.skillVersionGet === 'function'
+            ? await chatSkills.skillVersionGet({ id: dep.canonicalRef, versionNumber: released[0] })
+            : (await chatSkills.skillVersions({ id: dep.canonicalRef })).items
+              .find((entry) => Number(entry.versionNumber) === released[0]);
           if (!item) throw new Error('Dojo-released Chat Skill version unavailable: ' + dep.canonicalRef + ' v' + released[0]);
           return { ...base, resolvedVersion: item.versionNumber, versionPolicy: 'latest_dojo_release',
             title: item.title, loadState: 'loaded', content: item.body };
