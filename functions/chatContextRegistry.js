@@ -119,6 +119,36 @@ async function getSkill(input) {
  const dojos=await dojosFor(id);
  return dojos.length?{...skill,dojos,dojoNotice:dojoNotice(dojos,id,skill.revision)}:skill;
 }
+// Read a single immutable version by ID, independent of the 30-entry history
+// display window. Dojo-approved execution must never fall back to a draft.
+async function skillVersionGet(input={}) {
+ await bootstrapSkills();
+ const id=safeString(input.id,90);
+ const number=Number(input.versionNumber);
+ if(!/^[a-z][a-z0-9-]*$/.test(id))throw new Error('Skill ID must be kebab-case');
+ if(!Number.isInteger(number)||number<1)throw new Error('versionNumber must be a positive integer');
+ const doc=await db().collection(SKILL_VERSIONS).doc(id+'__'+String(number).padStart(6,'0')).get();
+ if(!doc.exists)throw new Error('Chat Skill version not found: '+id+' v'+number);
+ const item=doc.data();
+ if(item.id!==id||Number(item.versionNumber)!==number)throw new Error('Chat Skill version record mismatch');
+ return {...summary(item),versionNumber:number,body:item.body,changeReason:item.changeReason||''};
+}
+
+// Public execution view always contains the newest approved body.
+// Editing must opt into getSkill, which retains the Registry draft and revision.
+async function getExecutableSkill(input={}) {
+ const current=await getSkill(input);
+ const dojos=await require('./explorationBaseStore').trainersOf({kind:'chat_skill',id:current.id});
+ if(!dojos.length)return {...current,versionPolicy:'latest_registry_version',registryRevision:current.revision};
+ const releases=[...new Set(dojos.map(d=>Number(d.releasedVersion))
+   .filter(v=>Number.isInteger(v)&&v>0))];
+ if(releases.length!==1||dojos.some(d=>!Number(d.releasedVersion)))
+   throw new Error('Chat Skill has missing or conflicting dojo release: '+current.id);
+ const approved=await skillVersionGet({id:current.id,versionNumber:releases[0]});
+ return {...current,body:approved.body,revision:approved.versionNumber,
+   registryRevision:current.revision,versionPolicy:'latest_dojo_release',dojos,
+   dojoNotice:dojoNotice(dojos,current.id,current.revision)};
+}
 async function upsertSkill(input) {
  if(input.confirm!==true)throw new Error('Explicit confirmation required');
  let draft=input.skill||{};
@@ -221,4 +251,4 @@ async function removeSkill(input={}) {
  await ref.delete();
  return {id,title:current.title,deletedVersions:versions.docs.length,deleted:true};
 }
-module.exports={listSkills,getSkill,upsertSkill,skillVersions,removeSkill,listNotes,createNote,cleanSkill,skillSizeNotice,SKILL_BODY_LIMIT,SKILL_BODY_BUDGET};
+module.exports={listSkills,getSkill,getExecutableSkill,upsertSkill,skillVersions,skillVersionGet,removeSkill,listNotes,createNote,cleanSkill,skillSizeNotice,SKILL_BODY_LIMIT,SKILL_BODY_BUDGET};

@@ -89,7 +89,10 @@ function normalizeDependencies(value) {
     return {
       resourceType,
       canonicalRef,
-      versionNumber: positiveVersion(dep.versionNumber, 'dependency.versionNumber', true),
+      // Shared Chat Skills are live references, not copied Pack snapshots.
+      // Historical Pack versions retain their previous pins untouched.
+      ...(resourceType === 'chat_skill'
+        ? {} : { versionNumber: positiveVersion(dep.versionNumber, 'dependency.versionNumber', true) }),
       requiredness,
       when: text(dep.when, 800, 'dependency.when', false) || null,
       note: text(dep.note, 1000, 'dependency.note', false) || null,
@@ -322,14 +325,33 @@ function createRegistry(options) {
     if (!versionNumber) throw new Error('Intelligence Pack has no version');
     const version = snapshotValue(await db().collection(COLLECTIONS.packVersions).doc(versionId(id, versionNumber)).get());
     if (!version || version.packId !== id) throw new Error('Intelligence Pack version not found: ' + id + ' v' + versionNumber);
-    return {
+    const result = {
       pack: root,
       definition: version,
-      // Stored chat_skill versionNumber values document the immutable Pack
-      // revision. Execution always resolves shared Skills by canonicalRef.
+      // Historical immutable Pack definitions remain unchanged; consumers
+      // should read executionDependencies for the current effective version.
       executionDependencyPolicy: 'current_dojo_released_skill_else_registry_latest',
       databaseId: DEFAULT_DATABASE_ID,
     };
+    if (input?.includeResolvedDependencies === true) {
+      const refs = [
+        ...(version.dependencies || []).map((dep) => ({ dep, componentId: null })),
+        ...(version.components || []).flatMap((component) => (component.dependencies || [])
+          .map((dep) => ({ dep, componentId: component.id }))),
+      ];
+      result.executionDependencies = await Promise.all(refs.map(async ({ dep, componentId }) => {
+        if (dep.resourceType !== 'chat_skill')
+          return { componentId, resourceType: dep.resourceType, canonicalRef: dep.canonicalRef,
+            requiredness: dep.requiredness, declaredVersion: dep.versionNumber || null, versionPolicy: 'as_declared' };
+        // This is a read-only dependency preview; it does not invoke tools.
+        const current = await resolveDependency({ ...dep, requiredness: 'required' }, new Set());
+        return { componentId, resourceType: dep.resourceType, canonicalRef: dep.canonicalRef,
+          requiredness: dep.requiredness, declaredVersion: dep.versionNumber || null,
+          resolvedVersion: current.resolvedVersion || null, versionPolicy: current.versionPolicy || null,
+          loadState: current.loadState, ...(current.reason ? { reason: current.reason } : {}) };
+      }));
+    }
+    return result;
   }
 
   async function createPackVersion(input) {
@@ -391,7 +413,12 @@ function createRegistry(options) {
   }
 
   async function resolveDependency(dep, requested) {
-    const shouldLoad = dep.requiredness === 'required' || requested.has(dep.resourceType + ':' + dep.canonicalRef);
+    // A component explicitly selected by the agent is enough to activate its
+    // recommended Chat Skills. Optional Skills, tools and external resources
+    // remain opt-in, preserving the minimum-sufficient-load policy.
+    const shouldLoad = dep.requiredness === 'required'
+      || (dep.resourceType === 'chat_skill' && dep.requiredness === 'recommended')
+      || requested.has(dep.resourceType + ':' + dep.canonicalRef);
     const base = {
       resourceType: dep.resourceType,
       canonicalRef: dep.canonicalRef,
@@ -413,8 +440,11 @@ function createRegistry(options) {
           .filter((v) => Number.isInteger(v) && v > 0))];
         if (released.length > 1) throw new Error('Conflicting dojo Skill releases: ' + dep.canonicalRef);
         if (released.length) {
-          const history = await chatSkills.skillVersions({ id: dep.canonicalRef });
-          const item = (history.items || []).find((entry) => Number(entry.versionNumber) === released[0]);
+          // Exact document fetch works even after >30 revisions accumulate.
+          const item = typeof chatSkills.skillVersionGet === 'function'
+            ? await chatSkills.skillVersionGet({ id: dep.canonicalRef, versionNumber: released[0] })
+            : (await chatSkills.skillVersions({ id: dep.canonicalRef })).items
+              .find((entry) => Number(entry.versionNumber) === released[0]);
           if (!item) throw new Error('Dojo-released Chat Skill version unavailable: ' + dep.canonicalRef + ' v' + released[0]);
           return { ...base, resolvedVersion: item.versionNumber, versionPolicy: 'latest_dojo_release',
             title: item.title, loadState: 'loaded', content: item.body };
@@ -689,6 +719,134 @@ function createRegistry(options) {
     };
   }
 
+  // One read-only graph across the actual Registry and active dojos.
+  // Text-only Skill references are intentionally not presented as executable
+  // dependencies; they need separate structured declarations before use.
+  async function dependencyAudit(input) {
+    const args = input || {};
+    const [packList, profileList, dojoList, skillList] = await Promise.all([
+      listPacks({ status: 'active', limit: 100, scanLimit: 500 }),
+      listProfiles({ status: 'active', limit: 100, scanLimit: 500 }),
+      explorationBases.list({ status: 'active' }),
+      chatSkills.listSkills(),
+    ]);
+    const dojos = dojoList.items || [];
+    const skills = skillList.items || [];
+    const skillIndex = new Map(skills.map((item) => [item.id, item]));
+    const releaseByTarget = new Map();
+    const nodes = [];
+    const edges = [];
+    const warnings = [];
+    const profiles = await Promise.all((profileList.items || []).map((item) => getProfile({ id: item.id })));
+    const offeredPacks = new Set();
+    for (const profile of profiles) {
+      nodes.push({ type: 'agent_profile', id: profile.profile.id, version: profile.definition.versionNumber });
+      for (const entry of profile.definition.intelligencePortfolio || []) {
+        offeredPacks.add(entry.packId);
+        edges.push({ type: 'offers_pack', from: 'agent_profile:' + profile.profile.id,
+          to: 'intelligence_pack:' + entry.packId, declaredVersion: entry.versionNumber || null });
+      }
+    }
+    for (const base of dojos) {
+      nodes.push({ type: 'dojo', id: base.id, title: base.title,
+        rated: base.loop?.rated || 0, pass: base.loop?.pass || 0,
+        passRate: base.loop?.passRate ?? null });
+      if (base.target?.kind && base.target?.id) {
+        const key = base.target.kind + ':' + base.target.id;
+        const releases = releaseByTarget.get(key) || [];
+        releases.push(Number(base.target.versionNumber) || null);
+        releaseByTarget.set(key, releases);
+        edges.push({ type: 'trains', from: 'dojo:' + base.id, to: key,
+          releasedVersion: base.target.versionNumber || null });
+      }
+      for (const ref of base.packRefs || [])
+        edges.push({ type: 'uses_pack', from: 'dojo:' + base.id,
+          to: 'intelligence_pack:' + ref.packId, role: ref.role || '' });
+    }
+    const currentRelease = (kind, id) => {
+      const values = releaseByTarget.get(kind + ':' + id) || [];
+      const distinct = [...new Set(values.filter((v) => Number.isInteger(v) && v > 0))];
+      if (distinct.length > 1 || (values.length && !distinct.length)) {
+        warnings.push({ type: 'release_conflict_or_missing', resource: kind + ':' + id, values });
+        return null;
+      }
+      return distinct[0] || null;
+    };
+    for (const skill of skills) {
+      const approved = currentRelease('chat_skill', skill.id);
+      nodes.push({ type: 'chat_skill', id: skill.id, registryVersion: skill.revision,
+        executableVersion: approved || skill.revision,
+        approval: approved ? 'dojo_released' : 'registry_latest' });
+    }
+    let historicalSkillPins = 0;
+    const referenced = new Set();
+    for (const item of packList.items || []) {
+      const approved = currentRelease('intelligence_pack', item.id);
+      const version = approved || item.currentVersionNumber;
+      nodes.push({ type: 'intelligence_pack', id: item.id,
+        registryVersion: item.currentVersionNumber, executableVersion: version,
+        approval: approved ? 'dojo_released' : 'registry_latest',
+        inAgentProfile: offeredPacks.has(item.id) });
+      if (!offeredPacks.has(item.id))
+        warnings.push({ type: 'pack_not_selectable', packId: item.id });
+      if (approved && item.currentVersionNumber > approved)
+        warnings.push({ type: 'unreleased_pack_candidate', packId: item.id,
+          latest: item.currentVersionNumber, released: approved });
+      const pack = await getPack({ id: item.id, versionNumber: version });
+      const links = [
+        ...(pack.definition.dependencies || []).map((dep) => ({ dep, componentId: null })),
+        ...(pack.definition.components || []).flatMap((component) =>
+          (component.dependencies || []).map((dep) => ({ dep, componentId: component.id }))),
+      ];
+      for (const { dep, componentId } of links) {
+        if (dep.resourceType !== 'chat_skill') continue;
+        referenced.add(dep.canonicalRef);
+        const skill = skillIndex.get(dep.canonicalRef);
+        const target = currentRelease('chat_skill', dep.canonicalRef);
+        const old = dep.versionNumber || null;
+        if (old && skill && old !== skill.revision) historicalSkillPins++;
+        edges.push({ type: 'uses_skill', from: 'intelligence_pack:' + item.id,
+          to: 'chat_skill:' + dep.canonicalRef,
+          componentId, requiredness: dep.requiredness,
+          autoLoad: dep.requiredness !== 'optional',
+          declaredVersion: old, resolvedVersion: target || skill?.revision || null,
+          versionPolicy: target ? 'dojo_released' : 'registry_latest' });
+        if (!skill) warnings.push({ type: 'missing_skill', packId: item.id, skillId: dep.canonicalRef });
+      }
+    }
+    if (args.includeBodyReferences === true) {
+      const skillIds = new Set(skillIndex.keys());
+      const trained = skills.filter((item) => releaseByTarget.has('chat_skill:' + item.id));
+      for (const item of trained) {
+        // These are hints, not execution dependencies. Quoted names in prose
+        // cannot be promoted to authoritative dependency declarations.
+        const body = (await chatSkills.getSkill({ id: item.id })).body || '';
+        const matches = [...body.matchAll(/`([a-z][a-z0-9-]{2,})`/g)]
+          .map((match) => match[1]).filter((id) => id !== item.id && skillIds.has(id));
+        for (const target of [...new Set(matches)].slice(0, 20))
+          edges.push({ type: 'body_reference_unverified', from: 'chat_skill:' + item.id,
+            to: 'chat_skill:' + target, autoLoad: false });
+      }
+    }
+    return {
+      asOf: new Date().toISOString(),
+      nodes,
+      edges,
+      warnings,
+      summary: {
+        activeDojos: dojos.length, activePacks: (packList.items || []).length,
+        availableSkills: skills.length, packsSelectable: offeredPacks.size,
+        skillDependencies: edges.filter((item) => item.type === 'uses_skill').length,
+        uniqueSkillsInPacks: referenced.size,
+        skillsNotReferencedByPacks: skills.filter((item) => !referenced.has(item.id)).map((item) => item.id),
+        historicalSkillPins, warningCount: warnings.length,
+      },
+      boundaries: ['Body references are observations, not enforced dependencies.',
+        'A registered Skill may legitimately run standalone without a Pack.',
+        'Human acceptance and observed commercial outcomes are not inferred from graph connectivity.'],
+    };
+  }
+
   async function bootstrapInitialPack(input) {
     if (input?.confirm !== true) throw new Error('agent_intelligence_bootstrap requires confirm=true');
     const current = await db().collection(COLLECTIONS.packs).doc(INITIAL_PACK.id).get();
@@ -712,6 +870,7 @@ function createRegistry(options) {
     derivePackVersion,
     deriveProfileVersion,
     resolveBundle,
+    dependencyAudit,
     bootstrapInitialPack,
   };
 }
