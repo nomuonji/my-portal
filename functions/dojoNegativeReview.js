@@ -55,7 +55,8 @@ function checkNegativeReview(raw, { negativeTargets, hypotheses, trials, body })
     const hasFail = (trials || []).some(t => t.status === 'rated' && ['fail', 'partial'].includes(t.verdict));
     // Cold-start/measurement dojos do not have a human positive/negative pair yet.
     // Do not fabricate comparator IDs or turn off exploration; keep it explicitly unverified.
-    if (!hasPass || !hasFail) return { status: 'insufficient_human_contrast', checks: [] };
+    const totalRated = (trials || []).filter(t => t.status === 'rated' && t.verdict !== 'withdrawn').length;
+    if (!hasPass || !hasFail || totalRated < 3) return { status: 'insufficient_human_contrast', checks: [] };
   }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('negativeReview is required for runs testing negative hypotheses');
   const checks = raw.checks;
