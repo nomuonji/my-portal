@@ -834,11 +834,15 @@ test('provisional images and transient video refs cannot earn a user verdict bef
     label:'Video stable link',ref:refs[1],mediaUrl:'sandbox:///tmp/video.mp4',
   }]}),/public HTTPS URL/);
   await store.recordTrials({baseId:'test-base',runId,trials:[
-    {label:'Picture uploaded',ref:refs[0],imageUrl:'https://cdn.example.com/character.png'},
-    {label:'Video uploaded',ref:refs[1],mediaUrl:'https://cdn.example.com/film.mp4'},
+    {label:'Picture uploaded through stale MCP client',ref:refs[0],
+      predictionNote:'artifact:image:https://cdn.example.com/character.png'},
+    {label:'Video uploaded through stale MCP client',ref:refs[1],
+      predictionNote:'artifact:media:https://cdn.example.com/film.mp4'},
   ]});
   const now=await store.awaitingTrials({});
+  assert.equal(now.items.length,2,'artifact attachment must preserve trial identity');
   assert.ok(now.items.every(x=>x.reviewStatus==='ready'));
+  assert.equal(now.items[0].imageUrl,'https://cdn.example.com/character.png');
   assert.equal(now.items[1].mediaUrl,'https://cdn.example.com/film.mp4');
   const finished=await store.rateTrials({baseId:'test-base',ratings:[
     {id:'T-001',verdict:'pass',userWords:'画像を見て合格'}]});
