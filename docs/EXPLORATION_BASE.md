@@ -110,6 +110,14 @@ The default loop is **evidence → candidate mechanism → applicability check �
 - auditCoverage distinguishes genuinely reviewed trial comparisons from Buzz legacy screening. measuredWins is separate for measurement-confirmed dojos. These are not new success metrics.
 - The loop's nextActions requires comparing successful and failed cases before selecting another sample. A positive hypothesis with three or more actual human-rated outcomes and no passes is now blocked at trial recording, not merely mentioned in nextActions. Create a substantially different mechanism under a new hypothesis ID rather than recycling the losing ID.
 
+**Pre-generation historical recall checkpoint (new).** A user-reviewed dojo with at least four actual past passes and four actual past fails must complete a server-scored recall check **once per open run**, before recording new trials:
+
+1. Start the run; call `exploration_recall_prepare` with an actual research premise (`topic`) and, where relevant, `hypothesisIds`. The server ranks **all** rated texts by shared hypotheses and topic overlap, rather than using only the six representative cases from `loop.learning`. It returns two labeled passes and two labeled fails to study, plus four different historical samples with their verdicts omitted.
+2. Compare the real texts and their differences; call `exploration_recall_check` **once**, predicting pass/fail for all four challenge cases with literal quotes and observable reasons. The server checks the original human verdicts and requires at least **3 of 4** correct. A failed or skipped check blocks `exploration_trial_record` for that run. Start a new research run after investigating the mismatch; repeated guessing in the same run is refused.
+3. For a passing run, the ordinary `learningAudit`, Buzz `editorialScreen`, and any `negativeReview` are **still mandatory** per their existing conditions. New trial records preserve the recall score and the studied/challenged IDs. **Only later user feedback counts toward the actual success rate.**
+
+This is a modest historical-label consistency check, not a truly blind benchmark: other history APIs may reveal the same verdicts. The server verifies ID, text, history order and answer correctness, **not** the causal truth of the agent's explanation or the quality of its next creation. The challenge is a safeguard against unexamined transfer, not proof of taste. If there are fewer than four passes or four fails, the new check is not imposed; existing safeguards remain. Measurement-confirmed dojos and trusted historical imports are unaffected. New MCP fields/tools require the connector schema to refresh.
+
 **Pre-submission transfer review.** A new user-facing trial in any trial-based base with at least three prior rated outcomes and both an actual acceptance and rejection must include learningAudit (or legacy learning:v1: JSON in predictionNote, maximum 600 characters) before exploration_trial_record succeeds:
 
 ~~~json
@@ -136,7 +144,7 @@ The contract is shared by all domains (social, SEO, keywords, video, products, m
 
 ## MCP operations
 
-`exploration_base_list`, `exploration_base_get`, `exploration_base_create`, `exploration_outcome_set`, `exploration_method_version_set`, `exploration_item_upsert`, `exploration_run_start`, `exploration_run_finish`, `exploration_trial_record`, `exploration_trial_rate`.
+`exploration_base_list`, `exploration_base_get`, `exploration_base_create`, `exploration_outcome_set`, `exploration_method_version_set`, `exploration_item_upsert`, `exploration_run_start`, `exploration_run_finish`, `exploration_recall_prepare`, `exploration_recall_check`, `exploration_trial_record`, `exploration_trial_rate`.
 
 `exploration_base_get` with `view=brief` is the single call that starts a run. Packs may reference a base as a dependency with `resourceType: exploration_base`; `cognitive_bundle_resolve` loads the brief when the caller selects it. `world_map_get` lists the bases.
 

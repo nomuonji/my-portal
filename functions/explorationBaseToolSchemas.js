@@ -303,8 +303,41 @@ const tools = [
     },
   },
   {
+    name: 'exploration_recall_prepare',
+    description: 'Before creating candidates in a user-rated dojo run with >=4 real passes and >=4 real fails, retrieve relevant past human-rated texts based on a pre-generation topic and tested hypotheses. Returns 2 labeled passes + 2 labeled fails and 4 further historical cases without their labels. Creates one immutable recall challenge per run. Do NOT assume historical accuracy proves future creative quality.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        baseId, runId: string('Open run ID (R-nnn).',20),
+        topic: string('Specific research premise or audience situation, supplied before candidate drafting, 8-400 characters.',400),
+        hypothesisIds: strings('Positive hypotheses being researched; improves relevance of retrieved cases.',10),
+      },
+      required: ['baseId','runId','topic'], additionalProperties:false,
+    },
+  },
+  {
+    name: 'exploration_recall_check',
+    description: 'Classify all four historical challenge cases from exploration_recall_prepare with an exact quote and concrete reason per case. Server grades against existing human verdicts; >=3/4 must match before a new user-facing trial can be registered. One check per run; self-score does not count as a human pass.',
+    inputSchema: {
+      type:'object',
+      properties: {
+        baseId, runId: string('Open run ID with a prepared recall challenge.',20),
+        predictions: { type:'array', minItems:4, maxItems:4, items: { type:'object',
+          properties: {
+            caseId: string('Assigned historical T-nnn or haul case ID.',160),
+            predictedVerdict: { type:'string', enum:['pass','fail'] },
+            quote: string('Exact 8-160 character quote from this challenge case body or label.',160),
+            reason: string('Observable reason for predicting pass/fail; 20-700 chars, do not infer the user\'s hidden motive as fact.',700),
+          },
+          required:['caseId','predictedVerdict','quote','reason'],additionalProperties:false,
+        } },
+      },
+      required:['baseId','runId','predictions'],additionalProperties:false,
+    },
+  },
+  {
     name: 'exploration_trial_record',
-    description: 'Record user-facing trials before presenting. ALL trial-based dojos with 3+ rated results and both an accepted and rejected case require learningAudit with exact quotes from both human-rated case texts, plus the claimed transfer mechanism and counterexample. Old clients can use learning:v1:<compact JSON> in predictionNote (<=600 characters). The Buzz screen alone no longer satisfies the learning review. Buzz-post dojo adds an enforced early rejection screen: 3+ candidate pool, 2+ rejected, 2+ observed sourcing lanes, accepted/rejected human-rated precedent, exact passage from the proposed copy, concrete hostile objection, and a pre-registered closingType (derived_consequence = the last beat follows directly from the material; author_added = the author added an analogy, counterfactual, title or similar). predictedPass is an honest forecast and no longer gates submission. Native quote practice is retired. Use editorialScreen or, from clients with the older MCP schema, screen:v1:<compact JSON> inside predictionNote (up to 600 characters). Other dojos are unchanged. A screen is an AI-only gate, NOT independent approval or a promise of engagement.',
+    description: 'Record user-facing trials before presenting. For human-rated dojos with >=4 accepted and >=4 rejected historical texts, a run must have passed exploration_recall_prepare + exploration_recall_check (>=3 of 4) first. This is in addition to the existing learningAudit. ALL trial-based dojos with 3+ rated results and both an accepted and rejected case require learningAudit with exact quotes from both human-rated case texts, plus the claimed transfer mechanism and counterexample. Old clients can use learning:v1:<compact JSON> in predictionNote (<=600 characters). The Buzz screen alone no longer satisfies the learning review. Buzz-post dojo adds an enforced early rejection screen: 3+ candidate pool, 2+ rejected, 2+ observed sourcing lanes, accepted/rejected human-rated precedent, exact passage from the proposed copy, concrete hostile objection, and a pre-registered closingType (derived_consequence = the last beat follows directly from the material; author_added = the author added an analogy, counterfactual, title or similar). predictedPass is an honest forecast and no longer gates submission. Native quote practice is retired. Use editorialScreen or, from clients with the older MCP schema, screen:v1:<compact JSON> inside predictionNote (up to 600 characters). Other dojos are unchanged. A screen is an AI-only gate, NOT independent approval or a promise of engagement.',
     inputSchema: {
       type: 'object',
       properties: {

@@ -1066,3 +1066,98 @@ test('all dojos automatically precommit one failure hypothesis even when an old 
   assert.equal(finished.loop.negativeLearning.reviewed, 0);
   assert.equal(finished.loop.overall.rated, 0);
 });
+
+
+test('recall gate retrieves relevant real human examples and blocks skipped or failed historical checks', async () => {
+  const store = await setup();
+  await store.upsertItems({ baseId:'test-base', kind:'hypothesis', items:[hypothesis] });
+  const history = [
+    ['fail','The same ordinary words describe the customer but add no surprise.'],
+    ['pass','The customer rejects a discount, then misses the only buyer who cared.'],
+    ['fail','A generic last sentence repeats exactly what the first sentence said.'],
+    ['pass','The stylist gets the blame because I asked them to choose my haircut.'],
+    ['fail','A flat summary tells the reader only what the news already said.'],
+    ['pass','The person admits an embarrassing motive they cannot say aloud.'],
+    ['fail','The ending replaces one label with another without a concrete act.'],
+    ['pass','A mundane social rule makes its author accidentally trapped by it.'],
+  ];
+  await store.recordTrials({ baseId:'test-base', backfill:true, trials:history.map(([verdict,body],i) => ({
+    label:'Historical example '+i, body, hypothesisIds:['H-001'],
+    rating:{verdict,userWords:verdict==='pass'?'合格':'ボツ'},
+  }))});
+  const {runId} = await store.startRun({baseId:'test-base',objective:'Understand historical accepted vs rejected texts',
+    targets:[{hypothesisId:'H-001',prediction:'Specific motives will produce another user pass'}], responseMode:'compact'});
+  const candidate = {label:'New relationship-specific motive',
+    body:'When the buyer stops responding, I realize I wanted the message more than the sale itself.',
+    hypothesisIds:['H-001'],predictedPass:0.45};
+  await assert.rejects(store.recordTrials({baseId:'test-base',runId,trials:[candidate]}),/Historical recall check required/);
+  const p = await store.prepareRecall({baseId:'test-base',runId,topic:'Emotional reversal in ordinary customer interactions',hypothesisIds:['H-001']});
+  assert.equal(p.required,true);
+  assert.equal(p.studyCases.length,4);
+  assert.equal(p.challengeCases.length,4);
+  assert.equal(p.studyCases.filter(c=>c.verdict==='pass').length,2);
+  assert.equal(p.studyCases.filter(c=>c.verdict==='fail').length,2);
+  assert.ok(p.challengeCases.every(c=>c.verdict===undefined),'challenge labels are not returned');
+  await assert.rejects(store.recordTrials({baseId:'test-base',runId,trials:[candidate]}),/Historical recall check required/);
+  await assert.rejects(store.prepareRecall({baseId:'test-base',runId,topic:'Retry with a new topic'}),
+    /already prepared/);
+  const fail = await store.checkRecall({baseId:'test-base',runId,predictions:p.challengeCases.map(c=>({
+    caseId:c.id,predictedVerdict:'pass',quote:c.body.slice(0,12),
+    reason:'The text contains a specific observable situation and a candidate consequence.',
+  }))});
+  assert.equal(fail.status,'failed');
+  assert.equal(fail.correct,2);
+  await assert.rejects(store.recordTrials({baseId:'test-base',runId,trials:[candidate]}),/Historical recall check required/);
+  await assert.rejects(store.checkRecall({baseId:'test-base',runId,predictions:[]}),/not pending/);
+});
+
+test('passing an exact historical-label recall check permits the existing candidate learning audit', async () => {
+  const store = await setup();
+  await store.upsertItems({baseId:'test-base',kind:'hypothesis',items:[hypothesis]});
+  const examples = [
+    ['fail','The same ordinary words describe the customer but add no surprise.'],
+    ['pass','The customer rejects a discount, then misses the only buyer who cared.'],
+    ['fail','A generic last sentence repeats exactly what the first sentence said.'],
+    ['pass','The stylist gets the blame because I asked them to choose my haircut.'],
+    ['fail','A flat summary tells the reader only what the news already said.'],
+    ['pass','The person admits an embarrassing motive they cannot say aloud.'],
+    ['fail','The ending replaces one label with another without a concrete act.'],
+    ['pass','A mundane social rule makes its author accidentally trapped by it.'],
+  ];
+  await store.recordTrials({baseId:'test-base',backfill:true,trials:examples.map(([verdict,body],i)=>({
+    label:'Case '+i,body,rating:{verdict,userWords:verdict==='pass'?'合格':'ボツ'},
+  }))});
+  const {runId}=await store.startRun({baseId:'test-base',objective:'Check remembered success mechanisms',
+    targets:[{hypothesisId:'H-001',prediction:'Specific motive is an observable transfer condition'}],responseMode:'compact'});
+  const p=await store.prepareRecall({baseId:'test-base',runId,topic:'Reversal and motive in ordinary interactions'});
+  const truth=new Map(examples.map(([verdict],i)=>['T-'+String(i+1).padStart(3,'0'),verdict]));
+  const checked=await store.checkRecall({baseId:'test-base',runId,predictions:p.challengeCases.map((c,i)=>({
+    caseId:c.id,predictedVerdict:i===0?(truth.get(c.id)==='pass'?'fail':'pass'):truth.get(c.id),
+    quote:c.body.slice(0,12),reason:'This case has an observable action and a specific unexpected consequence.',
+  }))});
+  assert.equal(checked.status,'passed');
+  assert.equal(checked.correct,3);
+  const candidate={label:'A buyer I had turned down',
+    body:'The only person who asked about my old bag walked away, and now I miss that buyer more than the sale.',
+    hypothesisIds:['H-001'],predictedPass:0.46,
+    learningAudit:{
+      positiveCaseId:'T-002',negativeCaseId:'T-001',
+      positiveAnchor:'The customer rejects',negativeAnchor:'The same ordinary',
+      mechanism:'A character exposes an embarrassing personal motive rather than reporting a fact.',
+      transferCondition:'The seller misses the attention from the buyer more than receiving the money.',
+      failureContrast:'The candidate adds a motive beyond the rejected example rather than paraphrasing it.',
+      fatalRisk:'The buyer story might still sound like an obvious generic relationship metaphor.',
+      riskResolution:'The body ties the reversal to the original buyer and an actual declined sale.',
+      bodyAnchor:'now I miss that buyer',decision:'submit',
+    },
+  };
+  const created=await store.recordTrials({baseId:'test-base',runId,trials:[candidate]});
+  assert.equal(created.created.length,1);
+  const full=await store.get({id:'test-base',view:'full'});
+  const trial=full.full.trials.find(t=>t.id===created.created[0].id);
+  assert.equal(trial.recallEvidence.correct,3);
+  assert.equal(trial.recallEvidence.challengeCaseIds.length,4);
+  assert.equal(trial.learningAudit.status,'verified');
+  assert.equal(trial.status,'awaiting','historical recall must not count as a user rating');
+});
+
