@@ -338,3 +338,73 @@ test('trained Pack defaults to dojo-released version, even if Registry has an un
     /not released by its dojo/,
   );
 });
+
+test('runtime uses current shared Skill despite stale and conflicting Pack pins', async () => {
+  const db = new MemoryDb();
+  const registry = createRegistry(db);
+  const pack = basePack();
+  pack.components[0].dependencies = [
+    { resourceType: 'chat_skill', canonicalRef: 'example-skill', versionNumber: 1, requiredness: 'required' },
+    { resourceType: 'chat_skill', canonicalRef: 'example-skill', versionNumber: 2, requiredness: 'recommended' },
+  ];
+  await registry.createPackVersion({ pack, expectedCurrentVersion: 0, confirm: true });
+  await registry.createProfileVersion({ profile: baseProfile([{ packId: 'test-cognition', versionNumber: 1 }]), expectedCurrentVersion: 0, confirm: true });
+  const bundle = await registry.resolveBundle({
+    profileId: 'test-agent', taskFrame: { objective: 'Load shared Skill at execution time' },
+    selectedIntelligences: [{ packId: 'test-cognition', componentIds: ['evidence-review'],
+      selectionRationale: 'Shared Skill revisions should follow latest at each execution.' }],
+  });
+  const skills = bundle.resolvedDependencies.filter((item) => item.resourceType === 'chat_skill');
+  assert.equal(skills.length, 1);
+  assert.equal(skills[0].loadState, 'loaded');
+  assert.equal(skills[0].resolvedVersion, 2);
+  assert.equal(skills[0].content, '# Skill v2');
+  assert.equal(skills[0].versionPolicy, 'latest_registry_version');
+  assert.deepEqual(bundle.unresolvedGaps, []);
+  assert.equal((await registry.getPack({ id: 'test-cognition', versionNumber: 1 }))
+    .definition.components[0].dependencies[0].versionNumber, 1);
+});
+
+test('dojo-approved shared Skill update takes effect next resolution without Pack rewrite', async () => {
+  const db = new MemoryDb();
+  let release = 1;
+  const skills = {
+    ...chatSkills,
+    async skillVersions() {
+      return { items: [
+        { versionNumber: 3, title: 'Example Skill', body: '# Unapproved v3' },
+        { versionNumber: 2, title: 'Example Skill', body: '# Approved v2' },
+        { versionNumber: 1, title: 'Example Skill', body: '# Approved v1' },
+      ] };
+    },
+    async getSkill() { throw new Error('must not load draft of a dojo-owned Skill'); },
+  };
+  const dojos = {
+    ...explorationBases,
+    async trainersOf({ kind, id }) {
+      if (kind === 'chat_skill' && id === 'example-skill')
+        return [{ baseId: 'example-dojo', releasedVersion: release }];
+      return [];
+    },
+  };
+  const registry = registryModule.createRegistry({ getDb: () => db, chatSkills: skills, contextStore, explorationBases: dojos });
+  const pack = basePack();
+  pack.components[0].dependencies = [{ resourceType: 'chat_skill', canonicalRef: 'example-skill',
+    versionNumber: 1, requiredness: 'required' }];
+  await registry.createPackVersion({ pack, expectedCurrentVersion: 0, confirm: true });
+  await registry.createProfileVersion({ profile: baseProfile([{ packId: 'test-cognition' }]), expectedCurrentVersion: 0, confirm: true });
+  const args = {
+    profileId: 'test-agent', taskFrame: { objective: 'Use approved Skill' },
+    selectedIntelligences: [{ packId: 'test-cognition', componentIds: ['evidence-review'],
+      selectionRationale: 'Load the currently dojo-released version.' }],
+  };
+  const before = await registry.resolveBundle(args);
+  assert.equal(before.resolvedDependencies[0].resolvedVersion, 1);
+  assert.equal(before.resolvedDependencies[0].content, '# Approved v1');
+  release = 2;
+  const after = await registry.resolveBundle(args);
+  assert.equal(after.resolvedDependencies[0].resolvedVersion, 2);
+  assert.equal(after.resolvedDependencies[0].content, '# Approved v2');
+  assert.equal(after.resolvedDependencies[0].versionPolicy, 'latest_dojo_release');
+  assert.equal((await registry.getPack({ id: 'test-cognition' })).pack.currentVersionNumber, 1);
+});
