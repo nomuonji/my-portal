@@ -526,6 +526,7 @@ test('three user non-passes cannot be cleared by a ceremonial run or self-PASS',
     statement: 'An independently collected source leads to a different candidate.',
     mechanism: 'This is a new sourcing and selection hypothesis, not a reuse of the failed copy.',
   }] });
+  await completePriorResearch(store, 'test-base', third.runId);
   const ok = await store.recordTrials({ baseId: 'test-base', runId: third.runId, trials: [{ ...trial('D'), hypothesisIds: ['H-002'] }] });
   assert.equal(ok.created.length, 1);
 });
@@ -549,6 +550,7 @@ test('every evidence-rich dojo refuses a trial that skips positive/negative tran
     baseId: 'test-base', objective: 'Improve a keyword using verified lessons, not superficial similarity',
     targets: [{ hypothesisId: 'H-001', prediction: 'The user will accept a genuinely different keyword' }],
   });
+  await completePriorResearch(store, 'test-base', runId);
   const sample = { label: 'New keyword with observed comparison', body: 'A new candidate with observed readers and different actual competition.',
     hypothesisIds: ['H-001'], predictedPass: 0.48 };
   await assert.rejects(store.recordTrials({ baseId: 'test-base', runId, trials: [sample] }), /Learning review required/);
@@ -625,6 +627,7 @@ test('buzz dojo blocks low-confidence, one-shot, invented-reference or unscreene
     baseId, objective: 'Compare multiple upstream sources before producing the next standalone post',
     targets: [{ hypothesisId: 'H-001', prediction: 'One evaluated post could be accepted' }],
   });
+  await completePriorResearch(store, baseId, runId);
   const body = '当事者だけが気づく小さな面倒に、予想外の二段目が突然出てくる。だからそこが笑える。';
   const audit = {
     format: 'standalone',
@@ -907,6 +910,7 @@ test('negative hypotheses run in parallel: unresolved candidates blocked, user m
     responseMode: 'compact',
   });
   assert.equal(run.negativeTargetCount, 1);
+  await completePriorResearch(store, 'test-base', run.runId);
   const candidate = {
     label: 'Concrete office failure', body: 'The office rule created a second problem for its author.',
     hypothesisIds: ['H-001'], predictedPass: 0.5,
@@ -980,6 +984,7 @@ test('older MCP fields can classify and compare failure hypotheses without weake
       refutingObservation: 'Human rejects the new specific consequence.',
     }, responseMode: 'compact' });
   assert.equal(run.negativeTargetCount, 1);
+  await completePriorResearch(store, 'test-base', run.runId);
   const body = 'A specific office rule unexpectedly changes who pays for the mistake.';
   const audit = { positiveCaseId: 'T-001', negativeCaseId: 'T-002',
     positiveAnchor: 'distinct causal consequence', negativeAnchor: 'forgettable generic ending',
