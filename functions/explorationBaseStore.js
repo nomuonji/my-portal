@@ -8,7 +8,7 @@
 const { getDocumentDb } = require('./documentDb');
 const { loopView, loopSummary, ratedEntries, VERDICTS: TRIAL_VERDICTS, FAIL_STAGES, LIMITS } = require('./explorationLoop');
 const { validateLearningAudit } = require('./dojoLearning');
-const { sourceCases, recallRequired, buildRecallProbe, checkRecallPredictions } = require('./dojoRecall');
+const { recallRequired, buildRecallProbe, checkRecallPredictions, buildHistoricalHypotheses, checkHypothesisReviews } = require('./dojoRecall');
 const { trialArtifactStatus, publicMediaUrl } = require('./dojoArtifactReadiness');
 
 const DEFAULT_DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
@@ -50,7 +50,7 @@ const PROTOCOL = [
   'Sources (where candidates come from) are a ledger too: record which source a candidate came from (evidence on the source, sourceIds on the achievement) and reject sources that yield nothing, so the next run starts from proven ones.',
   'When a submarine (Project Submarine) carries this skill/pack, its sortie opens and closes the run here. What it finds is the submarine\'s haul; a haul the user confirms comes back here as an achievement.',
   'The measure of a 道場 is the pass rate of what its released version produces, by version (loop). There is no count target. Read loop.nextActions first.',
-  'Before new trials in a dojo with at least four real passes and four fails, call exploration_recall_prepare at the beginning of the run to retrieve relevant historical accepted/rejected texts; use exploration_recall_check to predict the four additional historical labels. An unsuccessful recall check blocks submissions in that run. This is only a label benchmark, never a substitute for a new user verdict.',
+  'Before new trials in a dojo with at least four real passes and four fails, exploration_recall_prepare retrieves related old case texts AND the content, counterexamples and results of historically tested hypotheses. exploration_recall_check must check four held-back verdicts and explicitly compare every retrieved hypothesis against its linked real pass/fail cases, limits and transfer/refutation conditions. Neither step proves causal understanding. An incomplete check blocks submissions in that run.',
   'Every sample shown to the user is a trial: exploration_trial_record before showing it, with the hypotheses it tests and the predicted chance of passing. A sample tied to no hypothesis teaches nothing and is refused.',
   'When the user reacts, exploration_trial_rate with their own words. The rating lands on the version and on each hypothesis the trial tested, so a rated hypothesis can no longer be closed as inconclusive.',
   'A new version waits until the released one has enough ratings to be compared (loop.gates). Three consecutive non-passes require a research run with a structured failureAnalysis: two actual failed examples, a confirmed pass or externally verifiable positive contrast, two competing causes with contradictory evidence and falsification, uncertainty, and a discriminating next test. A mere finished run or agent self-score never clears the gate.',
@@ -458,7 +458,10 @@ function createStore(options) {
     const topic = text(input?.topic, 400, 'topic (research premise before generating a sample)', true);
     if (topic.length < 8) throw new Error('Recall topic must describe a concrete research premise (8+ characters)');
     const hypothesisIds = list(input?.hypothesisIds, 10, 20);
-    const trials = await loadTrials(id);
+    const [trials, items, runDocs] = await Promise.all([
+      loadTrials(id), loadItems(id), db().collection(COLLECTIONS.runs).where('baseId', '==', id).limit(500).get(),
+    ]);
+    const historicalRuns = runDocs.docs.map(doc => doc.data());
     let payload = null;
     await db().runTransaction(async tx => {
       const base = await loadBase(tx, id);
@@ -472,6 +475,7 @@ function createStore(options) {
       }
       const relevanceIds = pinnedIds.length ? pinnedIds : hypothesisIds;
       const probe = buildRecallProbe(trials, base.feedbackLog || [], topic, relevanceIds);
+      const historicalHypotheses = buildHistoricalHypotheses(items, trials, historicalRuns, topic, relevanceIds);
       if (!probe.required || base.outcome?.confirmedBy === 'measurement') {
         payload = { required: false, reason: 'insufficient_human_contrast_or_measurement', runId };
         return;
@@ -479,11 +483,13 @@ function createStore(options) {
       run.recallProbe = {
         required: true, status: 'awaiting_predictions', issuedAt: now(), topic, hypothesisIds: relevanceIds,
         studyCaseIds: probe.studyCaseIds, challengeCaseIds: probe.challengeCaseIds,
+        historicalHypotheses,
       };
       put(tx, runRef(id, runId), run);
       payload = { required: true, runId, status: 'awaiting_predictions',
         studyCases: probe.studyCases, challengeCases: probe.challengeCases,
-        instructions: 'Study the labeled accepted/rejected cases. Predict the verdict of every unlabeled challenge using a quote and observable explanation. Check once per run; >=3/4 correct is required before recording a trial. These are historical cases, not a truly secret holdout.' };
+        historicalHypotheses,
+        instructions: 'Read the complete claims, conditions, earlier verdicts and counterexamples of every historicalHypothesis. Study the labeled accepted/rejected cases. Predict the verdict of every unlabeled challenge using a quote and observable explanation. Check once per run; >=3/4 correct is required before recording a trial. These are historical cases, not a truly secret holdout.' };
     });
     return payload;
   }
@@ -501,8 +507,9 @@ function createStore(options) {
       if (!run.recallProbe || run.recallProbe.status !== 'awaiting_predictions') {
         throw new Error('Recall is not pending; prepare once per run before checking');
       }
+      const hypothesisReviews = checkHypothesisReviews(run.recallProbe.historicalHypotheses || [], input?.hypothesisReviews);
       const graded = checkRecallPredictions(run.recallProbe, input?.predictions, trials, base.feedbackLog || []);
-      run.recallProbe = { ...run.recallProbe, ...graded, checkedAt: now() };
+      run.recallProbe = { ...run.recallProbe, ...graded, hypothesisReviews, checkedAt: now() };
       put(tx, runRef(id, runId), run);
       result = { runId, status: graded.status, correct: graded.correct, total: graded.total,
         nextAction: graded.status === 'passed' ? 'Proceed to trial recording with the existing learningAudit and negativeReview gates' : 'This run cannot submit trials: revise the explanation with historical counterexamples and open a new research run',
@@ -1458,6 +1465,7 @@ function createStore(options) {
           ...(run?.recallProbe?.status === 'passed' ? { recallEvidence: {
             runId, correct: run.recallProbe.correct, total: run.recallProbe.total,
             studyCaseIds: run.recallProbe.studyCaseIds, challengeCaseIds: run.recallProbe.challengeCaseIds,
+            reviewedHypotheses: (run.recallProbe.hypothesisReviews || []).map(h => h.hypothesisId),
             checkedAt: run.recallProbe.checkedAt, } } : {}),
           status: 'awaiting', verdict: null, createdAt: (backfill && text(raw.shownAt, 40, 'trial.shownAt', false)) || at,
           backfilled: backfill || undefined, actor: text(input.actor, 120, 'actor', false) || 'agent',

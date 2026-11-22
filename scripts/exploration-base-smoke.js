@@ -1068,9 +1068,13 @@ test('all dojos automatically precommit one failure hypothesis even when an old 
 });
 
 
-test('recall gate retrieves relevant real human examples and blocks skipped or failed historical checks', async () => {
+test('recall gate retrieves historical hypothesis claims, refutations and user-verified outcomes before a trial', async () => {
   const store = await setup();
   await store.upsertItems({ baseId:'test-base', kind:'hypothesis', items:[hypothesis] });
+  await store.upsertItems({ baseId:'test-base', kind:'hypothesis', items:[{
+    id:'H-001',limits:'The mechanism may fail when the ending is a generic restatement of the premise.',
+    reason:'Add a falsifiable countercondition observed in the early examples.',
+  }] });
   const history = [
     ['fail','The same ordinary words describe the customer but add no surprise.'],
     ['pass','The customer rejects a discount, then misses the only buyer who cared.'],
@@ -1098,13 +1102,35 @@ test('recall gate retrieves relevant real human examples and blocks skipped or f
   assert.equal(p.studyCases.filter(c=>c.verdict==='pass').length,2);
   assert.equal(p.studyCases.filter(c=>c.verdict==='fail').length,2);
   assert.ok(p.challengeCases.every(c=>c.verdict===undefined),'challenge labels are not returned');
+  assert.equal(p.historicalHypotheses.length,1);
+  const historical=p.historicalHypotheses[0];
+  assert.equal(historical.id,'H-001');
+  assert.equal(historical.testCounts.pass,4);
+  assert.equal(historical.testCounts.fail,4);
+  assert.match(historical.claim,/Emotional queries/);
+  assert.match(historical.mechanism,/Professionals/);
+  assert.match(historical.limits,/generic restatement/);
+  assert.ok(historical.revisionHistory.length>0,'the earlier hypothesis revision must be shown');
+  assert.ok(historical.passCaseIds.includes('T-002'));
+  assert.ok(historical.failCaseIds.includes('T-001'));
   await assert.rejects(store.recordTrials({baseId:'test-base',runId,trials:[candidate]}),/Historical recall check required/);
   await assert.rejects(store.prepareRecall({baseId:'test-base',runId,topic:'Retry with a new topic'}),
     /already prepared/);
-  const fail = await store.checkRecall({baseId:'test-base',runId,predictions:p.challengeCases.map(c=>({
+  const predictions=p.challengeCases.map(c=>({
     caseId:c.id,predictedVerdict:'pass',quote:c.body.slice(0,12),
     reason:'The text contains a specific observable situation and a candidate consequence.',
-  }))});
+  }));
+  const review={hypothesisId:'H-001',claimAnchor:'Emotional queries have',
+    limitAnchor:'mechanism may fail when',passCaseId:'T-002',failCaseId:'T-001',
+    transferCondition:'The new scenario may involve an actual motivation rather than a bare label.',
+    refutingCondition:'If the new copy repeats the premise without a changed action, this hypothesis fails.',
+  };
+  await assert.rejects(store.checkRecall({baseId:'test-base',runId,predictions}),/requires an explicit review/);
+  await assert.rejects(store.checkRecall({baseId:'test-base',runId,predictions,
+    hypothesisReviews:[{...review,claimAnchor:'invented historical claim'}]}),/claimAnchor/);
+  await assert.rejects(store.checkRecall({baseId:'test-base',runId,predictions,
+    hypothesisReviews:[{...review,failCaseId:'T-002'}]}),/actual pass and fail/);
+  const fail = await store.checkRecall({baseId:'test-base',runId,predictions,hypothesisReviews:[review]});
   assert.equal(fail.status,'failed');
   assert.equal(fail.correct,2);
   await assert.rejects(store.recordTrials({baseId:'test-base',runId,trials:[candidate]}),/Historical recall check required/);

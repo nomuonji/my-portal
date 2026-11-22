@@ -304,7 +304,7 @@ const tools = [
   },
   {
     name: 'exploration_recall_prepare',
-    description: 'Before creating candidates in a user-rated dojo run with >=4 real passes and >=4 real fails, retrieve relevant past human-rated texts based on a pre-generation topic and tested hypotheses. Returns 2 labeled passes + 2 labeled fails and 4 further historical cases without their labels. Creates one immutable recall challenge per run. Do NOT assume historical accuracy proves future creative quality.',
+    description: 'Before generating a candidate, retrieve related human-rated texts AND prior TESTED hypothesis statements, mechanisms, limiting conditions, recorded human pass/fail IDs, counterexamples, past run results and revisions. Four further cases are provided without labels for a historical-label check. The returned agent hypotheses are NOT proven causal explanations.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -317,7 +317,7 @@ const tools = [
   },
   {
     name: 'exploration_recall_check',
-    description: 'Classify all four historical challenge cases from exploration_recall_prepare with an exact quote and concrete reason per case. Server grades against existing human verdicts; >=3/4 must match before a new user-facing trial can be registered. One check per run; self-score does not count as a human pass.',
+    description: 'Classify all four historical challenge cases (>=3/4 correct) AND explicitly review every returned historical hypothesis, quoting its claim and falsifier and citing a true linked pass/fail pair with proposed transfer and rejection conditions. No trial can be registered without the reviews. One check per run; this is NOT proof of causality or the quality of new work.',
     inputSchema: {
       type:'object',
       properties: {
@@ -330,6 +330,18 @@ const tools = [
             reason: string('Observable reason for predicting pass/fail; 20-700 chars, do not infer the user\'s hidden motive as fact.',700),
           },
           required:['caseId','predictedVerdict','quote','reason'],additionalProperties:false,
+        } },
+        hypothesisReviews: { type:'array', maxItems:2, description:'One review for EACH returned historicalHypothesis; omit only when no historicalHypotheses were returned.', items: { type:'object',
+          properties: {
+            hypothesisId: string('Exact ID of a retrieved historical hypothesis.',20),
+            claimAnchor: string('8-160 literal characters from its actual statement/mechanism.',160),
+            limitAnchor: string('8-160 literal characters from its limits or an actual counterexample.',160),
+            passCaseId: string('Real past human PASS trial linked to this hypothesis.',20),
+            failCaseId: string('Real past human FAIL trial linked to this hypothesis.',20),
+            transferCondition: string('Specific observable reason this old success mechanism could apply to the current research topic (25-650 chars).',650),
+            refutingCondition: string('Specific observable reason this claim may be false or fail when transferred (25-650 chars).',650),
+          },
+          required:['hypothesisId','claimAnchor','limitAnchor','passCaseId','failCaseId','transferCondition','refutingCondition'],additionalProperties:false,
         } },
       },
       required:['baseId','runId','predictions'],additionalProperties:false,
