@@ -1595,8 +1595,12 @@ async function spaceRunStart(input, actor = {}) {
     methodVersion = await methodVersionGet({ id: method.currentVersionId });
   }
 
-  const spaceId = assertString(input.spaceId || method?.spaceId, 'spaceId', { max: 160 });
-  await spaceGet({ id: spaceId });
+  // A reusable HQ Method may intentionally be independent of any user Thinking Space.
+  // Preserve a Space requirement for Space-only runs, but let Method runs be recorded
+  // without inventing a user-facing Space merely to obtain a run ID.
+  const spaceId = clampString(input.spaceId || method?.spaceId, 160) || null;
+  if (!spaceId && !method) throw new Error('spaceId is required');
+  if (spaceId) await spaceGet({ id: spaceId });
   const ref = db().collection(THINKING_COLLECTIONS.runs).doc();
   await ref.set({
     agent: clampString(input.agent, 120) || actor.agent || 'chatgpt',
