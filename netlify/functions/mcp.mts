@@ -728,7 +728,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
   if (name === "context_history") return structured(await contextRegistry.listEvents(args));
   if (name === "context_event_create") return structured(await contextRegistry.addEvent(args));
   if (name === "chat_skill_list") return structured(await chatContext.listSkills());
-  if (name === "chat_skill_get") return structured(await chatContext.getSkill(args));
+  if (name === "chat_skill_get") return structured(args.mode === "edit" ? await chatContext.getSkill(args) : await chatContext.getExecutableSkill(args));
   if (name === "chat_skill_versions") return structured(await chatContext.skillVersions(args));
   if (name === "chat_skill_upsert") return structured(await chatContext.upsertSkill(args));
   if (name === "world_map_update") {
