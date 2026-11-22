@@ -60,6 +60,7 @@ function failStreakOf(entries) {
 // Everything the 道場 shows about its loop. `base` supplies the released version and the last finished run.
 function loopView({ trials, feedbackLog, base, hypotheses }) {
   const entries = ratedEntries(trials || [], feedbackLog);
+  const { trialArtifactStatus } = require('./dojoArtifactReadiness');
   const awaiting = (trials || []).filter((t) => t.status === 'awaiting');
   const releasedNumber = base?.method?.bodyRef?.versionNumber ?? null;
   const currentKey = releasedNumber !== null ? 'v' + releasedNumber : (base?.method?.version || 'unknown');
@@ -125,7 +126,11 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
   if (learning.status === 'contrast_ready') {
     nextActions.push('学習対照: 過去の本人合格/不採用の原文を loop.learning から読み、成立条件と不成立条件を比較してから次の見本を選ぶ。仮説名を貼るだけでは不十分。');
   }
-  if (awaiting.length) nextActions.push('評価待ちの見本が ' + awaiting.length + ' 件ある。新しい見本より先に、本人の評価をもらう。');
+  const missingArtifacts = awaiting.filter(t => !trialArtifactStatus(t).ready);
+  if (missingArtifacts.length) nextActions.push('実物未登録の見本 ' + missingArtifacts.map(t => t.id).join(', ')
+    + ' は本人評価の前に完成した画像・動画の恒久HTTPS URLを登録する。説明文や一時sandbox参照で合格を取らない。');
+  if (awaiting.length - missingArtifacts.length > 0)
+    nextActions.push('評価可能な見本が ' + (awaiting.length - missingArtifacts.length) + ' 件ある。新しい見本より先に、本人の評価をもらう。');
   if (researchDue) nextActions.push(failStreak + ' 回続けて合格が出ていない。次の見本・方法版の更新前に、実例の否定的評価と対照例、異なる原因仮説2つ、各反証条件、不確実性を failureAnalysis に記録した研究runを終了する。単なるrun完了では解除しない。');
   scoreboard.filter((h) => h.status === 'open' && h.rated >= LIMITS.hypothesisMinTrials && h.pass === 0)
     .forEach((h) => nextActions.push(h.id + ' は ' + h.rated + ' 回試して合格 0。棄却する（exploration_item_upsert status=rejected）。'));
@@ -141,7 +146,10 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
     overall: tally(entries),
     recent: tally(entries.slice(-10)),
     current, previous, byVersion,
-    awaiting: awaiting.map((t) => ({ id: t.id, label: t.label, body: t.body || '', ref: t.ref || '', imageUrl: t.imageUrl || '', createdAt: t.createdAt, hypothesisIds: t.hypothesisIds || [], predictedPass: t.predictedPass ?? null })),
+    awaiting: awaiting.map((t) => ({ id: t.id, label: t.label, body: t.body || '',
+      ref: t.ref || '', imageUrl: t.imageUrl || '', mediaUrl: t.mediaUrl || '',
+      reviewStatus: trialArtifactStatus(t).status, reviewReason: trialArtifactStatus(t).reason,
+      createdAt: t.createdAt, hypothesisIds: t.hypothesisIds || [], predictedPass: t.predictedPass ?? null })),
     calibration, screening, learning, refinement, hypotheses: scoreboard.slice(0, 20), failStages, failStreak,
     gates: { ...LIMITS, measurementMode, usesTrials, ratedOnCurrent: current.rated, canReleaseNewVersion: canRelease, researchDueBeforeNextTrial: researchDue },
     lastRated: entries.slice(-8).reverse().map((e) => ({ id: e.id, label: e.label, verdict: e.verdict, version: versionKey(e), at: e.at, userWords: e.userWords })),
