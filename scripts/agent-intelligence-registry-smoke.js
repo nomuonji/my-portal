@@ -461,3 +461,35 @@ test('exact approved skill version read is preferred to truncated version-histor
   assert.equal(result.resolvedDependencies[0].resolvedVersion, 1);
   assert.equal(result.resolvedDependencies[0].content, '# Released v1');
 });
+
+test('dojo_dependency_audit distinguishes executable graph, historical pins and unselectable Packs', async () => {
+  const db = new MemoryDb();
+  const skills = {
+    ...chatSkills,
+    async listSkills() { return { items: [
+      { id: 'example-skill', revision: 2, title: 'Example Skill' },
+      { id: 'standalone-skill', revision: 1, title: 'Standalone Skill' },
+    ] }; },
+  };
+  const dojos = { ...explorationBases,
+    async list() { return { items: [{ id: 'example-dojo', title: 'Example Dojo',
+      target: { kind: 'chat_skill', id: 'example-skill', versionNumber: 2 },
+      packRefs: [{ packId: 'test-cognition', role: 'training' }],
+      loop: { rated: 3, pass: 1, passRate: 1/3 } }] }; },
+  };
+  const registry = registryModule.createRegistry({ getDb: () => db, chatSkills: skills,
+    contextStore, explorationBases: dojos });
+  await registry.createPackVersion({ pack: basePack(), expectedCurrentVersion: 0, confirm: true });
+  await registry.createProfileVersion({
+    profile: baseProfile([{ packId: 'test-cognition' }]), expectedCurrentVersion: 0, confirm: true,
+  });
+  const graph = await registry.dependencyAudit({});
+  assert.equal(graph.summary.activeDojos, 1);
+  assert.equal(graph.summary.activePacks, 1);
+  assert.equal(graph.summary.uniqueSkillsInPacks, 1);
+  assert.deepEqual(graph.summary.skillsNotReferencedByPacks, ['standalone-skill']);
+  assert.ok(graph.edges.some(e => e.type === 'trains' && e.to === 'chat_skill:example-skill'));
+  assert.ok(graph.edges.some(e => e.type === 'uses_skill'
+    && e.to === 'chat_skill:example-skill' && e.resolvedVersion === 2));
+  assert.ok(!graph.warnings.some(w => w.type === 'pack_not_selectable'));
+});
