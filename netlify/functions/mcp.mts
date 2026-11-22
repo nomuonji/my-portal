@@ -43,6 +43,7 @@ import * as contextStoreImport from "../../functions/contextStore.js";
 import * as worldMapImport from "../../functions/worldMap.js";
 import * as workspaceAppImport from "../../functions/mcpWorkspaceApp.js";
 import * as chatContextImport from "../../functions/chatContextRegistry.js";
+import * as skillRelationPoliciesImport from "../../functions/chatSkillRelationsStore.js";
 import * as contextRegistryImport from "../../functions/contextRegistry.js";
 import * as contextRegistryToolsImport from "../../functions/contextRegistryToolSchemas.js";
 import * as chatContextToolsImport from "../../functions/chatContextToolSchemas.js";
@@ -91,6 +92,7 @@ const contextStore: any = (contextStoreImport as any).default ?? contextStoreImp
 const worldMap: any = (worldMapImport as any).default ?? worldMapImport;
 const workspaceApp: any = (workspaceAppImport as any).default ?? workspaceAppImport;
 const chatContext: any = (chatContextImport as any).default ?? chatContextImport;
+const skillRelationPolicies: any = (skillRelationPoliciesImport as any).default ?? skillRelationPoliciesImport;
 const contextRegistry: any = (contextRegistryImport as any).default ?? contextRegistryImport;
 const contextRegistryTools: any = (contextRegistryToolsImport as any).default ?? contextRegistryToolsImport;
 const chatContextTools: any = (chatContextToolsImport as any).default ?? chatContextToolsImport;
@@ -733,6 +735,8 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
   if (name === "chat_skill_list") return structured(await chatContext.listSkills());
   if (name === "chat_skill_get") return structured(args.mode === "edit" ? await chatContext.getSkill(args) : await chatContext.getExecutableSkill(args));
   if (name === "chat_skill_versions") return structured(await chatContext.skillVersions(args));
+  if (name === "chat_skill_relation_policy_get") return structured(await skillRelationPolicies.get(args));
+  if (name === "chat_skill_relation_policy_publish") return structured(await skillRelationPolicies.publish(args));
   if (name === "chat_skill_upsert") return structured(await chatContext.upsertSkill(args));
   if (name === "world_map_update") {
     await worldMap.update(args);

@@ -152,8 +152,10 @@ async function getExecutableSkill(input={}) {
     dojoNotice:dojoNotice(dojos,current.id,current.revision)};
  }
  if(input.includeRelations===false)return executable;
- const {relationsForSkill}=require('./chatSkillRelations');
- const links=relationsForSkill(executable.id,input.intent);
+ const relationStore=require('./chatSkillRelationsStore');
+ const policy=await relationStore.ensureMigrated({id:executable.id});
+ const links=relationStore.decorate(policy,input.intent);
+ const migrated=policy;
  if(!links.length)return executable;
  const skillRelations=[];
  const relatedSkills=[];
@@ -180,7 +182,11 @@ async function getExecutableSkill(input={}) {
   }
   skillRelations.push(relation);
  }
- return {...executable,skillRelations,relatedSkills};
+ return {...executable,skillRelations,relatedSkills,
+   relationPolicy:{source:policy.source,revision:policy.revision,
+     sourceSkillVersion:policy.sourceSkillVersion||null,
+     migrationRequired:policy.migrationRequired===true,
+     ...(migrated.migrationWarning?{migrationWarning:migrated.migrationWarning}:{})}};
 }
 async function upsertSkill(input) {
  if(input.confirm!==true)throw new Error('Explicit confirmation required');
