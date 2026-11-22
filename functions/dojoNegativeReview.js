@@ -18,6 +18,21 @@ function priorCase(trials, id, verdict, field) {
   ));
   if (!candidate) throw new Error(field + ' must cite a real ' + (verdict === 'pass' ? 'human-accepted' : 'human-rejected') + ' case in the same dojo: ' + id);
 }
+// New runs implicitly pair one relevant failure mechanism with a positive target.
+// The agent may override it by explicitly naming its negativeTargets, or by using
+// one of the contrasted failure hypotheses in experimentDesign. Selection is
+// deterministic, bounded to one arm and independent of any human pass-rate data.
+function selectAutomaticNegativeTarget(items = [], changedStage, runCount = 0) {
+  const open = items.filter(item => isNegative(item) && item.status === 'open')
+    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  if (!open.length) return null;
+  const matching = changedStage ? open.filter(item => item.pipelineStage === changedStage) : [];
+  const pool = matching.length ? matching : open;
+  const index = Math.max(0, Math.trunc(Number(runCount) || 0)) % pool.length;
+  const selected = pool[index];
+  return { hypothesisId: selected.id,
+    prediction: str(selected.statement, 800, 'automatic negative prediction') };
+}
 function checkNegativeTargets(rawTargets, hypotheses) {
   if (rawTargets === undefined) return [];
   if (!Array.isArray(rawTargets) || rawTargets.length > 6) throw new Error('negativeTargets must be an array of at most 6');
@@ -130,4 +145,4 @@ function negativeLearning(trials = [], base = {}, hypotheses = []) {
     note:'Internal rejections are not human fails; a cleared candidate later rejected by the user is a negative-gate false negative, not a success.',
   };
 }
-module.exports = { POSITIVE, NEGATIVE, isNegative, checkNegativeTargets, checkNegativeReview, checkScreenedOut, negativeLearning, legacyNegativeReviewFromAudit };
+module.exports = { POSITIVE, NEGATIVE, isNegative, checkNegativeTargets, checkNegativeReview, checkScreenedOut, negativeLearning, legacyNegativeReviewFromAudit, selectAutomaticNegativeTarget };
