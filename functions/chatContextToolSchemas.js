@@ -21,6 +21,24 @@ const tools=[
  {name:'chat_skill_upsert',description:'Create or update the canonical full ChatGPT Skill text in My Portal DB; revision-checked, keeps immutable version snapshots. Does not install it in ChatGPT. If a スキル錬成道場 (exploration base) trains this skill, execution keeps using the version that 道場 released: the result carries dojoNotice, and the new version must be released there (exploration_method_version_set) with its evidence before jobs use it. New skills need id, title and body. For a small change to an existing skill pass bodyEdits instead of the whole body.',
  inputSchema:obj({skill:obj(skillFields,['id']),bodyEdits:{...EDITS_SCHEMA,description:'Change part of the stored body without resending it: exact {find, replace} pairs, each find occurring exactly once. With bodyEdits, skill needs only id; other fields keep their stored value unless passed.'},expectedRevision:{type:'integer',minimum:0},changeReason:string('Why the skill changed',800),confirm:{type:'boolean'}},['skill','expectedRevision','confirm']),
  annotations:{readOnlyHint:false,destructiveHint:false}},
+ {name:'chat_skill_relation_policy_get',description:'Read versioned relation policy for a canonical Chat Skill. DB is authoritative once published; a legacy compatibility policy may be shown before migration. Execution loads related Skills by newest dojo-approved version and respects task intents.',
+ inputSchema:obj({id:string('Source Skill ID',90)},['id']),annotations:{readOnlyHint:true}},
+ {name:'chat_skill_relation_policy_publish',description:'Publish a new immutable version of a Chat Skill relation policy. Requires explicit confirmation, expected revision and change reason. Relation targets must be named in the approved source Skill body. Changing a relation requires a passed case benchmark. This does not edit the original Skill body or bypass its dojo release.',
+ inputSchema:obj({
+  policy:obj({
+   id:string('Source Skill ID',90),
+   defaultIntent:{type:'string',enum:['character_ideation','serious_creation','technical_edit','humor_ideation','personal_voice','distribution']},
+   relations:{type:'array',maxItems:25,items:obj({
+    skillId:string('Canonical related Skill ID',90),
+    requiredness:{type:'string',enum:['required','recommended','optional']},
+    intents:{type:'array',minItems:1,maxItems:6,items:{type:'string',enum:['character_ideation','serious_creation','technical_edit','humor_ideation','personal_voice','distribution']}},
+    rationale:string('Why this relation applies; must be grounded in source body',700),
+   },['skillId','requiredness','intents','rationale'])}
+  },['id','relations']),
+  expectedRevision:{type:'integer',minimum:0},changeReason:string('What changed and why',800),
+  benchmark:obj({passed:{type:'boolean'},ref:string('Evidence reference for relationship revision',600),cases:string('Concrete approval/failure cases',1000)},['passed','ref','cases']),
+  confirm:{type:'boolean'}
+ },['policy','expectedRevision','changeReason','confirm']),annotations:{readOnlyHint:false,destructiveHint:false}},
  {name:'chat_skill_versions',description:'Read version history of canonical chat Skill instructions stored in My Portal DB.',
  inputSchema:obj({id:string('Skill slug',90)},['id']),annotations:{readOnlyHint:true}},
 
