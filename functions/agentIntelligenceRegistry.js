@@ -524,7 +524,18 @@ function createRegistry(options) {
       chosenIds.add(packId);
       const portfolioEntry = portfolio.get(packId);
       if (!portfolioEntry) throw new Error('Selected Intelligence Pack is not in the Agent Profile portfolio: ' + packId);
-      const packResult = await getPack({ id: packId, versionNumber: selection.versionNumber });
+      // A newer Registry revision may be a candidate awaiting approval from its
+      // own dojo. The Bundle Resolver must not silently execute that draft.
+      // Older explicit portfolio pins remain valid for regression comparisons.
+      const trainers = await explorationBases.trainersOf({ kind: 'intelligence_pack', id: packId });
+      const released = [...new Set(trainers.map((item) => Number(item.releasedVersion)).filter((n) => Number.isInteger(n) && n > 0))];
+      if (released.length > 1) throw new Error('Conflicting dojo Pack releases for ' + packId);
+      const approved = released[0] || null;
+      const requestedVersion = selection.versionNumber || portfolioEntry.versionNumber || approved || undefined;
+      if (approved && requestedVersion > approved) {
+        throw new Error('Pack v' + requestedVersion + ' is not released by its dojo; use the released v' + approved + ': ' + packId);
+      }
+      const packResult = await getPack({ id: packId, versionNumber: requestedVersion });
       if (packResult.pack.status !== 'active') throw new Error('Intelligence Pack is not active: ' + packId);
       const definition = packResult.definition;
       if (portfolioEntry.versionNumber && Number(definition.versionNumber) !== portfolioEntry.versionNumber) {
