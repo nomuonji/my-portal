@@ -892,15 +892,19 @@ function createRegistry(options) {
     const targetBodyLinks = new Set();
     if (targetRef.kind === 'chat_skill') {
       targetSkills.add(targetRef.id);
-      // Strictly typed relationships take precedence over incidental text mentions.
-      for (const link of require('./chatSkillRelations').relationsForSkill(targetRef.id))
+      // Explicit dependency policy must override incidental body mentions:
+      // optional/irrelevant relations never become active peer suggestions.
+      const structuredRelations = require('./chatSkillRelations').relationsForSkill(targetRef.id);
+      const relationIds = new Set(structuredRelations.map((item) => item.skillId));
+      for (const link of structuredRelations)
         if (link.active && link.requiredness !== 'optional') targetBodyLinks.add(link.skillId);
       const skill = typeof chatSkills.getExecutableSkill === 'function'
         ? await chatSkills.getExecutableSkill({ id: targetRef.id, includeRelations: false })
         : await chatSkills.getSkill({ id: targetRef.id });
       const body = skill.body || '';
       const refs = [...body.matchAll(/`([a-z][a-z0-9-]{2,})`/g)].map((match) => match[1]);
-      for (const ref of refs) targetBodyLinks.add(ref);
+      for (const ref of refs)
+        if (!relationIds.has(ref)) targetBodyLinks.add(ref);
     } else if (targetRef.kind === 'intelligence_pack') {
       const pack = await getPack({ id: targetRef.id, versionNumber: targetRef.versionNumber });
       for (const dep of [
