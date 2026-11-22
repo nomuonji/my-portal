@@ -847,6 +847,97 @@ function createRegistry(options) {
     };
   }
 
+  // Cross-dojo retrieval on *the next actual training run*, not a scheduled job.
+  // Findings are evidence for a receiver-side hypothesis; never auto-credit
+  // another dojo's pass as a receiver's pass, or overwrite its Skill/Pack.
+  async function crossDojoLearning(input) {
+    const targetId = requireId(input?.targetBaseId, 'targetBaseId');
+    const limit = Math.min(Math.max(Number(input?.limit) || 5, 1), 10);
+    const active = (await explorationBases.list({ status: 'active' })).items || [];
+    const target = active.find((base) => base.id === targetId);
+    if (!target) throw new Error('Active receiver dojo not found: ' + targetId);
+    const targetRef = target.target || {};
+    const targetSkills = new Set();
+    const targetBodyLinks = new Set();
+    if (targetRef.kind === 'chat_skill') {
+      targetSkills.add(targetRef.id);
+      const skill = typeof chatSkills.getExecutableSkill === 'function'
+        ? await chatSkills.getExecutableSkill({ id: targetRef.id })
+        : await chatSkills.getSkill({ id: targetRef.id });
+      const body = skill.body || '';
+      const refs = [...body.matchAll(/`([a-z][a-z0-9-]{2,})`/g)].map((match) => match[1]);
+      for (const ref of refs) targetBodyLinks.add(ref);
+    } else if (targetRef.kind === 'intelligence_pack') {
+      const pack = await getPack({ id: targetRef.id, versionNumber: targetRef.versionNumber });
+      for (const dep of [
+        ...(pack.definition.dependencies || []),
+        ...(pack.definition.components || []).flatMap((component) => component.dependencies || []),
+      ]) if (dep.resourceType === 'chat_skill') targetSkills.add(dep.canonicalRef);
+    }
+    const targetPacks = new Set((target.packRefs || []).map((ref) => ref.packId)
+      .filter((id) => id !== 'exploration-operations'));
+    const candidates = [];
+    for (const base of active) {
+      if (base.id === targetId || !base.target?.id) continue;
+      const reasons = [];
+      if (targetBodyLinks.has(base.target.id))
+        reasons.push('receiver_skill_explicit_body_reference');
+      if (targetSkills.has(base.target.id))
+        reasons.push('receiver_pack_skill_dependency');
+      for (const item of base.packRefs || [])
+        if (targetPacks.has(item.packId))
+          reasons.push('shared_specialist_pack:' + item.packId);
+      if (!reasons.length) continue;
+      candidates.push({ base, reasons, score:
+        reasons.reduce((n, reason) => n + (reason === 'receiver_skill_explicit_body_reference' ? 5
+          : reason === 'receiver_pack_skill_dependency' ? 4 : 2), 0) });
+    }
+    candidates.sort((a, b) => b.score - a.score || a.base.id.localeCompare(b.base.id));
+    const sources = await Promise.all(candidates.slice(0, limit).map(async ({ base, reasons, score }) => {
+      const view = await explorationBases.brief({ id: base.id });
+      const learning = view.loop?.learning || {};
+      const samples = (arr) => (arr || []).slice(0, 3).map((item) => ({
+        trialId: item.id, label: item.label || '', version: item.version || null,
+        hypothesisIds: item.hypothesisIds || [],
+        textExcerpt: String(item.body || '').slice(0, 700),
+      }));
+      return {
+        sourceBaseId: base.id, sourceTitle: base.title, sourceTarget: base.target,
+        connectionReasons: reasons, relevanceScore: score,
+        sourceStatus: learning.status || 'unknown',
+        acceptedCount: learning.acceptedCount || 0,
+        rejectedCount: learning.rejectedCount || 0,
+        accepted: samples(learning.acceptedCases),
+        rejected: samples(learning.rejectedCases),
+        contrastPairs: (learning.contrastPairs || []).slice(0, 4).map((pair) => ({
+          positiveId: pair.positiveId, negativeId: pair.negativeId,
+          commonHypothesisIds: pair.commonHypothesisIds || [],
+        })),
+        evidenceStatus: 'source_user_feedback_only_not_receiver_validated',
+      };
+    }));
+    return {
+      receiver: { id: target.id, title: target.title, target: target.target,
+        awaitings: target.awaitingCount || 0,
+        currentVersionRated: target.loop?.currentRated || 0,
+        currentPassRate: target.loop?.currentPassRate ?? null },
+      sources,
+      count: sources.length,
+      transferContract: {
+        stage: 'hypothesis_only',
+        beforeUse: ['Read source accepted and rejected original cases, not just their labels',
+          'Extract the mechanism, applicability conditions and counterexamples',
+          'Design one controlled receiver-side trial with a competing hypothesis',
+          'Keep actual user verdict and predicted pass in the receiver dojo ledger'],
+        prohibited: ['Treat source dojo approval as receiver approval',
+          'Change an unapproved Skill or Pack version without the receiver dojo release gate',
+          'Schedule a synchronization or training job'],
+      },
+      missingLinksNotice: !sources.length
+        ? 'No structurally supported neighbor found; do not invent a transfer connection.' : null,
+    };
+  }
+
   async function bootstrapInitialPack(input) {
     if (input?.confirm !== true) throw new Error('agent_intelligence_bootstrap requires confirm=true');
     const current = await db().collection(COLLECTIONS.packs).doc(INITIAL_PACK.id).get();
@@ -871,6 +962,7 @@ function createRegistry(options) {
     deriveProfileVersion,
     resolveBundle,
     dependencyAudit,
+    crossDojoLearning,
     bootstrapInitialPack,
   };
 }

@@ -97,6 +97,20 @@ const tools = [
     annotations: { readOnlyHint: true },
   },
   {
+    name: 'dojo_cross_learning_get',
+    description: 'Find structurally linked peer dojos (shared specialist Pack, receiver Skill body reference or receiver Pack Skill dependency), then return original accepted/rejected trial evidence and hypothesis contrasts. This does not claim transfers are validated or change Skill versions. Use before a receiver-side trial; not a periodic job.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        targetBaseId: string('Active receiving dojo ID', 80, 2),
+        limit: { type: 'integer', minimum: 1, maximum: 10, default: 5 },
+      },
+      required: ['targetBaseId'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true },
+  },
+  {
     name: 'dojo_dependency_audit',
     description: 'Read the live graph of active dojos, shared Chat Skills, Intelligence Packs and Agent Profiles. Report approved runtime versions, duplicate/stale historical pins, unselectable Packs, candidate versions, and unenforced text-only Skill mentions. Never change versions or start a scheduled sync.',
     inputSchema: {

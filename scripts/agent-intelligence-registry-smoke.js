@@ -493,3 +493,45 @@ test('dojo_dependency_audit distinguishes executable graph, historical pins and 
     && e.to === 'chat_skill:example-skill' && e.resolvedVersion === 2));
   assert.ok(!graph.warnings.some(w => w.type === 'pack_not_selectable'));
 });
+
+test('cross-dojo learning fetches real approved/rejected evidence for an explicitly referenced peer', async () => {
+  const dojos = {
+    ...explorationBases,
+    async list() { return { items: [
+      { id: 'character-dojo', title: 'Character Dojo',
+        target: { kind: 'chat_skill', id: 'character-skill', versionNumber: 2 },
+        packRefs: [], loop: { currentRated: 2, currentPassRate: .5 } },
+      { id: 'humor-dojo', title: 'Humor Dojo',
+        target: { kind: 'chat_skill', id: 'humor-craft', versionNumber: 8 }, packRefs: [] },
+      { id: 'unrelated-dojo', title: 'Unrelated Dojo',
+        target: { kind: 'chat_skill', id: 'other-skill', versionNumber: 1 }, packRefs: [] },
+    ] }; },
+    async brief({ id }) {
+      assert.equal(id, 'humor-dojo');
+      return { loop: { learning: {
+        status: 'contrast_ready', acceptedCount: 1, rejectedCount: 1,
+        acceptedCases: [{ id: 'T-1', label: 'User-approved actual example', version: 8,
+          body: 'Approved case text', hypothesisIds: ['H-1'] }],
+        rejectedCases: [{ id: 'T-2', label: 'User-rejected actual example', version: 8,
+          body: 'Rejected case text', hypothesisIds: ['H-1'] }],
+        contrastPairs: [{ positiveId: 'T-1', negativeId: 'T-2', commonHypothesisIds: ['H-1'] }],
+      } } };
+    },
+  };
+  const skills = {
+    ...chatSkills,
+    async getSkill({ id }) {
+      assert.equal(id, 'character-skill');
+      return { id, body: 'Character creation requires the `humor-craft` lens for relevant cases.' };
+    },
+  };
+  const registry = registryModule.createRegistry({ getDb: () => new MemoryDb(),
+    chatSkills: skills, contextStore, explorationBases: dojos });
+  const result = await registry.crossDojoLearning({ targetBaseId: 'character-dojo' });
+  assert.equal(result.count, 1);
+  assert.equal(result.sources[0].sourceBaseId, 'humor-dojo');
+  assert.deepEqual(result.sources[0].accepted.map(x => x.trialId), ['T-1']);
+  assert.deepEqual(result.sources[0].rejected.map(x => x.trialId), ['T-2']);
+  assert.equal(result.sources[0].evidenceStatus, 'source_user_feedback_only_not_receiver_validated');
+  assert.equal(result.transferContract.stage, 'hypothesis_only');
+});
