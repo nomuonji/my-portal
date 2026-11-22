@@ -146,7 +146,8 @@ function buildHistoricalHypotheses(hypotheses = [], trials = [], runs = [], topi
     passCaseIds: positive.map(c => c.id).slice(0, 25),
     failCaseIds: negative.map(c => c.id).slice(0, 25),
     supportingEvidence: (h.evidence || []).slice(-2).map(e => String(e.ref || '').slice(0, 600)),
-    counterexamples: (h.counterexamples || []).slice(-2).map(e => String(e).slice(0, 600)),
+    counterexamples: ((h.counterexamples || []).length ? (h.counterexamples || []).slice(-2) : negative.slice(0, 2).map(c => c.body))
+      .map(e => String(e).slice(0, 600)),
     revisionHistory: (h.revisionHistory || []).slice(-2).map(e => ({
       at: e.at, reason: e.reason, changedFields: e.changedFields,
       before: e.before, after: e.after,
