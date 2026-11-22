@@ -787,7 +787,7 @@ test('receiver experiment preserves verified cross-dojo human verdicts and rejec
     experimentDesign: design, crossDojoEvidence: evidence, responseMode: 'compact',
   };
   await assert.rejects(
-    store.startRun({ ...input, crossDojoEvidence: [{ ...evidence[0], positiveTrialId: 'T-002' }] }),
+    store.startRun({ ...input, crossDojoEvidence: [{ ...evidence[0], positiveTrialId: 'T-003' }] }),
     /real user-rated pass/,
   );
   await assert.rejects(
