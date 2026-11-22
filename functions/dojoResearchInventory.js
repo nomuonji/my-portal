@@ -41,9 +41,10 @@ function buildResearchInventory(hypotheses = [], trials = [], feedbackLog = [], 
         .flatMap(r => (r.verdicts || []).filter(v => v.hypothesisId === h.id)
           .map(v => ({ runId:r.id, result:v.result, observed:v.observed || '' }))).slice(-8),
     }));
+  const feedbackDigest = createHash('sha256').update(JSON.stringify(ratings)).digest('hex');
   const hash = createHash('sha256').update(JSON.stringify([ordered, ratings])).digest('hex');
   const pages = Math.max(1, Math.ceil(ordered.length / HYPOTHESES_PER_PAGE), Math.ceil(ratings.length / FEEDBACK_PER_PAGE));
-  return { hypotheses: ordered, feedback: ratings, hash, pages,
+  return { hypotheses: ordered, feedback: ratings, hash, feedbackDigest, pages,
     hypothesisCount: ordered.length, feedbackCount: ratings.length };
 }
 
