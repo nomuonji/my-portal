@@ -114,16 +114,16 @@ const percent = (rate) => (rate === null || rate === undefined ? '—' : Math.ro
 export function PassRate({ loop, big = false }) {
   const rated = loop?.rated || 0;
   const onCurrent = loop?.currentRated || 0;
-  // The version in use is what matters; until it has ratings, show the rate across all versions.
-  const shown = onCurrent > 0 ? loop.currentPassRate : (rated > 0 ? loop.passRate : null);
+  // An unrated current release is not measured, even when older releases
+  // achieved passes. Never display historical rates as the current verdict.
+  const shown = onCurrent > 0 ? loop.currentPassRate : null;
   return (
     <Box sx={{ textAlign: { xs: 'left', md: 'right' } }}>
       <Typography sx={{ fontSize: big ? 34 : 24, fontWeight: 900, lineHeight: 1, letterSpacing: '-0.02em' }}>{percent(shown)}</Typography>
       <Typography sx={{ fontSize: 11.5, color: V.muted, mt: 0.5 }}>
-        {!rated ? '合格率（評価はまだありません）'
-          : onCurrent > 0 ? '合格率（いまの版・' + onCurrent + '件）' : '合格率（全部の版・' + rated + '件）'}
+        {onCurrent > 0 ? '現行版の本人合格率（' + onCurrent + '件）' : '現行版はまだ評価なし（0件）'}
       </Typography>
-      {onCurrent > 0 && rated > onCurrent && <Typography sx={{ fontSize: 11.5, color: V.faint, mt: 0.2 }}>全部の版では {percent(loop.passRate)}（{rated}件）</Typography>}
+      {rated > onCurrent && <Typography sx={{ fontSize: 11.5, color: V.faint, mt: 0.2 }}>全履歴の合格率 {percent(loop.passRate)}（{rated}件、現行版とは別）</Typography>}
     </Box>
   );
 }
@@ -419,7 +419,8 @@ export function LoopPanel({ loop, baseId, onRate, onRateBatch, busyId }) {
       ))}
       {calibration && (
         <Typography sx={{ fontSize: 12.5, color: V.muted, mt: 1 }}>
-          AIの事前予測が当たった割合 {percent(calibration.hitRate)}（{calibration.predicted}件）。これが上がるほど、出す前に自分でボツを落とせています。
+          AI予測の的中率 {percent(calibration.hitRate)}（本人評価のある{calibration.predicted}件）。
+          これは提出前の選別率や実際の売上・再生数ではありません。高い的中率だけで制作品質向上とは判断しません。
         </Typography>
       )}
       {refinement && (

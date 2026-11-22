@@ -82,8 +82,8 @@ test('lists bases with a one-line status and progress', async () => {
   expect(screen.getByText(/最後の実行は/)).toBeInTheDocument();
   // The measure is the pass rate of the version in use, not a count against a target.
   expect(screen.getByText('50%')).toBeInTheDocument();
-  expect(screen.getByText('合格率（いまの版・4件）')).toBeInTheDocument();
-  expect(screen.getByText('合格率（評価はまだありません）')).toBeInTheDocument();
+  expect(screen.getByText('現行版の本人合格率（4件）')).toBeInTheDocument();
+  expect(screen.getByText('現行版はまだ評価なし（0件）')).toBeInTheDocument();
   expect(screen.queryByText('確定した成果')).not.toBeInTheDocument();
 });
 
@@ -186,7 +186,7 @@ test('the 道場 shows the pass rate by version, what waits for the user and the
   expect(screen.getByText('25%')).toBeInTheDocument();
   expect(screen.getByText('60%')).toBeInTheDocument();
   expect(screen.getByText('惜しい 1')).toBeInTheDocument();
-  expect(screen.getByText(/AIの事前予測が当たった割合 50%/)).toBeInTheDocument();
+  expect(screen.getByText(/AI予測の的中率 50%/)).toBeInTheDocument();
   expect(screen.getByText('母親の推薦で口説く男')).toBeInTheDocument();
   expect(screen.getByText(/合格。いいね/)).toBeInTheDocument();
   expect(screen.getByText(/前の版 v44 の 60% を下回っている/)).toBeInTheDocument();
