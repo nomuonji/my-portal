@@ -757,7 +757,7 @@ function DojoDependencyPanel() {
         {graph && (
           <Box sx={{ mt: 2 }}>
             <Typography sx={{ fontSize: 12.5, color: V.muted, mb: 1 }}>
-              {graph.summary?.activeDojos}道場 / {graph.summary?.activePacks} Pack / {graph.summary?.availableSkills} Skill。
+              {graph.summary?.activeDojos}道場 / {graph.summary?.activePacks} Pack / {graph.summary?.availableSkills} Skill / {graph.summary?.activeSubmarines ?? 0}潜水艦。
               Pack参照Skill {graph.summary?.uniqueSkillsInPacks}件、旧版の記録 {graph.summary?.historicalSkillPins}箇所。
             </Typography>
             <Stack gap={1.5}>
@@ -786,6 +786,20 @@ function DojoDependencyPanel() {
                 );
               })}
             </Stack>
+            {(graph.nodes || []).filter((node) => node.type === 'submarine').length > 0 && (
+              <Box sx={{ mt: 1.5 }}>
+                <Typography sx={{ fontSize: 13, fontWeight: 800, mb: 0.7 }}>潜水艦の装備</Typography>
+                {(graph.nodes || []).filter((node) => node.type === 'submarine').map((boat) => {
+                  const gear = links.filter((edge) => edge.type === 'carries' && edge.from === 'submarine:' + boat.id);
+                  return (
+                    <Typography key={boat.id} sx={{ fontSize: 12, color: V.muted, lineHeight: 1.8 }}>
+                      {boat.title}: {gear.map((edge) => edge.to.replace(/^(chat_skill|intelligence_pack):/, '') +
+                        ' v' + (edge.resolvedVersion ?? '?')).join(' / ') || '装備なし'}
+                    </Typography>
+                  );
+                })}
+              </Box>
+            )}
             {problems.length > 0 && (
               <Alert severity="warning" sx={{ mt: 1.5 }}>
                 {problems.length}件の依存要確認: {problems.slice(0, 4).map((item) => item.packId || item.resource || item.skillId).join('、')}
