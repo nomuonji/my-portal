@@ -13,7 +13,8 @@ test('legacy fallback is read-only until explicitly published', async()=>{
  const old=await store.get({id:'character-creation-studio'});
  assert.equal(old.source,'legacy_code_fallback');assert.equal(old.revision,0);
  assert.equal(db.docs.size,0);
- const saved=await store.publish({policy:{id:old.id,defaultIntent:old.defaultIntent,relations:old.relations},expectedRevision:0,changeReason:'Preserve the approved v4 Skill relation policy as a versioned DB record',confirm:true});
+ const saved=await store.ensureMigrated({id:old.id});
+ assert.equal((await store.ensureMigrated({id:old.id})).revision,1,'on-demand bootstrap is idempotent');
  assert.equal(saved.revision,1);
  assert.equal(saved.sourceSkillVersion,4);
  assert.equal((await store.get({id:old.id})).source,'my_portal_db');
