@@ -803,3 +803,39 @@ test('receiver experiment preserves verified cross-dojo human verdicts and rejec
   const receiver = await store.get({ id: 'receiver-dojo', view: 'brief' });
   assert.equal(receiver.loop.overall.rated, 0, 'source approvals do not count as receiver verdicts');
 });
+
+test('provisional images and transient video refs cannot earn a user verdict before durable media exists', async () => {
+  const store=await setup();
+  await store.upsertItems({baseId:'test-base',kind:'hypothesis',items:[hypothesis]});
+  const {runId}=await store.startRun({baseId:'test-base',objective:'Compare complete artifacts only',
+    targets:[{hypothesisId:'H-001',prediction:'The user may accept the completed visual'}]});
+  const refs=[
+    'planned:character-creation-studio/R-011/traffic-gum-officer',
+    'sandbox:///working_dir/c_temp/artifacts/file_generation/video.mp4',
+  ];
+  const recorded=await store.recordTrials({baseId:'test-base',runId,trials:refs.map((ref,index)=>({
+    label:index?'Video without stable artifact':'Character concept without picture',
+    body:'Design plan only, not the completed image or video.',
+    hypothesisIds:['H-001'],predictedPass:0.4,ref,
+  }))});
+  assert.equal(recorded.created.length,2);
+  const waiting=await store.awaitingTrials({});
+  assert.deepEqual(waiting.items.map(x=>x.reviewStatus),['artifact_missing','artifact_temporary']);
+  await assert.rejects(store.rateTrials({baseId:'test-base',ratings:[
+    {id:'T-001',verdict:'pass',userWords:'合格'}]}),/not reviewable/);
+  await assert.rejects(store.rateTrials({baseId:'test-base',ratings:[
+    {id:'T-002',verdict:'pass',userWords:'合格'}]}),/not reviewable/);
+  await assert.rejects(store.recordTrials({baseId:'test-base',runId,trials:[{
+    label:'Video stable link',ref:refs[1],mediaUrl:'sandbox:///tmp/video.mp4',
+  }]}),/public HTTPS URL/);
+  await store.recordTrials({baseId:'test-base',runId,trials:[
+    {label:'Picture uploaded',ref:refs[0],imageUrl:'https://cdn.example.com/character.png'},
+    {label:'Video uploaded',ref:refs[1],mediaUrl:'https://cdn.example.com/film.mp4'},
+  ]});
+  const now=await store.awaitingTrials({});
+  assert.ok(now.items.every(x=>x.reviewStatus==='ready'));
+  assert.equal(now.items[1].mediaUrl,'https://cdn.example.com/film.mp4');
+  const finished=await store.rateTrials({baseId:'test-base',ratings:[
+    {id:'T-001',verdict:'pass',userWords:'画像を見て合格'}]});
+  assert.equal(finished.loop.current.pass,1);
+});
