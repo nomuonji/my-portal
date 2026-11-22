@@ -322,7 +322,14 @@ function createRegistry(options) {
     if (!versionNumber) throw new Error('Intelligence Pack has no version');
     const version = snapshotValue(await db().collection(COLLECTIONS.packVersions).doc(versionId(id, versionNumber)).get());
     if (!version || version.packId !== id) throw new Error('Intelligence Pack version not found: ' + id + ' v' + versionNumber);
-    return { pack: root, definition: version, databaseId: DEFAULT_DATABASE_ID };
+    return {
+      pack: root,
+      definition: version,
+      // Stored chat_skill versionNumber values document the immutable Pack
+      // revision. Execution always resolves shared Skills by canonicalRef.
+      executionDependencyPolicy: 'current_dojo_released_skill_else_registry_latest',
+      databaseId: DEFAULT_DATABASE_ID,
+    };
   }
 
   async function createPackVersion(input) {
