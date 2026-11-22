@@ -913,6 +913,9 @@ test('older MCP fields can classify and compare failure hypotheses without weake
   const initial = await store.get({ id: 'test-base' });
   const neg = initial.hypotheses.conjectures.find(h => h.id === 'H-002');
   assert.equal(neg.polarity, 'negative');
+  const listed = await store.listBases({});
+  assert.equal(listed.items.find(x => x.id === 'test-base').loop.negativeLearning.negativeHypotheses, 1,
+    'shared dojo listing must refresh when a hypothesis is migrated to negative');
 
   await store.recordTrials({ baseId: 'test-base', backfill: true, trials: [
     { label: 'Earlier accepted original', body: 'A distinct causal consequence.', rating: { verdict: 'pass', userWords: '合格' } },
