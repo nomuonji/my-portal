@@ -519,7 +519,14 @@ test('three user non-passes cannot be cleared by a ceremonial run or self-PASS',
   assert.equal(afterAudit.loop.gates.researchDueBeforeNextTrial, false, 'only the evidence-audited run clears the gate');
   assert.equal(afterAudit.position.lastRuns[0].failureAnalysisRecorded, true);
   const third = await store.startRun({ baseId: 'test-base', objective: 'Compare two new paths', unknownTerritoryProbe: 'New experiment' });
-  const ok = await store.recordTrials({ baseId: 'test-base', runId: third.runId, trials: [trial('D')] });
+  await assert.rejects(store.recordTrials({ baseId: 'test-base', runId: third.runId, trials: [trial('D')] }), /zero passes/,
+    'a ceremony cannot rehabilitate a mechanism with three human failures');
+  await store.upsertItems({ baseId: 'test-base', kind: 'hypothesis', items: [{
+    ...hypothesis, title: 'New mechanism after failed source selection',
+    statement: 'An independently collected source leads to a different candidate.',
+    mechanism: 'This is a new sourcing and selection hypothesis, not a reuse of the failed copy.',
+  }] });
+  const ok = await store.recordTrials({ baseId: 'test-base', runId: third.runId, trials: [{ ...trial('D'), hypothesisIds: ['H-002'] }] });
   assert.equal(ok.created.length, 1);
 });
 
@@ -547,6 +554,7 @@ test('every evidence-rich dojo refuses a trial that skips positive/negative tran
   await assert.rejects(store.recordTrials({ baseId: 'test-base', runId, trials: [sample] }), /Learning review required/);
   const learningAudit = {
     positiveCaseId: 'T-001', negativeCaseId: 'T-002',
+    positiveAnchor: 'observable audience', negativeAnchor: 'old label copied',
     mechanism: 'Users had a real question and the competing results failed to answer it.',
     transferCondition: 'The new query has independently observed demand and weak answers.',
     failureContrast: 'We did not just rename the rejected keyword or invent demand.',
@@ -561,6 +569,12 @@ test('every evidence-rich dojo refuses a trial that skips positive/negative tran
     { ...sample, learningAudit: { ...learningAudit, negativeCaseId: 'T-001' } },
   ] }), /actual human-rejected/);
   await assert.rejects(store.recordTrials({ baseId: 'test-base', runId, trials: [
+    { ...sample, learningAudit: { ...learningAudit, positiveAnchor: 'fabricated accepted fact' } },
+  ] }), /positiveAnchor must quote/);
+  await assert.rejects(store.recordTrials({ baseId: 'test-base', runId, trials: [
+    { ...sample, learningAudit: { ...learningAudit, negativeAnchor: 'fabricated rejection fact' } },
+  ] }), /negativeAnchor must quote/);
+  await assert.rejects(store.recordTrials({ baseId: 'test-base', runId, trials: [
     { ...sample, learningAudit: { ...learningAudit, decision: 'reject' } },
   ] }), /may not be submitted/);
   const result = await store.recordTrials({ baseId: 'test-base', runId, trials: [
@@ -571,6 +585,9 @@ test('every evidence-rich dojo refuses a trial that skips positive/negative tran
   assert.equal(saved.learningAudit.status, 'verified');
   assert.equal(saved.learningAudit.positiveCaseId, 'T-001');
   assert.equal(saved.learningAudit.negativeCaseId, 'T-002');
+  assert.equal(saved.learningAudit.positiveAnchor, 'observable audience');
+  assert.equal(saved.learningAudit.negativeAnchor, 'old label copied');
+  assert.equal(saved.learningAudit.verificationScope, 'case_identity_and_exact_quotes_only');
   assert.equal(full.loop.learning.auditCoverage.verified, 0, 'review coverage counts rated outcomes only');
   await store.rateTrials({ baseId: 'test-base', ratings: [{ id: saved.id, verdict: 'fail', userWords: 'ボツ' }] });
   const after = await store.get({ id: 'test-base', view: 'state' });
@@ -631,8 +648,22 @@ test('buzz dojo blocks low-confidence, one-shot, invented-reference or unscreene
   await assert.rejects(store.recordTrials({ baseId, runId, trials: [{ ...trial, editorialScreen: { ...audit, pool: audit.pool.slice(0, 2) } }] }), /compare 3-12/);
   await assert.rejects(store.recordTrials({ baseId, runId, trials: [{ ...trial, editorialScreen: { ...audit, pool: audit.pool.map(x => ({ ...x, sourceId: 'S-001' })) } }] }), /two observed source lanes/);
   const envelope = 'screen:v1:' + JSON.stringify(audit);
-  assert.ok(envelope.length <= 600, 'old MCP clients must have a usable envelope');
-  const accepted = await store.recordTrials({ baseId, runId, trials: [{ ...trial, predictedPass: 0.35, predictionNote: envelope }] });
+  assert.ok(envelope.length <= 600, 'legacy screen still parses, but is not an independent audit');
+  await assert.rejects(store.recordTrials({ baseId, runId, trials: [{ ...trial, predictionNote: envelope }] }),
+    /not a verified transfer audit/, 'a Buzz screen must no longer impersonate a learning transfer audit');
+  const transferAudit = {
+    positiveCaseId: 'T-001', negativeCaseId: 'T-002',
+    positiveAnchor: 'genuinely different accepted', negativeAnchor: 'explanation did not work',
+    mechanism: 'The accepted text offers a distinctive observable moment.',
+    transferCondition: 'The candidate needs its own specific interaction and consequence.',
+    failureContrast: 'The rejected text only explained its premise without a second moment.',
+    fatalRisk: 'This candidate might still explain an idea instead of showing the action.',
+    riskResolution: 'Its wording depicts the action and unexpected additional consequence.',
+    bodyAnchor: '予想外の二段目が', decision: 'submit',
+  };
+  const accepted = await store.recordTrials({ baseId, runId, trials: [{
+    ...trial, predictedPass: 0.35, editorialScreen: audit, learningAudit: transferAudit,
+  }] });
   assert.equal(accepted.created.length, 1);
   assert.equal(accepted.loop.screening.considered, 3);
   assert.equal(accepted.loop.screening.rejectedBeforeUser, 2);
@@ -935,12 +966,15 @@ test('older MCP fields can classify and compare failure hypotheses without weake
   assert.equal(run.negativeTargetCount, 1);
   const body = 'A specific office rule unexpectedly changes who pays for the mistake.';
   const audit = { positiveCaseId: 'T-001', negativeCaseId: 'T-002',
+    positiveAnchor: 'distinct causal consequence', negativeAnchor: 'forgettable generic ending',
     mechanism: 'The accepted case uses a concrete cause and consequence.',
     transferCondition: 'The next candidate also has a concrete action with consequences.',
     failureContrast: 'The failure was a generic restatement without causal movement.',
     fatalRisk: 'The new ending might be a generic point that fits any office.',
     riskResolution: 'The office rule dictates who pays, an observable causal detail.',
     bodyAnchor: 'office rule unexpectedly', decision: 'submit' };
+  assert.ok(('learning:v1:' + JSON.stringify(audit)).length <= 600,
+    'older MCP clients can still supply a quote-checked audit alongside a native editorial screen');
   const made = await store.recordTrials({ baseId: 'test-base', runId: run.runId, trials: [{
     label: 'Office rule story', body, hypothesisIds: ['H-001'], predictedPass: 0.43,
     predictionNote: 'learning:v1:' + JSON.stringify(audit),
