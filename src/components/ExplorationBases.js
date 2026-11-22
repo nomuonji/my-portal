@@ -801,6 +801,21 @@ function DojoDependencyPanel() {
                 })}
               </Box>
             )}
+            {links.some((edge) => edge.type === 'skill_uses_skill') && (
+              <Box sx={{ mt: 1.5 }}>
+                <Typography sx={{ fontSize: 13, fontWeight: 800, mb: 0.7 }}>Skill同士の依存（用途条件付き）</Typography>
+                {links.filter((edge) => edge.type === 'skill_uses_skill').map((edge) => (
+                  <Typography key={edge.from + edge.to} sx={{ fontSize: 12, color: V.muted, lineHeight: 1.7 }}>
+                    {edge.from.replace('chat_skill:', '')} → {edge.to.replace('chat_skill:', '')}
+                    {' · '}{edge.autoLoadByDefault ? '標準用途で自動読込' : '必要な用途のときのみ'}
+                    {' · 最新 v'}{edge.resolvedVersion ?? '?'} / {edge.when?.join(', ')}
+                  </Typography>
+                ))}
+                <Typography sx={{ fontSize: 11.5, color: V.muted, mt: 0.5 }}>
+                  造形の技術修正やシリアスな制作にユーモアを強制しません。参照はIDのみで、実行時に最新の承認版を読みます。
+                </Typography>
+              </Box>
+            )}
             {problems.length > 0 && (
               <Alert severity="warning" sx={{ mt: 1.5 }}>
                 {problems.length}件の依存要確認: {problems.slice(0, 4).map((item) => item.packId || item.resource || item.skillId).join('、')}
