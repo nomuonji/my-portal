@@ -880,6 +880,38 @@ function createStore(options) {
           refutingObservation: text(d.refutingObservation, 900, 'experimentDesign.refutingObservation', true),
         };
       }
+      let crossDojoEvidence = [];
+      if (input.crossDojoEvidence !== undefined) {
+        if (!experimentDesign) throw new Error('crossDojoEvidence requires a controlled experimentDesign');
+        if (!Array.isArray(input.crossDojoEvidence) || !input.crossDojoEvidence.length || input.crossDojoEvidence.length > 3)
+          throw new Error('crossDojoEvidence requires 1 to 3 concrete source-dojo comparisons');
+        for (const raw of input.crossDojoEvidence) {
+          const entry = plain(raw, 'crossDojoEvidence entry');
+          const sourceBaseId = requireBaseId(entry.sourceBaseId);
+          if (sourceBaseId === id) throw new Error('Cross-dojo source must differ from the receiver');
+          const sourceBase = value(await tx.get(baseRef(sourceBaseId)));
+          if (!sourceBase) throw new Error('Cross-dojo source base not found: ' + sourceBaseId);
+          const positiveTrialId = text(entry.positiveTrialId, 20, 'positiveTrialId', true);
+          const negativeTrialId = text(entry.negativeTrialId, 20, 'negativeTrialId', true);
+          if (positiveTrialId === negativeTrialId) throw new Error('Cross-dojo contrast needs two distinct trials');
+          const positive = value(await tx.get(trialRef(sourceBaseId, positiveTrialId)));
+          const negative = value(await tx.get(trialRef(sourceBaseId, negativeTrialId)));
+          if (!positive || positive.baseId !== sourceBaseId || positive.status !== 'rated' || positive.verdict !== 'pass')
+            throw new Error('Cross-dojo positive must be a real user-rated pass: ' + sourceBaseId + '/' + positiveTrialId);
+          if (!negative || negative.baseId !== sourceBaseId || negative.status !== 'rated'
+            || !['fail', 'partial'].includes(negative.verdict))
+            throw new Error('Cross-dojo negative must be a real user-rated fail/partial: ' + sourceBaseId + '/' + negativeTrialId);
+          crossDojoEvidence.push({
+            sourceBaseId, sourceMethodVersion: sourceBase.method?.version || null,
+            positiveTrialId, positiveVerdict: positive.verdict,
+            negativeTrialId, negativeVerdict: negative.verdict,
+            hypothesizedMechanism: text(entry.hypothesizedMechanism, 850, 'hypothesizedMechanism', true),
+            applicabilityConditions: text(entry.applicabilityConditions, 850, 'applicabilityConditions', true),
+            falsification: text(entry.falsification, 850, 'falsification', true),
+            receiverValidation: 'untested',
+          });
+        }
+      }
       base.counters.R = (base.counters.R || 0) + 1;
       runId = seqId('R', base.counters.R);
       const run = {
@@ -887,10 +919,12 @@ function createStore(options) {
         objective: text(input.objective, 800, 'objective', true),
         methodVersion: base.method.version, outcomeRevision: base.outcome.revision,
         targets: cleanTargets, unknownTerritoryProbe: probe, ...(experimentDesign ? { experimentDesign } : {}),
+        ...(crossDojoEvidence.length ? { crossDojoEvidence } : {}),
       };
       put(tx, runRef(id, runId), run);
       base.openRunId = runId;
-      receipt = { runId, methodVersion: run.methodVersion, outcomeRevision: run.outcomeRevision };
+      receipt = { runId, methodVersion: run.methodVersion, outcomeRevision: run.outcomeRevision,
+        crossDojoEvidenceCount: crossDojoEvidence.length };
       pushEvent(tx, base, { type: 'run_started', runId, summary: run.objective, actor: input.actor, detail: { targets: cleanTargets, methodVersion: run.methodVersion } });
       saveBase(tx, base);
     });
