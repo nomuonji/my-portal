@@ -1285,3 +1285,64 @@ test('all historical hypotheses and user feedback must be read; dialectical synt
   assert.equal(done.status,'synthesized');
   await assert.rejects(store.researchRead({baseId:'test-base',runId,page:0}),/already complete/);
 });
+
+test('a dialectical synthesis only counts as progress once linked to a real derived hypothesis in the ledger', async () => {
+  const store=await setup();
+  await store.upsertItems({baseId:'test-base',kind:'hypothesis',items:[
+    {...hypothesis,title:'Meaningful reversal in a situation'},
+    {...hypothesis,title:'Specific motive matters more than reversal',
+      statement:'The user accepts a specific embarrassing motive even without a formal reversal.',
+      mechanism:'A real motivation and consequence feel more human than abstract surprise.'},
+  ]});
+  await store.recordTrials({baseId:'test-base',backfill:true,trials:[
+    {label:'Earlier accepted example',body:'Specific human motive and a changed action.',
+      hypothesisIds:['H-001'],rating:{verdict:'pass',userWords:'合格'}},
+    {label:'Earlier rejected example',body:'An unexpected label with no specific stakes.',
+      hypothesisIds:['H-002'],rating:{verdict:'fail',userWords:'ボツ'}},
+  ]});
+  const {runId}=await store.startRun({baseId:'test-base',objective:'Integrate competing prior theories',
+    targets:[{hypothesisId:'H-001',prediction:'The joined mechanism changes user acceptance.'}],responseMode:'compact'});
+  const all=await store.researchRead({baseId:'test-base',runId,page:0});
+  assert.equal(all.pages,1);
+  const a=all.hypotheses.find(x=>x.id==='H-001');
+  const b=all.hypotheses.find(x=>x.id==='H-002');
+  await store.researchSynthesize({baseId:'test-base',runId,synthesis:{
+    thesisId:'H-001',antithesisId:'H-002',relationship:'competing',
+    thesisAnchor:a.statement.slice(0,35),antithesisAnchor:b.statement.slice(0,35),
+    passFeedbackId:'T-001',passFeedbackAnchor:'合格',
+    failFeedbackId:'T-002',failFeedbackAnchor:'ボツ',action:'synthesize',
+    tension:'Surprise and human motives may be competing explanations for why a concrete situation seems funny.',
+    proposedClaim:'The strongest example combines a meaningful reversal with a visible personal motive and consequent behavior.',
+    comparison:'Compare matched samples with the same context, varying only motive and action.',
+    falsification:'User rejects the motive-and-reversal example but accepts the original generic reversal.',
+  }});
+  const candidate={label:'Example grounded in a motive',
+    body:'The seller feels bad about rejecting the one person who wanted the item.',
+    hypothesisIds:['H-001'],predictedPass:0.42};
+  await assert.rejects(store.recordTrials({baseId:'test-base',runId,trials:[candidate]}),
+    /must be applied to the hypothesis ledger/);
+  const mutation=await store.upsertItems({baseId:'test-base',runId,kind:'hypothesis',items:[{
+    title:'Motive-driven reversal as a combined mechanism',
+    statement:'When ordinary social rules reverse, a recognizably selfish motivation shapes what the speaker does next.',
+    mechanism:'The distinctive payoff is the believable changed action, not merely a clever renaming of the situation.',
+    limits:'Generic metaphors with no changed behavior should not be treated as evidence of the new mechanism.',
+    reason:'Integrate H-001 and H-002 as an unverified synthesis to test separately.',
+  }]});
+  assert.deepEqual(mutation.changed.map(x=>x.id),['H-003']);
+  const made=await store.recordTrials({baseId:'test-base',runId,trials:[{...candidate,hypothesisIds:['H-003']}]});
+  assert.equal(made.created.length,1);
+  const state=await store.get({id:'test-base',view:'full'});
+  const h=state.full.hypotheses.find(x=>x.id==='H-003');
+  assert.equal(h.researchLineage[0].action,'synthesize');
+  assert.deepEqual(h.researchLineage[0].priorHypothesisIds,['H-001','H-002']);
+  assert.deepEqual(h.researchLineage[0].comparedFeedbackIds,['T-001','T-002']);
+  const trial=state.full.trials.find(x=>x.id===made.created[0].id);
+  assert.equal(trial.researchEvidence.action,'synthesize');
+  const finished=await store.finishRun({baseId:'test-base',runId,summary:'Derived an unverified combined claim from contrasting evidence',
+    verdicts:[{hypothesisId:'H-001',result:'inconclusive',
+      observed:'The new combined hypothesis awaits independent user evaluation.'}],
+    responseMode:'compact'});
+  assert.equal(finished.run.researchSynthesis.action,'synthesize');
+  assert.deepEqual(finished.run.researchSynthesis.appliedHypothesisIds,['H-003']);
+  assert.equal(finished.run.researchSynthesis.pendingApplication,false);
+});
