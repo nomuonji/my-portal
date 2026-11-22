@@ -37,7 +37,7 @@ const PROTOCOL = [
   'Read this base before exploring; do not rely on memory of an earlier version.',
   'exploration_run_start: read loop.refinement, compare competing explanations, and precommit a discriminating experimentDesign (changed stage, controls, expected difference, falsification) where possible. An exploratory probe may have no design.',
   'Forecast calibration and hypothesis ranking are advisory, not proof or automatic method release. Do not inflate predictedPass to bypass a domain-specific quality gate.',
-  'All dojos: keep positive and negative hypotheses parallel. Register a falsifiable failure mode with polarity=negative, declare it in startRun.negativeTargets alongside a positive target, and use negativeReview before showing a trial. An unresolved risk must be screened out, never shown as a trial.',
+  'All dojos: register falsifiable failure modes as polarity=negative. Every positive-target run with registered open failure hypotheses automatically pins one negative arm (stage-matched if possible); explicitly declared negativeTargets override the automatic choice. Compare genuine accepted/rejected cases via negativeReview before showing a trial, and screen out unresolved risks.',
   'At finishRun, negativeVerdicts report what was observed. screenedOut cases are unverified internal rejections, not user fails or method wins. Read loop.negativeLearning for cleared-but-rejected misses and update the next experiment. Older runs remain readable without evidence of negative testing.',
   'exploration_run_start: declare which hypotheses this run tests and the predicted result before measuring.',
   'During the run, write every changed fixed point with the runId (exploration_item_upsert).',
