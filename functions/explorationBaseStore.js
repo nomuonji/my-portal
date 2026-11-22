@@ -467,7 +467,7 @@ function createStore(options) {
       if (!run || run.status !== 'open') throw new Error('Research inventory requires an open run');
       const inventory = buildResearchInventory(items, trials, base.feedbackLog || [], runDocs.docs.map(doc => doc.data()));
       const progress = run.researchReview || { status:'reading', digest:inventory.hash,
-        nextPage:0, pages:inventory.pages, totalHypotheses:inventory.hypothesisCount, totalFeedback:inventory.feedbackCount };
+        nextPage:0, pages:inventory.pages, totalHypotheses:inventory.hypothesisCount, totalFeedback:inventory.feedbackCount, feedbackDigest:inventory.feedbackDigest };
       if (progress.status !== 'reading') throw new Error('Research reading is already complete for this run');
       if (progress.digest !== inventory.hash) throw new Error('Historical hypotheses or user feedback changed during reading; restart this research run with an updated snapshot');
       if (page !== progress.nextPage) throw new Error('Research history must be read in order without skipped or repeated pages; nextPage=' + progress.nextPage);
@@ -501,7 +501,8 @@ function createStore(options) {
       const inventory = buildResearchInventory(items, trials, base.feedbackLog || [], runDocs.docs.map(doc => doc.data()));
       if (run.researchReview.digest !== inventory.hash) throw new Error('Historical evidence changed after reading; restart research review');
       const synthesis = validateResearchSynthesis(input?.synthesis, inventory);
-      run.researchReview = { ...run.researchReview, status:'synthesized', synthesizedAt:now(), synthesis };
+      run.researchReview = { ...run.researchReview, status:'synthesized', synthesizedAt:now(),
+        feedbackDigest:inventory.feedbackDigest, synthesis };
       put(tx, runRef(id, runId), run);
       result = { baseId:id, runId, status:'synthesized', inventoryDigest:inventory.hash,
         pagesRead:run.researchReview.pages, totalHypotheses:inventory.hypothesisCount,
@@ -1458,12 +1459,6 @@ function createStore(options) {
         return false;
       });
       if (!backfill && fresh.length) {
-        if (base.outcome?.confirmedBy !== 'measurement'
-          && (existing.some(t => t.status === 'rated' && t.verdict !== 'withdrawn')
-            || (base.feedbackLog || []).some(f => f.decision === 'confirmed' || f.decision === 'declined'))
-          && (!run || run.researchReview?.status !== 'synthesized')) {
-          throw new Error('Full historical research review required: read every page of exploration_research_read and complete exploration_research_synthesize before recording trials');
-        }
         if (base.outcome?.confirmedBy !== 'measurement' && recallRequired(existing, base.feedbackLog || [])
           && (!run?.recallProbe || run.recallProbe.status !== 'passed')) {
           throw new Error('Historical recall check required: start a run, call exploration_recall_prepare and pass exploration_recall_check before recording user-facing trials. Agent-only learningAudit does not replace the check.');
@@ -1521,6 +1516,21 @@ function createStore(options) {
           body: text(raw.body, 4000, 'trial.body', false) || text(raw.label, 300, 'trial.label', false),
         });
         if (negativeReview && legacyReview) negativeReview.status = 'preflight_legacy_derived_unverified';
+        // All existing quality gates are evaluated first, preserving their
+        // diagnostic errors. A valid candidate still cannot be saved without
+        // the exhaustive research review of every earlier hypothesis and user
+        // feedback. New human feedback after synthesis invalidates the review.
+        if (!backfill && base.outcome?.confirmedBy !== 'measurement'
+          && (existing.some(t => t.status === 'rated' && t.verdict !== 'withdrawn')
+            || (base.feedbackLog || []).some(f => f.decision === 'confirmed' || f.decision === 'declined'))) {
+          if (!run || run.researchReview?.status !== 'synthesized') {
+            throw new Error('Full historical research review required: read every page of exploration_research_read and complete exploration_research_synthesize before recording trials');
+          }
+          const current = buildResearchInventory(items, existing, base.feedbackLog || []);
+          if (current.feedbackDigest !== run.researchReview.feedbackDigest) {
+            throw new Error('User feedback changed since the historical synthesis; open a new run and re-read all hypotheses and feedback before another trial');
+          }
+        }
         base.counters.T = (base.counters.T || 0) + 1;
         const at = now();
         const trial = {
