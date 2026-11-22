@@ -85,24 +85,18 @@ function checkNegativeReview(raw, { negativeTargets, hypotheses, trials, body, a
   if (seen.size !== targetIds.size) throw new Error('negativeReview did not cover every negative target');
   return { status: 'preflight_cleared_unverified', checks: result };
 }
-// The old MCP schema cannot send negativeReview. Reuse the *already-validated*
-// learningAudit (or the Buzz editorial screen) only for one explicit negative arm.
-// The resulting gate is marked legacy/unverified; never call it independent proof.
-function legacyNegativeReviewFromAudit(negativeTargets, audit, buzzScreen) {
+// Older MCP clients cannot send native negativeReview. A fully quote-checked
+// learning:v1 audit may supply the *agent* comparison for one failure arm.
+// Never turn the shorter Buzz editorial screen into an automatic clearance.
+function legacyNegativeReviewFromAudit(negativeTargets, audit) {
   if (!Array.isArray(negativeTargets) || negativeTargets.length !== 1 || !audit) return null;
-  const hypothesisId = negativeTargets[0].hypothesisId;
-  if (audit.status === 'verified') return { checks: [{
-    hypothesisId, rejectedCaseId: audit.negativeCaseId, acceptedCaseId: audit.positiveCaseId,
+  if (audit.status !== 'verified' || !audit.positiveAnchor || !audit.negativeAnchor) return null;
+  return { checks: [{
+    hypothesisId: negativeTargets[0].hypothesisId,
+    rejectedCaseId: audit.negativeCaseId, acceptedCaseId: audit.positiveCaseId,
     bodyAnchor: audit.bodyAnchor, observedRisk: audit.fatalRisk,
     counterEvidence: audit.riskResolution, decision: 'cleared',
   }] };
-  if (audit.status === 'legacy_buzz_screen' && buzzScreen) return { checks: [{
-    hypothesisId, rejectedCaseId: buzzScreen.negativeCaseIds[0],
-    acceptedCaseId: buzzScreen.positiveCaseId, bodyAnchor: buzzScreen.readerQuote,
-    observedRisk: buzzScreen.strongestObjection,
-    counterEvidence: buzzScreen.distinctValue, decision: 'cleared',
-  }] };
-  return null;
 }
 function checkScreenedOut(raw, negativeTargets, hypotheses) {
   if (raw === undefined) return [];
