@@ -31,7 +31,7 @@ const CONSTRAINT_STATUS = ['active', 'relaxed', 'retired'];
 const EVIDENCE_TYPES = ['observation', 'candidate', 'outcome'];
 const VERDICTS = ['supported', 'contradicted', 'inconclusive'];
 const OPEN_RUN_TTL_MS = 12 * 60 * 60 * 1000;
-const { NEGATIVE, checkNegativeTargets, checkNegativeReview, checkScreenedOut } = require('./dojoNegativeReview');
+const { NEGATIVE, checkNegativeTargets, checkNegativeReview, checkScreenedOut, legacyNegativeReviewFromAudit } = require('./dojoNegativeReview');
 const STALL_WARNING_AT = 3;
 const PROTOCOL = [
   'Read this base before exploring; do not rely on memory of an earlier version.',
@@ -730,6 +730,11 @@ function createStore(options) {
     item.evidence = [...(item.evidence || []), ...added].slice(-60);
     item.counterexamples = [...new Set([...(item.counterexamples || []), ...list(raw.addCounterexamples, 20, 800)])].slice(-40);
     const reason = text(raw.reason, 1500, 'reason', false);
+    // Old MCP installations cannot send the new polarity property until reconnected.
+    // Their existing reason field supports an explicit migration directive, without
+    // changing titles, legacyIds, evidence or human ratings.
+    const legacyPolarity = /^\[polarity:(positive|negative)\](?:\s|$)/.exec(reason);
+    if (kind === 'hypothesis' && raw.polarity === undefined && legacyPolarity) item.polarity = legacyPolarity[1];
     const previousStage = item.stage;
     if (raw.stage !== undefined) item.stage = oneOf(raw.stage, STAGES, kind + '.stage');
     const rank = STAGES.indexOf(item.stage);
@@ -858,13 +863,25 @@ function createStore(options) {
         if (hypothesis.polarity === NEGATIVE) throw new Error('Success targets must be positive; place failure hypotheses in negativeTargets: ' + hypothesisId);
         cleanTargets.push({ hypothesisId, prediction: text(target.prediction, 800, 'target.prediction (what you expect to measure, stated before measuring)', true) });
       }
-      const negativeInputs = Array.isArray(input.negativeTargets) ? input.negativeTargets : [];
+      const negativeInputs = Array.isArray(input.negativeTargets) ? [...input.negativeTargets] : [];
       const negativeHypotheses = new Map();
+      // Legacy client bridge: a precommitted negative hypothesis explicitly placed
+      // among experimentDesign contrasts is tested as a negative arm of this run.
+      // This does not silently enroll unrelated negative hypotheses.
+      if (!negativeInputs.length && Array.isArray(input.experimentDesign?.contrastedHypothesisIds)) {
+        for (const hid of list(input.experimentDesign.contrastedHypothesisIds, 6, 20)) {
+          const prior = value(await tx.get(itemRef(id, hid)));
+          if (prior?.kind === 'hypothesis' && prior.polarity === NEGATIVE) {
+            negativeHypotheses.set(hid, prior);
+            negativeInputs.push({ hypothesisId: hid, prediction: text(prior.statement, 800, 'negative hypothesis statement', true) });
+          }
+        }
+      }
       for (const rawNegative of negativeInputs) {
         const hid = text(rawNegative?.hypothesisId, 20, 'negativeTargets.hypothesisId', true);
         if (!negativeHypotheses.has(hid)) negativeHypotheses.set(hid, value(await tx.get(itemRef(id, hid))));
       }
-      const negativeTargets = checkNegativeTargets(input.negativeTargets, negativeHypotheses);
+      const negativeTargets = checkNegativeTargets(negativeInputs, negativeHypotheses);
       if (negativeTargets.length && !cleanTargets.length) throw new Error('negativeTargets must accompany a positive target: test both directions together.');
       if (base.openRunId) {
         const age = openRun ? Date.now() - Date.parse(openRun.startedAt) : Infinity;
@@ -976,7 +993,7 @@ function createStore(options) {
         };
       });
       const negativeVerdicts = (run.negativeTargets || []).map(target => {
-        const raw = (input.negativeVerdicts || []).find(v => v && v.hypothesisId === target.hypothesisId);
+        const raw = [...(input.negativeVerdicts || []), ...(input.verdicts || [])].find(v => v && v.hypothesisId === target.hypothesisId);
         if (!raw) throw new Error('Missing negativeVerdict for declared failure hypothesis ' + target.hypothesisId);
         return { hypothesisId: target.hypothesisId, prediction: target.prediction,
           result: oneOf(raw.result, VERDICTS, 'negativeVerdict.result'),
@@ -1293,10 +1310,6 @@ function createStore(options) {
         const predicted = raw.predictedPass === undefined || raw.predictedPass === null ? null : Number(raw.predictedPass);
         if (predicted !== null && !(predicted >= 0 && predicted <= 1)) throw new Error('trial.predictedPass must be between 0 and 1');
         if (!backfill && predicted === null) throw new Error('trial.predictedPass is required: the chance (0-1) that the user passes this sample, stated before they see it.');
-        const negativeReview = backfill ? null : checkNegativeReview(raw.negativeReview, {
-          negativeTargets: run?.negativeTargets || [], hypotheses, trials: existing,
-          body: text(raw.body, 4000, 'trial.body', false) || text(raw.label, 300, 'trial.label', false),
-        });
         const editorialScreen = (!backfill && id === 'viral-post-method-discovery')
           ? cleanBuzzScreen(raw, sourceItems, existing) : null;
         // Every trial-based dojo with real positive AND negative cases must show
@@ -1309,6 +1322,13 @@ function createStore(options) {
               body: text(raw.body, 4000, 'trial.body', false) || text(raw.label, 300, 'trial.label', false),
               buzzScreen: editorialScreen,
             }) : null;
+        const legacyReview = !backfill && !raw.negativeReview
+          ? legacyNegativeReviewFromAudit(run?.negativeTargets || [], learningAudit, editorialScreen) : null;
+        const negativeReview = backfill ? null : checkNegativeReview(raw.negativeReview || legacyReview, {
+          negativeTargets: run?.negativeTargets || [], hypotheses, trials: existing,
+          body: text(raw.body, 4000, 'trial.body', false) || text(raw.label, 300, 'trial.label', false),
+        });
+        if (negativeReview && legacyReview) negativeReview.status = 'preflight_legacy_derived_unverified';
         base.counters.T = (base.counters.T || 0) + 1;
         const at = now();
         const trial = {

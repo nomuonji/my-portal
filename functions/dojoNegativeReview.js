@@ -33,8 +33,15 @@ function checkNegativeTargets(rawTargets, hypotheses) {
 }
 function checkNegativeReview(raw, { negativeTargets, hypotheses, trials, body }) {
   const targets = negativeTargets || [];
-  if (!targets.length && raw === undefined) return null; // Backward-compatible existing runs.
+  if (!targets.length && (raw === undefined || raw === null)) return null; // Backward-compatible existing runs.
   if (!targets.length) throw new Error('negativeReview requires negativeTargets on the open run');
+  if (raw === undefined || raw === null) {
+    const hasPass = (trials || []).some(t => t.status === 'rated' && t.verdict === 'pass');
+    const hasFail = (trials || []).some(t => t.status === 'rated' && ['fail', 'partial'].includes(t.verdict));
+    // Cold-start/measurement dojos do not have a human positive/negative pair yet.
+    // Do not fabricate comparator IDs or turn off exploration; keep it explicitly unverified.
+    if (!hasPass || !hasFail) return { status: 'insufficient_human_contrast', checks: [] };
+  }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('negativeReview is required for runs testing negative hypotheses');
   const checks = raw.checks;
   if (!Array.isArray(checks) || checks.length < targets.length || checks.length > 8)
@@ -61,6 +68,25 @@ function checkNegativeReview(raw, { negativeTargets, hypotheses, trials, body })
   });
   if (seen.size !== targetIds.size) throw new Error('negativeReview did not cover every negative target');
   return { status: 'preflight_cleared_unverified', checks: result };
+}
+// The old MCP schema cannot send negativeReview. Reuse the *already-validated*
+// learningAudit (or the Buzz editorial screen) only for one explicit negative arm.
+// The resulting gate is marked legacy/unverified; never call it independent proof.
+function legacyNegativeReviewFromAudit(negativeTargets, audit, buzzScreen) {
+  if (!Array.isArray(negativeTargets) || negativeTargets.length !== 1 || !audit) return null;
+  const hypothesisId = negativeTargets[0].hypothesisId;
+  if (audit.status === 'verified') return { checks: [{
+    hypothesisId, rejectedCaseId: audit.negativeCaseId, acceptedCaseId: audit.positiveCaseId,
+    bodyAnchor: audit.bodyAnchor, observedRisk: audit.fatalRisk,
+    counterEvidence: audit.riskResolution, decision: 'cleared',
+  }] };
+  if (audit.status === 'legacy_buzz_screen' && buzzScreen) return { checks: [{
+    hypothesisId, rejectedCaseId: buzzScreen.negativeCaseIds[0],
+    acceptedCaseId: buzzScreen.positiveCaseId, bodyAnchor: buzzScreen.readerQuote,
+    observedRisk: buzzScreen.strongestObjection,
+    counterEvidence: buzzScreen.distinctValue, decision: 'cleared',
+  }] };
+  return null;
 }
 function checkScreenedOut(raw, negativeTargets, hypotheses) {
   if (raw === undefined) return [];
@@ -98,8 +124,10 @@ function negativeLearning(trials = [], base = {}, hypotheses = []) {
     reviewed: reviewed.length, clearedAndPassed, clearedButRejected,
     unreviewedRated: allRated.length - reviewed.length,
     screenedOutUnverified: Number(base.negativeScreening?.rejectedUnverified)||0,
+    insufficientHumanContrast: trials.filter(t => t.negativeReview?.status === 'insufficient_human_contrast').length,
+    legacyDerivedReviewed: reviewed.filter(t => t.negativeReview?.status === 'preflight_legacy_derived_unverified').length,
     byHypothesis,
     note:'Internal rejections are not human fails; a cleared candidate later rejected by the user is a negative-gate false negative, not a success.',
   };
 }
-module.exports = { POSITIVE, NEGATIVE, isNegative, checkNegativeTargets, checkNegativeReview, checkScreenedOut, negativeLearning };
+module.exports = { POSITIVE, NEGATIVE, isNegative, checkNegativeTargets, checkNegativeReview, checkScreenedOut, negativeLearning, legacyNegativeReviewFromAudit };
