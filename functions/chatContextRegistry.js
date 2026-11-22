@@ -153,8 +153,9 @@ async function getExecutableSkill(input={}) {
  }
  if(input.includeRelations===false)return executable;
  const relationStore=require('./chatSkillRelationsStore');
- const migrated=await relationStore.ensureMigrated({id:executable.id});
- const {links,policy}=await relationStore.resolve({id:executable.id,intent:input.intent});
+ const policy=await relationStore.ensureMigrated({id:executable.id});
+ const links=relationStore.decorate(policy,input.intent);
+ const migrated=policy;
  if(!links.length)return executable;
  const skillRelations=[];
  const relatedSkills=[];
