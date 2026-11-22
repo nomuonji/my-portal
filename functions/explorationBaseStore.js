@@ -839,6 +839,12 @@ function createStore(options) {
       if (run) put(tx, runRef(id, runId), { ...run, movedItemIds: [...new Set([...(run.movedItemIds || []), ...changed.map((entry) => entry.id)])] });
       saveBase(tx, base);
     });
+    // World Home and dojo-list cards consume the cached loop summary. An explicit
+    // polarity classification changes that summary even though no trial was rated.
+    // Refresh only these rare classification writes, not every evidence append.
+    if (kind === 'hypothesis' && input.items.some(raw => raw && (
+      raw.polarity !== undefined || /^\[polarity:(positive|negative)\](?:\s|$)/.test(String(raw.reason || ''))
+    ))) await refreshLoop(id);
     return { baseId: id, kind, changed, count: changed.length };
   }
 
