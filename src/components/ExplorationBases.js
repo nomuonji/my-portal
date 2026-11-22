@@ -721,6 +721,130 @@ function BaseList({ items, onOpen }) {
   );
 }
 
+function DojoDependencyPanel() {
+  const [expanded, setExpanded] = useState(false);
+  const [graph, setGraph] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState('');
+  const load = async () => {
+    setExpanded(true);
+    setBusy(true);
+    setProblem('');
+    try {
+      setGraph(await api('?resource=dojo_dependency_audit'));
+    } catch (error) { setProblem(error.message || '依存関係を取得できません'); }
+    finally { setBusy(false); }
+  };
+  const packs = (graph?.nodes || []).filter((node) => node.type === 'intelligence_pack');
+  const links = graph?.edges || [];
+  const problems = (graph?.warnings || []).filter((item) =>
+    ['missing_skill', 'pack_not_selectable', 'release_conflict_or_missing', 'unreleased_pack_candidate'].includes(item.type));
+  return (
+    <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 2, mb: 2 }}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1}>
+        <Box>
+          <Typography sx={{ fontWeight: 800, fontSize: 15 }}>道場・共有Skill・Pack の依存関係</Typography>
+          <Typography sx={{ fontSize: 12, color: V.muted, mt: 0.5 }}>現在の実行版を取得。旧版ピンは履歴として分離して表示します。</Typography>
+          <Link href="https://github.com/nomuonji/my-portal/issues/167" target="_blank" rel="noopener noreferrer" sx={{ display: 'inline-block', mt: 0.75, fontSize: 13 }}>全修正の進捗チェックリスト（GitHub #167）</Link>
+        </Box>
+        <Button size="small" variant="outlined" onClick={load} disabled={busy} sx={{ alignSelf: 'flex-start' }}>
+          {busy ? '照合中…' : expanded ? '再照合' : '依存関係を表示'}
+        </Button>
+      </Stack>
+      <Collapse in={expanded}>
+        {problem && <Alert severity="warning" sx={{ mt: 2 }}>{problem}</Alert>}
+        {busy && <CircularProgress size={18} sx={{ mt: 2 }} />}
+        {graph && (
+          <Box sx={{ mt: 2 }}>
+            <Typography sx={{ fontSize: 12.5, color: V.muted, mb: 1 }}>
+              {graph.summary?.activeDojos}道場 / {graph.summary?.activePacks} Pack / {graph.summary?.availableSkills} Skill。
+              Pack参照Skill {graph.summary?.uniqueSkillsInPacks}件、旧版の記録 {graph.summary?.historicalSkillPins}箇所。
+            </Typography>
+            <Stack gap={1.5}>
+              {packs.map((pack) => {
+                const deps = links.filter((edge) => edge.type === 'uses_skill' && edge.from === 'intelligence_pack:' + pack.id);
+                const trainers = links.filter((edge) => edge.type === 'trains' && edge.to === 'intelligence_pack:' + pack.id);
+                return (
+                  <Box key={pack.id} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
+                    <Typography sx={{ fontSize: 13.5, fontWeight: 800, overflowWrap: 'anywhere' }}>
+                      {pack.id} · 実行版 v{pack.executableVersion}
+                      {pack.registryVersion !== pack.executableVersion ? ' / 未承認候補 v' + pack.registryVersion : ''}
+                    </Typography>
+                    <Typography sx={{ fontSize: 12, color: V.muted, mb: 0.5 }}>
+                      {trainers.length ? '錬成: ' + trainers.map((edge) => edge.from.replace('dojo:', '')).join(', ') : 'Pack専用道場なし'}
+                      {!pack.inAgentProfile ? ' · Profile未接続' : ''}
+                    </Typography>
+                    {deps.map((dep, i) => (
+                      <Typography key={dep.to + ':' + (dep.componentId || '') + ':' + i}
+                        sx={{ fontSize: 12, color: V.muted, lineHeight: 1.7, overflowWrap: 'anywhere' }}>
+                        {dep.componentId ? dep.componentId + ' / ' : ''}{dep.to.replace('chat_skill:', '')}
+                        {' · '}{dep.autoLoad ? '自動読込' : '選択時のみ'}{' · 実行 v'}{dep.resolvedVersion ?? '不明'}
+                        {dep.declaredVersion && dep.declaredVersion !== dep.resolvedVersion ? ' (履歴 v' + dep.declaredVersion + ')' : ''}
+                      </Typography>
+                    ))}
+                  </Box>
+                );
+              })}
+            </Stack>
+            {problems.length > 0 && (
+              <Alert severity="warning" sx={{ mt: 1.5 }}>
+                {problems.length}件の依存要確認: {problems.slice(0, 4).map((item) => item.packId || item.resource || item.skillId).join('、')}
+              </Alert>
+            )}
+            <Typography sx={{ fontSize: 11.5, color: V.muted, mt: 1 }}>
+              本人の合格・ボツは他道場へ自動転記されません。Packへの未参照Skillは単独利用の可能性があります。
+            </Typography>
+          </Box>
+        )}
+      </Collapse>
+    </Box>
+  );
+}
+
+function DojoPeerLearningPanel({ baseId }) {
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const load = async () => {
+    setBusy(true);
+    setError('');
+    try { setData(await api('?resource=dojo_cross_learning&id=' + encodeURIComponent(baseId))); }
+    catch (err) { setError(err.message || '他道場の記録を取得できません'); }
+    finally { setBusy(false); }
+  };
+  useEffect(() => { setData(null); setError(''); }, [baseId]);
+  return (
+    <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 2, mt: 2 }}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
+        <Box>
+          <Typography sx={{ fontSize: 14, fontWeight: 800 }}>他道場からの学び</Typography>
+          <Typography sx={{ fontSize: 12, color: V.muted }}>共有Skillと専門Packを根拠に、本人評価済みの正例・反例を探索します。転用効果は未検証です。</Typography>
+        </Box>
+        <Button size="small" onClick={load} disabled={busy}>{busy ? '取得中…' : '照合'}</Button>
+      </Stack>
+      {error && <Alert severity="warning" sx={{ mt: 1 }}>{error}</Alert>}
+      {data && (
+        <Stack gap={1} sx={{ mt: 1.5 }}>
+          {!data.sources?.length && <Typography sx={{ fontSize: 12, color: V.muted }}>確認できた構造的な接続がありません。無関係な採用例を流用しません。</Typography>}
+          {(data.sources || []).map((source) => (
+            <Box key={source.sourceBaseId} sx={{ bgcolor: 'action.hover', borderRadius: 1.5, p: 1.5 }}>
+              <Typography sx={{ fontWeight: 800, fontSize: 12.5 }}>{source.sourceTitle}</Typography>
+              <Typography sx={{ color: V.muted, fontSize: 11.5 }}>接続根拠: {source.connectionReasons.join(', ')}</Typography>
+              <Typography sx={{ fontSize: 12, mt: 0.6 }}>
+                合格例: {source.accepted?.map((item) => item.trialId + ' ' + item.label).join(' / ') || 'なし'}
+              </Typography>
+              <Typography sx={{ fontSize: 12 }}>
+                不採用例: {source.rejected?.map((item) => item.trialId + ' ' + item.label).join(' / ') || 'なし'}
+              </Typography>
+            </Box>
+          ))}
+          <Typography sx={{ fontSize: 11.5, color: V.muted }}>採用された機序を仮説として検証するための参照です。受け側の本人合格には算入しません。</Typography>
+        </Stack>
+      )}
+    </Box>
+  );
+}
+
 export default function ExplorationBases() {
   const [params, setParams] = useSearchParams();
   const selectedId = params.get('id') || '';
@@ -859,6 +983,7 @@ export default function ExplorationBases() {
 
       {error && <Alert severity="error" onClose={() => setError('')} sx={{ mt: 2 }}>{error}</Alert>}
       {notice && <Alert severity="success" onClose={() => setNotice('')} sx={{ mt: 2 }}>{notice}</Alert>}
+      {!selectedId && <DojoDependencyPanel />}
 
       <Box sx={{ mt: selectedId ? 0 : 3 }}>
         {loading && !items.length && !selectedId ? (
@@ -876,7 +1001,10 @@ export default function ExplorationBases() {
         ) : detailLoading && !detail ? (
           <Box sx={{ display: 'grid', placeItems: 'center', py: 7 }}><CircularProgress /></Box>
         ) : detail ? (
-          <BaseDetail detail={detail} busy={busy} onRate={rate} onRateBatch={rateBatch} busyId={ratingKey} onDecide={(item, value) => { setDecision({ item, value }); setNote(''); }} />
+          <>
+            <BaseDetail detail={detail} busy={busy} onRate={rate} onRateBatch={rateBatch} busyId={ratingKey} onDecide={(item, value) => { setDecision({ item, value }); setNote(''); }} />
+            <DojoPeerLearningPanel baseId={selectedId} />
+          </>
         ) : null}
       </Box>
 
