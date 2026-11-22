@@ -952,7 +952,8 @@ function createStore(options) {
     const responseMode = oneOf(input?.responseMode, ['brief', 'compact'], 'responseMode', 'brief');
     const finishData = unpackFailureAnalysis(input);
     let summary;
-    const trials = await loadTrials(id);
+    const [trials, items] = await Promise.all([loadTrials(id), loadItems(id)]);
+    const hypotheses = new Map(items.filter(item => item.kind === 'hypothesis').map(item => [item.id, item]));
     await db().runTransaction(async (tx) => {
       const base = await loadBase(tx, id);
       requireOpenRun(base, runId);
@@ -973,6 +974,15 @@ function createStore(options) {
           observed: text(raw.observed, 1200, 'verdict.observed (what was actually measured)', true),
         };
       });
+      const negativeVerdicts = (run.negativeTargets || []).map(target => {
+        const raw = (input.negativeVerdicts || []).find(v => v && v.hypothesisId === target.hypothesisId);
+        if (!raw) throw new Error('Missing negativeVerdict for declared failure hypothesis ' + target.hypothesisId);
+        return { hypothesisId: target.hypothesisId, prediction: target.prediction,
+          result: oneOf(raw.result, VERDICTS, 'negativeVerdict.result'),
+          observed: text(raw.observed, 1200, 'negativeVerdict.observed', true),
+          evidenceKind: 'agent_interpretation_pending_human_validation' };
+      });
+      const screenedOut = checkScreenedOut(input.screenedOut, run.negativeTargets, hypotheses);
       const failureAnalysis = finishData.failureAnalysis
         ? cleanFailureAnalysis(finishData.failureAnalysis, ratedEntries(trials, base.feedbackLog))
         : null;
@@ -996,14 +1006,20 @@ function createStore(options) {
       // Finds a submarine brought back with this run's gear count as movement too; they are decided on the
       // submarine and mirrored here as achievements once the user confirms them.
       const yieldRefs = list(input.yieldRefs, 30, 600);
-      const moved = itemChanges.length > 0 || achievements.length > 0 || yieldRefs.length > 0 || (run.trialIds || []).length > 0;
+      const moved = itemChanges.length > 0 || achievements.length > 0 || yieldRefs.length > 0 || (run.trialIds || []).length > 0 || screenedOut.length > 0;
+      if (screenedOut.length) {
+        const prior = base.negativeScreening || { rejectedUnverified: 0, byHypothesis: {} };
+        const byHypothesis = { ...(prior.byHypothesis || {}) };
+        screenedOut.forEach(({ hypothesisId }) => { byHypothesis[hypothesisId] = (byHypothesis[hypothesisId] || 0) + 1; });
+        base.negativeScreening = { rejectedUnverified: (prior.rejectedUnverified || 0) + screenedOut.length, byHypothesis };
+      }
       base.stalledRuns = moved ? 0 : (base.stalledRuns || 0) + 1;
       base.runCount = (base.runCount || 0) + 1;
       base.openRunId = null;
       const finished = {
         ...run, status: 'finished', finishedAt: now(),
         summary: finishData.summary,
-        verdicts, achievementIds: achievements.map((a) => a.id), failureAnalysis,
+        verdicts, negativeVerdicts, screenedOut, achievementIds: achievements.map((a) => a.id), failureAnalysis,
         movedItemIds: [...new Set(itemChanges)], yieldRefs, moved,
         notMovedReason: moved ? '' : text(input.notMovedReason, 1000, 'notMovedReason (this run changed no fixed point; say why and what that implies)', true),
         costNote: text(input.costNote, 400, 'costNote', false),
@@ -1013,7 +1029,8 @@ function createStore(options) {
       summary = {
         id: runId, finishedAt: finished.finishedAt, methodVersion: run.methodVersion, objective: run.objective,
         summary: finished.summary.slice(0, 400), moved, movedItemIds: finished.movedItemIds,
-        verdicts: verdicts.map((v) => v.hypothesisId + ':' + v.result), achievementIds: finished.achievementIds, yieldCount: yieldRefs.length,
+        verdicts: verdicts.map((v) => v.hypothesisId + ':' + v.result), negativeVerdicts: negativeVerdicts.map((v) => v.hypothesisId + ':' + v.result), screenedOutUnverifiedCount: screenedOut.length,
+        achievementIds: finished.achievementIds, yieldCount: yieldRefs.length,
         failureAnalysisRecorded: Boolean(failureAnalysis),
         nextStep: finished.nextStep,
       };
@@ -1274,6 +1291,10 @@ function createStore(options) {
         const predicted = raw.predictedPass === undefined || raw.predictedPass === null ? null : Number(raw.predictedPass);
         if (predicted !== null && !(predicted >= 0 && predicted <= 1)) throw new Error('trial.predictedPass must be between 0 and 1');
         if (!backfill && predicted === null) throw new Error('trial.predictedPass is required: the chance (0-1) that the user passes this sample, stated before they see it.');
+        const negativeReview = backfill ? null : checkNegativeReview(raw.negativeReview, {
+          negativeTargets: run?.negativeTargets || [], hypotheses, trials: existing,
+          body: text(raw.body, 4000, 'trial.body', false) || text(raw.label, 300, 'trial.label', false),
+        });
         const editorialScreen = (!backfill && id === 'viral-post-method-discovery')
           ? cleanBuzzScreen(raw, sourceItems, existing) : null;
         // Every trial-based dojo with real positive AND negative cases must show
@@ -1298,6 +1319,7 @@ function createStore(options) {
           predictedPass: predicted, predictionNote: text(raw.predictionNote, 600, 'trial.predictionNote', false),
           ...(editorialScreen ? { format: editorialScreen.format, editorialScreen } : {}),
           ...(learningAudit ? { learningAudit } : {}),
+          ...(negativeReview ? { negativeReview } : {}),
           status: 'awaiting', verdict: null, createdAt: (backfill && text(raw.shownAt, 40, 'trial.shownAt', false)) || at,
           backfilled: backfill || undefined, actor: text(input.actor, 120, 'actor', false) || 'agent',
         };
