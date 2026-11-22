@@ -325,14 +325,33 @@ function createRegistry(options) {
     if (!versionNumber) throw new Error('Intelligence Pack has no version');
     const version = snapshotValue(await db().collection(COLLECTIONS.packVersions).doc(versionId(id, versionNumber)).get());
     if (!version || version.packId !== id) throw new Error('Intelligence Pack version not found: ' + id + ' v' + versionNumber);
-    return {
+    const result = {
       pack: root,
       definition: version,
-      // Stored chat_skill versionNumber values document the immutable Pack
-      // revision. Execution always resolves shared Skills by canonicalRef.
+      // Historical immutable Pack definitions remain unchanged; consumers
+      // should read executionDependencies for the current effective version.
       executionDependencyPolicy: 'current_dojo_released_skill_else_registry_latest',
       databaseId: DEFAULT_DATABASE_ID,
     };
+    if (input?.includeResolvedDependencies === true) {
+      const refs = [
+        ...(version.dependencies || []).map((dep) => ({ dep, componentId: null })),
+        ...(version.components || []).flatMap((component) => (component.dependencies || [])
+          .map((dep) => ({ dep, componentId: component.id }))),
+      ];
+      result.executionDependencies = await Promise.all(refs.map(async ({ dep, componentId }) => {
+        if (dep.resourceType !== 'chat_skill')
+          return { componentId, resourceType: dep.resourceType, canonicalRef: dep.canonicalRef,
+            requiredness: dep.requiredness, declaredVersion: dep.versionNumber || null, versionPolicy: 'as_declared' };
+        // This is a read-only dependency preview; it does not invoke tools.
+        const current = await resolveDependency({ ...dep, requiredness: 'required' }, new Set());
+        return { componentId, resourceType: dep.resourceType, canonicalRef: dep.canonicalRef,
+          requiredness: dep.requiredness, declaredVersion: dep.versionNumber || null,
+          resolvedVersion: current.resolvedVersion || null, versionPolicy: current.versionPolicy || null,
+          loadState: current.loadState, ...(current.reason ? { reason: current.reason } : {}) };
+      }));
+    }
+    return result;
   }
 
   async function createPackVersion(input) {
