@@ -20,6 +20,11 @@ const MANIFEST = Object.freeze({
       intents: ['character_ideation', 'serious_creation'],
       rationale: 'Use as an additional lens only when ideation requires distant transfer.' },
   ],
+  'buzz-content-ideation': [
+    { skillId: 'humor-craft', requiredness: 'recommended',
+      intents: ['humor_ideation'],
+      rationale: 'For humour-led viral posts, load the current dojo-approved Humor Craft and contrast accepted and rejected examples. Ordinary non-humorous distribution must not force humour.' },
+  ],
   'humor-craft': [
     { skillId: 'creative-thinking', requiredness: 'recommended',
       intents: ['humor_ideation'],
@@ -39,6 +44,7 @@ const MANIFEST = Object.freeze({
 const DEFAULT_INTENT = Object.freeze({
   'character-creation-studio': 'character_ideation',
   'humor-craft': 'humor_ideation',
+  'buzz-content-ideation': 'distribution',
 });
 const INTENTS = new Set([
   'character_ideation', 'serious_creation', 'technical_edit',
