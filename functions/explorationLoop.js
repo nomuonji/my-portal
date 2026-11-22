@@ -1,6 +1,7 @@
 'use strict';
 
 const { refinementView } = require('./hypothesisRefinement');
+const { negativeLearning: negativeLearningView } = require('./dojoNegativeReview');
 const { learningView } = require('./dojoLearning');
 
 // The improvement loop of a スキル錬成道場, as numbers. A trial is one sample shown to the user, registered
@@ -101,11 +102,13 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
   const byHypothesis = new Map();
   entries.forEach((e) => e.hypothesisIds.forEach((id) => byHypothesis.set(id, [...(byHypothesis.get(id) || []), e])));
   const titles = new Map((hypotheses || []).map((h) => [h.id, h]));
-  const scoreboard = [...byHypothesis.entries()].map(([id, list]) => ({
+  // A failure hypothesis is measured by risk clearance and missed risks, never by the positive pass-rate scoreboard.
+  const negativeLearning = negativeLearningView(trials || [], base, hypotheses || []);
+  const scoreboard = [...byHypothesis.entries()].filter(([id]) => titles.get(id)?.polarity !== 'negative').map(([id, list]) => ({
     id, title: titles.get(id)?.title || '', status: titles.get(id)?.status || 'open', ...tally(list),
   })).sort((a, b) => b.rated - a.rated || String(a.id).localeCompare(String(b.id)));
 
-  const refinement = refinementView(entries, hypotheses || []);
+  const refinement = refinementView(entries, (hypotheses || []).filter(h => h.polarity !== 'negative'));
   const learning = learningView(trials || [], feedbackLog || [], hypotheses || [], base?.progress);
   const failStages = {};
   entries.filter((e) => e.verdict !== 'pass' && e.failStage).forEach((e) => { failStages[e.failStage] = (failStages[e.failStage] || 0) + 1; });
@@ -123,6 +126,11 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
   const canRelease = !usesTrials || current.rated >= LIMITS.minRatedPerVersion;
 
   const nextActions = [];
+  if (!measurementMode && learning.status === 'contrast_ready') {
+    if (negativeLearning.status === 'not_registered') nextActions.push('全道場共通: 本人の合格・不採用の原文を対照し、失敗しやすい条件の仮説を polarity=negative として登録する。次のrunでは正のtargetsとnegativeTargetsを同時に宣言する。');
+    else if (negativeLearning.unreviewedRated > 0) nextActions.push('退屈化/失敗仮説を次のrunのnegativeTargetsで並走し、候補ごとのnegativeReviewを記録する。古い未検証稿は事後判定で合格にしない。');
+    if (negativeLearning.clearedButRejected) nextActions.push('負の品質ゲートの見逃し: negativeReviewでclearedとした稿に本人不採用が ' + negativeLearning.clearedButRejected + ' 件。対応する失敗仮説と素材選定を反証する。');
+  }
   if (learning.status === 'contrast_ready') {
     nextActions.push('学習対照: 過去の本人合格/不採用の原文を loop.learning から読み、成立条件と不成立条件を比較してから次の見本を選ぶ。仮説名を貼るだけでは不十分。');
   }
@@ -150,7 +158,7 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
       ref: t.ref || '', imageUrl: t.imageUrl || '', mediaUrl: t.mediaUrl || '',
       reviewStatus: trialArtifactStatus(t).status, reviewReason: trialArtifactStatus(t).reason,
       createdAt: t.createdAt, hypothesisIds: t.hypothesisIds || [], predictedPass: t.predictedPass ?? null })),
-    calibration, screening, learning, refinement, hypotheses: scoreboard.slice(0, 20), failStages, failStreak,
+    calibration, screening, learning, negativeLearning, refinement, hypotheses: scoreboard.slice(0, 20), failStages, failStreak,
     gates: { ...LIMITS, measurementMode, usesTrials, ratedOnCurrent: current.rated, canReleaseNewVersion: canRelease, researchDueBeforeNextTrial: researchDue },
     lastRated: entries.slice(-8).reverse().map((e) => ({ id: e.id, label: e.label, verdict: e.verdict, version: versionKey(e), at: e.at, userWords: e.userWords })),
     nextActions,
@@ -167,6 +175,10 @@ function loopSummary(view) {
     awaiting: view.awaiting.length, failStreak: view.failStreak,
     hitRate: view.calibration?.hitRate ?? null,
     screening: view.screening,
+    negativeLearning: { status: view.negativeLearning.status,
+      negativeHypotheses: view.negativeLearning.negativeHypotheses, reviewed: view.negativeLearning.reviewed,
+      clearedButRejected: view.negativeLearning.clearedButRejected,
+      screenedOutUnverified: view.negativeLearning.screenedOutUnverified },
     learning: {
       status: view.learning.status, acceptedCount: view.learning.acceptedCount,
       rejectedCount: view.learning.rejectedCount,
