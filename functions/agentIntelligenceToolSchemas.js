@@ -96,7 +96,7 @@ const tools = [
   },
   {
     name: 'intelligence_pack_get',
-    description: 'Read an Intelligence Pack and an exact immutable version, including world model, evidence standards, procedures, components and canonical dependencies.',
+    description: 'Read immutable Intelligence Pack definitions. Stored Chat Skill versionNumber values describe historical dependencies only; for execution use cognitive_bundle_resolve, which always resolves each referenced Chat Skill to its current dojo-released version (or Registry latest if no dojo). Do not execute stored Skill pins directly.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -126,7 +126,7 @@ const tools = [
   },
   {
     name: 'cognitive_bundle_resolve',
-    description: 'Validate an Agent-selected set of exact Intelligence Pack versions and dependencies, then return an ephemeral host-neutral Resolved Cognitive Bundle. The resolver does not choose Intelligence, execute reasoning, run tools, adapt to hosts, or manage runs.',
+    description: 'Assemble a Resolved Cognitive Bundle. For shared chat_skill dependencies, disregard stale Pack versionNumber pins and load the current Skill on every invocation: dojo-approved latest if trained, Registry latest otherwise. Different historical Pack pins for the same Skill do not conflict. Trained Packs themselves use the dojo-released version; Pack and HQ Method history remain immutable. The resolver does not execute reasoning or tools.',
     inputSchema: {
       type: 'object',
       properties: {
