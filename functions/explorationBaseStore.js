@@ -338,6 +338,9 @@ function feedbackView(log, releasedVersion) {
 
 function createStore(options) {
   const getDb = (options && options.getDb) || database;
+  // Only trusted, explicitly configured migration code may import already-rated
+  // historical trials. MCP/client input must never be able to enable this.
+  const allowHistoricalBackfill = options?.allowHistoricalBackfill === true;
   const resolveTarget = (options && options.resolveTarget) || defaultResolveTarget;
   const db = () => getDb();
   const baseRef = (id) => db().collection(COLLECTIONS.bases).doc(id);
@@ -1278,6 +1281,9 @@ function createStore(options) {
     if (!Array.isArray(input.trials) || !input.trials.length) throw new Error('trials must be a non-empty array');
     if (input.trials.length > 30) throw new Error('At most 30 trials per call');
     const backfill = input.backfill === true;
+    if (backfill && !allowHistoricalBackfill) {
+      throw new Error('Historical trial backfill is disabled for agent/client tools. Use an explicitly trusted migration store; normal user feedback must use exploration_trial_rate.');
+    }
     const [existing, items] = await Promise.all([loadTrials(id), loadItems(id)]);
     const hypotheses = new Map(items.filter((item) => item.kind === 'hypothesis').map((item) => [item.id, item]));
     const sourceItems = items.filter((item) => item.kind === 'source');
@@ -1330,6 +1336,15 @@ function createStore(options) {
           if (!hypothesis) throw new Error('Hypothesis not found: ' + hid);
           if (!backfill && hypothesis.status !== 'open') throw new Error('Hypothesis ' + hid + ' is ' + hypothesis.status + '; a trial tests open hypotheses.');
           if (!backfill && hypothesis.polarity === NEGATIVE) throw new Error('trial.hypothesisIds is for positive targets; evaluate negative hypotheses through negativeReview: ' + hid);
+          // 'Reject a 0-for-3 hypothesis' used to be nextActions prose only.
+          // Make it an actual refusal; a changed mechanism needs a new hypothesis,
+          // rather than quietly reusing a failing ID to satisfy a trial envelope.
+          const outcomes = backfill ? [] : existing.filter(t => t.status === 'rated'
+            && t.verdict !== 'withdrawn' && (t.hypothesisIds || []).includes(hid));
+          if (!backfill && outcomes.length >= LIMITS.hypothesisMinTrials
+            && outcomes.every(t => t.verdict !== 'pass')) {
+            throw new Error('Hypothesis ' + hid + ' has ' + outcomes.length + ' human-rated trials and zero passes. Retire or revise the mechanism as a new hypothesis before another trial.');
+          }
         });
         if (!backfill && !hypothesisIds.length) throw new Error('trial.hypothesisIds is required: name the hypothesis this sample tests (register it first with exploration_item_upsert). A sample tied to no hypothesis settles nothing when it is rated.');
         const predicted = raw.predictedPass === undefined || raw.predictedPass === null ? null : Number(raw.predictedPass);

@@ -17,6 +17,7 @@ function priorCase(trials, id, verdict, field) {
     verdict === 'pass' ? t.verdict === 'pass' : ['fail','partial'].includes(t.verdict)
   ));
   if (!candidate) throw new Error(field + ' must cite a real ' + (verdict === 'pass' ? 'human-accepted' : 'human-rejected') + ' case in the same dojo: ' + id);
+  return candidate;
 }
 // New runs implicitly pair one relevant failure mechanism with a positive target.
 // The agent may override it by explicitly naming its negativeTargets, or by using
@@ -71,8 +72,16 @@ function checkNegativeReview(raw, { negativeTargets, hypotheses, trials, body, a
     seen.add(hid);
     const rejectedCaseId = str(check.rejectedCaseId, 20, 'negativeReview.rejectedCaseId');
     const acceptedCaseId = str(check.acceptedCaseId, 20, 'negativeReview.acceptedCaseId');
-    priorCase(trials, rejectedCaseId, 'fail', 'negativeReview.rejectedCaseId');
-    priorCase(trials, acceptedCaseId, 'pass', 'negativeReview.acceptedCaseId');
+    const rejectedCase = priorCase(trials, rejectedCaseId, 'fail', 'negativeReview.rejectedCaseId');
+    const acceptedCase = priorCase(trials, acceptedCaseId, 'pass', 'negativeReview.acceptedCaseId');
+    const rejectedAnchor = str(check.rejectedAnchor, 160, 'negativeReview.rejectedAnchor');
+    const acceptedAnchor = str(check.acceptedAnchor, 160, 'negativeReview.acceptedAnchor');
+    if (rejectedAnchor.length < 8 || !(rejectedCase.body || rejectedCase.label).includes(rejectedAnchor))
+      throw new Error('negativeReview.rejectedAnchor must quote the real rejected case');
+    if (acceptedAnchor.length < 8 || !(acceptedCase.body || acceptedCase.label).includes(acceptedAnchor))
+      throw new Error('negativeReview.acceptedAnchor must quote the real accepted case');
+    if (acceptedAnchor === rejectedAnchor)
+      throw new Error('negativeReview accepted/rejected anchors must differ');
     const bodyAnchor = str(check.bodyAnchor, 160, 'negativeReview.bodyAnchor');
     if (bodyAnchor.length < 8 || !String(body).includes(bodyAnchor))
       throw new Error('negativeReview.bodyAnchor must quote 8+ exact characters from this candidate');
@@ -80,29 +89,25 @@ function checkNegativeReview(raw, { negativeTargets, hypotheses, trials, body, a
     const counterEvidence = str(check.counterEvidence, 700, 'negativeReview.counterEvidence');
     const decision = str(check.decision, 20, 'negativeReview.decision');
     if (decision !== 'cleared') throw new Error('Unresolved negative risk: reject the candidate internally, do not record a user-facing trial');
-    return { hypothesisId: hid, rejectedCaseId, acceptedCaseId, bodyAnchor, observedRisk, counterEvidence, decision };
+    return { hypothesisId: hid, rejectedCaseId, acceptedCaseId, acceptedAnchor, rejectedAnchor,
+      bodyAnchor, observedRisk, counterEvidence, decision };
   });
   if (seen.size !== targetIds.size) throw new Error('negativeReview did not cover every negative target');
   return { status: 'preflight_cleared_unverified', checks: result };
 }
-// The old MCP schema cannot send negativeReview. Reuse the *already-validated*
-// learningAudit (or the Buzz editorial screen) only for one explicit negative arm.
-// The resulting gate is marked legacy/unverified; never call it independent proof.
-function legacyNegativeReviewFromAudit(negativeTargets, audit, buzzScreen) {
+// Older MCP clients cannot send native negativeReview. A fully quote-checked
+// learning:v1 audit may supply the *agent* comparison for one failure arm.
+// Never turn the shorter Buzz editorial screen into an automatic clearance.
+function legacyNegativeReviewFromAudit(negativeTargets, audit) {
   if (!Array.isArray(negativeTargets) || negativeTargets.length !== 1 || !audit) return null;
-  const hypothesisId = negativeTargets[0].hypothesisId;
-  if (audit.status === 'verified') return { checks: [{
-    hypothesisId, rejectedCaseId: audit.negativeCaseId, acceptedCaseId: audit.positiveCaseId,
+  if (audit.status !== 'verified' || !audit.positiveAnchor || !audit.negativeAnchor) return null;
+  return { checks: [{
+    hypothesisId: negativeTargets[0].hypothesisId,
+    rejectedCaseId: audit.negativeCaseId, acceptedCaseId: audit.positiveCaseId,
+    rejectedAnchor: audit.negativeAnchor, acceptedAnchor: audit.positiveAnchor,
     bodyAnchor: audit.bodyAnchor, observedRisk: audit.fatalRisk,
     counterEvidence: audit.riskResolution, decision: 'cleared',
   }] };
-  if (audit.status === 'legacy_buzz_screen' && buzzScreen) return { checks: [{
-    hypothesisId, rejectedCaseId: buzzScreen.negativeCaseIds[0],
-    acceptedCaseId: buzzScreen.positiveCaseId, bodyAnchor: buzzScreen.readerQuote,
-    observedRisk: buzzScreen.strongestObjection,
-    counterEvidence: buzzScreen.distinctValue, decision: 'cleared',
-  }] };
-  return null;
 }
 function checkScreenedOut(raw, negativeTargets, hypotheses) {
   if (raw === undefined) return [];
