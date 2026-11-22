@@ -33,7 +33,7 @@ function checkNegativeTargets(rawTargets, hypotheses) {
 }
 function checkNegativeReview(raw, { negativeTargets, hypotheses, trials, body }) {
   const targets = negativeTargets || [];
-  if (!targets.length && raw === undefined) return null; // Backward-compatible existing runs.
+  if (!targets.length && (raw === undefined || raw === null)) return null; // Backward-compatible existing runs.
   if (!targets.length) throw new Error('negativeReview requires negativeTargets on the open run');
   if (raw === undefined || raw === null) {
     const hasPass = (trials || []).some(t => t.status === 'rated' && t.verdict === 'pass');
