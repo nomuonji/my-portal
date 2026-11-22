@@ -27,6 +27,61 @@ function evidenceCases(trials = [], feedbackLog = []) {
   return rows.sort((a, b) => String(b.at).localeCompare(String(a.at)));
 }
 
+// Do not let the most recent burst from one hypothesis monopolize the few examples
+// that an agent sees. Keep two recent cases, then cover distinct hypotheses/versions.
+function representativeCases(cases, limit = 6) {
+  const chosen = [];
+  const seen = new Set();
+  const hypotheses = new Set();
+  const versions = new Set();
+  function add(row) {
+    if (!row || seen.has(row.id)) return;
+    chosen.push(row);
+    seen.add(row.id);
+    for (const id of row.hypothesisIds || []) hypotheses.add(id);
+    if (row.version !== null && row.version !== undefined) versions.add(String(row.version));
+  }
+  for (const row of cases.slice(0, 2)) add(row);
+  while (chosen.length < Math.min(limit, cases.length)) {
+    let best = null;
+    let bestScore = -Infinity;
+    for (let index = 0; index < cases.length; index += 1) {
+      const row = cases[index];
+      if (seen.has(row.id)) continue;
+      const newHypotheses = new Set(row.hypothesisIds || []);
+      const uncovered = [...newHypotheses].filter(id => !hypotheses.has(id)).length;
+      const newVersion = row.version !== null && row.version !== undefined && !versions.has(String(row.version));
+      // One independent mechanism beats merely another recent phrasing of the same one.
+      const score = 4 * uncovered + (newVersion ? 2 : 0) + (row.body ? 0.5 : 0) - index / Math.max(1, cases.length);
+      if (score > bestScore) { best = row; bestScore = score; }
+    }
+    add(best);
+  }
+  return chosen;
+}
+
+// A contrast is a retrieval hint, not a causal finding. Prefer examples which
+// received different human verdicts under the SAME registered hypothesis.
+function contrastPairs(accepted, rejected, limit = 4) {
+  const pairs = [];
+  const used = new Set();
+  for (const positive of accepted) {
+    const match = rejected.find(negative =>
+      (positive.hypothesisIds || []).some(id => (negative.hypothesisIds || []).includes(id))
+      && !used.has(negative.id));
+    if (!match) continue;
+    used.add(match.id);
+    pairs.push({
+      positiveId: positive.id,
+      negativeId: match.id,
+      commonHypothesisIds: positive.hypothesisIds.filter(id => match.hypothesisIds.includes(id)),
+      note: '同じ仮説で採否が割れた実例。因果を決めつけず原文と条件の差を調べる。',
+    });
+    if (pairs.length >= limit) break;
+  }
+  return pairs;
+}
+
 function learningView(trials = [], feedbackLog = [], hypotheses = [], progress = null) {
   const cases = evidenceCases(trials, feedbackLog);
   const accepted = cases.filter(x => x.verdict === 'pass');
@@ -55,8 +110,10 @@ function learningView(trials = [], feedbackLog = [], hypotheses = [], progress =
     status: accepted.length && rejected.length ? 'contrast_ready'
       : accepted.length ? 'no_rejected_example' : rejected.length ? 'no_accepted_example' : 'no_rated_examples',
     acceptedCount: accepted.length, rejectedCount: rejected.length,
-    acceptedCases: accepted.slice(0, 6).map(compactCase),
-    rejectedCases: rejected.slice(0, 6).map(compactCase),
+    acceptedCases: representativeCases(accepted).map(compactCase),
+    rejectedCases: representativeCases(rejected).map(compactCase),
+    contrastPairs: contrastPairs(accepted, rejected),
+    caseSelection: 'two_recent_plus_hypothesis_and_version_diversity',
     promisingHypotheses: calibrated.slice(0, 6),
     // Human decisions are the ground truth; transfer conditions remain agent hypotheses.
     auditCoverage: { ratedTrials: samples.length, verified: audited, legacyBuzzScreen: legacy,
@@ -127,4 +184,4 @@ function validateLearningAudit(raw, { trials = [], feedbackLog = [], body = '', 
   };
 }
 
-module.exports = { evidenceCases, learningView, validateLearningAudit, AUDIT_PREFIX };
+module.exports = { evidenceCases, learningView, validateLearningAudit, representativeCases, contrastPairs, AUDIT_PREFIX };
