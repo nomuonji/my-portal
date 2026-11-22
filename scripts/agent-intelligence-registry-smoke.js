@@ -71,6 +71,7 @@ const contextStore = {
   },
 };
 const explorationBases = {
+  async trainersOf() { return []; },
   async brief({ id }) {
     if (id !== 'example-base') throw new Error('Exploration Base not found: ' + id);
     return { base: { id, title: 'Example Base', revision: 7 }, outcome: { statement: 'Find two things.' } };
@@ -300,4 +301,40 @@ test('derive creates a new version by changing only dependencies or the portfoli
   await assert.rejects(registry.deriveProfileVersion({ id: 'test-agent', expectedCurrentVersion: 1, confirm: true, portfolio: [{ packId: 'test-cognition', versionNumber: null }] }), /version conflict/);
   const identityBefore = (await registry.getProfile({ id: 'test-agent', versionNumber: 1 })).definition.identity;
   assert.deepEqual((await registry.getProfile({ id: 'test-agent' })).definition.identity, identityBefore);
+});
+
+test('trained Pack defaults to dojo-released version, even if Registry has an untested draft', async () => {
+  const db = new MemoryDb();
+  const trainedBases = { ...explorationBases, trainersOf: async ({ kind, id }) =>
+    kind === 'intelligence_pack' && id === 'test-cognition'
+      ? [{ baseId: 'test-dojo', releasedVersion: 1 }] : [] };
+  const registry = registryModule.createRegistry({
+    getDb: () => db, chatSkills, contextStore, explorationBases: trainedBases,
+  });
+  await registry.createProfileVersion({
+    profile: baseProfile([{ packId: 'test-cognition', versionNumber: null }]),
+    expectedCurrentVersion: 0, confirm: true,
+  });
+  await registry.createPackVersion({ pack: basePack(), expectedCurrentVersion: 0, confirm: true });
+  await registry.createPackVersion({
+    pack: { ...basePack(), summary: 'Draft dependency update, not dojo released' },
+    expectedCurrentVersion: 1, confirm: true,
+  });
+  assert.equal((await registry.getPack({ id: 'test-cognition' })).definition.versionNumber, 2);
+  const request = {
+    profileId: 'test-agent', taskFrame: { objective: 'Verify dojo release isolation' },
+    selectedIntelligences: [{
+      packId: 'test-cognition', componentIds: ['evidence-review'],
+      selectionRationale: 'Only the dojo released version is executable.',
+    }],
+  };
+  const bundle = await registry.resolveBundle(request);
+  assert.equal(bundle.selectedIntelligences[0].versionNumber, 1);
+  await assert.rejects(
+    registry.resolveBundle({
+      ...request,
+      selectedIntelligences: [{ ...request.selectedIntelligences[0], versionNumber: 2 }],
+    }),
+    /not released by its dojo/,
+  );
 });
