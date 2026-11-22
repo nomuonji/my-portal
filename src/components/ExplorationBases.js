@@ -717,6 +717,73 @@ function BaseDetail({ detail, onDecide, busy, onRate, onRateBatch, busyId }) {
 
 // ---- List -------------------------------------------------------------------
 
+// Live evidence radar: observations are never substituted with AI predictions.
+// Derived from the same cached dojo/loop records that the list renders.
+function DojoEvidenceRadar({ items, awaiting, onOpen }) {
+  const [expanded, setExpanded] = useState(false);
+  const waitingIds = new Map();
+  (awaiting || []).forEach(item => waitingIds.set(item.baseId, (waitingIds.get(item.baseId) || 0) + 1));
+  const rows = (items || []).map(item => {
+    const loop = item.loop || {};
+    const rated = loop.currentRated || 0;
+    const waiting = waitingIds.get(item.id) || 0;
+    const historical = loop.rated || 0;
+    const prior = loop.previousPassRate;
+    const current = loop.currentPassRate;
+    const lower = rated >= 3 && Number.isFinite(prior)
+      && Number.isFinite(current) && current < prior;
+    const status = waiting > 0 ? '本人評価待ち' :
+      lower ? '前版より低下（要比較）' :
+      rated === 0 ? (historical > 0 ? '新版は未評価' : '成果・評価の観測なし') :
+      rated < 3 ? '現行版は少数評価' : '現行版の評価あり';
+    const priority = waiting ? 0 : lower ? 1 : rated === 0 ? 2 : rated < 3 ? 3 : 4;
+    return { id:item.id, title:item.title, status, priority, waiting,
+      currentRate:rated?current:null, currentRated:rated, historical,
+      priorRate:prior, target:item.target };
+  }).sort((a,b)=>a.priority-b.priority || a.currentRated-b.currentRated || a.title.localeCompare(b.title,'ja'));
+  const waitingCount=rows.filter(row=>row.waiting).length;
+  const unmeasured=rows.filter(row=>row.currentRated===0).length;
+  const down=rows.filter(row=>row.priority===1).length;
+  return (
+    <Box sx={{borderTop:'1px solid '+V.rule,borderBottom:'1px solid '+V.rule,py:2,my:2}}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
+        <Box>
+          <Typography sx={{fontWeight:850,fontSize:15.5}}>全道場の品質検証状況</Typography>
+          <Typography sx={{fontSize:12.5,color:V.muted}}>
+            {rows.length}道場 · 本人評価待ち {waitingCount}道場 · 現行版0件 {unmeasured}道場 · 前版との低下 {down}道場
+          </Typography>
+        </Box>
+        <Button size="small" variant="text" onClick={()=>setExpanded(x=>!x)}>
+          {expanded?'閉じる':'全件を確認'}
+        </Button>
+      </Stack>
+      <Typography sx={{fontSize:11.5,color:V.faint,mt:0.6}}>
+        表示は版別の本人採否だけです。サーバー実行・素材取得・AI自己判定・過去版の合格は現行版の成果に加算しません。
+      </Typography>
+      <Collapse in={expanded}>
+        <Box sx={{mt:1.2}}>
+          {rows.map(row=>(
+            <Box key={row.id} component="button" type="button" onClick={()=>onOpen(row.id)}
+              sx={{all:'unset',width:'100%',cursor:'pointer',display:'flex',
+                justifyContent:'space-between',gap:1.5,py:1.2,borderBottom:'1px solid '+V.rule,
+                '&:hover':{background:V.accentSoft}}}>
+              <Box sx={{minWidth:0}}>
+                <Typography sx={{fontSize:13.5,fontWeight:700}}>{row.title}</Typography>
+                <Typography sx={{fontSize:12,color:V.muted}}>{row.status}
+                  {row.waiting>0?'（'+row.waiting+'件）':''}
+                </Typography>
+              </Box>
+              <Typography sx={{fontSize:12.5,color:V.muted,textAlign:'right',whiteSpace:'nowrap'}}>
+                {row.currentRated ? percent(row.currentRate)+' / '+row.currentRated+'件':'現行版未評価'}
+              </Typography>
+            </Box>
+          ))}
+        </Box>
+      </Collapse>
+    </Box>
+  );
+}
+
 function BaseList({ items, onOpen }) {
   if (!items.length) return <Quiet>まだ道場はありません。</Quiet>;
   return (
@@ -1048,6 +1115,7 @@ export default function ExplorationBases() {
                 <RateTrials items={awaiting} onRate={rate} onRateBatch={rateBatch} busyId={ratingKey} showBase />
               </Box>
             )}
+            <DojoEvidenceRadar items={items} awaiting={awaiting} onOpen={open} />
             <BaseList items={items} onOpen={open} />
           </>
         ) : detailLoading && !detail ? (
