@@ -903,6 +903,7 @@ test('negative hypotheses run in parallel: unresolved candidates blocked, user m
     hypothesisIds: ['H-001'], predictedPass: 0.5,
   };
   const report = { checks: [{ hypothesisId: 'H-002', rejectedCaseId: 'T-002', acceptedCaseId: 'T-001',
+    acceptedAnchor: 'Specific relationship', rejectedAnchor: 'Generic line',
     bodyAnchor: 'office rule created', observedRisk: 'The ending may merely restate a generic complaint.',
     counterEvidence: 'The particular office rule creates a different consequence.', decision: 'cleared' }] };
   await assert.rejects(store.recordTrials({ baseId: 'test-base', runId: run.runId, trials: [candidate] }), /negativeReview is required/);
@@ -912,6 +913,12 @@ test('negative hypotheses run in parallel: unresolved candidates blocked, user m
   await assert.rejects(store.recordTrials({ baseId: 'test-base', runId: run.runId, trials: [
     { ...candidate, negativeReview: { checks: [{ ...report.checks[0], acceptedCaseId: 'T-002' }] } },
   ] }), /human-accepted/);
+  await assert.rejects(store.recordTrials({ baseId: 'test-base', runId: run.runId, trials: [
+    { ...candidate, negativeReview: { checks: [{ ...report.checks[0], acceptedAnchor: 'imaginary positive quote' }] } },
+  ] }), /acceptedAnchor must quote/);
+  await assert.rejects(store.recordTrials({ baseId: 'test-base', runId: run.runId, trials: [
+    { ...candidate, negativeReview: { checks: [{ ...report.checks[0], rejectedAnchor: 'invented rejection quote' }] } },
+  ] }), /rejectedAnchor must quote/);
   const made = await store.recordTrials({ baseId: 'test-base', runId: run.runId, trials: [{ ...candidate, negativeReview: report }] });
   assert.equal(made.created[0].id, 'T-003');
   await store.rateTrials({ baseId: 'test-base', ratings: [{ id: 'T-003', verdict: 'fail', userWords: 'ボツ' }] });
@@ -967,8 +974,8 @@ test('older MCP fields can classify and compare failure hypotheses without weake
   const body = 'A specific office rule unexpectedly changes who pays for the mistake.';
   const audit = { positiveCaseId: 'T-001', negativeCaseId: 'T-002',
     positiveAnchor: 'distinct causal consequence', negativeAnchor: 'forgettable generic ending',
-    mechanism: 'The accepted case uses a concrete cause and consequence.',
-    transferCondition: 'The next candidate also has a concrete action with consequences.',
+    mechanism: 'The accepted example has a real cause and result.',
+    transferCondition: 'The new item has an observable action and consequence.',
     failureContrast: 'The failure was a generic restatement without causal movement.',
     fatalRisk: 'The new ending might be a generic point that fits any office.',
     riskResolution: 'The office rule dictates who pays, an observable causal detail.',
