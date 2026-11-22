@@ -154,3 +154,15 @@ A dojo must study **what makes a candidate fail**, not only which mechanism pred
 - Older recorded runs remain readable. Runs with no `negativeTargets` have no verified negative preflight and are called out in the loop when a dojo has both passed and rejected cases. This compatibility does **not** imply a negative test occurred. For new work, test positive and negative hypotheses concurrently; inspect false-clearance misses before repeating the same source, selection or transformation.
 
 This is a common server-side protocol, not a universal list of bad styles: different dojos must derive failure mechanisms from their own authentic rejected and accepted cases. For example, SNS may test predictable endings, SEO may test non-indexable source demand, video may test a weak retention hook, and monetization may test a missing distribution-to-purchase link. User verdicts and original acceptance gates remain unchanged.
+
+### Compatibility for existing ChatGPT MCP connections (schema pinned before release)
+
+Existing `exploration_item_upsert` schemas cannot send `polarity`. To classify a hypothesis **without changing its title or overwriting legacy IDs**, use the existing `reason` field on an upsert: `"[polarity:negative] <why this hypothesis predicts failure>"`. The server persists `polarity=negative` and records a revision. This explicit directive may also be used on creation; omitting it preserves the legacy positive default. Do not silently classify by words such as “bad” or “failure” in a title.
+
+Existing `exploration_run_start` clients can precommit a **single negative comparison** with `experimentDesign.contrastedHypothesisIds` referring to an open negative hypothesis (alongside an ordinary positive `targets`). The server copies the negative hypothesis' stored statement into the run's `negativeTargets` *before* output generation. Other non-negative contrasts keep their old behavior. Multiple negative contrasts require native review fields.
+
+Where a dojo already has real accepted/rejected user examples, a legacy `learning:v1:` audit is mapped to the negative preflight, and Buzz's already-enforced `screen:v1:` is mapped as a **legacy-only, agent-derived review**, flagged `preflight_legacy_derived_unverified`, not as independent approval. Native `negativeReview` remains preferred; a screened-out candidate should never be submitted merely to satisfy the schema.
+
+When rating cases are insufficient for a comparison (particularly measurement-led or zero-pass dojos), `negativeReview.status=insufficient_human_contrast` is recorded without fake comparators or claiming gate coverage. Research can continue, but such samples are not counted among successful preflight reviews.
+
+At finish, older MCP clients can put the negative hypothesis verdict in the existing `verdicts` array in addition to normal positive-target verdicts. The server persists those as `negativeVerdicts`; an omitted negative verdict is still an error. The new `screenedOut` structured field requires an updated connector schema; do not invent screening counts on older clients. Reconnecting the connector eventually enables the native fields.
