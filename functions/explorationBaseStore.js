@@ -1345,6 +1345,7 @@ function createStore(options) {
           ? legacyNegativeReviewFromAudit(run?.negativeTargets || [], learningAudit, editorialScreen) : null;
         const negativeReview = backfill ? null : checkNegativeReview(raw.negativeReview || legacyReview, {
           negativeTargets: run?.negativeTargets || [], hypotheses, trials: existing,
+          allowLimitedAuto: run?.negativeTargetOrigin === 'automatic',
           body: text(raw.body, 4000, 'trial.body', false) || text(raw.label, 300, 'trial.label', false),
         });
         if (negativeReview && legacyReview) negativeReview.status = 'preflight_legacy_derived_unverified';
