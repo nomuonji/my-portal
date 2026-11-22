@@ -154,6 +154,12 @@ export default function WorldHome() {
   const [skillSaving, setSkillSaving] = useState(false);
   const [skillError, setSkillError] = useState('');
   const [skillEditing, setSkillEditing] = useState(false);
+  const [relationPolicy, setRelationPolicy] = useState(null);
+  const [relationDraft, setRelationDraft] = useState('');
+  const [relationChangeReason, setRelationChangeReason] = useState('');
+  const [relationBenchmarkRef, setRelationBenchmarkRef] = useState('');
+  const [relationBenchmarkCases, setRelationBenchmarkCases] = useState('');
+  const [relationSaving, setRelationSaving] = useState(false);
 
   const refreshWorld = useCallback(async () => {
     try { setData(await fetchPortalWorld()); } catch (err) { setError(err.message || 'Context一覧の更新に失敗しました'); }
@@ -192,13 +198,19 @@ export default function WorldHome() {
     setSkillDetail({id:skill.id,title:skill.title});
     setSkillLoading(true);setSkillEditing(false);setSkillError('');
     try {
-      const [full,hist] = await Promise.all([
+      const [full,hist,relations] = await Promise.all([
         fetchPortalWorld(`?resource=chat_skill&id=${encodeURIComponent(skill.id)}`),
         fetchPortalWorld(`?resource=chat_skill_versions&id=${encodeURIComponent(skill.id)}`),
+        fetchPortalWorld(`?resource=chat_skill_relation_policy&id=${encodeURIComponent(skill.id)}`),
       ]);
       setSkillDetail(full);
       setSkillDraft({...full,triggersText:(full.triggers||[]).join(', ')});
       setSkillHistory(hist.items||[]);
+      setRelationPolicy(relations);
+      setRelationDraft(JSON.stringify({id:relations.id,defaultIntent:relations.defaultIntent,relations:relations.relations||[]},null,2));
+      setRelationChangeReason('');
+      setRelationBenchmarkRef('');
+      setRelationBenchmarkCases('');
     } catch(e) {setSkillError(e.message);}
     finally {setSkillLoading(false);}
   };
@@ -219,6 +231,22 @@ export default function WorldHome() {
       setSkillEditing(false);
     } catch(err){setSkillError(err.message||'更新に失敗しました');}
     finally{setSkillSaving(false);}
+  };
+  const saveRelations = async () => {
+    if(!skillDetail||!relationPolicy)return;
+    setRelationSaving(true);setSkillError('');
+    try {
+      const policy=JSON.parse(relationDraft);
+      if(policy.id!==skillDetail.id)throw new Error('参照元SkillのIDは変更できません');
+      const benchmark=relationBenchmarkRef.trim()&&relationBenchmarkCases.trim()
+        ? {passed:true,ref:relationBenchmarkRef.trim(),cases:relationBenchmarkCases.trim()} : undefined;
+      await fetchPortalWorld('',{method:'POST',body:JSON.stringify({
+        action:'chat_skill_relation_policy_publish',policy,expectedRevision:relationPolicy.revision,
+        changeReason:relationChangeReason.trim(),benchmark,confirm:true,
+      })});
+      await openSkill({id:skillDetail.id,title:skillDetail.title});
+    } catch(err){setSkillError(err.message||'依存ルールを保存できません');}
+    finally{setRelationSaving(false);}
   };
   const line = theme.palette.divider;
   const surface = theme.palette.background.paper;
@@ -470,7 +498,30 @@ export default function WorldHome() {
                   </Paper>
                 </>
               )}
-              <Typography variant="caption" color="text.secondary">保存履歴: {skillHistory.map(v=>`v${v.versionNumber}`).join('、') || '未取得'}</Typography>
+                            <Typography variant="caption" color="text.secondary">保存履歴: {skillHistory.map(v=>`v${v.versionNumber}`).join('、') || '未取得'}</Typography>
+              {relationPolicy && (
+                <Paper variant="outlined" sx={{p:1.7,borderRadius:2}}>
+                  <Typography sx={{fontWeight:800,fontSize:13.5}}>関連Skill・用途条件</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{display:'block',my:0.75}}>
+                    {relationPolicy.source==='my_portal_db' ? 'My Portal DBで管理' : '旧コード定義（DBへ未移行）'}
+                    {' · '}関係定義 v{relationPolicy.revision}。関連Skillの本文は実行時に道場承認済み最新版を取得します。
+                    変更は本文の改訂とは独立して記録され、変更時は事例ベンチマークが必要です。
+                  </Typography>
+                  <TextField fullWidth multiline minRows={4} maxRows={12} label="関係定義（JSON）"
+                    value={relationDraft} onChange={e=>setRelationDraft(e.target.value)}
+                    InputProps={{sx:{fontFamily:'monospace',fontSize:12.5}}} />
+                  <TextField sx={{mt:1}} fullWidth size="small" label="変更理由（必須）"
+                    value={relationChangeReason} onChange={e=>setRelationChangeReason(e.target.value)} />
+                  <TextField sx={{mt:1}} fullWidth size="small" label="比較の証拠URL/記録ID（変更時は必須）"
+                    value={relationBenchmarkRef} onChange={e=>setRelationBenchmarkRef(e.target.value)} />
+                  <TextField sx={{mt:1}} fullWidth size="small" label="合否の具体例・比較内容（変更時は必須）"
+                    value={relationBenchmarkCases} onChange={e=>setRelationBenchmarkCases(e.target.value)} />
+                  <Stack direction="row" justifyContent="flex-end" sx={{mt:1}}>
+                    <Button size="small" variant="outlined" disabled={relationSaving||!relationChangeReason.trim()}
+                      onClick={saveRelations}>{relationSaving?'保存中…':'依存ルールを版付きで保存'}</Button>
+                  </Stack>
+                </Paper>
+              )}
             </Stack>
           )}
         </DialogContent>
