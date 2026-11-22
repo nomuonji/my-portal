@@ -848,3 +848,57 @@ test('provisional images and transient video refs cannot earn a user verdict bef
     {id:'T-001',verdict:'pass',userWords:'画像を見て合格'}]});
   assert.equal(finished.loop.current.pass,1);
 });
+
+test('negative hypotheses run in parallel: unresolved candidates blocked, user misses separate from internal rejections', async () => {
+  const store = await setup();
+  await store.upsertItems({ baseId: 'test-base', kind: 'hypothesis', items: [
+    { ...hypothesis, title: 'Positive condition' },
+    { ...hypothesis, title: 'Risk of generic endings', polarity: 'negative', statement: 'Generic endings may be rejected.', mechanism: 'A replaceable ending adds no discovery.' },
+  ] });
+  // Existing independently human-rated cases ground the review; an internal rejection is never a rating.
+  const old = await store.recordTrials({ baseId: 'test-base', backfill: true, trials: [
+    { label: 'Accepted example', body: 'Specific relationship, new consequence.', rating: { verdict: 'pass', userWords: '合格' } },
+    { label: 'Rejected example', body: 'Generic line without consequence.', rating: { verdict: 'fail', userWords: 'ボツ' } },
+  ] });
+  assert.deepEqual(old.created.map(x => x.id), ['T-001', 'T-002']);
+  const run = await store.startRun({ baseId: 'test-base', objective: 'Test success and failure mechanisms together',
+    targets: [{ hypothesisId: 'H-001', prediction: 'User accepts the unusual consequence.' }],
+    negativeTargets: [{ hypothesisId: 'H-002', prediction: 'Generic ending makes the copy boring.' }],
+    responseMode: 'compact',
+  });
+  assert.equal(run.negativeTargetCount, 1);
+  const candidate = {
+    label: 'Concrete office failure', body: 'The office rule created a second problem for its author.',
+    hypothesisIds: ['H-001'], predictedPass: 0.5,
+  };
+  const report = { checks: [{ hypothesisId: 'H-002', rejectedCaseId: 'T-002', acceptedCaseId: 'T-001',
+    bodyAnchor: 'office rule created', observedRisk: 'The ending may merely restate a generic complaint.',
+    counterEvidence: 'The particular office rule creates a different consequence.', decision: 'cleared' }] };
+  await assert.rejects(store.recordTrials({ baseId: 'test-base', runId: run.runId, trials: [candidate] }), /negativeReview is required/);
+  await assert.rejects(store.recordTrials({ baseId: 'test-base', runId: run.runId, trials: [
+    { ...candidate, negativeReview: { checks: [{ ...report.checks[0], decision: 'unresolved' }] } },
+  ] }), /Unresolved negative risk/);
+  await assert.rejects(store.recordTrials({ baseId: 'test-base', runId: run.runId, trials: [
+    { ...candidate, negativeReview: { checks: [{ ...report.checks[0], acceptedCaseId: 'T-002' }] } },
+  ] }), /human-accepted/);
+  const made = await store.recordTrials({ baseId: 'test-base', runId: run.runId, trials: [{ ...candidate, negativeReview: report }] });
+  assert.equal(made.created[0].id, 'T-003');
+  await store.rateTrials({ baseId: 'test-base', ratings: [{ id: 'T-003', verdict: 'fail', userWords: 'ボツ' }] });
+  const done = await store.finishRun({ baseId: 'test-base', runId: run.runId,
+    summary: 'A cleared risk still led to a human rejection.',
+    verdicts: [{ hypothesisId: 'H-001', result: 'contradicted', observed: 'User rejected the candidate.' }],
+    negativeVerdicts: [{ hypothesisId: 'H-002', result: 'inconclusive', observed: 'One missed risk; causal mechanism is not confirmed.' }],
+    screenedOut: [{ hypothesisId: 'H-002', candidate: 'Unshown generic draft',
+      observedRisk: 'The entire premise was replaceable by generic nouns.',
+      counterEvidence: 'The accepted case needed the particular office rule.' }],
+    responseMode: 'compact',
+  });
+  assert.equal(done.run.screenedOutUnverifiedCount, 1);
+  const brief = await store.get({ id: 'test-base' });
+  assert.equal(brief.loop.negativeLearning.negativeHypotheses, 1);
+  assert.equal(brief.loop.negativeLearning.clearedButRejected, 1);
+  assert.equal(brief.loop.negativeLearning.screenedOutUnverified, 1);
+  assert.equal(brief.loop.overall.pass, 1, 'screenedOut must not count as a human-rated fail or pass');
+  assert.ok(!brief.loop.hypotheses.some(h => h.id === 'H-002'), 'negative hypotheses do not rank as positive win patterns');
+  assert.ok(brief.hypotheses.conjectures.some(h => h.id === 'H-002' && h.polarity === 'negative'));
+});
