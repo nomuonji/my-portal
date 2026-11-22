@@ -31,7 +31,7 @@ const CONSTRAINT_STATUS = ['active', 'relaxed', 'retired'];
 const EVIDENCE_TYPES = ['observation', 'candidate', 'outcome'];
 const VERDICTS = ['supported', 'contradicted', 'inconclusive'];
 const OPEN_RUN_TTL_MS = 12 * 60 * 60 * 1000;
-const { NEGATIVE, checkNegativeTargets, checkNegativeReview, checkScreenedOut, legacyNegativeReviewFromAudit } = require('./dojoNegativeReview');
+const { NEGATIVE, checkNegativeTargets, checkNegativeReview, checkScreenedOut, legacyNegativeReviewFromAudit, selectAutomaticNegativeTarget } = require('./dojoNegativeReview');
 const STALL_WARNING_AT = 3;
 const PROTOCOL = [
   'Read this base before exploring; do not rely on memory of an earlier version.',
@@ -847,6 +847,12 @@ function createStore(options) {
     const responseMode = oneOf(input?.responseMode, ['brief', 'compact'], 'responseMode', 'brief');
     let runId;
     let receipt;
+    // Bounded read before the transaction: selecting a negative arm must not require
+    // newer MCP clients or an agent remembering an extra field. A transaction then
+    // verifies the selected item is still open before persisting the run.
+    const automaticNegativeCandidates = (Array.isArray(input.targets) && input.targets.length
+      && (!Array.isArray(input.negativeTargets) || input.negativeTargets.length === 0))
+      ? (await loadItems(id)).filter(item => item.kind === 'hypothesis' && item.polarity === NEGATIVE && item.status === 'open') : [];
     await db().runTransaction(async (tx) => {
       const base = await loadBase(tx, id);
       if (base.status !== 'active') throw new Error('Exploration Base is ' + base.status + '; runs start only on an active base.');
@@ -865,6 +871,7 @@ function createStore(options) {
       }
       const negativeInputs = Array.isArray(input.negativeTargets) ? [...input.negativeTargets] : [];
       const negativeHypotheses = new Map();
+      let negativeTargetOrigin = negativeInputs.length ? 'explicit' : null;
       // Legacy client bridge: a precommitted negative hypothesis explicitly placed
       // among experimentDesign contrasts is tested as a negative arm of this run.
       // This does not silently enroll unrelated negative hypotheses.
@@ -874,7 +881,15 @@ function createStore(options) {
           if (prior?.kind === 'hypothesis' && prior.polarity === NEGATIVE) {
             negativeHypotheses.set(hid, prior);
             negativeInputs.push({ hypothesisId: hid, prediction: text(prior.statement, 800, 'negative hypothesis statement', true) });
+            negativeTargetOrigin = 'legacy_contrast';
           }
+        }
+      }
+      if (!negativeInputs.length && cleanTargets.length) {
+        const chosen = selectAutomaticNegativeTarget(automaticNegativeCandidates, input.experimentDesign?.changedStage, base.runCount);
+        if (chosen) {
+          negativeInputs.push(chosen);
+          negativeTargetOrigin = 'automatic';
         }
       }
       for (const rawNegative of negativeInputs) {
@@ -950,13 +965,14 @@ function createStore(options) {
         id: runId, baseId: id, status: 'open', startedAt: now(), actor: text(input.actor, 120, 'actor', false) || 'agent',
         objective: text(input.objective, 800, 'objective', true),
         methodVersion: base.method.version, outcomeRevision: base.outcome.revision,
-        targets: cleanTargets, ...(negativeTargets.length ? { negativeTargets } : {}), unknownTerritoryProbe: probe, ...(experimentDesign ? { experimentDesign } : {}),
+        targets: cleanTargets, ...(negativeTargets.length ? { negativeTargets, negativeTargetOrigin } : {}), unknownTerritoryProbe: probe, ...(experimentDesign ? { experimentDesign } : {}),
         ...(crossDojoEvidence.length ? { crossDojoEvidence } : {}),
       };
       put(tx, runRef(id, runId), run);
       base.openRunId = runId;
       receipt = { runId, methodVersion: run.methodVersion, outcomeRevision: run.outcomeRevision,
-        crossDojoEvidenceCount: crossDojoEvidence.length, negativeTargetCount: negativeTargets.length };
+        crossDojoEvidenceCount: crossDojoEvidence.length, negativeTargetCount: negativeTargets.length,
+        negativeTargetOrigin: negativeTargetOrigin || null };
       pushEvent(tx, base, { type: 'run_started', runId, summary: run.objective, actor: input.actor, detail: { targets: cleanTargets, negativeTargets, methodVersion: run.methodVersion } });
       saveBase(tx, base);
     });
@@ -994,7 +1010,10 @@ function createStore(options) {
       });
       const negativeVerdicts = (run.negativeTargets || []).map(target => {
         const raw = [...(input.negativeVerdicts || []), ...(input.verdicts || [])].find(v => v && v.hypothesisId === target.hypothesisId);
-        if (!raw) throw new Error('Missing negativeVerdict for declared failure hypothesis ' + target.hypothesisId);
+        if (!raw && run.negativeTargetOrigin !== 'automatic') throw new Error('Missing negativeVerdict for declared failure hypothesis ' + target.hypothesisId);
+        if (!raw) return { hypothesisId: target.hypothesisId, prediction: target.prediction,
+          result: 'inconclusive', observed: 'Automatically selected failure hypothesis; no separate negative verdict was supplied. A human rating, if any, is stored on the trial and does not prove this cause.',
+          evidenceKind: 'automatic_unreviewed_unconfirmed' };
         return { hypothesisId: target.hypothesisId, prediction: target.prediction,
           result: oneOf(raw.result, VERDICTS, 'negativeVerdict.result'),
           observed: text(raw.observed, 1200, 'negativeVerdict.observed', true),
