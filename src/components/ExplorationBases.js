@@ -418,10 +418,32 @@ export function LoopPanel({ loop, baseId, onRate, onRateBatch, busyId }) {
         </Stack>
       ))}
       {calibration && (
-        <Typography sx={{ fontSize: 12.5, color: V.muted, mt: 1 }}>
-          AI予測の的中率 {percent(calibration.hitRate)}（本人評価のある{calibration.predicted}件）。
-          これは提出前の選別率や実際の売上・再生数ではありません。高い的中率だけで制作品質向上とは判断しません。
-        </Typography>
+        <Box sx={{ mt: 1.5, px: 1.5, py: 1.1, border: '1px solid ' + V.rule, borderRadius: 1.5 }}>
+          <Typography sx={{ fontSize: 13, fontWeight: 800, mb: 0.4 }}>AIの事前予測を検証</Typography>
+          <Typography sx={{ fontSize: 12.5, color: V.muted, lineHeight: 1.7 }}>
+            本人評価 {calibration.predicted}件。的中率 {percent(calibration.hitRate)} ／
+            単純な多数派予測でも {percent(calibration.baselineHitRate)}。
+            Brier誤差 {calibration.brier?.toFixed(3)}（小さいほど良い）／
+            全履歴の合格率だけを使う同一標本の参考値 {calibration.inSampleBaseRateBrier?.toFixed(3)}。
+          </Typography>
+          <Typography sx={{ fontSize: 12.5, color: V.muted, lineHeight: 1.7 }}>
+            合格すると予測した {calibration.positiveCalls}件のうち正解 {calibration.truePositive}件、
+            誤判定 {calibration.falsePositive}件。{calibration.positiveCalls
+              ? '合格予測の適中率 ' + percent(calibration.precision) + '。'
+              : '合格予測は0件のため、合格作の選別性能は未検証。'}
+            {calibration.predictiveStatus === 'no_better_than_base_rate'
+              ? ' この標本では単純基準より予測誤差が大きい。'
+              : calibration.predictiveStatus === 'no_pass_examples'
+                ? ' 合格例がないため良作の識別性能は測定できない。'
+                : calibration.predictiveStatus === 'too_few'
+                  ? ' 件数が少なく一般化できない。'
+                  : ''}
+          </Typography>
+          <Typography sx={{ fontSize: 11.5, color: V.faint }}>
+            同一標本の基準値は事後的な比較で、将来の予測精度や合格率向上の証明ではありません。
+            惜しいは合格予測の判定上は不合格に含みます。売上・再生数の測定とも別です。
+          </Typography>
+        </Box>
       )}
       {refinement && (
         <Box sx={{ mt: 1.5, px: 1.5, py: 1.3, border: '1px solid ' + V.rule, borderRadius: 1.5 }}>
