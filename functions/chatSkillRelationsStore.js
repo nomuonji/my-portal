@@ -106,7 +106,26 @@ function createStore(opts={}) {
     });
     return {...saved,source:'my_portal_db'};
   }
-  return {get,resolve,list,publish,cleanPolicy};
+  async function ensureMigrated(input={}) {
+    const current=await get(input);
+    if(current.revision||!current.migrationRequired)return current;
+    // Exact, nonsemantic migration of the already-running curated policy.
+    // Never alter the source Skill or its dojo release; a discrepancy fails
+    // closed with a warning and the previous runtime fallback stays active.
+    try {
+      return await publish({
+        policy:{id:current.id,defaultIntent:current.defaultIntent,relations:current.relations},
+        expectedRevision:0,
+        changeReason:'Copy approved legacy Skill relation rules into versioned My Portal DB without semantic changes',
+        confirm:true,
+      });
+    }catch(error){
+      const reread=await get(input);
+      if(reread.revision)return reread; // Parallel first reader migrated it.
+      return {...current,migrationWarning:String(error.message||error).slice(0,300)};
+    }
+  }
+  return {get,resolve,list,publish,ensureMigrated,cleanPolicy};
 }
 const store=createStore();
 module.exports={...store,createStore,cleanPolicy,decorate,COLLECTION,VERSIONS};
