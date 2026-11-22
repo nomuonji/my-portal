@@ -62,6 +62,25 @@ function checkNegativeReview(raw, { negativeTargets, hypotheses, trials, body })
   if (seen.size !== targetIds.size) throw new Error('negativeReview did not cover every negative target');
   return { status: 'preflight_cleared_unverified', checks: result };
 }
+// The old MCP schema cannot send negativeReview. Reuse the *already-validated*
+// learningAudit (or the Buzz editorial screen) only for one explicit negative arm.
+// The resulting gate is marked legacy/unverified; never call it independent proof.
+function legacyNegativeReviewFromAudit(negativeTargets, audit, buzzScreen) {
+  if (!Array.isArray(negativeTargets) || negativeTargets.length !== 1 || !audit) return null;
+  const hypothesisId = negativeTargets[0].hypothesisId;
+  if (audit.status === 'verified') return { checks: [{
+    hypothesisId, rejectedCaseId: audit.negativeCaseId, acceptedCaseId: audit.positiveCaseId,
+    bodyAnchor: audit.bodyAnchor, observedRisk: audit.fatalRisk,
+    counterEvidence: audit.riskResolution, decision: 'cleared',
+  }] };
+  if (audit.status === 'legacy_buzz_screen' && buzzScreen) return { checks: [{
+    hypothesisId, rejectedCaseId: buzzScreen.negativeCaseIds[0],
+    acceptedCaseId: buzzScreen.positiveCaseId, bodyAnchor: buzzScreen.readerQuote,
+    observedRisk: buzzScreen.strongestObjection,
+    counterEvidence: buzzScreen.distinctValue, decision: 'cleared',
+  }] };
+  return null;
+}
 function checkScreenedOut(raw, negativeTargets, hypotheses) {
   if (raw === undefined) return [];
   if (!Array.isArray(raw) || raw.length > 20) throw new Error('screenedOut must be an array of at most 20');
@@ -102,4 +121,4 @@ function negativeLearning(trials = [], base = {}, hypotheses = []) {
     note:'Internal rejections are not human fails; a cleared candidate later rejected by the user is a negative-gate false negative, not a success.',
   };
 }
-module.exports = { POSITIVE, NEGATIVE, isNegative, checkNegativeTargets, checkNegativeReview, checkScreenedOut, negativeLearning };
+module.exports = { POSITIVE, NEGATIVE, isNegative, checkNegativeTargets, checkNegativeReview, checkScreenedOut, negativeLearning, legacyNegativeReviewFromAudit };
