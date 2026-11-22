@@ -1274,7 +1274,7 @@ test('all historical hypotheses and user feedback must be read; dialectical synt
     comparison:'Compare versions with an actual changed motive versus a generic paraphrase under matched source conditions.',
     falsification:'The user rejects the specific motive version or accepts a generic equivalent under matched conditions.'};
   await assert.rejects(store.researchSynthesize({baseId:'test-base',runId,synthesis:{
-    ...synthesis,antithesisId:'H-999'}}),/two distinct existing hypotheses/);
+    ...synthesis,antithesisId:'H-999'}}),/distinct existing hypothesis/);
   await assert.rejects(store.researchSynthesize({baseId:'test-base',runId,synthesis:{
     ...synthesis,passFeedbackId:'T-888'}}),/real historical accepted feedback/);
   await assert.rejects(store.researchSynthesize({baseId:'test-base',runId,synthesis:{
