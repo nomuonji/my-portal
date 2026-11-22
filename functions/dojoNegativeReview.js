@@ -35,6 +35,13 @@ function checkNegativeReview(raw, { negativeTargets, hypotheses, trials, body })
   const targets = negativeTargets || [];
   if (!targets.length && raw === undefined) return null; // Backward-compatible existing runs.
   if (!targets.length) throw new Error('negativeReview requires negativeTargets on the open run');
+  if (raw === undefined || raw === null) {
+    const hasPass = (trials || []).some(t => t.status === 'rated' && t.verdict === 'pass');
+    const hasFail = (trials || []).some(t => t.status === 'rated' && ['fail', 'partial'].includes(t.verdict));
+    // Cold-start/measurement dojos do not have a human positive/negative pair yet.
+    // Do not fabricate comparator IDs or turn off exploration; keep it explicitly unverified.
+    if (!hasPass || !hasFail) return { status: 'insufficient_human_contrast', checks: [] };
+  }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('negativeReview is required for runs testing negative hypotheses');
   const checks = raw.checks;
   if (!Array.isArray(checks) || checks.length < targets.length || checks.length > 8)
@@ -117,6 +124,8 @@ function negativeLearning(trials = [], base = {}, hypotheses = []) {
     reviewed: reviewed.length, clearedAndPassed, clearedButRejected,
     unreviewedRated: allRated.length - reviewed.length,
     screenedOutUnverified: Number(base.negativeScreening?.rejectedUnverified)||0,
+    insufficientHumanContrast: trials.filter(t => t.negativeReview?.status === 'insufficient_human_contrast').length,
+    legacyDerivedReviewed: reviewed.filter(t => t.negativeReview?.status === 'preflight_legacy_derived_unverified').length,
     byHypothesis,
     note:'Internal rejections are not human fails; a cleared candidate later rejected by the user is a negative-gate false negative, not a success.',
   };
