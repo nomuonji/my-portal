@@ -322,7 +322,9 @@ export function RateTrials({ items, onRate, onRateBatch, busyId, showBase = fals
   if (!items?.length) return null;
   const batchMode = Boolean(onRateBatch) && items.length > 1;
   const busy = Boolean(busyId);
-  const selectedRows = batchMode ? items.filter((trial) => selections[trial.baseId + ':' + trial.id]).map((trial) => {
+  const selectedRows = batchMode ? items.filter((trial) =>
+    trial.reviewStatus !== 'artifact_missing' && trial.reviewStatus !== 'artifact_temporary'
+    && selections[trial.baseId + ':' + trial.id]).map((trial) => {
     const key = trial.baseId + ':' + trial.id;
     return { baseId: trial.baseId, id: trial.id, verdict: selections[key], comment: (comments[key] || '').trim(), key };
   }) : [];
@@ -331,6 +333,7 @@ export function RateTrials({ items, onRate, onRateBatch, busyId, showBase = fals
       {items.map((t) => {
         const key = t.baseId + ':' + t.id;
         const comment = comments[key] || '';
+        const artifactMissing = ['artifact_missing', 'artifact_temporary'].includes(t.reviewStatus);
         return (
           <Box key={key} sx={{ py: 1.6, borderBottom: '1px solid ' + V.rule }}>
             {showBase && t.baseTitle && <Typography sx={{ fontSize: 11.5, color: V.accent, fontWeight: 800, mb: 0.3 }}>{t.baseTitle}</Typography>}
@@ -346,18 +349,27 @@ export function RateTrials({ items, onRate, onRateBatch, busyId, showBase = fals
               </Stack>
             )}
             {bodyWithoutImages(t.body) && <Typography sx={{ fontSize: 14, lineHeight: 1.8, mt: 0.6, whiteSpace: 'pre-line', background: V.accentSoft, px: 1.2, py: 0.8 }}>{bodyWithoutImages(t.body)}</Typography>}
+            {artifactMissing && (
+              <Alert severity="warning" sx={{mt:0.9}}>
+                {t.reviewReason || '完成品が未登録です。閲覧できる実物が登録されるまで評価しません。'}
+              </Alert>
+            )}
+            {/^https:\/\//.test(t.mediaUrl || '') && (
+              <Button component="a" href={t.mediaUrl} target="_blank" rel="noreferrer"
+                size="small" variant="outlined" sx={{mt:0.8}}>完成した画像・動画を開く</Button>
+            )}
             {/^https?:\/\//.test(t.ref || '') && (
               <Button component="a" href={t.ref} target="_blank" rel="noreferrer" size="small" variant="outlined" sx={{ mt: 0.8 }}>
                 {linkLabel(t.ref)}
               </Button>
             )}
             <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mt: 1 }}>
-              <TextField size="small" placeholder="一言（任意）：ここが嫌、など" value={comment} disabled={busy}
+              <TextField size="small" placeholder="一言（任意）：ここが嫌、など" value={comment} disabled={busy || artifactMissing}
                 onChange={(event) => setComments((all) => ({ ...all, [key]: event.target.value }))}
                 inputProps={{ maxLength: 500, 'aria-label': t.label + ' への一言' }} sx={{ flex: 1 }} />
               <Stack direction="row" gap={0.8}>
                 {['pass', 'partial', 'fail'].map((verdict) => (
-                  <Button key={verdict} size="small" disabled={busy}
+                  <Button key={verdict} size="small" disabled={busy || artifactMissing}
                     aria-pressed={batchMode ? selections[key] === verdict : undefined}
                     variant={batchMode ? (selections[key] === verdict ? 'contained' : 'outlined') : (verdict === 'pass' ? 'contained' : 'outlined')}
                     color={verdict === 'fail' ? 'inherit' : 'primary'}
