@@ -303,8 +303,36 @@ const tools = [
     },
   },
   {
+    name:'exploration_research_read',
+    description:'MANDATORY before creating trial candidates in any dojo with earlier user feedback. Read ALL pages of the historical inventory in ascending order (page=0,1,...): every previous hypothesis including negative/retired ones, full claim, mechanism, limits, evidence, counterexamples, revisions, run results and every actual user rating with their original words. Do not select only the favorite two hypotheses. Research synthesis cannot proceed until all pages are read.',
+    inputSchema: { type:'object', properties: {
+      baseId, runId:string('Open research run ID.',20),
+      page:{type:'integer',minimum:0,description:'Zero-based history page. Must start at 0 and follow the nextPage value, without skipping pages.'},
+    },required:['baseId','runId','page'],additionalProperties:false },
+  },
+  {
+    name:'exploration_research_synthesize',
+    description:'After ALL hypothesis/feedback pages are read, register a dialectical proposal: cite a real prior thesis and competing hypothesis (if at least 2 exist), quote their actual claims, cite real human pass and fail feedback, explain tension, propose a testable synthesis/revision and its falsifying observation. Required before existing recall tests and trial recording. Does not itself change hypotheses or certify user acceptance.',
+    inputSchema: { type:'object', properties: {
+      baseId,runId:string('Open run ID with completed research reading.',20),
+      synthesis:{type:'object',properties:{
+        thesisId:string('Existing historical hypothesis ID.',20),
+        antithesisId:string('Distinct existing competing hypothesis ID when at least two exist.',20),
+        thesisAnchor:string('Exact 8-160 character quote from actual thesis claim, mechanism or limits.',160),
+        antithesisAnchor:string('Exact 8-160 character quote from competing claim, mechanism or limits.',160),
+        passFeedbackId:string('Real historical human-accepted trial or feedback ID, if one exists.',160),
+        failFeedbackId:string('Real historical human-rejected or partial trial or feedback ID, if one exists.',160),
+        action:{type:'string',enum:['revise','synthesize','retain','retire']},
+        tension:string('Precise empirical or logical opposition between the two prior explanations; distinguish what the user actually said from the agent\'s inference.',1200),
+        proposedClaim:string('Revised or integrated, falsifiable hypothesis that follows from the evidence.',1200),
+        comparison:string('Observable contrast/controls and how the alternative explanations would be distinguished.',1200),
+        falsification:string('What future observation or human response would specifically refute the proposal.',1200),
+      },required:['thesisId','thesisAnchor','tension','proposedClaim','comparison','falsification','action'],additionalProperties:false},
+    },required:['baseId','runId','synthesis'],additionalProperties:false},
+  },
+  {
     name: 'exploration_recall_prepare',
-    description: 'Before generating a candidate, retrieve related human-rated texts AND prior TESTED hypothesis statements, mechanisms, limiting conditions, recorded human pass/fail IDs, counterexamples, past run results and revisions. Four further cases are provided without labels for a historical-label check. The returned agent hypotheses are NOT proven causal explanations.',
+    description: 'Only AFTER exploration_research_read and exploration_research_synthesize (when feedback history exists). Before generating a candidate, retrieve related human-rated texts AND prior TESTED hypothesis statements, mechanisms, limiting conditions, recorded human pass/fail IDs, counterexamples, past run results and revisions. Four further cases are provided without labels for a historical-label check. The returned agent hypotheses are NOT proven causal explanations.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -349,7 +377,7 @@ const tools = [
   },
   {
     name: 'exploration_trial_record',
-    description: 'Record user-facing trials before presenting. For human-rated dojos with >=4 accepted and >=4 rejected historical texts, a run must have passed exploration_recall_prepare + exploration_recall_check (>=3 of 4) first. This is in addition to the existing learningAudit. ALL trial-based dojos with 3+ rated results and both an accepted and rejected case require learningAudit with exact quotes from both human-rated case texts, plus the claimed transfer mechanism and counterexample. Old clients can use learning:v1:<compact JSON> in predictionNote (<=600 characters). The Buzz screen alone no longer satisfies the learning review. Buzz-post dojo adds an enforced early rejection screen: 3+ candidate pool, 2+ rejected, 2+ observed sourcing lanes, accepted/rejected human-rated precedent, exact passage from the proposed copy, concrete hostile objection, and a pre-registered closingType (derived_consequence = the last beat follows directly from the material; author_added = the author added an analogy, counterfactual, title or similar). predictedPass is an honest forecast and no longer gates submission. Native quote practice is retired. Use editorialScreen or, from clients with the older MCP schema, screen:v1:<compact JSON> inside predictionNote (up to 600 characters). Other dojos are unchanged. A screen is an AI-only gate, NOT independent approval or a promise of engagement.',
+    description: 'Record user-facing trials before presenting. If historical user ratings exist, full paginated exploration_research_read plus grounded exploration_research_synthesize are mandatory, including ALL prior hypotheses (not just the best two) and all user feedback words. For human-rated dojos with >=4 accepted and >=4 rejected historical texts, a run must have passed exploration_recall_prepare + exploration_recall_check (>=3 of 4) first. This is in addition to the existing learningAudit. ALL trial-based dojos with 3+ rated results and both an accepted and rejected case require learningAudit with exact quotes from both human-rated case texts, plus the claimed transfer mechanism and counterexample. Old clients can use learning:v1:<compact JSON> in predictionNote (<=600 characters). The Buzz screen alone no longer satisfies the learning review. Buzz-post dojo adds an enforced early rejection screen: 3+ candidate pool, 2+ rejected, 2+ observed sourcing lanes, accepted/rejected human-rated precedent, exact passage from the proposed copy, concrete hostile objection, and a pre-registered closingType (derived_consequence = the last beat follows directly from the material; author_added = the author added an analogy, counterfactual, title or similar). predictedPass is an honest forecast and no longer gates submission. Native quote practice is retired. Use editorialScreen or, from clients with the older MCP schema, screen:v1:<compact JSON> inside predictionNote (up to 600 characters). Other dojos are unchanged. A screen is an AI-only gate, NOT independent approval or a promise of engagement.',
     inputSchema: {
       type: 'object',
       properties: {
