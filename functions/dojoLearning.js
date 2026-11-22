@@ -136,15 +136,11 @@ function validateLearningAudit(raw, { trials = [], feedbackLog = [], body = '', 
     try { audit = JSON.parse(note.slice(AUDIT_PREFIX.length)); }
     catch (e) { throw new Error('Learning review: malformed learning:v1 JSON: ' + e.message); }
   }
-  if (!audit && buzzScreen) {
-    // Existing Buzz clients send the already-enforced screen:v1 packet. Preserve their
-    // compatibility, but report that semantic transfer conditions were NOT verified.
-    return {
-      status: 'legacy_buzz_screen',
-      positiveCaseId: buzzScreen.positiveCaseId,
-      negativeCaseId: buzzScreen.negativeCaseIds?.[0] || '',
-      mechanism: buzzScreen.distinctValue, fatalRisk: buzzScreen.strongestObjection,
-    };
+  // A Buzz editorial screen is an assertion written by the candidate's author.
+  // It cannot stand in for a transfer audit using real human-rated text.
+  // Older MCP clients may send editorialScreen alongside a learning:v1 packet.
+  if (!audit && buzzScreen && sufficient) {
+    throw new Error('Learning review required: the Buzz editorial screen is not a verified transfer audit. Supply learningAudit or learning:v1 with exact positive/negative text anchors.');
   }
   if (!audit) {
     if (sufficient) {
@@ -167,8 +163,17 @@ function validateLearningAudit(raw, { trials = [], feedbackLog = [], body = '', 
   }
   const positiveCaseId = field('positiveCaseId', 3, 160);
   const negativeCaseId = field('negativeCaseId', 3, 160);
-  if (!accepted.some(x => x.id === positiveCaseId)) throw new Error('Learning review: positiveCaseId must be an actual human-accepted earlier case in this dojo.');
-  if (!rejected.some(x => x.id === negativeCaseId)) throw new Error('Learning review: negativeCaseId must be an actual human-rejected earlier case in this dojo.');
+  const positiveCase = accepted.find(x => x.id === positiveCaseId);
+  const negativeCase = rejected.find(x => x.id === negativeCaseId);
+  if (!positiveCase) throw new Error('Learning review: positiveCaseId must be an actual human-accepted earlier case in this dojo.');
+  if (!negativeCase) throw new Error('Learning review: negativeCaseId must be an actual human-rejected earlier case in this dojo.');
+  // Verify the quoted evidence against the immutable historical trial text, not
+  // a paraphrase supplied by the same LLM that authored the new candidate.
+  const positiveAnchor = field('positiveAnchor', 8, 160);
+  const negativeAnchor = field('negativeAnchor', 8, 160);
+  if (!(positiveCase.body || positiveCase.label).includes(positiveAnchor)) throw new Error('Learning review: positiveAnchor must quote the actual human-accepted case.');
+  if (!(negativeCase.body || negativeCase.label).includes(negativeAnchor)) throw new Error('Learning review: negativeAnchor must quote the actual human-rejected case.');
+  if (positiveAnchor === negativeAnchor) throw new Error('Learning review: accepted and rejected case anchors must be different.');
   const mechanism = field('mechanism', 15);
   const transferCondition = field('transferCondition', 15);
   const failureContrast = field('failureContrast', 15);
@@ -178,9 +183,10 @@ function validateLearningAudit(raw, { trials = [], feedbackLog = [], body = '', 
   if (!body.includes(bodyAnchor)) throw new Error('Learning review: bodyAnchor must be a real passage in the proposed sample.');
   if (audit.decision !== 'submit') throw new Error('Learning review: unresolved/rejected candidate may not be submitted to the user.');
   return {
-    status: 'verified', positiveCaseId, negativeCaseId, mechanism,
+    status: 'verified', positiveCaseId, negativeCaseId, positiveAnchor, negativeAnchor, mechanism,
     transferCondition, failureContrast, fatalRisk, riskResolution, bodyAnchor,
     decision: 'submit', reviewer: 'agent_only_not_independent',
+    verificationScope: 'case_identity_and_exact_quotes_only',
   };
 }
 
