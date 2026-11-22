@@ -46,7 +46,7 @@ function checkNegativeTargets(rawTargets, hypotheses) {
     return { hypothesisId: hid, prediction: str(raw.prediction, 800, 'negativeTargets.prediction') };
   });
 }
-function checkNegativeReview(raw, { negativeTargets, hypotheses, trials, body }) {
+function checkNegativeReview(raw, { negativeTargets, hypotheses, trials, body, allowLimitedAuto = false }) {
   const targets = negativeTargets || [];
   if (!targets.length && (raw === undefined || raw === null)) return null; // Backward-compatible existing runs.
   if (!targets.length) throw new Error('negativeReview requires negativeTargets on the open run');
@@ -56,7 +56,7 @@ function checkNegativeReview(raw, { negativeTargets, hypotheses, trials, body })
     // Cold-start/measurement dojos do not have a human positive/negative pair yet.
     // Do not fabricate comparator IDs or turn off exploration; keep it explicitly unverified.
     const totalRated = (trials || []).filter(t => t.status === 'rated' && t.verdict !== 'withdrawn').length;
-    if (!hasPass || !hasFail || totalRated < 3) return { status: 'insufficient_human_contrast', checks: [] };
+    if (!hasPass || !hasFail || (allowLimitedAuto && totalRated < 3)) return { status: 'insufficient_human_contrast', checks: [] };
   }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('negativeReview is required for runs testing negative hypotheses');
   const checks = raw.checks;
