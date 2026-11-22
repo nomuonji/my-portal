@@ -228,6 +228,7 @@ function createRegistry(options) {
   const contextStore = opts.contextStore || require('./contextStore');
   const explorationBases = opts.explorationBases || require('./explorationBaseStore');
   const submarines = opts.submarines || require('./submarineStore');
+  const skillRelationPolicies = opts.skillRelationPolicies || require('./chatSkillRelationsStore').createStore({getDb});
   const db = () => getDb();
 
   async function listProfiles(input) {
@@ -774,9 +775,14 @@ function createRegistry(options) {
       }
       return distinct[0] || null;
     };
-    const { relationsForSkill } = require('./chatSkillRelations');
+    const { MANIFEST, DEFAULT_INTENT } = require('./chatSkillRelations');
+    const { decorate } = require('./chatSkillRelationsStore');
+    const relationEntries = await skillRelationPolicies.list();
+    const configured = new Map((relationEntries.items || []).map(policy => [policy.id,policy]));
     for (const skill of skills) {
-      for (const relation of relationsForSkill(skill.id)) {
+      const policy=configured.get(skill.id) || { id: skill.id,
+        defaultIntent: DEFAULT_INTENT[skill.id]||'', relations: MANIFEST[skill.id]||[], revision:0 };
+      for (const relation of decorate(policy)) {
         edges.push({ type: 'skill_uses_skill', from: 'chat_skill:' + skill.id,
           to: 'chat_skill:' + relation.skillId, requiredness: relation.requiredness,
           when: relation.intents, defaultIntent: relation.intent,
@@ -894,7 +900,7 @@ function createRegistry(options) {
       targetSkills.add(targetRef.id);
       // Explicit dependency policy must override incidental body mentions:
       // optional/irrelevant relations never become active peer suggestions.
-      const structuredRelations = require('./chatSkillRelations').relationsForSkill(targetRef.id);
+      const {links: structuredRelations}=await skillRelationPolicies.resolve({id:targetRef.id});
       const relationIds = new Set(structuredRelations.map((item) => item.skillId));
       for (const link of structuredRelations)
         if (link.active && link.requiredness !== 'optional') targetBodyLinks.add(link.skillId);
