@@ -186,7 +186,7 @@ const tools = [
   },
   {
     name: 'exploration_run_start',
-    description: 'Open an exploration run. Read loop.refinement first, declare the tested hypothesis and forecast before observing outcomes. When testing a known competing explanation, supply experimentDesign with a distinct alternative and controlled difference; legacy exploratory probes may omit it. Pins method version. Prefer responseMode=compact after loading the base; returns run ID and pinned versions without a redundant full brief.',
+    description: 'Open an exploration run and pin its method. Optional crossDojoEvidence validates a real user-rated source-dojo pass/fail pair and stores the unproven transfer mechanism with a controlled receiver experimentDesign. Receiver pass/fail remains exclusively based on its own later human feedback. Prefer responseMode=compact after loading the base.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -210,6 +210,23 @@ const tools = [
           },
           required: ['contrastedHypothesisIds', 'changedStage', 'intervention', 'comparison', 'controls', 'expectedDifference', 'refutingObservation'],
           additionalProperties: false,
+        },
+        crossDojoEvidence: {
+          type: 'array', minItems: 1, maxItems: 3,
+          description: 'Optional structured peer-dojo transfer evidence. Requires experimentDesign. The source positive and negative MUST exist as human-rated trials. This records receiver-side hypothesis provenance, not an automatic success or approval.',
+          items: {
+            type: 'object', additionalProperties: false,
+            properties: {
+              sourceBaseId: string('Source dojo ID; must differ from receiving baseId.', 80),
+              positiveTrialId: string('Real human-rated pass from source dojo (T-nnn).', 20),
+              negativeTrialId: string('Real human-rated fail or partial from source dojo (T-nnn).', 20),
+              hypothesizedMechanism: string('Transferable process mechanism, not copied words or creative surface.', 850),
+              applicabilityConditions: string('When the mechanism can and cannot apply at receiving dojo.', 850),
+              falsification: string('Observable receiver-side result that would reject this transferred mechanism.', 850),
+            },
+            required: ['sourceBaseId', 'positiveTrialId', 'negativeTrialId',
+              'hypothesizedMechanism', 'applicabilityConditions', 'falsification'],
+          },
         },
         takeover: { type: 'boolean', description: 'Abandon a stale open run and start a new one.' },
         responseMode: { type: 'string', enum: ['brief', 'compact'], description: 'compact returns the committed run receipt only; brief (default) also reloads the base.' },

@@ -77,8 +77,9 @@ const explorationBases = {
     return { base: { id, title: 'Example Base', revision: 7 }, outcome: { statement: 'Find two things.' } };
   },
 };
+const fakeSubmarines = { async list() { return { items: [] }; } };
 const createRegistry = (database) => registryModule.createRegistry({
-  getDb: () => database, chatSkills, contextStore, explorationBases,
+  getDb: () => database, chatSkills, contextStore, explorationBases, submarines: fakeSubmarines,
 });
 const baseProfile = (portfolio) => ({
   id: 'test-agent',
@@ -478,13 +479,19 @@ test('dojo_dependency_audit distinguishes executable graph, historical pins and 
       loop: { rated: 3, pass: 1, passRate: 1/3 } }] }; },
   };
   const registry = registryModule.createRegistry({ getDb: () => db, chatSkills: skills,
-    contextStore, explorationBases: dojos });
+    contextStore, explorationBases: dojos,
+    submarines: { async list() { return { items: [{ id: 'boat-1', name: 'Demo Ship',
+      loadout: [{ kind: 'chat_skill', id: 'example-skill', role: 'primary', version: 2,
+        dojoId: 'example-dojo' }] }] }; } } });
   await registry.createPackVersion({ pack: basePack(), expectedCurrentVersion: 0, confirm: true });
   await registry.createProfileVersion({
     profile: baseProfile([{ packId: 'test-cognition' }]), expectedCurrentVersion: 0, confirm: true,
   });
   const graph = await registry.dependencyAudit({});
   assert.equal(graph.summary.activeDojos, 1);
+  assert.equal(graph.summary.activeSubmarines, 1);
+  assert.ok(graph.edges.some(e => e.type === 'carries' && e.from === 'submarine:boat-1'
+    && e.to === 'chat_skill:example-skill' && e.resolvedVersion === 2));
   assert.equal(graph.summary.activePacks, 1);
   assert.equal(graph.summary.uniqueSkillsInPacks, 1);
   assert.deepEqual(graph.summary.skillsNotReferencedByPacks, ['standalone-skill']);

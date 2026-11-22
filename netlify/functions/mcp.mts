@@ -497,6 +497,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
   if (name === "consumer_model_import_keywords_snapshot") return structured(await consumerModels.importSnapshot(args));
   if (name === "intelligence_pack_list") return structured(await agentIntelligenceRegistry.listPacks(args));
   if (name === "intelligence_pack_get") return structured(await agentIntelligenceRegistry.getPack(args));
+  // Read-only registry audit includes resolved submarine loadout; never rewrite gear.
   if (name === "dojo_dependency_audit") return structured(await agentIntelligenceRegistry.dependencyAudit(args));
   if (name === "dojo_cross_learning_get") return structured(await agentIntelligenceRegistry.crossDojoLearning(args));
   if (name === "intelligence_pack_version_create") return structured(await agentIntelligenceRegistry.createPackVersion(args));

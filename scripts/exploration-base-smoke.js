@@ -753,3 +753,53 @@ test('compact dojo workflow avoids redundant target resolution and preserves aut
   assert.equal(full.position.openRunId, null);
   assert.ok(JSON.stringify(state).length < JSON.stringify(before).length / 2, 'refresh payload must be materially smaller');
 });
+
+test('receiver experiment preserves verified cross-dojo human verdicts and rejects fake peer cases', async () => {
+  const db = new MemoryDb();
+  const store = createStore({ getDb: () => db });
+  await store.create({ id: 'receiver-dojo', title: 'Receiver', summary: 'Test receiver', outcome, method, ...auth });
+  await store.create({ id: 'source-dojo', title: 'Source', summary: 'Test source', outcome, method, ...auth });
+  await store.upsertItems({ baseId: 'receiver-dojo', kind: 'hypothesis', items: [
+    { ...hypothesis, title: 'Source mechanism transfers' },
+    { ...hypothesis, title: 'Context explains source result' },
+  ] });
+  const mkTrial = (id, verdict) => ({ id, baseId: 'source-dojo',
+    status: 'rated', verdict, methodVersion: 'm-v1', label: 'Verified source '+id });
+  db.records.set('explorationBaseTrials/source-dojo__T-001', mkTrial('T-001', 'pass'));
+  db.records.set('explorationBaseTrials/source-dojo__T-002', mkTrial('T-002', 'fail'));
+  const design = {
+    contrastedHypothesisIds: ['H-002'], changedStage: 'selection',
+    intervention: 'Select candidates by the verified transfer mechanism.',
+    comparison: 'Keep original receiver selection as the comparison.',
+    controls: 'Match task audience, budget and source type.',
+    expectedDifference: 'Transferred selection produces a higher human acceptance rate.',
+    refutingObservation: 'Receiver trials do not pass with the proposed selection.',
+  };
+  const evidence = [{
+    sourceBaseId: 'source-dojo', positiveTrialId: 'T-001', negativeTrialId: 'T-002',
+    hypothesizedMechanism: 'Actionable tension distinguishes successful source examples.',
+    applicabilityConditions: 'Receiver must also offer this concrete tension.',
+    falsification: 'Receiver user rejects otherwise equivalent transfer examples.',
+  }];
+  const input = {
+    baseId: 'receiver-dojo', objective: 'Test a qualified cross-dojo transfer',
+    targets: [{ hypothesisId: 'H-001', prediction: 'More human accepted receiver trials' }],
+    experimentDesign: design, crossDojoEvidence: evidence, responseMode: 'compact',
+  };
+  await assert.rejects(
+    store.startRun({ ...input, crossDojoEvidence: [{ ...evidence[0], positiveTrialId: 'T-003' }] }),
+    /real user-rated pass/,
+  );
+  await assert.rejects(
+    store.startRun({ ...input, experimentDesign: undefined }), /requires a controlled experimentDesign/,
+  );
+  const started = await store.startRun(input);
+  assert.equal(started.crossDojoEvidenceCount, 1);
+  const run = (await store.get({ id: 'receiver-dojo', view: 'full' }))
+    .full.runs.find(x => x.id === started.runId);
+  assert.deepEqual(run.crossDojoEvidence.map(x => [x.sourceBaseId, x.positiveTrialId,
+    x.negativeTrialId, x.receiverValidation]), [['source-dojo', 'T-001', 'T-002', 'untested']]);
+  assert.equal(run.experimentDesign.changedStage, 'selection');
+  const receiver = await store.get({ id: 'receiver-dojo', view: 'brief' });
+  assert.equal(receiver.loop.overall.rated, 0, 'source approvals do not count as receiver verdicts');
+});
