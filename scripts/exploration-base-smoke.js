@@ -1240,7 +1240,10 @@ test('all historical hypotheses and user feedback must be read; dialectical synt
     targets:[{hypothesisId:'H-002',prediction:'Test a concrete consequence against earlier failures.'}],responseMode:'compact'});
   const candidate={label:'A new consequence',body:'The waiting customer finally changes their mind after a strange answer.',
     hypothesisIds:['H-002'],predictedPass:0.4};
-  await assert.rejects(store.recordTrials({baseId:'test-base',runId,trials:[candidate]}),/Full historical research review required/);
+  await assert.rejects(store.prepareRecall({baseId:'test-base',runId,topic:'An unresolved change in customer motivation'}),
+    /Full hypothesis and user-feedback research review must be synthesized/);
+  await assert.rejects(store.recordTrials({baseId:'test-base',runId,trials:[candidate]}),
+    /Historical recall check required|Full historical research review required/);
   const first=await store.researchRead({baseId:'test-base',runId,page:0});
   assert.equal(first.totalHypotheses,26);
   assert.equal(first.totalFeedback,30);
