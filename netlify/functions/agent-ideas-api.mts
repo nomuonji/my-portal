@@ -18,6 +18,7 @@ import * as mediaConnectionsImport from "../../functions/mediaAccountConnections
 import * as routineStoreImport from "../../functions/routineJobStore.js";
 import * as jobOpportunityStoreImport from "../../functions/jobOpportunityStore.js";
 import * as explorationBaseStoreImport from "../../functions/explorationBaseStore.js";
+import * as agentIntelligenceRegistryImport from "../../functions/agentIntelligenceRegistry.js";
 import * as submarineStoreImport from "../../functions/submarineStore.js";
 import * as submarineFleetImport from "../../functions/submarineFleet.js";
 
@@ -37,6 +38,7 @@ const mediaConnections: any = (mediaConnectionsImport as any).default ?? mediaCo
 const routineStore: any = (routineStoreImport as any).default ?? routineStoreImport;
 const jobOpportunityStore: any = (jobOpportunityStoreImport as any).default ?? jobOpportunityStoreImport;
 const explorationBaseStore: any = (explorationBaseStoreImport as any).default ?? explorationBaseStoreImport;
+const agentIntelligenceRegistry: any = (agentIntelligenceRegistryImport as any).default ?? agentIntelligenceRegistryImport;
 const submarineStore: any = (submarineStoreImport as any).default ?? submarineStoreImport;
 const submarineFleet: any = (submarineFleetImport as any).default ?? submarineFleetImport;
 const documentDb: any = (documentDbImport as any).default ?? documentDbImport;
@@ -183,6 +185,11 @@ export default async (request: Request) => {
       if (resource === "exploration_awaiting_trials") return json(await explorationBaseStore.awaitingTrials({ limit: Number(url.searchParams.get("limit")) || 60 }));
       if (resource === "consumer_models") return json(await consumerModels.list());
       if (resource === "consumer_model") return json(await consumerModels.get({id:url.searchParams.get("id")||"",version:url.searchParams.get("version")||undefined}));
+      if (resource === "dojo_dependency_audit") return json(await agentIntelligenceRegistry.dependencyAudit({}));
+      if (resource === "dojo_cross_learning") return json(await agentIntelligenceRegistry.crossDojoLearning({
+        targetBaseId: url.searchParams.get("id") || "",
+        limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 5, 1), 10),
+      }));
       if (resource === "exploration_bases") return json(await explorationBaseStore.list({ status: url.searchParams.get("status") || undefined }));
       if (resource === "exploration_base") return json(await explorationBaseStore.get({
         id: url.searchParams.get("id") || "",
