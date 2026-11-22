@@ -1314,8 +1314,9 @@ function createStore(options) {
         }
         return false;
       });
+      let preflightLoop = null;
       if (!backfill && fresh.length) {
-        const loop = loopView({ trials: existing, feedbackLog: base.feedbackLog, base });
+        const loop = preflightLoop = loopView({ trials: existing, feedbackLog: base.feedbackLog, base });
         if (loop.awaiting.length + fresh.length > LIMITS.maxAwaiting) {
           throw new Error(loop.awaiting.length + ' trial(s) are still waiting for the user (' + loop.awaiting.map((t) => t.id).join(', ') + '). At most ' + LIMITS.maxAwaiting + ' may wait: get them rated, or withdraw stale ones with exploration_trial_rate verdict=withdrawn, before showing more.');
         }
@@ -1330,6 +1331,13 @@ function createStore(options) {
           if (!hypothesis) throw new Error('Hypothesis not found: ' + hid);
           if (!backfill && hypothesis.status !== 'open') throw new Error('Hypothesis ' + hid + ' is ' + hypothesis.status + '; a trial tests open hypotheses.');
           if (!backfill && hypothesis.polarity === NEGATIVE) throw new Error('trial.hypothesisIds is for positive targets; evaluate negative hypotheses through negativeReview: ' + hid);
+          // 'Reject a 0-for-3 hypothesis' used to be nextActions prose only.
+          // Make it an actual refusal; a changed mechanism needs a new hypothesis,
+          // rather than quietly reusing a failing ID to satisfy a trial envelope.
+          const scored = preflightLoop?.hypotheses?.find(row => row.id === hid);
+          if (!backfill && scored && scored.rated >= LIMITS.hypothesisMinTrials && scored.pass === 0) {
+            throw new Error('Hypothesis ' + hid + ' has ' + scored.rated + ' human-rated trials and zero passes. Retire or revise the mechanism as a new hypothesis before another trial.');
+          }
         });
         if (!backfill && !hypothesisIds.length) throw new Error('trial.hypothesisIds is required: name the hypothesis this sample tests (register it first with exploration_item_upsert). A sample tied to no hypothesis settles nothing when it is rated.');
         const predicted = raw.predictedPass === undefined || raw.predictedPass === null ? null : Number(raw.predictedPass);
