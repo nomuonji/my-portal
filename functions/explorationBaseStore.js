@@ -31,11 +31,14 @@ const CONSTRAINT_STATUS = ['active', 'relaxed', 'retired'];
 const EVIDENCE_TYPES = ['observation', 'candidate', 'outcome'];
 const VERDICTS = ['supported', 'contradicted', 'inconclusive'];
 const OPEN_RUN_TTL_MS = 12 * 60 * 60 * 1000;
+const { NEGATIVE, checkNegativeTargets, checkNegativeReview, checkScreenedOut } = require('./dojoNegativeReview');
 const STALL_WARNING_AT = 3;
 const PROTOCOL = [
   'Read this base before exploring; do not rely on memory of an earlier version.',
   'exploration_run_start: read loop.refinement, compare competing explanations, and precommit a discriminating experimentDesign (changed stage, controls, expected difference, falsification) where possible. An exploratory probe may have no design.',
   'Forecast calibration and hypothesis ranking are advisory, not proof or automatic method release. Do not inflate predictedPass to bypass a domain-specific quality gate.',
+  'All dojos: keep positive and negative hypotheses parallel. Register a falsifiable failure mode with polarity=negative, declare it in startRun.negativeTargets alongside a positive target, and use negativeReview before showing a trial. An unresolved risk must be screened out, never shown as a trial.',
+  'At finishRun, negativeVerdicts report what was observed. screenedOut cases are unverified internal rejections, not user fails or method wins. Read loop.negativeLearning for cleared-but-rejected misses and update the next experiment. Older runs remain readable without evidence of negative testing.',
   'exploration_run_start: declare which hypotheses this run tests and the predicted result before measuring.',
   'During the run, write every changed fixed point with the runId (exploration_item_upsert).',
   'exploration_run_finish: give a verdict per declared hypothesis. A run that moved no fixed point is recorded as stalled.',
@@ -263,7 +266,7 @@ function cleanEvidence(raw, runId) {
 }
 function hypothesisBrief(item) {
   return {
-    id: item.id, title: item.title, stage: item.stage, pipelineStage: item.pipelineStage || 'unknown', statement: item.statement,
+    id: item.id, title: item.title, stage: item.stage, pipelineStage: item.pipelineStage || 'unknown', polarity: item.polarity || 'positive', statement: item.statement,
     revisionCount: (item.revisionHistory || []).length, limits: item.limits || '', evidenceCount: (item.evidence || []).length,
     counterexampleCount: (item.counterexamples || []).length, legacyIds: item.legacyIds || [],
   };
@@ -714,6 +717,8 @@ function createStore(options) {
       if (creating || raw.mechanism !== undefined) item.mechanism = text(raw.mechanism, 2000, 'hypothesis.mechanism (why it would hold)', true);
       if (raw.pipelineStage !== undefined) item.pipelineStage = oneOf(raw.pipelineStage, PIPELINE_STAGES, 'hypothesis.pipelineStage');
       if (creating) item.pipelineStage = item.pipelineStage || 'unknown';
+      if (raw.polarity !== undefined) item.polarity = oneOf(raw.polarity, ['positive', NEGATIVE], 'hypothesis.polarity');
+      if (creating) item.polarity = item.polarity || 'positive';
     } else {
       if (creating || raw.locator !== undefined) item.locator = text(raw.locator, 600, 'source.locator (URL, query or tool call that reaches it)', true);
       if (creating || raw.coverage !== undefined) item.coverage = text(raw.coverage, 1500, 'source.coverage (what it yields and why it is worth trying)', true);
@@ -748,7 +753,7 @@ function createStore(options) {
     // Preserve actual changes to a hypothesis, not just its latest wording. A rating/evidence
     // append is not a hypothesis revision, and does not erase earlier versions of the claim.
     if (!creating && kind === 'hypothesis') {
-      const fields = ['title', 'statement', 'mechanism', 'limits', 'pipelineStage', 'stage', 'status'];
+      const fields = ['title', 'statement', 'mechanism', 'limits', 'pipelineStage', 'polarity', 'stage', 'status'];
       const modified = fields.filter((field) => (item[field] || '') !== (prior[field] || ''));
       if (modified.length) {
         item.revisionHistory = [...(prior.revisionHistory || []), {
@@ -852,6 +857,14 @@ function createStore(options) {
         if (hypothesis.status !== 'open') throw new Error('Hypothesis ' + hypothesisId + ' is ' + hypothesis.status + '; reopen it with a reason before testing it again.');
         cleanTargets.push({ hypothesisId, prediction: text(target.prediction, 800, 'target.prediction (what you expect to measure, stated before measuring)', true) });
       }
+      const negativeInputs = Array.isArray(input.negativeTargets) ? input.negativeTargets : [];
+      const negativeHypotheses = new Map();
+      for (const rawNegative of negativeInputs) {
+        const hid = text(rawNegative?.hypothesisId, 20, 'negativeTargets.hypothesisId', true);
+        if (!negativeHypotheses.has(hid)) negativeHypotheses.set(hid, value(await tx.get(itemRef(id, hid))));
+      }
+      const negativeTargets = checkNegativeTargets(input.negativeTargets, negativeHypotheses);
+      if (negativeTargets.length && !cleanTargets.length) throw new Error('negativeTargets must accompany a positive target: test both directions together.');
       if (base.openRunId) {
         const age = openRun ? Date.now() - Date.parse(openRun.startedAt) : Infinity;
         if (input.takeover !== true && age < OPEN_RUN_TTL_MS) throw new Error('Run ' + base.openRunId + ' is open (started ' + openRun.startedAt + '). Finish it, or pass takeover=true if it was abandoned.');
@@ -919,14 +932,14 @@ function createStore(options) {
         id: runId, baseId: id, status: 'open', startedAt: now(), actor: text(input.actor, 120, 'actor', false) || 'agent',
         objective: text(input.objective, 800, 'objective', true),
         methodVersion: base.method.version, outcomeRevision: base.outcome.revision,
-        targets: cleanTargets, unknownTerritoryProbe: probe, ...(experimentDesign ? { experimentDesign } : {}),
+        targets: cleanTargets, ...(negativeTargets.length ? { negativeTargets } : {}), unknownTerritoryProbe: probe, ...(experimentDesign ? { experimentDesign } : {}),
         ...(crossDojoEvidence.length ? { crossDojoEvidence } : {}),
       };
       put(tx, runRef(id, runId), run);
       base.openRunId = runId;
       receipt = { runId, methodVersion: run.methodVersion, outcomeRevision: run.outcomeRevision,
-        crossDojoEvidenceCount: crossDojoEvidence.length };
-      pushEvent(tx, base, { type: 'run_started', runId, summary: run.objective, actor: input.actor, detail: { targets: cleanTargets, methodVersion: run.methodVersion } });
+        crossDojoEvidenceCount: crossDojoEvidence.length, negativeTargetCount: negativeTargets.length };
+      pushEvent(tx, base, { type: 'run_started', runId, summary: run.objective, actor: input.actor, detail: { targets: cleanTargets, negativeTargets, methodVersion: run.methodVersion } });
       saveBase(tx, base);
     });
     if (responseMode === 'compact') return receipt;
