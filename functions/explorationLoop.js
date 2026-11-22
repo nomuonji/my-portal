@@ -178,7 +178,9 @@ function loopSummary(view) {
     negativeLearning: { status: view.negativeLearning.status,
       negativeHypotheses: view.negativeLearning.negativeHypotheses, reviewed: view.negativeLearning.reviewed,
       clearedButRejected: view.negativeLearning.clearedButRejected,
-      screenedOutUnverified: view.negativeLearning.screenedOutUnverified },
+      screenedOutUnverified: view.negativeLearning.screenedOutUnverified,
+      insufficientHumanContrast: view.negativeLearning.insufficientHumanContrast,
+      legacyDerivedReviewed: view.negativeLearning.legacyDerivedReviewed },
     learning: {
       status: view.learning.status, acceptedCount: view.learning.acceptedCount,
       rejectedCount: view.learning.rejectedCount,
