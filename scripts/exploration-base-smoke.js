@@ -1088,7 +1088,9 @@ async function completePriorResearch(store, baseId, runId) {
     thesisAnchor:thesis.statement.slice(0,Math.min(40,thesis.statement.length)),
     antithesisAnchor:antithesis?.statement.slice(0,Math.min(40,antithesis.statement.length)),
     passFeedbackId:feedback.find(x=>x.verdict==='pass')?.id,
+    passFeedbackAnchor:feedback.find(x=>x.verdict==='pass')?.userWords?.slice(0,80),
     failFeedbackId:feedback.find(x=>['fail','partial'].includes(x.verdict))?.id,
+    failFeedbackAnchor:feedback.find(x=>['fail','partial'].includes(x.verdict))?.userWords?.slice(0,80),
     action:'retain',tension:'The earlier mechanism may work for some tasks, while the rejected cases imply it is not sufficient.',
     proposedClaim:'A narrower transfer condition should allow the mechanism to work only when the individual has a concrete motive.',
     comparison:'Keep the topic fixed while testing a concrete motive against the original generic statement with matched context.',
@@ -1264,7 +1266,9 @@ test('all historical hypotheses and user feedback must be read; dialectical synt
   const synthesis={thesisId:h1.id,antithesisId:h2.id,thesisAnchor:h1.statement.slice(0,32),
     antithesisAnchor:h2.statement.slice(0,32),
     passFeedbackId:allF.find(x=>x.verdict==='pass').id,
-    failFeedbackId:allF.find(x=>x.verdict==='fail').id,action:'synthesize',
+    passFeedbackAnchor:allF.find(x=>x.verdict==='pass').userWords,
+    failFeedbackId:allF.find(x=>x.verdict==='fail').id,
+    failFeedbackAnchor:allF.find(x=>x.verdict==='fail').userWords,action:'synthesize',
     tension:'The hypothesis with broad explanatory scope contradicts the narrower evidence of recent failed samples.',
     proposedClaim:'The motive must change the downstream action rather than just introduce another descriptive label.',
     comparison:'Compare versions with an actual changed motive versus a generic paraphrase under matched source conditions.',
@@ -1273,6 +1277,8 @@ test('all historical hypotheses and user feedback must be read; dialectical synt
     ...synthesis,antithesisId:'H-999'}}),/two distinct existing hypotheses/);
   await assert.rejects(store.researchSynthesize({baseId:'test-base',runId,synthesis:{
     ...synthesis,passFeedbackId:'T-888'}}),/real historical accepted feedback/);
+  await assert.rejects(store.researchSynthesize({baseId:'test-base',runId,synthesis:{
+    ...synthesis,passFeedbackAnchor:'invented feedback'}}),/must quote the actual human feedback/);
   const done=await store.researchSynthesize({baseId:'test-base',runId,synthesis});
   assert.equal(done.totalHypotheses,26);
   assert.equal(done.totalFeedback,30);
