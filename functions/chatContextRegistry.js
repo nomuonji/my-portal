@@ -153,40 +153,26 @@ async function getExecutableSkill(input={}) {
  }
  if(input.includeRelations===false)return executable;
  const relationStore=require('./chatSkillRelationsStore');
- const policy=await relationStore.ensureMigrated({id:executable.id});
- const links=relationStore.decorate(policy,input.intent);
- const migrated=policy;
- if(!links.length)return executable;
- const skillRelations=[];
- const relatedSkills=[];
- for(const link of links){
-  // Canonical approved instructions must still name the relation explicitly.
-  // A stale catalogue entry never overrides the Skill's own instructions.
-  const mentioned=String(executable.body||'').includes('`'+link.skillId+'`');
-  const relation={skillId:link.skillId,requiredness:link.requiredness,
-    intent:link.intent,when:link.intents,
-    versionPolicy:link.versionPolicy,provenance:link.provenance,
-    loadState:!mentioned?'stale_source_reference':!link.active?'not_applicable':link.autoLoad?'loading':'optional_not_requested'};
-  if(mentioned && link.autoLoad){
-   try {
-    // One-level dependency expansion; avoid cycles and recursive Pack loading.
-    const dep=await getExecutableSkill({id:link.skillId,includeRelations:false});
-    relation.loadState='loaded';
-    relation.resolvedVersion=dep.revision;
-    relatedSkills.push({id:dep.id,title:dep.title,revision:dep.revision,
-      versionPolicy:dep.versionPolicy,body:dep.body});
-   }catch(error){
-    relation.loadState='unresolved';
-    relation.reason=String(error.message||error).slice(0,400);
-   }
-  }
-  skillRelations.push(relation);
- }
- return {...executable,skillRelations,relatedSkills,
+ const {resolveRelatedSkills}=require('./chatSkillResolution');
+ const resolved=await resolveRelatedSkills({
+   root:executable,intent:input.intent,
+   getPolicy:async id=>relationStore.ensureMigrated({id}),
+   decorate:relationStore.decorate,
+   getApprovedSkill:async id=>getExecutableSkill({id,includeRelations:false}),
+   maxDepth:3,maxRelated:10,
+ });
+ const policy=resolved.relationPolicy;
+ if(!resolved.skillRelations.length) return executable;
+ return {...executable,
+   skillRelations:resolved.skillRelations,
+   relatedSkills:resolved.relatedSkills,
+   dependencyGraph:{maxDepth:3,maxRelated:10,truncated:resolved.truncated,
+     loadedCount:resolved.relatedSkills.length},
    relationPolicy:{source:policy.source,revision:policy.revision,
      sourceSkillVersion:policy.sourceSkillVersion||null,
      migrationRequired:policy.migrationRequired===true,
-     ...(migrated.migrationWarning?{migrationWarning:migrated.migrationWarning}:{})}};
+     ...(policy.migrationWarning?{migrationWarning:policy.migrationWarning}:{})}};
+
 }
 async function upsertSkill(input) {
  if(input.confirm!==true)throw new Error('Explicit confirmation required');
