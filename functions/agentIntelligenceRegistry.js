@@ -397,14 +397,24 @@ function createRegistry(options) {
     if (!shouldLoad) return { ...base, loadState: 'not_requested' };
     try {
       if (dep.resourceType === 'chat_skill') {
-        if (dep.versionNumber) {
+        // Pack version pins describe the historical Pack definition, not the
+        // execution dependency. Resolve shared Skills at execution time so
+        // each consumer gets the current Skill without copying Pack versions.
+        const trainers = await explorationBases.trainersOf({ kind: 'chat_skill', id: dep.canonicalRef });
+        const released = [...new Set(trainers
+          .map((dojo) => Number(dojo.releasedVersion))
+          .filter((v) => Number.isInteger(v) && v > 0))];
+        if (released.length > 1) throw new Error('Conflicting dojo Skill releases: ' + dep.canonicalRef);
+        if (released.length) {
           const history = await chatSkills.skillVersions({ id: dep.canonicalRef });
-          const item = (history.items || []).find((entry) => Number(entry.versionNumber) === dep.versionNumber);
-          if (!item) throw new Error('Pinned Chat Skill version not found');
-          return { ...base, resolvedVersion: item.versionNumber, title: item.title, loadState: 'loaded', content: item.body };
+          const item = (history.items || []).find((entry) => Number(entry.versionNumber) === released[0]);
+          if (!item) throw new Error('Dojo-released Chat Skill version unavailable: ' + dep.canonicalRef + ' v' + released[0]);
+          return { ...base, resolvedVersion: item.versionNumber, versionPolicy: 'latest_dojo_release',
+            title: item.title, loadState: 'loaded', content: item.body };
         }
         const item = await chatSkills.getSkill({ id: dep.canonicalRef });
-        return { ...base, resolvedVersion: item.revision || null, title: item.title, loadState: 'loaded', content: item.body };
+        return { ...base, resolvedVersion: item.revision || null, versionPolicy: 'latest_registry_version',
+          title: item.title, loadState: 'loaded', content: item.body };
       }
       if (dep.resourceType === 'hq_method') {
         const context = await contextStore.methodGetContext({ id: dep.canonicalRef, versionLimit: 50, runLimit: 1 });
@@ -576,7 +586,12 @@ function createRegistry(options) {
       ]),
     ];
     const requirednessRank = { optional: 1, recommended: 2, required: 3 };
-    for (const dep of dependencySources) {
+    for (const declared of dependencySources) {
+      // Old immutable Pack definitions may pin different revisions of the
+      // same shared Skill. Those pins are advisory history in normal execution;
+      // never treat them as a runtime conflict or a reason to load stale code.
+      const dep = declared.resourceType === 'chat_skill'
+        ? { ...declared, versionNumber: null } : declared;
       const key = dep.resourceType + ':' + dep.canonicalRef;
       const previous = dependencyGroups.get(key);
       if (!previous) {
