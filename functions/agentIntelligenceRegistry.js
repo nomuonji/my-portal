@@ -774,7 +774,19 @@ function createRegistry(options) {
       }
       return distinct[0] || null;
     };
+    const { relationsForSkill } = require('./chatSkillRelations');
     for (const skill of skills) {
+      for (const relation of relationsForSkill(skill.id)) {
+        edges.push({ type: 'skill_uses_skill', from: 'chat_skill:' + skill.id,
+          to: 'chat_skill:' + relation.skillId, requiredness: relation.requiredness,
+          when: relation.intents, defaultIntent: relation.intent,
+          autoLoadByDefault: relation.autoLoad, versionPolicy: relation.versionPolicy,
+          declaredVersion: null, resolvedVersion: currentRelease('chat_skill', relation.skillId)
+            || skillIndex.get(relation.skillId)?.revision || null });
+        if (!skillIndex.has(relation.skillId))
+          warnings.push({ type: 'missing_skill_relation', sourceSkillId: skill.id,
+            targetSkillId: relation.skillId });
+      }
       const approved = currentRelease('chat_skill', skill.id);
       nodes.push({ type: 'chat_skill', id: skill.id, registryVersion: skill.revision,
         executableVersion: approved || skill.revision,
@@ -880,8 +892,11 @@ function createRegistry(options) {
     const targetBodyLinks = new Set();
     if (targetRef.kind === 'chat_skill') {
       targetSkills.add(targetRef.id);
+      // Strictly typed relationships take precedence over incidental text mentions.
+      for (const link of require('./chatSkillRelations').relationsForSkill(targetRef.id))
+        if (link.active && link.requiredness !== 'optional') targetBodyLinks.add(link.skillId);
       const skill = typeof chatSkills.getExecutableSkill === 'function'
-        ? await chatSkills.getExecutableSkill({ id: targetRef.id })
+        ? await chatSkills.getExecutableSkill({ id: targetRef.id, includeRelations: false })
         : await chatSkills.getSkill({ id: targetRef.id });
       const body = skill.body || '';
       const refs = [...body.matchAll(/`([a-z][a-z0-9-]{2,})`/g)].map((match) => match[1]);
