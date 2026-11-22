@@ -902,3 +902,78 @@ test('negative hypotheses run in parallel: unresolved candidates blocked, user m
   assert.ok(!brief.loop.hypotheses.some(h => h.id === 'H-002'), 'negative hypotheses do not rank as positive win patterns');
   assert.ok(brief.hypotheses.conjectures.some(h => h.id === 'H-002' && h.polarity === 'negative'));
 });
+
+test('older MCP fields can classify and compare failure hypotheses without weakening human verdicts', async () => {
+  const store = await setup();
+  const result = await store.upsertItems({ baseId: 'test-base', kind: 'hypothesis', items: [
+    { ...hypothesis, title: 'Original success mechanism' },
+    { ...hypothesis, title: 'Generic endings fail', reason: '[polarity:negative] The user asked to classify this untested failure mechanism separately.', statement: 'The ending may be a generic observation and get rejected.' },
+  ] });
+  assert.equal(result.changed[1].id, 'H-002');
+  const initial = await store.get({ id: 'test-base' });
+  const neg = initial.hypotheses.conjectures.find(h => h.id === 'H-002');
+  assert.equal(neg.polarity, 'negative');
+
+  await store.recordTrials({ baseId: 'test-base', backfill: true, trials: [
+    { label: 'Earlier accepted original', body: 'A distinct causal consequence.', rating: { verdict: 'pass', userWords: '合格' } },
+    { label: 'Earlier generic rejected', body: 'A forgettable generic ending.', rating: { verdict: 'fail', userWords: 'ボツ' } },
+    { label: 'Another rejected case', body: 'Yet another generic ending.', rating: { verdict: 'fail', userWords: 'ボツ' } },
+  ] });
+  const run = await store.startRun({ baseId: 'test-base', objective: 'Controlled positive and negative comparison with old MCP parameters',
+    targets: [{ hypothesisId: 'H-001', prediction: 'A distinct causal consequence is rated highly.' }],
+    experimentDesign: {
+      contrastedHypothesisIds: ['H-002'], changedStage: 'gate',
+      intervention: 'Search for distinct consequences rather than generic endings.',
+      comparison: 'Generic endings rejected in previous cases.',
+      controls: 'Keep domain and reader expectations fixed.',
+      expectedDifference: 'Human pass rate increases when the candidate is distinctive.',
+      refutingObservation: 'Human rejects the new specific consequence.',
+    }, responseMode: 'compact' });
+  assert.equal(run.negativeTargetCount, 1);
+  const body = 'A specific office rule unexpectedly changes who pays for the mistake.';
+  const audit = { positiveCaseId: 'T-001', negativeCaseId: 'T-002',
+    mechanism: 'The accepted case uses a concrete cause and consequence.',
+    transferCondition: 'The next candidate also has a concrete action with consequences.',
+    failureContrast: 'The failure was a generic restatement without causal movement.',
+    fatalRisk: 'The new ending might be a generic point that fits any office.',
+    riskResolution: 'The office rule dictates who pays, an observable causal detail.',
+    bodyAnchor: 'office rule unexpectedly', decision: 'submit' };
+  const made = await store.recordTrials({ baseId: 'test-base', runId: run.runId, trials: [{
+    label: 'Office rule story', body, hypothesisIds: ['H-001'], predictedPass: 0.43,
+    predictionNote: 'learning:v1:' + JSON.stringify(audit),
+  }] });
+  assert.equal(made.created[0].id, 'T-004');
+  await store.rateTrials({ baseId: 'test-base', ratings: [{ id: 'T-004', verdict: 'fail', userWords: 'ボツ' }] });
+  const ended = await store.finishRun({ baseId: 'test-base', runId: run.runId,
+    summary: 'Review cleared but the human rejected the sample, so the failure gate missed a risk.',
+    verdicts: [
+      { hypothesisId: 'H-001', result: 'contradicted', observed: 'Rejected by the human.' },
+      { hypothesisId: 'H-002', result: 'inconclusive', observed: 'One miss; the failure mechanism remains hypothetical.' },
+    ], responseMode: 'compact' });
+  assert.equal(ended.run.negativeVerdicts[0], 'H-002:inconclusive');
+  const detail = await store.get({ id: 'test-base', view: 'full' });
+  assert.equal(detail.loop.negativeLearning.clearedButRejected, 1);
+  assert.equal(detail.loop.negativeLearning.legacyDerivedReviewed, 1);
+  assert.equal(detail.loop.overall.pass, 1);
+  assert.ok(!detail.loop.hypotheses.some(h => h.id === 'H-002'));
+});
+
+test('a dojo with no accepted cases can research a failure hypothesis without fabricating a pass', async () => {
+  const store = await setup();
+  await store.upsertItems({ baseId: 'test-base', kind: 'hypothesis', items: [
+    hypothesis,
+    { ...hypothesis, title: 'Unobserved risk', statement: 'Weak upstream evidence produces unattractive outputs.', reason: '[polarity:negative] Cold-start hypothesis only.' },
+  ] });
+  const { runId } = await store.startRun({ baseId: 'test-base', objective: 'Cold-start learning',
+    targets: [{ hypothesisId: 'H-001', prediction: 'The new candidate improves the evidence.' }],
+    experimentDesign: { contrastedHypothesisIds: ['H-002'], changedStage: 'source', intervention: 'Change the source.',
+      comparison: 'Old source.', controls: 'Same acceptance.', expectedDifference: 'Different evidence.',
+      refutingObservation: 'No difference.' }, responseMode: 'compact' });
+  const made = await store.recordTrials({ baseId: 'test-base', runId, trials: [
+    { label: 'Early candidate', body: 'Early candidate with no human comparator yet.', hypothesisIds: ['H-001'], predictedPass: 0.3 },
+  ] });
+  assert.equal(made.created.length, 1);
+  const d = await store.get({ id: 'test-base', view: 'full' });
+  assert.equal(d.loop.negativeLearning.reviewed, 0, 'missing comparators must not be counted as a real review');
+  assert.equal(d.loop.negativeLearning.insufficientHumanContrast, 1);
+});
