@@ -8,6 +8,7 @@
 const { getDocumentDb } = require('./documentDb');
 const { loopView, loopSummary, ratedEntries, VERDICTS: TRIAL_VERDICTS, FAIL_STAGES, LIMITS } = require('./explorationLoop');
 const { validateLearningAudit } = require('./dojoLearning');
+const { sourceCases, recallRequired, buildRecallProbe, checkRecallPredictions } = require('./dojoRecall');
 const { trialArtifactStatus, publicMediaUrl } = require('./dojoArtifactReadiness');
 
 const DEFAULT_DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
@@ -49,6 +50,7 @@ const PROTOCOL = [
   'Sources (where candidates come from) are a ledger too: record which source a candidate came from (evidence on the source, sourceIds on the achievement) and reject sources that yield nothing, so the next run starts from proven ones.',
   'When a submarine (Project Submarine) carries this skill/pack, its sortie opens and closes the run here. What it finds is the submarine\'s haul; a haul the user confirms comes back here as an achievement.',
   'The measure of a 道場 is the pass rate of what its released version produces, by version (loop). There is no count target. Read loop.nextActions first.',
+  'Before new trials in a dojo with at least four real passes and four fails, call exploration_recall_prepare at the beginning of the run to retrieve relevant historical accepted/rejected texts; use exploration_recall_check to predict the four additional historical labels. An unsuccessful recall check blocks submissions in that run. This is only a label benchmark, never a substitute for a new user verdict.',
   'Every sample shown to the user is a trial: exploration_trial_record before showing it, with the hypotheses it tests and the predicted chance of passing. A sample tied to no hypothesis teaches nothing and is refused.',
   'When the user reacts, exploration_trial_rate with their own words. The rating lands on the version and on each hypothesis the trial tested, so a rated hypothesis can no longer be closed as inconclusive.',
   'A new version waits until the released one has enough ratings to be compared (loop.gates). Three consecutive non-passes require a research run with a structured failureAnalysis: two actual failed examples, a confirmed pass or externally verifiable positive contrast, two competing causes with contradictory evidence and falsification, uncertainty, and a discriminating next test. A mere finished run or agent self-score never clears the gate.',
@@ -447,6 +449,63 @@ function createStore(options) {
     const snap = await db().collection(COLLECTIONS.trials).where('baseId', '==', baseId).limit(3000).get();
     return snap.docs.map((doc) => doc.data()).sort((a, b) => String(a.id).localeCompare(String(b.id)));
   }
+  // The prepare call must happen before recording a new candidate; it ties a
+  // specific run to relevant case texts instead of relying on six generic examples.
+  // One attempt per run prevents repeatedly guessing the same known answers.
+  async function prepareRecall(input) {
+    const id = requireBaseId(input?.baseId);
+    const runId = text(input?.runId, 20, 'runId', true);
+    const topic = text(input?.topic, 400, 'topic (research premise before generating a sample)', true);
+    if (topic.length < 8) throw new Error('Recall topic must describe a concrete research premise (8+ characters)');
+    const hypothesisIds = list(input?.hypothesisIds, 10, 20);
+    const trials = await loadTrials(id);
+    let payload = null;
+    await db().runTransaction(async tx => {
+      const base = await loadBase(tx, id);
+      requireOpenRun(base, runId);
+      const run = value(await tx.get(runRef(id, runId)));
+      if (!run || run.status !== 'open') throw new Error('Recall requires an open run');
+      if (run.recallProbe) throw new Error('Recall already prepared for this run; use its first challenge or start a new research run');
+      const probe = buildRecallProbe(trials, base.feedbackLog || [], topic, hypothesisIds);
+      if (!probe.required || base.outcome?.confirmedBy === 'measurement') {
+        payload = { required: false, reason: 'insufficient_human_contrast_or_measurement', runId };
+        return;
+      }
+      run.recallProbe = {
+        required: true, status: 'awaiting_predictions', issuedAt: now(), topic, hypothesisIds,
+        studyCaseIds: probe.studyCaseIds, challengeCaseIds: probe.challengeCaseIds,
+      };
+      put(tx, runRef(id, runId), run);
+      payload = { required: true, runId, status: 'awaiting_predictions',
+        studyCases: probe.studyCases, challengeCases: probe.challengeCases,
+        instructions: 'Study the labeled accepted/rejected cases. Predict the verdict of every unlabeled challenge using a quote and observable explanation. Check once per run; >=3/4 correct is required before recording a trial. These are historical cases, not a truly secret holdout.' };
+    });
+    return payload;
+  }
+
+  async function checkRecall(input) {
+    const id = requireBaseId(input?.baseId);
+    const runId = text(input?.runId, 20, 'runId', true);
+    const trials = await loadTrials(id);
+    let result = null;
+    await db().runTransaction(async tx => {
+      const base = await loadBase(tx, id);
+      requireOpenRun(base, runId);
+      const run = value(await tx.get(runRef(id, runId)));
+      if (!run || run.status !== 'open') throw new Error('Recall requires an open run');
+      if (!run.recallProbe || run.recallProbe.status !== 'awaiting_predictions') {
+        throw new Error('Recall is not pending; prepare once per run before checking');
+      }
+      const graded = checkRecallPredictions(run.recallProbe, input?.predictions, trials, base.feedbackLog || []);
+      run.recallProbe = { ...run.recallProbe, ...graded, checkedAt: now() };
+      put(tx, runRef(id, runId), run);
+      result = { runId, status: graded.status, correct: graded.correct, total: graded.total,
+        nextAction: graded.status === 'passed' ? 'Proceed to trial recording with the existing learningAudit and negativeReview gates' : 'This run cannot submit trials: revise the explanation with historical counterexamples and open a new research run',
+        note: graded.note };
+    });
+    return result;
+  }
+
   // Cache the loop summary on the base so the list and World Home need no extra reads.
   async function refreshLoop(baseId) {
     const [trials, items] = await Promise.all([loadTrials(baseId), loadItems(baseId)]);
@@ -1321,6 +1380,10 @@ function createStore(options) {
         return false;
       });
       if (!backfill && fresh.length) {
+        if (base.outcome?.confirmedBy !== 'measurement' && recallRequired(existing, base.feedbackLog || [])
+          && (!run?.recallProbe || run.recallProbe.status !== 'passed')) {
+          throw new Error('Historical recall check required: start a run, call exploration_recall_prepare and pass exploration_recall_check before recording user-facing trials. Agent-only learningAudit does not replace the check.');
+        }
         const loop = loopView({ trials: existing, feedbackLog: base.feedbackLog, base });
         if (loop.awaiting.length + fresh.length > LIMITS.maxAwaiting) {
           throw new Error(loop.awaiting.length + ' trial(s) are still waiting for the user (' + loop.awaiting.map((t) => t.id).join(', ') + '). At most ' + LIMITS.maxAwaiting + ' may wait: get them rated, or withdraw stale ones with exploration_trial_rate verdict=withdrawn, before showing more.');
@@ -1383,6 +1446,10 @@ function createStore(options) {
           ...(editorialScreen ? { format: editorialScreen.format, editorialScreen } : {}),
           ...(learningAudit ? { learningAudit } : {}),
           ...(negativeReview ? { negativeReview } : {}),
+          ...(run?.recallProbe?.status === 'passed' ? { recallEvidence: {
+            runId, correct: run.recallProbe.correct, total: run.recallProbe.total,
+            studyCaseIds: run.recallProbe.studyCaseIds, challengeCaseIds: run.recallProbe.challengeCaseIds,
+            checkedAt: run.recallProbe.checkedAt, } } : {}),
           status: 'awaiting', verdict: null, createdAt: (backfill && text(raw.shownAt, 40, 'trial.shownAt', false)) || at,
           backfilled: backfill || undefined, actor: text(input.actor, 120, 'actor', false) || 'agent',
         };
@@ -1543,7 +1610,7 @@ function createStore(options) {
   // Compact summary used by the Agent Intelligence bundle resolver.
   async function brief(input) { return get({ id: input?.id, view: 'brief' }); }
 
-  return { create, list: listBases, get, remove, brief, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, recordTrials, rateTrials, awaitingTrials, refreshLoop, trainersOf };
+  return { create, list: listBases, get, remove, brief, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, prepareRecall, checkRecall, recordTrials, rateTrials, awaitingTrials, refreshLoop, trainersOf };
 }
 
 const store = createStore();
