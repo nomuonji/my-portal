@@ -109,4 +109,93 @@ function checkRecallPredictions(probe, answers, trials, feedbackLog) {
   };
 }
 
-module.exports = { sourceCases, recallRequired, buildRecallProbe, checkRecallPredictions };
+
+/**
+ * Recover the actual earlier experimental claims, falsifiers and revisions.
+ * The sample casebook alone contains only hypothesis IDs, which do not tell
+ * the author what was tested or what repeatedly failed.
+ * Rank by the current task and frozen run hypotheses; require mixed user
+ * outcomes to avoid showing an untested hypothesis as a proven win.
+ */
+function buildHistoricalHypotheses(hypotheses = [], trials = [], runs = [], topic = '', pinnedIds = []) {
+  const cases = sourceCases(trials);
+  const pinned = new Set(pinnedIds);
+  const ranked = hypotheses.filter(h => h.kind === 'hypothesis' && h.polarity !== 'negative')
+    .map(h => {
+      const linked = cases.filter(c => (c.hypothesisIds || []).includes(h.id));
+      const positive = linked.filter(c => c.verdict === 'pass');
+      const negative = linked.filter(c => c.verdict === 'fail');
+      if (!positive.length || !negative.length) return null;
+      const relatedRuns = runs.filter(r => r.status === 'finished'
+        && (r.verdicts || []).some(v => v.hypothesisId === h.id));
+      return { h, positive, negative, relatedRuns,
+        rank: (pinned.has(h.id) ? 12 : 0)
+          + 5 * similarity(topic, [h.title, h.statement, h.mechanism].join(' '))
+          + Math.min(positive.length, negative.length) * 0.3,
+      };
+    }).filter(Boolean)
+    .sort((a, b) => b.rank - a.rank || (b.positive.length + b.negative.length) - (a.positive.length + a.negative.length))
+    .slice(0, 2);
+  return ranked.map(({ h, positive, negative, relatedRuns }) => ({
+    id: h.id, title: h.title,
+    claim: String(h.statement || '').slice(0, 1500),
+    mechanism: String(h.mechanism || '').slice(0, 1600),
+    limits: String(h.limits || '').slice(0, 1200),
+    stage: h.stage || 'conjecture', status: h.status || 'open',
+    testCounts: { pass: positive.length, fail: negative.length },
+    passCaseIds: positive.map(c => c.id).slice(0, 25),
+    failCaseIds: negative.map(c => c.id).slice(0, 25),
+    supportingEvidence: (h.evidence || []).slice(-2).map(e => String(e.ref || '').slice(0, 600)),
+    counterexamples: (h.counterexamples || []).slice(-2).map(e => String(e).slice(0, 600)),
+    revisionHistory: (h.revisionHistory || []).slice(-2).map(e => ({
+      at: e.at, reason: e.reason, changedFields: e.changedFields,
+      before: e.before, after: e.after,
+    })),
+    pastRunResults: relatedRuns.slice(-2).flatMap(r =>
+      (r.verdicts || []).filter(v => v.hypothesisId === h.id)
+        .map(v => ({ runId: r.id, result: v.result, observed: String(v.observed || '').slice(0, 500) }))),
+    note: 'Hypothesis claims and run verdicts are agent interpretations. Counts reflect actual historical user labels, not causal proof.',
+  }));
+}
+
+function checkHypothesisReviews(snapshot = [], reviews = []) {
+  if (!snapshot.length) {
+    if (Array.isArray(reviews) && reviews.length) throw new Error('Unassigned hypothesis reviews are not allowed');
+    return [];
+  }
+  if (!Array.isArray(reviews) || reviews.length !== snapshot.length) {
+    throw new Error('Every retrieved historical hypothesis requires an explicit review before submitting a trial');
+  }
+  const seen = new Set();
+  return reviews.map(review => {
+    if (!review || seen.has(review.hypothesisId)) throw new Error('Duplicate or invalid hypothesis review');
+    seen.add(review.hypothesisId);
+    const h = snapshot.find(c => c.id === review.hypothesisId);
+    if (!h) throw new Error('Hypothesis review ID is not among the retrieved historical hypotheses');
+    const claimAnchor = String(review.claimAnchor || '').trim();
+    const limitAnchor = String(review.limitAnchor || '').trim();
+    if (claimAnchor.length < 8 || claimAnchor.length > 160
+      || !(h.claim || '').includes(claimAnchor) && !(h.mechanism || '').includes(claimAnchor)) {
+      throw new Error('Historical hypothesis claimAnchor must quote its actual claim or mechanism');
+    }
+    if (limitAnchor.length < 8 || limitAnchor.length > 160
+      || !(h.limits || '').includes(limitAnchor)
+        && !(h.counterexamples || []).some(e => e.includes(limitAnchor))) {
+      throw new Error('Historical hypothesis limitAnchor must quote its actual limits or counterexamples');
+    }
+    if (!(h.passCaseIds || []).includes(review.passCaseId) || !(h.failCaseIds || []).includes(review.failCaseId)) {
+      throw new Error('Historical hypothesis review must cite an actual pass and fail linked to this hypothesis');
+    }
+    const transferCondition = String(review.transferCondition || '').trim();
+    const refutingCondition = String(review.refutingCondition || '').trim();
+    if (transferCondition.length < 25 || transferCondition.length > 650
+      || refutingCondition.length < 25 || refutingCondition.length > 650) {
+      throw new Error('Historical hypothesis review needs concrete transfer and refuting conditions (25-650 chars)');
+    }
+    return { hypothesisId:h.id, claimAnchor, limitAnchor, passCaseId:review.passCaseId,
+      failCaseId:review.failCaseId, transferCondition, refutingCondition,
+      observedPass:h.testCounts.pass, observedFail:h.testCounts.fail };
+  });
+}
+
+module.exports = { sourceCases, recallRequired, buildRecallProbe, checkRecallPredictions, buildHistoricalHypotheses, checkHypothesisReviews };
