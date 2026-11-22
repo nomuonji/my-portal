@@ -8,6 +8,7 @@
 const { getDocumentDb } = require('./documentDb');
 const { loopView, loopSummary, ratedEntries, VERDICTS: TRIAL_VERDICTS, FAIL_STAGES, LIMITS } = require('./explorationLoop');
 const { validateLearningAudit } = require('./dojoLearning');
+const { buildResearchInventory, researchPage, validateResearchSynthesis } = require('./dojoResearchInventory');
 const { recallRequired, buildRecallProbe, checkRecallPredictions, buildHistoricalHypotheses, checkHypothesisReviews } = require('./dojoRecall');
 const { trialArtifactStatus, publicMediaUrl } = require('./dojoArtifactReadiness');
 
@@ -50,6 +51,7 @@ const PROTOCOL = [
   'Sources (where candidates come from) are a ledger too: record which source a candidate came from (evidence on the source, sourceIds on the achievement) and reject sources that yield nothing, so the next run starts from proven ones.',
   'When a submarine (Project Submarine) carries this skill/pack, its sortie opens and closes the run here. What it finds is the submarine\'s haul; a haul the user confirms comes back here as an achievement.',
   'The measure of a 道場 is the pass rate of what its released version produces, by version (loop). There is no count target. Read loop.nextActions first.',
+  'Before new trials in any dojo with rated feedback, open a research run, read EVERY page of exploration_research_read: every prior hypothesis (including failed/retired/negative) plus EVERY human-rating word and history, then call exploration_research_synthesize with an evidenced comparison of competing explanations, thesis/antithesis references, accepted/rejected user feedback, new or revised claim, controls and a falsifying observation. The server blocks trials and recall if pages were skipped or synthesis lacks grounded references.',
   'Before new trials in a dojo with at least four real passes and four fails, exploration_recall_prepare retrieves related old case texts AND the content, counterexamples and results of historically tested hypotheses. exploration_recall_check must check four held-back verdicts and explicitly compare every retrieved hypothesis against its linked real pass/fail cases, limits and transfer/refutation conditions. Neither step proves causal understanding. An incomplete check blocks submissions in that run.',
   'Every sample shown to the user is a trial: exploration_trial_record before showing it, with the hypotheses it tests and the predicted chance of passing. A sample tied to no hypothesis teaches nothing and is refused.',
   'When the user reacts, exploration_trial_rate with their own words. The rating lands on the version and on each hypothesis the trial tested, so a rated hypothesis can no longer be closed as inconclusive.',
@@ -449,6 +451,67 @@ function createStore(options) {
     const snap = await db().collection(COLLECTIONS.trials).where('baseId', '==', baseId).limit(3000).get();
     return snap.docs.map((doc) => doc.data()).sort((a, b) => String(a.id).localeCompare(String(b.id)));
   }
+  async function researchRead(input) {
+    const id = requireBaseId(input?.baseId);
+    const runId = text(input?.runId, 20, 'runId', true);
+    const page = input?.page === undefined ? 0 : input.page;
+    if (!Number.isInteger(page) || page < 0) throw new Error('Research history page must be a nonnegative integer');
+    const [trials, items, runDocs] = await Promise.all([
+      loadTrials(id), loadItems(id), db().collection(COLLECTIONS.runs).where('baseId', '==', id).limit(500).get(),
+    ]);
+    let output;
+    await db().runTransaction(async tx => {
+      const base = await loadBase(tx, id);
+      requireOpenRun(base, runId);
+      const run = value(await tx.get(runRef(id, runId)));
+      if (!run || run.status !== 'open') throw new Error('Research inventory requires an open run');
+      const inventory = buildResearchInventory(items, trials, base.feedbackLog || [], runDocs.docs.map(doc => doc.data()));
+      const progress = run.researchReview || { status:'reading', digest:inventory.hash,
+        nextPage:0, pages:inventory.pages, totalHypotheses:inventory.hypothesisCount, totalFeedback:inventory.feedbackCount, feedbackDigest:inventory.feedbackDigest };
+      if (progress.status !== 'reading') throw new Error('Research reading is already complete for this run');
+      if (progress.digest !== inventory.hash) throw new Error('Historical hypotheses or user feedback changed during reading; restart this research run with an updated snapshot');
+      if (page !== progress.nextPage) throw new Error('Research history must be read in order without skipped or repeated pages; nextPage=' + progress.nextPage);
+      output = researchPage(inventory, page);
+      progress.nextPage += 1;
+      if (progress.nextPage === progress.pages) progress.status = 'ready_to_synthesize';
+      run.researchReview = progress;
+      put(tx, runRef(id, runId), run);
+      output.status = progress.status;
+      output.nextPage = progress.status === 'reading' ? progress.nextPage : null;
+      output.note = 'Inspect EVERY listed historical hypothesis, human feedback quote and opposing case. No model-authored conclusion is a human rating.';
+    });
+    return output;
+  }
+
+  async function researchSynthesize(input) {
+    const id = requireBaseId(input?.baseId);
+    const runId = text(input?.runId, 20, 'runId', true);
+    const [trials, items, runDocs] = await Promise.all([
+      loadTrials(id), loadItems(id), db().collection(COLLECTIONS.runs).where('baseId', '==', id).limit(500).get(),
+    ]);
+    let result;
+    await db().runTransaction(async tx => {
+      const base = await loadBase(tx, id);
+      requireOpenRun(base, runId);
+      const run = value(await tx.get(runRef(id, runId)));
+      if (!run || run.status !== 'open') throw new Error('Research synthesis requires an open run');
+      if (!run.researchReview || run.researchReview.status !== 'ready_to_synthesize') {
+        throw new Error('Read all prior hypothesis and user-feedback pages before dialectical synthesis');
+      }
+      const inventory = buildResearchInventory(items, trials, base.feedbackLog || [], runDocs.docs.map(doc => doc.data()));
+      if (run.researchReview.digest !== inventory.hash) throw new Error('Historical evidence changed after reading; restart research review');
+      const synthesis = validateResearchSynthesis(input?.synthesis, inventory);
+      run.researchReview = { ...run.researchReview, status:'synthesized', synthesizedAt:now(),
+        feedbackDigest:inventory.feedbackDigest, synthesis };
+      put(tx, runRef(id, runId), run);
+      result = { baseId:id, runId, status:'synthesized', inventoryDigest:inventory.hash,
+        pagesRead:run.researchReview.pages, totalHypotheses:inventory.hypothesisCount,
+        totalFeedback:inventory.feedbackCount, thesisId:synthesis.thesisId, antithesisId:synthesis.antithesisId,
+        action:synthesis.action, nextAction:'Proceed to casebook recall (when required) and then trial recording. This is an agent hypothesis, not a user-confirmed improvement.' };
+    });
+    return result;
+  }
+
   // The prepare call must happen before recording a new candidate; it ties a
   // specific run to relevant case texts instead of relying on six generic examples.
   // One attempt per run prevents repeatedly guessing the same known answers.
@@ -468,6 +531,10 @@ function createStore(options) {
       requireOpenRun(base, runId);
       const run = value(await tx.get(runRef(id, runId)));
       if (!run || run.status !== 'open') throw new Error('Recall requires an open run');
+      if (run.researchReview?.status !== 'synthesized' && (trials.some(t => t.status === 'rated' && t.verdict !== 'withdrawn')
+        || (base.feedbackLog || []).some(f => f.decision === 'confirmed' || f.decision === 'declined'))) {
+        throw new Error('Full hypothesis and user-feedback research review must be synthesized before preparing the casebook recall');
+      }
       if (run.recallProbe) throw new Error('Recall already prepared for this run; use its first challenge or start a new research run');
       const pinnedIds = (run.targets || []).map(target => target.hypothesisId);
       if (pinnedIds.length && hypothesisIds.some(hid => !pinnedIds.includes(hid))) {
@@ -901,6 +968,28 @@ function createStore(options) {
           item.id = seqId(prefix, base.counters[prefix]);
           item.baseId = id;
         }
+        // The dialectical research record must have a visible consequence in
+        // the hypothesis ledger when it explicitly proposes changing a theory.
+        // Revisions remain provisional until separately tested by the user.
+        if (kind === 'hypothesis' && run?.researchReview?.status === 'synthesized') {
+          const review = run.researchReview;
+          const theoryAction = review.synthesis.action;
+          const substantive = !prior || ['title','statement','mechanism','limits','status','polarity'].some(k =>
+            raw[k] !== undefined && raw[k] !== prior?.[k]);
+          const isApplicable = (theoryAction === 'synthesize' && !prior)
+            || (theoryAction === 'revise' && prior?.id === review.synthesis.thesisId && substantive)
+            || (theoryAction === 'retire' && prior?.id === review.synthesis.thesisId
+              && ['retired','rejected'].includes(item.status));
+          if (isApplicable) {
+            item.researchLineage = [...(item.researchLineage || []), {
+              runId, action: theoryAction, priorHypothesisIds:[review.synthesis.thesisId, review.synthesis.antithesisId].filter(Boolean),
+              comparedFeedbackIds:[review.synthesis.passFeedbackId, review.synthesis.failFeedbackId].filter(Boolean),
+              relation:review.synthesis.relationship, claimedAt:now(), evidenceStatus:'agent_hypothesis_unverified',
+            }].slice(-12);
+            review.appliedHypothesisIds = [...new Set([...(review.appliedHypothesisIds || []), item.id])];
+            run.researchReview = review;
+          }
+        }
         item.updatedAt = now();
         put(tx, itemRef(id, item.id), item);
         pushEvent(tx, base, {
@@ -1149,6 +1238,16 @@ function createStore(options) {
         verdicts: verdicts.map((v) => v.hypothesisId + ':' + v.result), negativeVerdicts: negativeVerdicts.map((v) => v.hypothesisId + ':' + v.result), screenedOutUnverifiedCount: screenedOut.length,
         achievementIds: finished.achievementIds, yieldCount: yieldRefs.length,
         failureAnalysisRecorded: Boolean(failureAnalysis),
+        researchSynthesis: run.researchReview?.status === 'synthesized' ? {
+          thesisId:run.researchReview.synthesis.thesisId,
+          antithesisId:run.researchReview.synthesis.antithesisId,
+          relation:run.researchReview.synthesis.relationship,
+          action:run.researchReview.synthesis.action,
+          appliedHypothesisIds:run.researchReview.appliedHypothesisIds || [],
+          proposedClaim:run.researchReview.synthesis.proposedClaim.slice(0,400),
+          pendingApplication:['synthesize','revise','retire'].includes(run.researchReview.synthesis.action)
+            && !(run.researchReview.appliedHypothesisIds || []).length,
+        } : null,
         nextStep: finished.nextStep,
       };
       base.lastRuns = [summary, ...(base.lastRuns || [])].slice(0, 5);
@@ -1423,7 +1522,8 @@ function createStore(options) {
         });
         if (!backfill && !hypothesisIds.length) throw new Error('trial.hypothesisIds is required: name the hypothesis this sample tests (register it first with exploration_item_upsert). A sample tied to no hypothesis settles nothing when it is rated.');
         if (!backfill && run?.recallProbe?.status === 'passed' && (run.recallProbe.hypothesisIds || []).length
-          && !hypothesisIds.some(hid => run.recallProbe.hypothesisIds.includes(hid))) {
+          && !hypothesisIds.some(hid => run.recallProbe.hypothesisIds.includes(hid))
+          && !hypothesisIds.some(hid => (run.researchReview?.appliedHypothesisIds || []).includes(hid))) {
           throw new Error('The recalled casebook does not cover any hypothesis tested by this trial; open a matching research run');
         }
         const predicted = raw.predictedPass === undefined || raw.predictedPass === null ? null : Number(raw.predictedPass);
@@ -1449,6 +1549,35 @@ function createStore(options) {
           body: text(raw.body, 4000, 'trial.body', false) || text(raw.label, 300, 'trial.label', false),
         });
         if (negativeReview && legacyReview) negativeReview.status = 'preflight_legacy_derived_unverified';
+        // All existing quality gates are evaluated first, preserving their
+        // diagnostic errors. A valid candidate still cannot be saved without
+        // the exhaustive research review of every earlier hypothesis and user
+        // feedback. New human feedback after synthesis invalidates the review.
+        if (!backfill && run?.researchReview?.status === 'synthesized'
+          && ['synthesize','revise','retire'].includes(run.researchReview.synthesis?.action)) {
+          const action = run.researchReview.synthesis.action;
+          const applied = run.researchReview.appliedHypothesisIds || [];
+          if (!applied.length) {
+            throw new Error('Research synthesis action ' + action + ' must be applied to the hypothesis ledger via exploration_item_upsert before registering a new trial');
+          }
+          if (action === 'synthesize' && !hypothesisIds.some(hid => applied.includes(hid))) {
+            throw new Error('Trial must test a derived hypothesis registered from the research synthesis');
+          }
+          if (action === 'revise' && !hypothesisIds.includes(run.researchReview.synthesis.thesisId)) {
+            throw new Error('Trial must test the revised historical thesis, not an unrelated hypothesis');
+          }
+        }
+        if (!backfill && base.outcome?.confirmedBy !== 'measurement'
+          && (existing.some(t => t.status === 'rated' && t.verdict !== 'withdrawn')
+            || (base.feedbackLog || []).some(f => f.decision === 'confirmed' || f.decision === 'declined'))) {
+          if (!run || run.researchReview?.status !== 'synthesized') {
+            throw new Error('Full historical research review required: read every page of exploration_research_read and complete exploration_research_synthesize before recording trials');
+          }
+          const current = buildResearchInventory(items, existing, base.feedbackLog || []);
+          if (current.feedbackDigest !== run.researchReview.feedbackDigest) {
+            throw new Error('User feedback changed since the historical synthesis; open a new run and re-read all hypotheses and feedback before another trial');
+          }
+        }
         base.counters.T = (base.counters.T || 0) + 1;
         const at = now();
         const trial = {
@@ -1462,6 +1591,11 @@ function createStore(options) {
           ...(editorialScreen ? { format: editorialScreen.format, editorialScreen } : {}),
           ...(learningAudit ? { learningAudit } : {}),
           ...(negativeReview ? { negativeReview } : {}),
+          ...(run?.researchReview?.status === 'synthesized' ? { researchEvidence: {
+            pagesRead:run.researchReview.pages, totalHypotheses:run.researchReview.totalHypotheses,
+            totalFeedback:run.researchReview.totalFeedback, action:run.researchReview.synthesis.action,
+            thesisId:run.researchReview.synthesis.thesisId, antithesisId:run.researchReview.synthesis.antithesisId,
+            synthesizedAt:run.researchReview.synthesizedAt, } } : {}),
           ...(run?.recallProbe?.status === 'passed' ? { recallEvidence: {
             runId, correct: run.recallProbe.correct, total: run.recallProbe.total,
             studyCaseIds: run.recallProbe.studyCaseIds, challengeCaseIds: run.recallProbe.challengeCaseIds,
@@ -1627,7 +1761,7 @@ function createStore(options) {
   // Compact summary used by the Agent Intelligence bundle resolver.
   async function brief(input) { return get({ id: input?.id, view: 'brief' }); }
 
-  return { create, list: listBases, get, remove, brief, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, prepareRecall, checkRecall, recordTrials, rateTrials, awaitingTrials, refreshLoop, trainersOf };
+  return { create, list: listBases, get, remove, brief, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, researchRead, researchSynthesize, prepareRecall, checkRecall, recordTrials, rateTrials, awaitingTrials, refreshLoop, trainersOf };
 }
 
 const store = createStore();

@@ -515,6 +515,8 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
   if (name === "exploration_item_upsert") return structured(await explorationBaseStore.upsertItems(args));
   if (name === "exploration_run_start") return structured(await explorationBaseStore.startRun(args));
   if (name === "exploration_run_finish") return structured(await explorationBaseStore.finishRun(args));
+  if (name === "exploration_research_read") return structured(await explorationBaseStore.researchRead(args));
+  if (name === "exploration_research_synthesize") return structured(await explorationBaseStore.researchSynthesize(args));
   if (name === "exploration_recall_prepare") return structured(await explorationBaseStore.prepareRecall(args));
   if (name === "exploration_recall_check") return structured(await explorationBaseStore.checkRecall(args));
   if (name === "exploration_trial_record") return structured(await explorationBaseStore.recordTrials(args));

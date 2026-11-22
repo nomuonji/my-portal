@@ -526,6 +526,7 @@ test('three user non-passes cannot be cleared by a ceremonial run or self-PASS',
     statement: 'An independently collected source leads to a different candidate.',
     mechanism: 'This is a new sourcing and selection hypothesis, not a reuse of the failed copy.',
   }] });
+  await completePriorResearch(store, 'test-base', third.runId);
   const ok = await store.recordTrials({ baseId: 'test-base', runId: third.runId, trials: [{ ...trial('D'), hypothesisIds: ['H-002'] }] });
   assert.equal(ok.created.length, 1);
 });
@@ -549,6 +550,7 @@ test('every evidence-rich dojo refuses a trial that skips positive/negative tran
     baseId: 'test-base', objective: 'Improve a keyword using verified lessons, not superficial similarity',
     targets: [{ hypothesisId: 'H-001', prediction: 'The user will accept a genuinely different keyword' }],
   });
+  await completePriorResearch(store, 'test-base', runId);
   const sample = { label: 'New keyword with observed comparison', body: 'A new candidate with observed readers and different actual competition.',
     hypothesisIds: ['H-001'], predictedPass: 0.48 };
   await assert.rejects(store.recordTrials({ baseId: 'test-base', runId, trials: [sample] }), /Learning review required/);
@@ -625,6 +627,7 @@ test('buzz dojo blocks low-confidence, one-shot, invented-reference or unscreene
     baseId, objective: 'Compare multiple upstream sources before producing the next standalone post',
     targets: [{ hypothesisId: 'H-001', prediction: 'One evaluated post could be accepted' }],
   });
+  await completePriorResearch(store, baseId, runId);
   const body = '当事者だけが気づく小さな面倒に、予想外の二段目が突然出てくる。だからそこが笑える。';
   const audit = {
     format: 'standalone',
@@ -907,6 +910,7 @@ test('negative hypotheses run in parallel: unresolved candidates blocked, user m
     responseMode: 'compact',
   });
   assert.equal(run.negativeTargetCount, 1);
+  await completePriorResearch(store, 'test-base', run.runId);
   const candidate = {
     label: 'Concrete office failure', body: 'The office rule created a second problem for its author.',
     hypothesisIds: ['H-001'], predictedPass: 0.5,
@@ -980,6 +984,7 @@ test('older MCP fields can classify and compare failure hypotheses without weake
       refutingObservation: 'Human rejects the new specific consequence.',
     }, responseMode: 'compact' });
   assert.equal(run.negativeTargetCount, 1);
+  await completePriorResearch(store, 'test-base', run.runId);
   const body = 'A specific office rule unexpectedly changes who pays for the mistake.';
   const audit = { positiveCaseId: 'T-001', negativeCaseId: 'T-002',
     positiveAnchor: 'distinct causal consequence', negativeAnchor: 'forgettable generic ending',
@@ -1068,6 +1073,31 @@ test('all dojos automatically precommit one failure hypothesis even when an old 
 });
 
 
+
+async function completePriorResearch(store, baseId, runId) {
+  const first = await store.researchRead({baseId,runId,page:0});
+  const rows = [first];
+  for (let page=1;page<first.pages;page++) rows.push(await store.researchRead({baseId,runId,page}));
+  const hypotheses = rows.flatMap(x=>x.hypotheses);
+  const feedback = rows.flatMap(x=>x.feedback);
+  const thesis=hypotheses[0];
+  const antithesis=hypotheses[1]||null;
+  assert.ok(thesis,'research requires a preexisting hypothesis');
+  return store.researchSynthesize({baseId,runId,synthesis:{
+    thesisId:thesis.id,antithesisId:antithesis?.id,
+    thesisAnchor:thesis.statement.slice(0,Math.min(40,thesis.statement.length)),
+    antithesisAnchor:antithesis?.statement.slice(0,Math.min(40,antithesis.statement.length)),
+    passFeedbackId:feedback.find(x=>x.verdict==='pass')?.id,
+    passFeedbackAnchor:feedback.find(x=>x.verdict==='pass')?.userWords?.slice(0,80),
+    failFeedbackId:feedback.find(x=>['fail','partial'].includes(x.verdict))?.id,
+    failFeedbackAnchor:feedback.find(x=>['fail','partial'].includes(x.verdict))?.userWords?.slice(0,80),
+    action:'retain',tension:'The earlier mechanism may work for some tasks, while the rejected cases imply it is not sufficient.',
+    proposedClaim:'A narrower transfer condition should allow the mechanism to work only when the individual has a concrete motive.',
+    comparison:'Keep the topic fixed while testing a concrete motive against the original generic statement with matched context.',
+    falsification:'If the newer user-rated example fails despite meeting the proposed motive condition, the proposal is refuted.',
+  }});
+}
+
 test('recall gate retrieves historical hypothesis claims, refutations and user-verified outcomes before a trial', async () => {
   const store = await setup();
   await store.upsertItems({ baseId:'test-base', kind:'hypothesis', items:[hypothesis] });
@@ -1091,6 +1121,7 @@ test('recall gate retrieves historical hypothesis claims, refutations and user-v
   }))});
   const {runId} = await store.startRun({baseId:'test-base',objective:'Understand historical accepted vs rejected texts',
     targets:[{hypothesisId:'H-001',prediction:'Specific motives will produce another user pass'}], responseMode:'compact'});
+  await completePriorResearch(store,'test-base',runId);
   const candidate = {label:'New relationship-specific motive',
     body:'When the buyer stops responding, I realize I wanted the message more than the sale itself.',
     hypothesisIds:['H-001'],predictedPass:0.45};
@@ -1155,6 +1186,7 @@ test('passing an exact historical-label recall check permits the existing candid
   }))});
   const {runId}=await store.startRun({baseId:'test-base',objective:'Check remembered success mechanisms',
     targets:[{hypothesisId:'H-001',prediction:'Specific motive is an observable transfer condition'}],responseMode:'compact'});
+  await completePriorResearch(store,'test-base',runId);
   const p=await store.prepareRecall({baseId:'test-base',runId,topic:'Reversal and motive in ordinary interactions'});
   const truth=new Map(examples.map(([verdict],i)=>['T-'+String(i+1).padStart(3,'0'),verdict]));
   const checked=await store.checkRecall({baseId:'test-base',runId,predictions:p.challengeCases.map((c,i)=>({
@@ -1187,3 +1219,130 @@ test('passing an exact historical-label recall check permits the existing candid
   assert.equal(trial.status,'awaiting','historical recall must not count as a user rating');
 });
 
+
+
+test('all historical hypotheses and user feedback must be read; dialectical synthesis binds genuine opposing claims and ratings', async () => {
+  const store=await setup();
+  const hypotheses=Array.from({length:26},(_,i)=>({
+    title:'Historical theory '+i,
+    statement:'The mechanism '+i+' predicts a concrete new consequence for ordinary actions.',
+    mechanism:'A specific motive changes what the speaker does in this situation.',
+    limits:'Without a plausible character motive the statement is only an abstract label.',
+    polarity:i%5===0?'negative':'positive',
+  }));
+  await store.upsertItems({baseId:'test-base',kind:'hypothesis',items:hypotheses});
+  const sampleRows=Array.from({length:30},(_,i)=>({
+    label:'Historical sample '+i,
+    body:'A customer has a particular concern in case number '+i+' and responds unusually.',
+    hypothesisIds:['H-001'],
+    rating:{verdict:i%2===0?'pass':'fail',userWords:i%2===0?'合格、具体的な行動がある':'ボツ。変化が弱い'},
+  }));
+  await store.recordTrials({baseId:'test-base',backfill:true,trials:sampleRows});
+  const {runId}=await store.startRun({baseId:'test-base',objective:'Read all prior ideas and direct feedback',
+    targets:[{hypothesisId:'H-002',prediction:'Test a concrete consequence against earlier failures.'}],responseMode:'compact'});
+  const candidate={label:'A new consequence',body:'The waiting customer finally changes their mind after a strange answer.',
+    hypothesisIds:['H-002'],predictedPass:0.4};
+  await assert.rejects(store.prepareRecall({baseId:'test-base',runId,topic:'An unresolved change in customer motivation'}),
+    /Full hypothesis and user-feedback research review must be synthesized/);
+  await assert.rejects(store.recordTrials({baseId:'test-base',runId,trials:[candidate]}),
+    /Historical recall check required|Full historical research review required/);
+  const first=await store.researchRead({baseId:'test-base',runId,page:0});
+  assert.equal(first.totalHypotheses,26);
+  assert.equal(first.totalFeedback,30);
+  assert.equal(first.pages,3);
+  assert.equal(first.hypotheses.length,12);
+  assert.equal(first.feedback.length,25);
+  assert.ok(first.feedback[0].userWords,'the original user evaluation must be exposed');
+  await assert.rejects(store.researchRead({baseId:'test-base',runId,page:2}),/without skipped or repeated pages/);
+  await assert.rejects(store.researchSynthesize({baseId:'test-base',runId,synthesis:{}}),/Read all prior/);
+  const second=await store.researchRead({baseId:'test-base',runId,page:1});
+  const third=await store.researchRead({baseId:'test-base',runId,page:2});
+  assert.equal(third.status,'ready_to_synthesize');
+  assert.equal([first,second,third].flatMap(x=>x.hypotheses).length,26);
+  assert.equal([first,second,third].flatMap(x=>x.feedback).length,30);
+  const allH=[first,second,third].flatMap(x=>x.hypotheses);
+  const allF=[first,second,third].flatMap(x=>x.feedback);
+  const h1=allH[1],h2=allH[2];
+  const synthesis={thesisId:h1.id,antithesisId:h2.id,thesisAnchor:h1.statement.slice(0,32),
+    antithesisAnchor:h2.statement.slice(0,32),
+    passFeedbackId:allF.find(x=>x.verdict==='pass').id,
+    passFeedbackAnchor:allF.find(x=>x.verdict==='pass').userWords,
+    failFeedbackId:allF.find(x=>x.verdict==='fail').id,
+    failFeedbackAnchor:allF.find(x=>x.verdict==='fail').userWords,action:'synthesize',
+    tension:'The hypothesis with broad explanatory scope contradicts the narrower evidence of recent failed samples.',
+    proposedClaim:'The motive must change the downstream action rather than just introduce another descriptive label.',
+    comparison:'Compare versions with an actual changed motive versus a generic paraphrase under matched source conditions.',
+    falsification:'The user rejects the specific motive version or accepts a generic equivalent under matched conditions.'};
+  await assert.rejects(store.researchSynthesize({baseId:'test-base',runId,synthesis:{
+    ...synthesis,antithesisId:'H-999'}}),/distinct existing hypothesis/);
+  await assert.rejects(store.researchSynthesize({baseId:'test-base',runId,synthesis:{
+    ...synthesis,passFeedbackId:'T-888'}}),/real historical accepted feedback/);
+  await assert.rejects(store.researchSynthesize({baseId:'test-base',runId,synthesis:{
+    ...synthesis,passFeedbackAnchor:'invented feedback'}}),/must quote the actual human feedback/);
+  const done=await store.researchSynthesize({baseId:'test-base',runId,synthesis});
+  assert.equal(done.totalHypotheses,26);
+  assert.equal(done.totalFeedback,30);
+  assert.equal(done.status,'synthesized');
+  await assert.rejects(store.researchRead({baseId:'test-base',runId,page:0}),/already complete/);
+});
+
+test('a dialectical synthesis only counts as progress once linked to a real derived hypothesis in the ledger', async () => {
+  const store=await setup();
+  await store.upsertItems({baseId:'test-base',kind:'hypothesis',items:[
+    {...hypothesis,title:'Meaningful reversal in a situation'},
+    {...hypothesis,title:'Specific motive matters more than reversal',
+      statement:'The user accepts a specific embarrassing motive even without a formal reversal.',
+      mechanism:'A real motivation and consequence feel more human than abstract surprise.'},
+  ]});
+  await store.recordTrials({baseId:'test-base',backfill:true,trials:[
+    {label:'Earlier accepted example',body:'Specific human motive and a changed action.',
+      hypothesisIds:['H-001'],rating:{verdict:'pass',userWords:'合格'}},
+    {label:'Earlier rejected example',body:'An unexpected label with no specific stakes.',
+      hypothesisIds:['H-002'],rating:{verdict:'fail',userWords:'ボツ'}},
+  ]});
+  const {runId}=await store.startRun({baseId:'test-base',objective:'Integrate competing prior theories',
+    targets:[{hypothesisId:'H-001',prediction:'The joined mechanism changes user acceptance.'}],responseMode:'compact'});
+  const all=await store.researchRead({baseId:'test-base',runId,page:0});
+  assert.equal(all.pages,1);
+  const a=all.hypotheses.find(x=>x.id==='H-001');
+  const b=all.hypotheses.find(x=>x.id==='H-002');
+  await store.researchSynthesize({baseId:'test-base',runId,synthesis:{
+    thesisId:'H-001',antithesisId:'H-002',relationship:'competing',
+    thesisAnchor:a.statement.slice(0,35),antithesisAnchor:b.statement.slice(0,35),
+    passFeedbackId:'T-001',passFeedbackAnchor:'合格',
+    failFeedbackId:'T-002',failFeedbackAnchor:'ボツ',action:'synthesize',
+    tension:'Surprise and human motives may be competing explanations for why a concrete situation seems funny.',
+    proposedClaim:'The strongest example combines a meaningful reversal with a visible personal motive and consequent behavior.',
+    comparison:'Compare matched samples with the same context, varying only motive and action.',
+    falsification:'User rejects the motive-and-reversal example but accepts the original generic reversal.',
+  }});
+  const candidate={label:'Example grounded in a motive',
+    body:'The seller feels bad about rejecting the one person who wanted the item.',
+    hypothesisIds:['H-001'],predictedPass:0.42};
+  await assert.rejects(store.recordTrials({baseId:'test-base',runId,trials:[candidate]}),
+    /must be applied to the hypothesis ledger/);
+  const mutation=await store.upsertItems({baseId:'test-base',runId,kind:'hypothesis',items:[{
+    title:'Motive-driven reversal as a combined mechanism',
+    statement:'When ordinary social rules reverse, a recognizably selfish motivation shapes what the speaker does next.',
+    mechanism:'The distinctive payoff is the believable changed action, not merely a clever renaming of the situation.',
+    limits:'Generic metaphors with no changed behavior should not be treated as evidence of the new mechanism.',
+    reason:'Integrate H-001 and H-002 as an unverified synthesis to test separately.',
+  }]});
+  assert.deepEqual(mutation.changed.map(x=>x.id),['H-003']);
+  const made=await store.recordTrials({baseId:'test-base',runId,trials:[{...candidate,hypothesisIds:['H-003']}]});
+  assert.equal(made.created.length,1);
+  const state=await store.get({id:'test-base',view:'full'});
+  const h=state.full.hypotheses.find(x=>x.id==='H-003');
+  assert.equal(h.researchLineage[0].action,'synthesize');
+  assert.deepEqual(h.researchLineage[0].priorHypothesisIds,['H-001','H-002']);
+  assert.deepEqual(h.researchLineage[0].comparedFeedbackIds,['T-001','T-002']);
+  const trial=state.full.trials.find(x=>x.id===made.created[0].id);
+  assert.equal(trial.researchEvidence.action,'synthesize');
+  const finished=await store.finishRun({baseId:'test-base',runId,summary:'Derived an unverified combined claim from contrasting evidence',
+    verdicts:[{hypothesisId:'H-001',result:'inconclusive',
+      observed:'The new combined hypothesis awaits independent user evaluation.'}],
+    responseMode:'compact'});
+  assert.equal(finished.run.researchSynthesis.action,'synthesize');
+  assert.deepEqual(finished.run.researchSynthesis.appliedHypothesisIds,['H-003']);
+  assert.equal(finished.run.researchSynthesis.pendingApplication,false);
+});
