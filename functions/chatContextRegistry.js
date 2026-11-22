@@ -172,6 +172,11 @@ async function upsertSkill(input) {
   previousLength=String(current.body||'').length;
   const rev=Number(current.revision)||0;
   if(rev!==expectedRevision)throw new Error('Skill revision conflict');
+  // Over-budget Skills must consolidate when editing the executable body.
+  // Metadata-only edits are fine, and existing immutable revisions stay intact.
+  if(previousLength>SKILL_BODY_BUDGET && cleaned.body!==String(current.body||'')
+     && cleaned.body.length>=previousLength)
+    throw new Error('Skill body exceeds the 20k working budget. Revise existing rules and reduce body length; do not append more revision history to executable instructions.');
   const next=rev+1;
   // Preserve imported provenance unless the editor intentionally supplies it.
   const record={...cleaned,importProvenance:cleaned.importProvenance||current.importProvenance||null,
