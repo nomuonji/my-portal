@@ -338,6 +338,9 @@ function feedbackView(log, releasedVersion) {
 
 function createStore(options) {
   const getDb = (options && options.getDb) || database;
+  // Only trusted, explicitly configured migration code may import already-rated
+  // historical trials. MCP/client input must never be able to enable this.
+  const allowHistoricalBackfill = options?.allowHistoricalBackfill === true;
   const resolveTarget = (options && options.resolveTarget) || defaultResolveTarget;
   const db = () => getDb();
   const baseRef = (id) => db().collection(COLLECTIONS.bases).doc(id);
@@ -1278,6 +1281,9 @@ function createStore(options) {
     if (!Array.isArray(input.trials) || !input.trials.length) throw new Error('trials must be a non-empty array');
     if (input.trials.length > 30) throw new Error('At most 30 trials per call');
     const backfill = input.backfill === true;
+    if (backfill && !allowHistoricalBackfill) {
+      throw new Error('Historical trial backfill is disabled for agent/client tools. Use an explicitly trusted migration store; normal user feedback must use exploration_trial_rate.');
+    }
     const [existing, items] = await Promise.all([loadTrials(id), loadItems(id)]);
     const hypotheses = new Map(items.filter((item) => item.kind === 'hypothesis').map((item) => [item.id, item]));
     const sourceItems = items.filter((item) => item.kind === 'source');
