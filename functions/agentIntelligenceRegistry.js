@@ -774,7 +774,19 @@ function createRegistry(options) {
       }
       return distinct[0] || null;
     };
+    const { relationsForSkill } = require('./chatSkillRelations');
     for (const skill of skills) {
+      for (const relation of relationsForSkill(skill.id)) {
+        edges.push({ type: 'skill_uses_skill', from: 'chat_skill:' + skill.id,
+          to: 'chat_skill:' + relation.skillId, requiredness: relation.requiredness,
+          when: relation.intents, defaultIntent: relation.intent,
+          autoLoadByDefault: relation.autoLoad, versionPolicy: relation.versionPolicy,
+          declaredVersion: null, resolvedVersion: currentRelease('chat_skill', relation.skillId)
+            || skillIndex.get(relation.skillId)?.revision || null });
+        if (!skillIndex.has(relation.skillId))
+          warnings.push({ type: 'missing_skill_relation', sourceSkillId: skill.id,
+            targetSkillId: relation.skillId });
+      }
       const approved = currentRelease('chat_skill', skill.id);
       nodes.push({ type: 'chat_skill', id: skill.id, registryVersion: skill.revision,
         executableVersion: approved || skill.revision,
@@ -880,12 +892,19 @@ function createRegistry(options) {
     const targetBodyLinks = new Set();
     if (targetRef.kind === 'chat_skill') {
       targetSkills.add(targetRef.id);
+      // Explicit dependency policy must override incidental body mentions:
+      // optional/irrelevant relations never become active peer suggestions.
+      const structuredRelations = require('./chatSkillRelations').relationsForSkill(targetRef.id);
+      const relationIds = new Set(structuredRelations.map((item) => item.skillId));
+      for (const link of structuredRelations)
+        if (link.active && link.requiredness !== 'optional') targetBodyLinks.add(link.skillId);
       const skill = typeof chatSkills.getExecutableSkill === 'function'
-        ? await chatSkills.getExecutableSkill({ id: targetRef.id })
+        ? await chatSkills.getExecutableSkill({ id: targetRef.id, includeRelations: false })
         : await chatSkills.getSkill({ id: targetRef.id });
       const body = skill.body || '';
       const refs = [...body.matchAll(/`([a-z][a-z0-9-]{2,})`/g)].map((match) => match[1]);
-      for (const ref of refs) targetBodyLinks.add(ref);
+      for (const ref of refs)
+        if (!relationIds.has(ref)) targetBodyLinks.add(ref);
     } else if (targetRef.kind === 'intelligence_pack') {
       const pack = await getPack({ id: targetRef.id, versionNumber: targetRef.versionNumber });
       for (const dep of [
