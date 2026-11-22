@@ -141,3 +141,16 @@ The contract is shared by all domains (social, SEO, keywords, video, products, m
 ## Storage
 
 Collections `explorationBases`, `explorationBaseItems`, `explorationBaseRuns`, `explorationBaseEvents`, `explorationBaseTrials` in the Agent Ideas document database. Events are append-only.
+
+## Parallel negative hypotheses — shared by every dojo
+
+A dojo must study **what makes a candidate fail**, not only which mechanism predicts success. These are distinct, falsifiable hypotheses in the same canonical Exploration Base, not a second dojo, skill or recurring job.
+
+- Register ordinary success hypotheses with `exploration_item_upsert(kind="hypothesis", polarity="positive")` (also the legacy default). Register potential failure modes with `polarity="negative"`, an observable trigger, a competing positive case and a falsifier. The same H-nnn identity/evidence/revision-history lifecycle applies. A negative hypothesis is **not** a human rejection verdict.
+- In `exploration_run_start`, specify `targets` (positive) **and** `negativeTargets` (failure modes) with independent predictions. The latter must refer to open negative hypotheses; neither a generic stylistic label nor the absence of a pass is an adequate failure mechanism.
+- Before `exploration_trial_record`, use `negativeReview.checks` for **each declared negative target**: `hypothesisId`, one real `rejectedCaseId`, one real accepted `acceptedCaseId`, an exact `bodyAnchor`, `observedRisk` and `counterEvidence`. Only a justified `decision="cleared"` may be shown to the human; unresolved candidates are **not** registered as user trials.
+- At `exploration_run_finish`, use `screenedOut` to record such withheld candidates against their failure hypothesis and `negativeVerdicts` to record the research outcome, including `inconclusive` when not tested independently. Internal rejections are **unverified** and must never be counted as user failures, passes, market outcomes or evidence that a negative gate actually works.
+- Once the user rates a cleared trial, `loop.negativeLearning` reports `clearedAndPassed`, `clearedButRejected` (missed failure risks), `screenedOutUnverified`, review coverage and per-hypothesis misses; the familiar `loop.current.passRate` still counts **only actual human ratings**. The positive hypothesis scoreboard and calibration exclude negative hypotheses so they are not mislabeled as win patterns.
+- Older recorded runs remain readable. Runs with no `negativeTargets` have no verified negative preflight and are called out in the loop when a dojo has both passed and rejected cases. This compatibility does **not** imply a negative test occurred. For new work, test positive and negative hypotheses concurrently; inspect false-clearance misses before repeating the same source, selection or transformation.
+
+This is a common server-side protocol, not a universal list of bad styles: different dojos must derive failure mechanisms from their own authentic rejected and accepted cases. For example, SNS may test predictable endings, SEO may test non-indexable source demand, video may test a weak retention hook, and monetization may test a missing distribution-to-purchase link. User verdicts and original acceptance gates remain unchanged.
