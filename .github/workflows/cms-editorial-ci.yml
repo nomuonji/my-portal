@@ -2,6 +2,12 @@ name: CMS editorial gate
 on:
   pull_request:
     paths:
+      - 'functions/explorationBaseStore.js'
+      - 'functions/explorationLoop.js'
+      - 'functions/dojoArtifactReadiness.js'
+      - 'functions/explorationBaseToolSchemas.js'
+      - 'src/components/ExplorationBases.js'
+      - 'scripts/exploration-base-smoke.js'
       - 'functions/characterImageStore.js'
       - 'functions/characterImageMcpTools.js'
       - 'functions/characterImageStore.test.js'
@@ -37,6 +43,12 @@ on:
   push:
     branches: [main]
     paths:
+      - 'functions/explorationBaseStore.js'
+      - 'functions/explorationLoop.js'
+      - 'functions/dojoArtifactReadiness.js'
+      - 'functions/explorationBaseToolSchemas.js'
+      - 'src/components/ExplorationBases.js'
+      - 'scripts/exploration-base-smoke.js'
       - 'functions/publicCmsStore.js'
       - 'functions/publicCmsToolSchemas.js'
       - 'netlify/functions/mcp.mts'
