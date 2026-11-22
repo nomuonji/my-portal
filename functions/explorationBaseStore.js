@@ -699,7 +699,22 @@ function createStore(options) {
       saveBase(tx, base);
     });
     await refreshLoop(id);
-    return get({ id });
+    const result = await get({ id });
+    const released = result.method?.bodyRef;
+    if (released && ['chat_skill', 'intelligence_pack'].includes(released.kind)) {
+      try {
+        // Only an actually committed dojo release may trigger dependent Pack /
+        // Agent Profile version propagation. Draft Skill edits never propagate.
+        result.dependencyPropagation = await require('./dojoSynergy').reconcileDojoRelease({
+          kind: released.kind, id: released.location, versionNumber: released.versionNumber,
+        });
+      } catch (error) {
+        // The dojo release is committed already. Expose the failed propagation
+        // instead of pretending that a partial cross-dojo sync succeeded.
+        result.dependencyPropagation = { failed: true, error: String(error.message || error).slice(0, 700) };
+      }
+    }
+    return result;
   }
 
   function applyLedgerItem(kind, prior, raw, runId, base) {
