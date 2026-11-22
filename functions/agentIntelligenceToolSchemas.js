@@ -97,6 +97,19 @@ const tools = [
     annotations: { readOnlyHint: true },
   },
   {
+    name: 'dojo_dependency_audit',
+    description: 'Read the live graph of active dojos, shared Chat Skills, Intelligence Packs and Agent Profiles. Report approved runtime versions, duplicate/stale historical pins, unselectable Packs, candidate versions, and unenforced text-only Skill mentions. Never change versions or start a scheduled sync.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        includeBodyReferences: { type: 'boolean', default: false,
+          description: 'Also scan trained Skill bodies for backtick-enclosed references; these are unverified textual hints, not executable dependencies.' },
+      },
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true },
+  },
+  {
     name: 'intelligence_pack_get',
     description: 'Read immutable Intelligence Pack definitions. Stored Chat Skill versionNumber values describe historical dependencies only; for execution use cognitive_bundle_resolve, which always resolves each referenced Chat Skill to its current dojo-released version (or Registry latest if no dojo). Do not execute stored Skill pins directly.',
     inputSchema: {
