@@ -47,7 +47,7 @@ const outcome = {
 const method = { title: 'Method', version: 'm-v1', summary: 'Initial', bodyRef: { kind: 'repo', location: 'owner/repo', path: 'docs/method.md' } };
 async function setup() {
   const db = new MemoryDb();
-  const store = createStore({ getDb: () => db });
+  const store = createStore({ getDb: () => db, allowHistoricalBackfill: true });
   await store.create({ id: 'test-base', title: 'Test', summary: 'Smoke', outcome, method, ...auth });
   return store;
 }
@@ -599,6 +599,8 @@ test('buzz dojo blocks low-confidence, one-shot, invented-reference or unscreene
   const db = new MemoryDb();
   const store = createStore({ getDb: () => db });
   const baseId = 'viral-post-method-discovery';
+  // This fixture deliberately imports a known human-rated corpus before new trials.
+  const trustedStore = createStore({ getDb: () => db, allowHistoricalBackfill: true });
   await store.create({ id: baseId, title: 'Buzz Dojo', summary: 'Standalone quality gate', outcome, method, ...auth });
   await store.upsertItems({
     baseId, kind: 'source', items: [
@@ -609,7 +611,7 @@ test('buzz dojo blocks low-confidence, one-shot, invented-reference or unscreene
     ],
   });
   await store.upsertItems({ baseId, kind: 'hypothesis', items: [hypothesis] });
-  await store.recordTrials({
+  await trustedStore.recordTrials({
     baseId, backfill: true, trials: [
       { label: 'Human accepted', body: 'This genuinely different accepted standalone has a distinctive reader moment.',
         rating: { verdict: 'pass', userWords: '合格' } },
@@ -682,8 +684,15 @@ test('buzz dojo blocks low-confidence, one-shot, invented-reference or unscreene
   });
 });
 
-test('past samples are backfilled with the version and rating they had', async () => {
-  const store = await setup();
+test('agent/runtime stores refuse forged historical ratings while trusted migrations retain backfill', async () => {
+  const db = new MemoryDb();
+  const runtime = createStore({ getDb: () => db });
+  await runtime.create({ id: 'test-base', title: 'Test', summary: 'Smoke', outcome, method, ...auth });
+  await assert.rejects(runtime.recordTrials({ baseId: 'test-base', backfill: true, trials: [{
+    label: 'Fabricated win', version: 999, rating: { verdict: 'pass', userWords: '合格' },
+  }] }), /backfill is disabled/, 'an agent cannot fabricate human PASS history via backfill');
+  assert.equal((await runtime.get({ id: 'test-base', view: 'full' })).full.trials.length, 0);
+  const store = createStore({ getDb: () => db, allowHistoricalBackfill: true });
   const done = await store.recordTrials({ baseId: 'test-base', backfill: true, trials: [
     { label: 'Old pass', ref: 'out-1', version: 44, methodVersion: 'old-v4', shownAt: '2026-11-14T06:00:00.000Z', rating: { verdict: 'pass', userWords: '初の合格', ratedAt: '2026-11-14T06:26:00.000Z' } },
     { label: 'Old fail', ref: 'out-2', version: 44, methodVersion: 'old-v4', rating: { verdict: 'fail', userWords: 'ボツ', ratedAt: '2026-11-14T07:00:00.000Z' } },
