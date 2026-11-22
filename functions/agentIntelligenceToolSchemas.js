@@ -56,6 +56,8 @@ const tools = [
       properties: {
         id: string('Agent Profile ID.', 80, 2),
         versionNumber: positiveVersion('Exact historical version; omission selects current.'),
+        includeResolvedDependencies: { type: 'boolean', default: false,
+          description: 'When true, include each Skill dependency\'s historical declaredVersion and current resolvedVersion without mutating Pack versions.' },
       },
       required: ['id'],
       additionalProperties: false,
@@ -126,7 +128,7 @@ const tools = [
   },
   {
     name: 'cognitive_bundle_resolve',
-    description: 'Assemble a Resolved Cognitive Bundle. For shared chat_skill dependencies, disregard stale Pack versionNumber pins and load the current Skill on every invocation: dojo-approved latest if trained, Registry latest otherwise. Different historical Pack pins for the same Skill do not conflict. Trained Packs themselves use the dojo-released version; Pack and HQ Method history remain immutable. The resolver does not execute reasoning or tools.',
+    description: 'Assemble an ephemeral Resolved Cognitive Bundle. For selected components, automatically load required and recommended Chat Skills; optional Skills and external resources remain opt-in. Historical Pack Skill pins never override the current approved Skill version. Trained Packs use dojo-released versions; immutable histories are retained. No reasoning or tool execution occurs.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -136,7 +138,7 @@ const tools = [
         selectedIntelligences: { type: 'array', items: selectedIntelligence, minItems: 1, maxItems: 20 },
         selectedDependencies: {
           type: 'array',
-          items: string('Optional or recommended canonical dependency key: resourceType:canonicalRef.', 600, 3),
+          items: string('Explicitly request an optional dependency or external tool; recommended Chat Skills of a selected component are loaded automatically.', 600, 3),
           maxItems: 100,
         },
         compositionPlan: object('Agent-selected stages, dependency edges, parallel groups, critique targets and synthesis rule.'),
