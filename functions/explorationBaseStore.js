@@ -31,11 +31,14 @@ const CONSTRAINT_STATUS = ['active', 'relaxed', 'retired'];
 const EVIDENCE_TYPES = ['observation', 'candidate', 'outcome'];
 const VERDICTS = ['supported', 'contradicted', 'inconclusive'];
 const OPEN_RUN_TTL_MS = 12 * 60 * 60 * 1000;
+const { NEGATIVE, checkNegativeTargets, checkNegativeReview, checkScreenedOut } = require('./dojoNegativeReview');
 const STALL_WARNING_AT = 3;
 const PROTOCOL = [
   'Read this base before exploring; do not rely on memory of an earlier version.',
   'exploration_run_start: read loop.refinement, compare competing explanations, and precommit a discriminating experimentDesign (changed stage, controls, expected difference, falsification) where possible. An exploratory probe may have no design.',
   'Forecast calibration and hypothesis ranking are advisory, not proof or automatic method release. Do not inflate predictedPass to bypass a domain-specific quality gate.',
+  'All dojos: keep positive and negative hypotheses parallel. Register a falsifiable failure mode with polarity=negative, declare it in startRun.negativeTargets alongside a positive target, and use negativeReview before showing a trial. An unresolved risk must be screened out, never shown as a trial.',
+  'At finishRun, negativeVerdicts report what was observed. screenedOut cases are unverified internal rejections, not user fails or method wins. Read loop.negativeLearning for cleared-but-rejected misses and update the next experiment. Older runs remain readable without evidence of negative testing.',
   'exploration_run_start: declare which hypotheses this run tests and the predicted result before measuring.',
   'During the run, write every changed fixed point with the runId (exploration_item_upsert).',
   'exploration_run_finish: give a verdict per declared hypothesis. A run that moved no fixed point is recorded as stalled.',
@@ -263,7 +266,7 @@ function cleanEvidence(raw, runId) {
 }
 function hypothesisBrief(item) {
   return {
-    id: item.id, title: item.title, stage: item.stage, pipelineStage: item.pipelineStage || 'unknown', statement: item.statement,
+    id: item.id, title: item.title, stage: item.stage, pipelineStage: item.pipelineStage || 'unknown', polarity: item.polarity || 'positive', statement: item.statement,
     revisionCount: (item.revisionHistory || []).length, limits: item.limits || '', evidenceCount: (item.evidence || []).length,
     counterexampleCount: (item.counterexamples || []).length, legacyIds: item.legacyIds || [],
   };
@@ -714,6 +717,8 @@ function createStore(options) {
       if (creating || raw.mechanism !== undefined) item.mechanism = text(raw.mechanism, 2000, 'hypothesis.mechanism (why it would hold)', true);
       if (raw.pipelineStage !== undefined) item.pipelineStage = oneOf(raw.pipelineStage, PIPELINE_STAGES, 'hypothesis.pipelineStage');
       if (creating) item.pipelineStage = item.pipelineStage || 'unknown';
+      if (raw.polarity !== undefined) item.polarity = oneOf(raw.polarity, ['positive', NEGATIVE], 'hypothesis.polarity');
+      if (creating) item.polarity = item.polarity || 'positive';
     } else {
       if (creating || raw.locator !== undefined) item.locator = text(raw.locator, 600, 'source.locator (URL, query or tool call that reaches it)', true);
       if (creating || raw.coverage !== undefined) item.coverage = text(raw.coverage, 1500, 'source.coverage (what it yields and why it is worth trying)', true);
@@ -748,7 +753,7 @@ function createStore(options) {
     // Preserve actual changes to a hypothesis, not just its latest wording. A rating/evidence
     // append is not a hypothesis revision, and does not erase earlier versions of the claim.
     if (!creating && kind === 'hypothesis') {
-      const fields = ['title', 'statement', 'mechanism', 'limits', 'pipelineStage', 'stage', 'status'];
+      const fields = ['title', 'statement', 'mechanism', 'limits', 'pipelineStage', 'polarity', 'stage', 'status'];
       const modified = fields.filter((field) => (item[field] || '') !== (prior[field] || ''));
       if (modified.length) {
         item.revisionHistory = [...(prior.revisionHistory || []), {
@@ -850,8 +855,17 @@ function createStore(options) {
         const hypothesis = value(await tx.get(itemRef(id, hypothesisId)));
         if (!hypothesis || hypothesis.kind !== 'hypothesis') throw new Error('Hypothesis not found: ' + hypothesisId);
         if (hypothesis.status !== 'open') throw new Error('Hypothesis ' + hypothesisId + ' is ' + hypothesis.status + '; reopen it with a reason before testing it again.');
+        if (hypothesis.polarity === NEGATIVE) throw new Error('Success targets must be positive; place failure hypotheses in negativeTargets: ' + hypothesisId);
         cleanTargets.push({ hypothesisId, prediction: text(target.prediction, 800, 'target.prediction (what you expect to measure, stated before measuring)', true) });
       }
+      const negativeInputs = Array.isArray(input.negativeTargets) ? input.negativeTargets : [];
+      const negativeHypotheses = new Map();
+      for (const rawNegative of negativeInputs) {
+        const hid = text(rawNegative?.hypothesisId, 20, 'negativeTargets.hypothesisId', true);
+        if (!negativeHypotheses.has(hid)) negativeHypotheses.set(hid, value(await tx.get(itemRef(id, hid))));
+      }
+      const negativeTargets = checkNegativeTargets(input.negativeTargets, negativeHypotheses);
+      if (negativeTargets.length && !cleanTargets.length) throw new Error('negativeTargets must accompany a positive target: test both directions together.');
       if (base.openRunId) {
         const age = openRun ? Date.now() - Date.parse(openRun.startedAt) : Infinity;
         if (input.takeover !== true && age < OPEN_RUN_TTL_MS) throw new Error('Run ' + base.openRunId + ' is open (started ' + openRun.startedAt + '). Finish it, or pass takeover=true if it was abandoned.');
@@ -919,14 +933,14 @@ function createStore(options) {
         id: runId, baseId: id, status: 'open', startedAt: now(), actor: text(input.actor, 120, 'actor', false) || 'agent',
         objective: text(input.objective, 800, 'objective', true),
         methodVersion: base.method.version, outcomeRevision: base.outcome.revision,
-        targets: cleanTargets, unknownTerritoryProbe: probe, ...(experimentDesign ? { experimentDesign } : {}),
+        targets: cleanTargets, ...(negativeTargets.length ? { negativeTargets } : {}), unknownTerritoryProbe: probe, ...(experimentDesign ? { experimentDesign } : {}),
         ...(crossDojoEvidence.length ? { crossDojoEvidence } : {}),
       };
       put(tx, runRef(id, runId), run);
       base.openRunId = runId;
       receipt = { runId, methodVersion: run.methodVersion, outcomeRevision: run.outcomeRevision,
-        crossDojoEvidenceCount: crossDojoEvidence.length };
-      pushEvent(tx, base, { type: 'run_started', runId, summary: run.objective, actor: input.actor, detail: { targets: cleanTargets, methodVersion: run.methodVersion } });
+        crossDojoEvidenceCount: crossDojoEvidence.length, negativeTargetCount: negativeTargets.length };
+      pushEvent(tx, base, { type: 'run_started', runId, summary: run.objective, actor: input.actor, detail: { targets: cleanTargets, negativeTargets, methodVersion: run.methodVersion } });
       saveBase(tx, base);
     });
     if (responseMode === 'compact') return receipt;
@@ -939,7 +953,8 @@ function createStore(options) {
     const responseMode = oneOf(input?.responseMode, ['brief', 'compact'], 'responseMode', 'brief');
     const finishData = unpackFailureAnalysis(input);
     let summary;
-    const trials = await loadTrials(id);
+    const [trials, items] = await Promise.all([loadTrials(id), loadItems(id)]);
+    const hypotheses = new Map(items.filter(item => item.kind === 'hypothesis').map(item => [item.id, item]));
     await db().runTransaction(async (tx) => {
       const base = await loadBase(tx, id);
       requireOpenRun(base, runId);
@@ -960,6 +975,15 @@ function createStore(options) {
           observed: text(raw.observed, 1200, 'verdict.observed (what was actually measured)', true),
         };
       });
+      const negativeVerdicts = (run.negativeTargets || []).map(target => {
+        const raw = (input.negativeVerdicts || []).find(v => v && v.hypothesisId === target.hypothesisId);
+        if (!raw) throw new Error('Missing negativeVerdict for declared failure hypothesis ' + target.hypothesisId);
+        return { hypothesisId: target.hypothesisId, prediction: target.prediction,
+          result: oneOf(raw.result, VERDICTS, 'negativeVerdict.result'),
+          observed: text(raw.observed, 1200, 'negativeVerdict.observed', true),
+          evidenceKind: 'agent_interpretation_pending_human_validation' };
+      });
+      const screenedOut = checkScreenedOut(input.screenedOut, run.negativeTargets, hypotheses);
       const failureAnalysis = finishData.failureAnalysis
         ? cleanFailureAnalysis(finishData.failureAnalysis, ratedEntries(trials, base.feedbackLog))
         : null;
@@ -983,14 +1007,20 @@ function createStore(options) {
       // Finds a submarine brought back with this run's gear count as movement too; they are decided on the
       // submarine and mirrored here as achievements once the user confirms them.
       const yieldRefs = list(input.yieldRefs, 30, 600);
-      const moved = itemChanges.length > 0 || achievements.length > 0 || yieldRefs.length > 0 || (run.trialIds || []).length > 0;
+      const moved = itemChanges.length > 0 || achievements.length > 0 || yieldRefs.length > 0 || (run.trialIds || []).length > 0 || screenedOut.length > 0;
+      if (screenedOut.length) {
+        const prior = base.negativeScreening || { rejectedUnverified: 0, byHypothesis: {} };
+        const byHypothesis = { ...(prior.byHypothesis || {}) };
+        screenedOut.forEach(({ hypothesisId }) => { byHypothesis[hypothesisId] = (byHypothesis[hypothesisId] || 0) + 1; });
+        base.negativeScreening = { rejectedUnverified: (prior.rejectedUnverified || 0) + screenedOut.length, byHypothesis };
+      }
       base.stalledRuns = moved ? 0 : (base.stalledRuns || 0) + 1;
       base.runCount = (base.runCount || 0) + 1;
       base.openRunId = null;
       const finished = {
         ...run, status: 'finished', finishedAt: now(),
         summary: finishData.summary,
-        verdicts, achievementIds: achievements.map((a) => a.id), failureAnalysis,
+        verdicts, negativeVerdicts, screenedOut, achievementIds: achievements.map((a) => a.id), failureAnalysis,
         movedItemIds: [...new Set(itemChanges)], yieldRefs, moved,
         notMovedReason: moved ? '' : text(input.notMovedReason, 1000, 'notMovedReason (this run changed no fixed point; say why and what that implies)', true),
         costNote: text(input.costNote, 400, 'costNote', false),
@@ -1000,7 +1030,8 @@ function createStore(options) {
       summary = {
         id: runId, finishedAt: finished.finishedAt, methodVersion: run.methodVersion, objective: run.objective,
         summary: finished.summary.slice(0, 400), moved, movedItemIds: finished.movedItemIds,
-        verdicts: verdicts.map((v) => v.hypothesisId + ':' + v.result), achievementIds: finished.achievementIds, yieldCount: yieldRefs.length,
+        verdicts: verdicts.map((v) => v.hypothesisId + ':' + v.result), negativeVerdicts: negativeVerdicts.map((v) => v.hypothesisId + ':' + v.result), screenedOutUnverifiedCount: screenedOut.length,
+        achievementIds: finished.achievementIds, yieldCount: yieldRefs.length,
         failureAnalysisRecorded: Boolean(failureAnalysis),
         nextStep: finished.nextStep,
       };
@@ -1256,11 +1287,16 @@ function createStore(options) {
           const hypothesis = hypotheses.get(hid);
           if (!hypothesis) throw new Error('Hypothesis not found: ' + hid);
           if (!backfill && hypothesis.status !== 'open') throw new Error('Hypothesis ' + hid + ' is ' + hypothesis.status + '; a trial tests open hypotheses.');
+          if (!backfill && hypothesis.polarity === NEGATIVE) throw new Error('trial.hypothesisIds is for positive targets; evaluate negative hypotheses through negativeReview: ' + hid);
         });
         if (!backfill && !hypothesisIds.length) throw new Error('trial.hypothesisIds is required: name the hypothesis this sample tests (register it first with exploration_item_upsert). A sample tied to no hypothesis settles nothing when it is rated.');
         const predicted = raw.predictedPass === undefined || raw.predictedPass === null ? null : Number(raw.predictedPass);
         if (predicted !== null && !(predicted >= 0 && predicted <= 1)) throw new Error('trial.predictedPass must be between 0 and 1');
         if (!backfill && predicted === null) throw new Error('trial.predictedPass is required: the chance (0-1) that the user passes this sample, stated before they see it.');
+        const negativeReview = backfill ? null : checkNegativeReview(raw.negativeReview, {
+          negativeTargets: run?.negativeTargets || [], hypotheses, trials: existing,
+          body: text(raw.body, 4000, 'trial.body', false) || text(raw.label, 300, 'trial.label', false),
+        });
         const editorialScreen = (!backfill && id === 'viral-post-method-discovery')
           ? cleanBuzzScreen(raw, sourceItems, existing) : null;
         // Every trial-based dojo with real positive AND negative cases must show
@@ -1285,6 +1321,7 @@ function createStore(options) {
           predictedPass: predicted, predictionNote: text(raw.predictionNote, 600, 'trial.predictionNote', false),
           ...(editorialScreen ? { format: editorialScreen.format, editorialScreen } : {}),
           ...(learningAudit ? { learningAudit } : {}),
+          ...(negativeReview ? { negativeReview } : {}),
           status: 'awaiting', verdict: null, createdAt: (backfill && text(raw.shownAt, 40, 'trial.shownAt', false)) || at,
           backfilled: backfill || undefined, actor: text(input.actor, 120, 'actor', false) || 'agent',
         };

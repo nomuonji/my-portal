@@ -81,6 +81,7 @@ const item = {
     statement: string('Hypothesis: the claim. Constraint: the rule.', 1500),
     mechanism: string('Hypothesis: why it would hold (required on create).', 2000),
     pipelineStage: { type: 'string', enum: ['source', 'selection', 'transform', 'voice', 'gate', 'audience', 'unknown'], description: 'Hypothesis only: which part of the full sourcing-to-evaluation pipeline is under test. Not the evidence maturity stage.' },
+    polarity: { type: 'string', enum: ['positive', 'negative'], description: 'All dojos: positive predicts successful outcomes (default for legacy), negative predicts a falsifiable failure mode. Negative hypotheses are validated separately and cannot be ranked as positive win patterns.' },
     limits: string('Hypothesis/source: where it does not apply.', 1500),
     locator: string('Source: URL, search query or tool call that reaches it (required on create).', 600),
     coverage: string('Source: what it yields for this outcome and why it is worth trying (required on create).', 1500),
@@ -186,7 +187,7 @@ const tools = [
   },
   {
     name: 'exploration_run_start',
-    description: 'Open an exploration run and pin its method. Optional crossDojoEvidence validates a real user-rated source-dojo pass/fail pair and stores the unproven transfer mechanism with a controlled receiver experimentDesign. Receiver pass/fail remains exclusively based on its own later human feedback. Prefer responseMode=compact after loading the base.',
+    description: 'Open an exploration run and pin its method. Test success and failure hypotheses in parallel: targets plus negativeTargets. Optional crossDojoEvidence validates a real user-rated source-dojo pass/fail pair and stores the unproven transfer mechanism with a controlled receiver experimentDesign. Receiver pass/fail remains exclusively based on its own later human feedback. Prefer responseMode=compact after loading the base.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -194,6 +195,11 @@ const tools = [
         targets: {
           type: 'array', maxItems: 12,
           items: { type: 'object', properties: { hypothesisId: string('H-nnn.', 20), prediction: string('Expected measurement, stated before measuring.', 800) }, required: ['hypothesisId', 'prediction'], additionalProperties: false },
+        },
+        negativeTargets: {
+          type: 'array', maxItems: 6,
+          description: 'Failure-mode hypotheses (polarity=negative) to test alongside positive targets; open H-nnn IDs and falsifiable precommitted predictions. When specified, each user-facing trial requires negativeReview covering all targets.',
+          items: { type:'object', properties: { hypothesisId: string('Open negative H-nnn.',20), prediction: string('Predicted failure condition and how it would be falsified.',800) }, required:['hypothesisId','prediction'], additionalProperties:false },
         },
         unknownTerritoryProbe: string('Area outside the known hypotheses this run will observe.', 800),
         experimentDesign: {
@@ -245,6 +251,15 @@ const tools = [
         verdicts: {
           type: 'array', maxItems: 12,
           items: { type: 'object', properties: { hypothesisId: string('H-nnn.', 20), result: { type: 'string', enum: ['supported', 'contradicted', 'inconclusive'] }, observed: string('What was actually measured.', 1200) }, required: ['hypothesisId', 'result', 'observed'], additionalProperties: false },
+        },
+        negativeVerdicts: {
+          type: 'array', maxItems: 6,
+          description: 'Required for each declared negativeTarget. Inconclusive is valid when no independent human test exists; internal rejection does not prove a hypothesis.',
+          items: { type:'object', properties: { hypothesisId: string('Declared negative H-nnn.',20), result: { type:'string', enum:['supported','contradicted','inconclusive'] }, observed: string('What was observed, with uncertainty.',1200) }, required:['hypothesisId','result','observed'], additionalProperties:false },
+        },
+        screenedOut: {
+          type: 'array', maxItems: 20, description: 'Candidates stopped internally after a negative-hypothesis check. Never counted as a human-rated fail or pass.',
+          items: { type:'object', properties: { hypothesisId: string('Declared negative H-nnn.',20), candidate: string('Candidate label, not fake finished user-facing trial.',300), observedRisk: string('Specific failure risk observed.',700), counterEvidence: string('Positive counterexample and why the risk remains fatal.',700) }, required:['hypothesisId','candidate','observedRisk','counterEvidence'], additionalProperties:false },
         },
         achievements: {
           type: 'array', maxItems: 20,
@@ -308,6 +323,19 @@ const tools = [
               sourceIds: strings('S-nnn the material came from.', 10),
               predictedPass: { type: 'number', minimum: 0, maximum: 1, description: 'Chance the user passes it, stated before showing. Required unless backfill.' },
               predictionNote: string('Why that chance. Older MCP clients use learning:v1:<compact JSON> for the general learning review, or screen:v1:<compact JSON> for the Buzz-specific screen. Each is limited to 600 characters.', 600),
+              negativeReview: {
+                type: 'object', description: 'All dojos: declared failure hypotheses are checked BEFORE user-facing trial submission. Required if the run has negativeTargets; unresolved risks must be screenedOut instead.',
+                properties: { checks: { type:'array', minItems:1, maxItems:8, items: { type:'object', properties: {
+                  hypothesisId: string('Declared negative H-nnn.',20),
+                  rejectedCaseId: string('Actual earlier human fail/partial in this dojo.',20),
+                  acceptedCaseId: string('Actual earlier human pass in this dojo, used as a counterexample.',20),
+                  bodyAnchor: string('Exact 8+ characters from candidate body/label.',160),
+                  observedRisk: string('Strongest failure mechanism that could apply to this candidate.',700),
+                  counterEvidence: string('Why the candidate is not explained by this failure mechanism, citing visible evidence.',700),
+                  decision: { type:'string', enum:['cleared'], description:'Only cleared hypotheses may be submitted; unresolved means screen out internally.' },
+                }, required:['hypothesisId','rejectedCaseId','acceptedCaseId','bodyAnchor','observedRisk','counterEvidence','decision'], additionalProperties:false } } },
+                required:['checks'], additionalProperties:false,
+              },
               learningAudit: {
                 type: 'object',
                 description: 'All dojos: mandatory for new trial submissions when this dojo has 3+ rated samples including a real pass and fail. The server validates these references against human ratings; it cannot independently judge the proposed mechanism. Buzz old screen:v1 has a limited legacy fallback.',
