@@ -855,6 +855,7 @@ function createStore(options) {
         const hypothesis = value(await tx.get(itemRef(id, hypothesisId)));
         if (!hypothesis || hypothesis.kind !== 'hypothesis') throw new Error('Hypothesis not found: ' + hypothesisId);
         if (hypothesis.status !== 'open') throw new Error('Hypothesis ' + hypothesisId + ' is ' + hypothesis.status + '; reopen it with a reason before testing it again.');
+        if (hypothesis.polarity === NEGATIVE) throw new Error('Success targets must be positive; place failure hypotheses in negativeTargets: ' + hypothesisId);
         cleanTargets.push({ hypothesisId, prediction: text(target.prediction, 800, 'target.prediction (what you expect to measure, stated before measuring)', true) });
       }
       const negativeInputs = Array.isArray(input.negativeTargets) ? input.negativeTargets : [];
@@ -1286,6 +1287,7 @@ function createStore(options) {
           const hypothesis = hypotheses.get(hid);
           if (!hypothesis) throw new Error('Hypothesis not found: ' + hid);
           if (!backfill && hypothesis.status !== 'open') throw new Error('Hypothesis ' + hid + ' is ' + hypothesis.status + '; a trial tests open hypotheses.');
+          if (!backfill && hypothesis.polarity === NEGATIVE) throw new Error('trial.hypothesisIds is for positive targets; evaluate negative hypotheses through negativeReview: ' + hid);
         });
         if (!backfill && !hypothesisIds.length) throw new Error('trial.hypothesisIds is required: name the hypothesis this sample tests (register it first with exploration_item_upsert). A sample tied to no hypothesis settles nothing when it is rated.');
         const predicted = raw.predictedPass === undefined || raw.predictedPass === null ? null : Number(raw.predictedPass);
