@@ -227,6 +227,7 @@ function createRegistry(options) {
   const chatSkills = opts.chatSkills || require('./chatContextRegistry');
   const contextStore = opts.contextStore || require('./contextStore');
   const explorationBases = opts.explorationBases || require('./explorationBaseStore');
+  const submarines = opts.submarines || require('./submarineStore');
   const db = () => getDb();
 
   async function listProfiles(input) {
@@ -724,11 +725,12 @@ function createRegistry(options) {
   // dependencies; they need separate structured declarations before use.
   async function dependencyAudit(input) {
     const args = input || {};
-    const [packList, profileList, dojoList, skillList] = await Promise.all([
+    const [packList, profileList, dojoList, skillList, fleetList] = await Promise.all([
       listPacks({ status: 'active', limit: 100, scanLimit: 500 }),
       listProfiles({ status: 'active', limit: 100, scanLimit: 500 }),
       explorationBases.list({ status: 'active' }),
       chatSkills.listSkills(),
+      submarines.list({ status: 'active' }),
     ]);
     const dojos = dojoList.items || [];
     const skills = skillList.items || [];
@@ -814,6 +816,22 @@ function createRegistry(options) {
         if (!skill) warnings.push({ type: 'missing_skill', packId: item.id, skillId: dep.canonicalRef });
       }
     }
+    const fleet = fleetList.items || [];
+    for (const boat of fleet) {
+      nodes.push({ type: 'submarine', id: boat.id, title: boat.title || boat.name || boat.id });
+      for (const gear of boat.loadout || []) {
+        const targetType = gear.kind;
+        if (!['chat_skill', 'intelligence_pack'].includes(targetType)) continue;
+        edges.push({ type: 'carries', from: 'submarine:' + boat.id,
+          to: targetType + ':' + gear.id, role: gear.role || null,
+          dojoId: gear.dojoId || null, resolvedVersion: gear.version || null });
+        const approved = currentRelease(targetType, gear.id);
+        if (approved && gear.dojoId && Number(gear.version) !== approved)
+          warnings.push({ type: 'gear_version_mismatch', submarineId: boat.id,
+            resource: targetType + ':' + gear.id,
+            released: approved, loaded: gear.version || null });
+      }
+    }
     if (args.includeBodyReferences === true) {
       const skillIds = new Set(skillIndex.keys());
       const trained = skills.filter((item) => releaseByTarget.has('chat_skill:' + item.id));
@@ -835,6 +853,7 @@ function createRegistry(options) {
       warnings,
       summary: {
         activeDojos: dojos.length, activePacks: (packList.items || []).length,
+        activeSubmarines: fleet.length,
         availableSkills: skills.length, packsSelectable: offeredPacks.size,
         skillDependencies: edges.filter((item) => item.type === 'uses_skill').length,
         uniqueSkillsInPacks: referenced.size,
