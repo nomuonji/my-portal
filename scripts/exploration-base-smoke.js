@@ -821,6 +821,11 @@ test('provisional images and transient video refs cannot earn a user verdict bef
   assert.equal(recorded.created.length,2);
   const waiting=await store.awaitingTrials({});
   assert.deepEqual(waiting.items.map(x=>x.reviewStatus),['artifact_missing','artifact_temporary']);
+  await store.recordTrials({baseId:'test-base',runId,trials:[{
+    label:'Video thumbnail only',ref:refs[1],imageUrl:'https://cdn.example.com/thumbnail.jpg',
+  }]});
+  assert.equal((await store.awaitingTrials({})).items.find(x=>x.id==='T-002').reviewStatus,
+    'artifact_temporary','video thumbnail cannot stand in for an inaccessible completed video');
   await assert.rejects(store.rateTrials({baseId:'test-base',ratings:[
     {id:'T-001',verdict:'pass',userWords:'合格'}]}),/not reviewable/);
   await assert.rejects(store.rateTrials({baseId:'test-base',ratings:[
