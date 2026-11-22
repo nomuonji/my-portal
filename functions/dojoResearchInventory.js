@@ -75,9 +75,12 @@ function validateResearchSynthesis(raw, inventory) {
   const antithesisId = String(raw.antithesisId || '').trim();
   const thesis = hById.get(thesisId);
   if (!thesis) throw new Error('Research synthesis thesisId must reference a previously inspected hypothesis');
-  if (inventory.hypothesisCount >= 2 && (!hById.has(antithesisId) || thesisId === antithesisId)) {
-    throw new Error('Research synthesis must compare two distinct existing hypotheses (or explicitly inspect a single-hypothesis dojo)');
+  const relationship = String(raw.relationship || (antithesisId ? 'competing' : 'unresolved'));
+  if (!['competing','complementary','unresolved'].includes(relationship)) throw new Error('Research synthesis relationship is invalid');
+  if (antithesisId && (!hById.has(antithesisId) || thesisId === antithesisId)) {
+    throw new Error('Research synthesis contrast must cite a distinct existing hypothesis');
   }
+  if (!antithesisId && relationship !== 'unresolved') throw new Error('Research synthesis requires a real contrasting hypothesis for competing or complementary claims');
   const antithesis = hById.get(antithesisId) || null;
   const thesisAnchor = String(raw.thesisAnchor || '').trim();
   const antithesisAnchor = String(raw.antithesisAnchor || '').trim();
@@ -93,15 +96,25 @@ function validateResearchSynthesis(raw, inventory) {
   const fail = inventory.feedback.filter(f => f.verdict === 'fail' || f.verdict === 'partial');
   const passId = String(raw.passFeedbackId || '').trim();
   const failId = String(raw.failFeedbackId || '').trim();
-  if (pass.length && !pass.some(f => f.id === passId)) throw new Error('Research synthesis needs a real historical accepted feedback ID');
-  if (fail.length && !fail.some(f => f.id === failId)) throw new Error('Research synthesis needs a real historical rejected feedback ID');
+  const accepted = pass.find(f => f.id === passId);
+  const rejected = fail.find(f => f.id === failId);
+  if (pass.length && !accepted) throw new Error('Research synthesis needs a real historical accepted feedback ID');
+  if (fail.length && !rejected) throw new Error('Research synthesis needs a real historical rejected feedback ID');
+  for (const [caseKind, entry] of [['accepted', accepted], ['rejected', rejected]]) {
+    if (!entry || !entry.userWords || entry.userWords.length < 2) continue;
+    const key = caseKind === 'accepted' ? 'passFeedbackAnchor' : 'failFeedbackAnchor';
+    const anchor = String(raw[key] || '').trim();
+    if (anchor.length < 2 || anchor.length > 160 || !entry.userWords.includes(anchor)) {
+      throw new Error('Research synthesis ' + key + ' must quote the actual human feedback words');
+    }
+  }
   const action = String(raw.action || '');
   if (!['revise','synthesize','retain','retire'].includes(action)) throw new Error('Research synthesis action is invalid');
   return {
-    thesisId, antithesisId:antithesis?.id || null,
+    thesisId, antithesisId:antithesis?.id || null, relationship,
     thesisAnchor, antithesisAnchor:antithesis?.id?antithesisAnchor:null,
-    passFeedbackId:pass.length?passId:null,
-    failFeedbackId:fail.length?failId:null,
+    passFeedbackId:pass.length?passId:null, passFeedbackAnchor:accepted ? String(raw.passFeedbackAnchor||'').trim() : null,
+    failFeedbackId:fail.length?failId:null, failFeedbackAnchor:rejected ? String(raw.failFeedbackAnchor||'').trim() : null,
     action,
     tension:form('tension'),
     proposedClaim:form('proposedClaim'),
