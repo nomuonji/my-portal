@@ -418,10 +418,32 @@ export function LoopPanel({ loop, baseId, onRate, onRateBatch, busyId }) {
         </Stack>
       ))}
       {calibration && (
-        <Typography sx={{ fontSize: 12.5, color: V.muted, mt: 1 }}>
-          AI予測の的中率 {percent(calibration.hitRate)}（本人評価のある{calibration.predicted}件）。
-          これは提出前の選別率や実際の売上・再生数ではありません。高い的中率だけで制作品質向上とは判断しません。
-        </Typography>
+        <Box sx={{ mt: 1.5, px: 1.5, py: 1.1, border: '1px solid ' + V.rule, borderRadius: 1.5 }}>
+          <Typography sx={{ fontSize: 13, fontWeight: 800, mb: 0.4 }}>AIの事前予測を検証</Typography>
+          <Typography sx={{ fontSize: 12.5, color: V.muted, lineHeight: 1.7 }}>
+            本人評価 {calibration.predicted}件。的中率 {percent(calibration.hitRate)} ／
+            単純な多数派予測でも {percent(calibration.baselineHitRate)}。
+            Brier誤差 {calibration.brier?.toFixed(3)}（小さいほど良い）／
+            全履歴の合格率だけを使う同一標本の参考値 {calibration.inSampleBaseRateBrier?.toFixed(3)}。
+          </Typography>
+          <Typography sx={{ fontSize: 12.5, color: V.muted, lineHeight: 1.7 }}>
+            合格すると予測した {calibration.positiveCalls}件のうち正解 {calibration.truePositive}件、
+            誤判定 {calibration.falsePositive}件。{calibration.positiveCalls
+              ? '合格予測の適中率 ' + percent(calibration.precision) + '。'
+              : '合格予測は0件のため、合格作の選別性能は未検証。'}
+            {calibration.predictiveStatus === 'no_better_than_base_rate'
+              ? ' この標本では単純基準より予測誤差が大きい。'
+              : calibration.predictiveStatus === 'no_pass_examples'
+                ? ' 合格例がないため良作の識別性能は測定できない。'
+                : calibration.predictiveStatus === 'too_few'
+                  ? ' 件数が少なく一般化できない。'
+                  : ''}
+          </Typography>
+          <Typography sx={{ fontSize: 11.5, color: V.faint }}>
+            同一標本の基準値は事後的な比較で、将来の予測精度や合格率向上の証明ではありません。
+            惜しいは合格予測の判定上は不合格に含みます。売上・再生数の測定とも別です。
+          </Typography>
+        </Box>
       )}
       {refinement && (
         <Box sx={{ mt: 1.5, px: 1.5, py: 1.3, border: '1px solid ' + V.rule, borderRadius: 1.5 }}>
@@ -694,6 +716,73 @@ function BaseDetail({ detail, onDecide, busy, onRate, onRateBatch, busyId }) {
 }
 
 // ---- List -------------------------------------------------------------------
+
+// Live evidence radar: observations are never substituted with AI predictions.
+// Derived from the same cached dojo/loop records that the list renders.
+function DojoEvidenceRadar({ items, awaiting, onOpen }) {
+  const [expanded, setExpanded] = useState(false);
+  const waitingIds = new Map();
+  (awaiting || []).forEach(item => waitingIds.set(item.baseId, (waitingIds.get(item.baseId) || 0) + 1));
+  const rows = (items || []).map(item => {
+    const loop = item.loop || {};
+    const rated = loop.currentRated || 0;
+    const waiting = waitingIds.get(item.id) || 0;
+    const historical = loop.rated || 0;
+    const prior = loop.previousPassRate;
+    const current = loop.currentPassRate;
+    const lower = rated >= 3 && Number.isFinite(prior)
+      && Number.isFinite(current) && current < prior;
+    const status = waiting > 0 ? '本人評価待ち' :
+      lower ? '前版より低下（要比較）' :
+      rated === 0 ? (historical > 0 ? '新版は未評価' : '成果・評価の観測なし') :
+      rated < 3 ? '現行版は少数評価' : '現行版の評価あり';
+    const priority = waiting ? 0 : lower ? 1 : rated === 0 ? 2 : rated < 3 ? 3 : 4;
+    return { id:item.id, title:item.title, status, priority, waiting,
+      currentRate:rated?current:null, currentRated:rated, historical,
+      priorRate:prior, target:item.target };
+  }).sort((a,b)=>a.priority-b.priority || a.currentRated-b.currentRated || a.title.localeCompare(b.title,'ja'));
+  const waitingCount=rows.filter(row=>row.waiting).length;
+  const unmeasured=rows.filter(row=>row.currentRated===0).length;
+  const down=rows.filter(row=>row.priority===1).length;
+  return (
+    <Box sx={{borderTop:'1px solid '+V.rule,borderBottom:'1px solid '+V.rule,py:2,my:2}}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
+        <Box>
+          <Typography sx={{fontWeight:850,fontSize:15.5}}>全道場の品質検証状況</Typography>
+          <Typography sx={{fontSize:12.5,color:V.muted}}>
+            {rows.length}道場 · 本人評価待ち {waitingCount}道場 · 現行版0件 {unmeasured}道場 · 前版との低下 {down}道場
+          </Typography>
+        </Box>
+        <Button size="small" variant="text" onClick={()=>setExpanded(x=>!x)}>
+          {expanded?'閉じる':'全件を確認'}
+        </Button>
+      </Stack>
+      <Typography sx={{fontSize:11.5,color:V.faint,mt:0.6}}>
+        表示は版別の本人採否だけです。サーバー実行・素材取得・AI自己判定・過去版の合格は現行版の成果に加算しません。
+      </Typography>
+      <Collapse in={expanded}>
+        <Box sx={{mt:1.2}}>
+          {rows.map(row=>(
+            <Box key={row.id} component="button" type="button" onClick={()=>onOpen(row.id)}
+              sx={{all:'unset',width:'100%',cursor:'pointer',display:'flex',
+                justifyContent:'space-between',gap:1.5,py:1.2,borderBottom:'1px solid '+V.rule,
+                '&:hover':{background:V.accentSoft}}}>
+              <Box sx={{minWidth:0}}>
+                <Typography sx={{fontSize:13.5,fontWeight:700}}>{row.title}</Typography>
+                <Typography sx={{fontSize:12,color:V.muted}}>{row.status}
+                  {row.waiting>0?'（'+row.waiting+'件）':''}
+                </Typography>
+              </Box>
+              <Typography sx={{fontSize:12.5,color:V.muted,textAlign:'right',whiteSpace:'nowrap'}}>
+                {row.currentRated ? percent(row.currentRate)+' / '+row.currentRated+'件':'現行版未評価'}
+              </Typography>
+            </Box>
+          ))}
+        </Box>
+      </Collapse>
+    </Box>
+  );
+}
 
 function BaseList({ items, onOpen }) {
   if (!items.length) return <Quiet>まだ道場はありません。</Quiet>;
@@ -1026,6 +1115,7 @@ export default function ExplorationBases() {
                 <RateTrials items={awaiting} onRate={rate} onRateBatch={rateBatch} busyId={ratingKey} showBase />
               </Box>
             )}
+            <DojoEvidenceRadar items={items} awaiting={awaiting} onOpen={open} />
             <BaseList items={items} onOpen={open} />
           </>
         ) : detailLoading && !detail ? (

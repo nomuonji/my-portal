@@ -73,13 +73,8 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
   // The version to beat: the most recently rated earlier version with enough ratings to compare.
   const previous = byVersion.find((g) => !g.released && g.rated >= LIMITS.minRatedPerVersion) || null;
 
-  const predicted = entries.filter((e) => e.predictedPass !== null);
-  const hits = predicted.filter((e) => (e.predictedPass >= 0.5) === (e.verdict === 'pass')).length;
-  const calibration = predicted.length ? {
-    predicted: predicted.length, hitRate: round(hits / predicted.length),
-    meanPredictedPass: round(predicted.reduce((sum, e) => sum + e.predictedPass, 0) / predicted.length),
-    actualPassRate: rateOf(predicted.filter((e) => e.verdict === 'pass').length, predicted.length),
-  } : null;
+  const { measureCalibration } = require('./dojoCalibration');
+  const calibration = measureCalibration(entries);
 
   // End-to-end efficiency, kept distinct from author self-scores:
   // candidate ideas screened internally vs ideas shown vs actual user passes.
