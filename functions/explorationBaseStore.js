@@ -968,6 +968,28 @@ function createStore(options) {
           item.id = seqId(prefix, base.counters[prefix]);
           item.baseId = id;
         }
+        // The dialectical research record must have a visible consequence in
+        // the hypothesis ledger when it explicitly proposes changing a theory.
+        // Revisions remain provisional until separately tested by the user.
+        if (kind === 'hypothesis' && run?.researchReview?.status === 'synthesized') {
+          const review = run.researchReview;
+          const theoryAction = review.synthesis.action;
+          const substantive = !prior || ['title','statement','mechanism','limits','status','polarity'].some(k =>
+            raw[k] !== undefined && raw[k] !== prior?.[k]);
+          const isApplicable = (theoryAction === 'synthesize' && !prior)
+            || (theoryAction === 'revise' && prior?.id === review.synthesis.thesisId && substantive)
+            || (theoryAction === 'retire' && prior?.id === review.synthesis.thesisId
+              && ['retired','rejected'].includes(item.status));
+          if (isApplicable) {
+            item.researchLineage = [...(item.researchLineage || []), {
+              runId, action: theoryAction, priorHypothesisIds:[review.synthesis.thesisId, review.synthesis.antithesisId].filter(Boolean),
+              comparedFeedbackIds:[review.synthesis.passFeedbackId, review.synthesis.failFeedbackId].filter(Boolean),
+              relation:review.synthesis.relationship, claimedAt:now(), evidenceStatus:'agent_hypothesis_unverified',
+            }].slice(-12);
+            review.appliedHypothesisIds = [...new Set([...(review.appliedHypothesisIds || []), item.id])];
+            run.researchReview = review;
+          }
+        }
         item.updatedAt = now();
         put(tx, itemRef(id, item.id), item);
         pushEvent(tx, base, {
@@ -1216,6 +1238,16 @@ function createStore(options) {
         verdicts: verdicts.map((v) => v.hypothesisId + ':' + v.result), negativeVerdicts: negativeVerdicts.map((v) => v.hypothesisId + ':' + v.result), screenedOutUnverifiedCount: screenedOut.length,
         achievementIds: finished.achievementIds, yieldCount: yieldRefs.length,
         failureAnalysisRecorded: Boolean(failureAnalysis),
+        researchSynthesis: run.researchReview?.status === 'synthesized' ? {
+          thesisId:run.researchReview.synthesis.thesisId,
+          antithesisId:run.researchReview.synthesis.antithesisId,
+          relation:run.researchReview.synthesis.relationship,
+          action:run.researchReview.synthesis.action,
+          appliedHypothesisIds:run.researchReview.appliedHypothesisIds || [],
+          proposedClaim:run.researchReview.synthesis.proposedClaim.slice(0,400),
+          pendingApplication:['synthesize','revise','retire'].includes(run.researchReview.synthesis.action)
+            && !(run.researchReview.appliedHypothesisIds || []).length,
+        } : null,
         nextStep: finished.nextStep,
       };
       base.lastRuns = [summary, ...(base.lastRuns || [])].slice(0, 5);
@@ -1490,7 +1522,8 @@ function createStore(options) {
         });
         if (!backfill && !hypothesisIds.length) throw new Error('trial.hypothesisIds is required: name the hypothesis this sample tests (register it first with exploration_item_upsert). A sample tied to no hypothesis settles nothing when it is rated.');
         if (!backfill && run?.recallProbe?.status === 'passed' && (run.recallProbe.hypothesisIds || []).length
-          && !hypothesisIds.some(hid => run.recallProbe.hypothesisIds.includes(hid))) {
+          && !hypothesisIds.some(hid => run.recallProbe.hypothesisIds.includes(hid))
+          && !hypothesisIds.some(hid => (run.researchReview?.appliedHypothesisIds || []).includes(hid))) {
           throw new Error('The recalled casebook does not cover any hypothesis tested by this trial; open a matching research run');
         }
         const predicted = raw.predictedPass === undefined || raw.predictedPass === null ? null : Number(raw.predictedPass);
@@ -1520,6 +1553,20 @@ function createStore(options) {
         // diagnostic errors. A valid candidate still cannot be saved without
         // the exhaustive research review of every earlier hypothesis and user
         // feedback. New human feedback after synthesis invalidates the review.
+        if (!backfill && run?.researchReview?.status === 'synthesized'
+          && ['synthesize','revise','retire'].includes(run.researchReview.synthesis?.action)) {
+          const action = run.researchReview.synthesis.action;
+          const applied = run.researchReview.appliedHypothesisIds || [];
+          if (!applied.length) {
+            throw new Error('Research synthesis action ' + action + ' must be applied to the hypothesis ledger via exploration_item_upsert before registering a new trial');
+          }
+          if (action === 'synthesize' && !hypothesisIds.some(hid => applied.includes(hid))) {
+            throw new Error('Trial must test a derived hypothesis registered from the research synthesis');
+          }
+          if (action === 'revise' && !hypothesisIds.includes(run.researchReview.synthesis.thesisId)) {
+            throw new Error('Trial must test the revised historical thesis, not an unrelated hypothesis');
+          }
+        }
         if (!backfill && base.outcome?.confirmedBy !== 'measurement'
           && (existing.some(t => t.status === 'rated' && t.verdict !== 'withdrawn')
             || (base.feedbackLog || []).some(f => f.decision === 'confirmed' || f.decision === 'declined'))) {
