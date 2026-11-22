@@ -11,8 +11,9 @@ const CHALLENGE_PER_CLASS = 2;
 
 function sourceCases(trials = [], feedbackLog = []) {
   return evidenceCases(trials, feedbackLog).filter(c =>
-    (c.verdict === 'pass' || c.verdict === 'fail')
-    && (c.body || c.label).trim().length >= 8);
+    c.evidenceKind === 'user_trial'
+    && (c.verdict === 'pass' || c.verdict === 'fail')
+    && typeof c.body === 'string' && c.body.trim().length >= 8);
 }
 
 function recallRequired(trials = [], feedbackLog = []) {
