@@ -187,7 +187,7 @@ const tools = [
   },
   {
     name: 'exploration_run_start',
-    description: 'Open an exploration run and pin its method. Test success and failure hypotheses in parallel: targets plus negativeTargets. Optional crossDojoEvidence validates a real user-rated source-dojo pass/fail pair and stores the unproven transfer mechanism with a controlled receiver experimentDesign. Receiver pass/fail remains exclusively based on its own later human feedback. Prefer responseMode=compact after loading the base.',
+    description: 'Open an exploration run and pin its method. Test success and failure hypotheses in parallel: targets plus negativeTargets (the server auto-pins one open failure hypothesis for positive runs when omitted). Optional crossDojoEvidence validates a real user-rated source-dojo pass/fail pair and stores the unproven transfer mechanism with a controlled receiver experimentDesign. Receiver pass/fail remains exclusively based on its own later human feedback. Prefer responseMode=compact after loading the base.',
     inputSchema: {
       type: 'object',
       properties: {

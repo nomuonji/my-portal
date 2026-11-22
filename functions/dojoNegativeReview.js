@@ -18,6 +18,21 @@ function priorCase(trials, id, verdict, field) {
   ));
   if (!candidate) throw new Error(field + ' must cite a real ' + (verdict === 'pass' ? 'human-accepted' : 'human-rejected') + ' case in the same dojo: ' + id);
 }
+// New runs implicitly pair one relevant failure mechanism with a positive target.
+// The agent may override it by explicitly naming its negativeTargets, or by using
+// one of the contrasted failure hypotheses in experimentDesign. Selection is
+// deterministic, bounded to one arm and independent of any human pass-rate data.
+function selectAutomaticNegativeTarget(items = [], changedStage, runCount = 0) {
+  const open = items.filter(item => isNegative(item) && item.status === 'open')
+    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  if (!open.length) return null;
+  const matching = changedStage ? open.filter(item => item.pipelineStage === changedStage) : [];
+  const pool = matching.length ? matching : open;
+  const index = Math.max(0, Math.trunc(Number(runCount) || 0)) % pool.length;
+  const selected = pool[index];
+  return { hypothesisId: selected.id,
+    prediction: str(selected.statement, 800, 'automatic negative prediction') };
+}
 function checkNegativeTargets(rawTargets, hypotheses) {
   if (rawTargets === undefined) return [];
   if (!Array.isArray(rawTargets) || rawTargets.length > 6) throw new Error('negativeTargets must be an array of at most 6');
@@ -31,7 +46,7 @@ function checkNegativeTargets(rawTargets, hypotheses) {
     return { hypothesisId: hid, prediction: str(raw.prediction, 800, 'negativeTargets.prediction') };
   });
 }
-function checkNegativeReview(raw, { negativeTargets, hypotheses, trials, body }) {
+function checkNegativeReview(raw, { negativeTargets, hypotheses, trials, body, allowLimitedAuto = false }) {
   const targets = negativeTargets || [];
   if (!targets.length && (raw === undefined || raw === null)) return null; // Backward-compatible existing runs.
   if (!targets.length) throw new Error('negativeReview requires negativeTargets on the open run');
@@ -40,7 +55,8 @@ function checkNegativeReview(raw, { negativeTargets, hypotheses, trials, body })
     const hasFail = (trials || []).some(t => t.status === 'rated' && ['fail', 'partial'].includes(t.verdict));
     // Cold-start/measurement dojos do not have a human positive/negative pair yet.
     // Do not fabricate comparator IDs or turn off exploration; keep it explicitly unverified.
-    if (!hasPass || !hasFail) return { status: 'insufficient_human_contrast', checks: [] };
+    const totalRated = (trials || []).filter(t => t.status === 'rated' && t.verdict !== 'withdrawn').length;
+    if (!hasPass || !hasFail || (allowLimitedAuto && totalRated < 3)) return { status: 'insufficient_human_contrast', checks: [] };
   }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('negativeReview is required for runs testing negative hypotheses');
   const checks = raw.checks;
@@ -130,4 +146,4 @@ function negativeLearning(trials = [], base = {}, hypotheses = []) {
     note:'Internal rejections are not human fails; a cleared candidate later rejected by the user is a negative-gate false negative, not a success.',
   };
 }
-module.exports = { POSITIVE, NEGATIVE, isNegative, checkNegativeTargets, checkNegativeReview, checkScreenedOut, negativeLearning, legacyNegativeReviewFromAudit };
+module.exports = { POSITIVE, NEGATIVE, isNegative, checkNegativeTargets, checkNegativeReview, checkScreenedOut, negativeLearning, legacyNegativeReviewFromAudit, selectAutomaticNegativeTarget };

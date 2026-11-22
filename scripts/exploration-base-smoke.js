@@ -977,3 +977,39 @@ test('a dojo with no accepted cases can research a failure hypothesis without fa
   assert.equal(d.loop.negativeLearning.reviewed, 0, 'missing comparators must not be counted as a real review');
   assert.equal(d.loop.negativeLearning.insufficientHumanContrast, 1);
 });
+
+test('all dojos automatically precommit one failure hypothesis even when an old agent omits the new fields', async () => {
+  const store = await setup();
+  await store.upsertItems({ baseId: 'test-base', kind: 'hypothesis', items: [
+    { ...hypothesis, title: 'Positive candidate mechanism' },
+    { ...hypothesis, title: 'Generic result failure', statement: 'Generic results fail to be useful.', reason: '[polarity:negative] A real but untested failure condition.', pipelineStage: 'selection' },
+    { ...hypothesis, title: 'Weak presentation failure', statement: 'Weak presentation cannot show a distinctive example.', reason: '[polarity:negative] Independent failure condition.', pipelineStage: 'gate' },
+  ] });
+  const first = await store.startRun({ baseId: 'test-base', objective: 'Automatic paired learning on a new candidate',
+    targets: [{ hypothesisId: 'H-001', prediction: 'A specific candidate gets accepted.' }], responseMode: 'compact' });
+  assert.equal(first.negativeTargetCount, 1);
+  assert.equal(first.negativeTargetOrigin, 'automatic');
+  const made = await store.recordTrials({ baseId: 'test-base', runId: first.runId, trials: [{
+    label: 'Unverified early sample', body: 'Concrete artifact for a domain that has no human comparator yet.',
+    hypothesisIds: ['H-001'], predictedPass: 0.45,
+  }] });
+  assert.equal(made.created.length, 1, 'auto-enrollment must not freeze a cold-start dojo');
+  const closed = await store.finishRun({ baseId: 'test-base', runId: first.runId,
+    summary: 'Research without sufficient human samples; no user rating is invented.',
+    verdicts: [{ hypothesisId: 'H-001', result: 'inconclusive', observed: 'The human has not rated this trial.' }],
+    responseMode: 'compact' });
+  assert.deepEqual(closed.run.negativeVerdicts, ['H-002:inconclusive'], 'an automatic target cannot silently become supported');
+  const next = await store.startRun({ baseId: 'test-base', objective: 'A separate next trial rotates the failure arm',
+    targets: [{ hypothesisId: 'H-001', prediction: 'Another candidate may succeed.' }], responseMode: 'compact' });
+  assert.equal(next.negativeTargetOrigin, 'automatic');
+  await store.finishRun({ baseId: 'test-base', runId: next.runId,
+    summary: 'No further data yet, second negative arm stays inconclusive.',
+    verdicts: [{ hypothesisId: 'H-001', result: 'inconclusive', observed: 'No new user observation.' }],
+    notMovedReason: 'The next source has not been checked; no new trial or evidence to claim yet.',
+    responseMode: 'compact' });
+  const finished = await store.get({ id: 'test-base', view: 'full' });
+  assert.equal(finished.loop.negativeLearning.negativeHypotheses, 2);
+  assert.equal(finished.loop.negativeLearning.insufficientHumanContrast, 1);
+  assert.equal(finished.loop.negativeLearning.reviewed, 0);
+  assert.equal(finished.loop.overall.rated, 0);
+});
