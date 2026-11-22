@@ -466,13 +466,18 @@ function createStore(options) {
       const run = value(await tx.get(runRef(id, runId)));
       if (!run || run.status !== 'open') throw new Error('Recall requires an open run');
       if (run.recallProbe) throw new Error('Recall already prepared for this run; use its first challenge or start a new research run');
-      const probe = buildRecallProbe(trials, base.feedbackLog || [], topic, hypothesisIds);
+      const pinnedIds = (run.targets || []).map(target => target.hypothesisId);
+      if (pinnedIds.length && hypothesisIds.some(hid => !pinnedIds.includes(hid))) {
+        throw new Error('Recall hypotheses must be pinned in the open run; agents may not choose an unrelated easy casebook');
+      }
+      const relevanceIds = pinnedIds.length ? pinnedIds : hypothesisIds;
+      const probe = buildRecallProbe(trials, base.feedbackLog || [], topic, relevanceIds);
       if (!probe.required || base.outcome?.confirmedBy === 'measurement') {
         payload = { required: false, reason: 'insufficient_human_contrast_or_measurement', runId };
         return;
       }
       run.recallProbe = {
-        required: true, status: 'awaiting_predictions', issuedAt: now(), topic, hypothesisIds,
+        required: true, status: 'awaiting_predictions', issuedAt: now(), topic, hypothesisIds: relevanceIds,
         studyCaseIds: probe.studyCaseIds, challengeCaseIds: probe.challengeCaseIds,
       };
       put(tx, runRef(id, runId), run);
@@ -1410,6 +1415,10 @@ function createStore(options) {
           }
         });
         if (!backfill && !hypothesisIds.length) throw new Error('trial.hypothesisIds is required: name the hypothesis this sample tests (register it first with exploration_item_upsert). A sample tied to no hypothesis settles nothing when it is rated.');
+        if (!backfill && run?.recallProbe?.status === 'passed' && (run.recallProbe.hypothesisIds || []).length
+          && !hypothesisIds.some(hid => run.recallProbe.hypothesisIds.includes(hid))) {
+          throw new Error('The recalled casebook does not cover any hypothesis tested by this trial; open a matching research run');
+        }
         const predicted = raw.predictedPass === undefined || raw.predictedPass === null ? null : Number(raw.predictedPass);
         if (predicted !== null && !(predicted >= 0 && predicted <= 1)) throw new Error('trial.predictedPass must be between 0 and 1');
         if (!backfill && predicted === null) throw new Error('trial.predictedPass is required: the chance (0-1) that the user passes this sample, stated before they see it.');
