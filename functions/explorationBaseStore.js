@@ -474,6 +474,14 @@ function createStore(options) {
     if(!base)throw new Error('Exploration Base not found: '+id);
     const graph=projectGraph({base,items,trials,feedbackLog:base.feedbackLog||[],
       relations:edgeSnap.docs.map(doc=>doc.data()),view});
+    graph.stewardship.feedbackReview={
+      pendingTrialIds:base.treeMaintenance?.pendingTrialIds||[],
+      touchedHypothesisIds:base.treeMaintenance?.touchedHypothesisIds||[],
+      pendingCount:(base.treeMaintenance?.pendingTrialIds||[]).length,
+      overflowCount:base.treeMaintenance?.overflowCount||0,
+      lastReviewedRunId:base.treeMaintenance?.lastReviewedRunId||null,
+      status:(base.treeMaintenance?.pendingTrialIds||[]).length?'needs_hypothesis_tree_review':'up_to_date',
+    };
     const proposals=ruleSnap.docs.map(doc=>doc.data());
     graph.skillRules={status:'candidate_rule_mapping',rules:proposals.map(p=>({
       id:p.id,sourceRuleId:p.sourceRuleId,action:p.action,moduleId:p.moduleId,
@@ -614,7 +622,38 @@ function createStore(options) {
       const inventory = buildResearchInventory(items, trials, base.feedbackLog || [], runDocs.docs.map(doc => doc.data()));
       if (run.researchReview.digest !== inventory.hash) throw new Error('Historical evidence changed after reading; restart research review');
       const synthesis = validateResearchSynthesis(input?.synthesis, inventory);
+      const pending=base.treeMaintenance?.pendingTrialIds||[];
+      const touched=base.treeMaintenance?.touchedHypothesisIds||[];
+      let treeReview=null;
+      if(pending.length){
+        const supplied=plain(input?.treeReview,'treeReview (review every newly rated example and its affected hypothesis)');
+        const ids=list(supplied.reviewedTrialIds,120,20);
+        if(ids.length!==pending.length||pending.some(id=>!ids.includes(id)))
+          throw Error('Review all newly human-rated T-nnn cases before proceeding; treeReview.reviewedTrialIds must cover pending trials');
+        const entries=new Map(inventory.feedback.map(f=>[f.id,f]));
+        if(ids.some(id=>!entries.has(id)))throw Error('Tree review includes an unknown human-rated trial');
+        const decisions=Array.isArray(supplied.branchDecisions)?supplied.branchDecisions:[];
+        const idsSeen=new Set();
+        for(const rawDecision of decisions){
+          const d=plain(rawDecision,'treeReview.branchDecision');
+          const hid=text(d.hypothesisId,20,'branchDecision.hypothesisId',true);
+          if(!touched.includes(hid)||idsSeen.has(hid))throw Error('Tree review must classify each affected hypothesis exactly once');
+          idsSeen.add(hid);
+          oneOf(d.action,['retain','refine','split','merge_candidate','retire','unresolved'],'branchDecision.action');
+          if(text(d.rationale,900,'branchDecision.rationale',true).length<30
+            ||text(d.nextFalsification,900,'branchDecision.nextFalsification',true).length<25)
+            throw Error('Tree review needs a concrete rationale and refuting experiment for every affected hypothesis');
+        }
+        if(touched.some(id=>!idsSeen.has(id)))throw Error('Tree review is missing affected hypothesis branches');
+        if(text(supplied.crossBranchSummary,1500,'treeReview.crossBranchSummary',true).length<40)
+          throw Error('Tree review needs a cross-branch comparison, not just a verdict recap');
+        treeReview={reviewedTrialIds:ids,branchDecisions:decisions,crossBranchSummary:supplied.crossBranchSummary};
+        base.treeMaintenance={pendingTrialIds:[],touchedHypothesisIds:[],
+          overflowCount:0,lastReviewedAt:now(),lastReviewedRunId:runId};
+        saveBase(tx,base);
+      }
       run.researchReview = { ...run.researchReview, status:'synthesized', synthesizedAt:now(),
+        treeReview,
         feedbackDigest:inventory.feedbackDigest, synthesis };
       put(tx, runRef(id, runId), run);
       result = { baseId:id, runId, status:'synthesized', inventoryDigest:inventory.hash,
@@ -1834,6 +1873,19 @@ function createStore(options) {
         rated.push({ id: trial.id, label: trial.label, verdict: rating.verdict, version: trial.version, hypothesisIds: trial.hypothesisIds || [] });
       });
       touched.forEach((item, hid) => { if (item) put(tx, itemRef(id, hid), item); });
+      // A real human verdict creates a maintenance obligation. The next
+      // research synthesis cannot silently skip the latest feedback or its
+      // affected branches, even when an unrelated old pass/fail pair is cited.
+      const previous=base.treeMaintenance||{};
+      const pending=[...new Set([...(previous.pendingTrialIds||[]),
+        ...rated.filter(t=>t.verdict!=='withdrawn').map(t=>t.id)])];
+      base.treeMaintenance={...previous,
+        pendingTrialIds:pending.slice(-120),
+        touchedHypothesisIds:[...new Set([...(previous.touchedHypothesisIds||[]),
+          ...rated.filter(t=>t.verdict!=='withdrawn').flatMap(t=>t.hypothesisIds||[])])].slice(-120),
+        overflowCount:(previous.overflowCount||0)+Math.max(0,pending.length-120),
+        updatedAt:now(),
+      };
       pushEvent(tx, base, { type: 'trials_rated', actor: input.actor, summary: rated.map((t) => t.id + ':' + t.verdict).join(', '), detail: { rated } });
       saveBase(tx, base);
     });
