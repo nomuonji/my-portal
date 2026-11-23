@@ -355,7 +355,7 @@ const tools = [
   },
   {
     name:'exploration_research_synthesize',
-    description:'After ALL hypothesis/feedback pages are read, register a dialectical proposal: cite a real prior thesis and competing hypothesis (if at least 2 exist), quote their actual claims, cite real human pass and fail feedback, explain tension, propose a testable synthesis/revision and its falsifying observation. Required before existing recall tests and trial recording. Does not itself change hypotheses or certify user acceptance.',
+    description:'After ALL hypothesis/feedback pages are read, register a dialectical proposal and, if new human ratings await maintenance, treeReview must cover all rated cases and every touched hypothesis branch. Then it can propose refinements, splits, or merges; all agent interpretations remain hypotheses. Prior flow: cite a real prior thesis and competing hypothesis (if at least 2 exist), quote their actual claims, cite real human pass and fail feedback, explain tension, propose a testable synthesis/revision and its falsifying observation. Required before existing recall tests and trial recording. Does not itself change hypotheses or certify user acceptance.',
     inputSchema: { type:'object', properties: {
       baseId,runId:string('Open run ID with completed research reading.',20),
       synthesis:{type:'object',properties:{
@@ -374,6 +374,16 @@ const tools = [
         comparison:string('Observable contrast/controls and how the alternative explanations would be distinguished.',1200),
         falsification:string('What future observation or human response would specifically refute the proposal.',1200),
       },required:['thesisId','thesisAnchor','tension','proposedClaim','comparison','falsification','action'],additionalProperties:false},
+      treeReview:{type:'object',description:'Required whenever new user-rated Trials exist since the last tree synthesis; reconcile every newly affected hypothesis branch before new output.',properties:{
+        reviewedTrialIds:strings('ALL pending newly human-rated T-nnn IDs exposed by graph.stewardship.feedbackReview (max 120).',120),
+        crossBranchSummary:string('How the latest real feedback changes the relation among branches, rather than only restating verdicts (40-1500 chars).',1500),
+        branchDecisions:{type:'array',minItems:1,maxItems:120,items:{type:'object',properties:{
+          hypothesisId:string('One affected H-nnn ID; each affected branch must be reviewed once.',20),
+          action:{type:'string',enum:['retain','refine','split','merge_candidate','retire','unresolved']},
+          rationale:string('Compare actual human feedback with the hypothesis; do not assert an unknown rejection cause as fact (30-900 chars).',900),
+          nextFalsification:string('Specific new test or observation that could refute the chosen next action (25-900 chars).',900),
+        },required:['hypothesisId','action','rationale','nextFalsification'],additionalProperties:false}},
+      },required:['reviewedTrialIds','crossBranchSummary','branchDecisions'],additionalProperties:false},
     },required:['baseId','runId','synthesis'],additionalProperties:false},
   },
   {
