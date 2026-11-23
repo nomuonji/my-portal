@@ -192,7 +192,8 @@ export default async (request: Request) => {
         targetBaseId: url.searchParams.get("id") || "",
         limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 5, 1), 10),
       }));
-      if (resource === "exploration_bases") return json(await explorationBaseStore.list({ status: url.searchParams.get("status") || undefined }));
+      if (resource === "exploration_skill_graph") return json(await explorationBaseStore.graphGet({baseId:url.searchParams.get("id")||"",view:url.searchParams.get("view")==="full"?"full":"summary"}));
+    if (resource === "exploration_bases") return json(await explorationBaseStore.list({ status: url.searchParams.get("status") || undefined }));
       if (resource === "exploration_base") return json(await explorationBaseStore.get({
         id: url.searchParams.get("id") || "",
         view: "full",
