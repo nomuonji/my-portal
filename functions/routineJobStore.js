@@ -6,6 +6,10 @@ const JOBS = 'memos/agent-control/routineJobs';
 const RUNS = 'memos/agent-control/routineJobRuns';
 const DATABASE = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const MAX_WINDOW_MINUTES = 120;
+// ChatGPT Scheduled Tasks can wake several minutes before the nominal JST slot.
+// Accept the same slotKey just before the slot; the persisted run ID still
+// prevents duplicate execution after the scheduled minute arrives.
+const EARLY_WAKE_GRACE_MINUTES = 10;
 const RUNNER_SLOTS = Object.freeze(['04:30','08:30','10:30','14:30','16:30','20:30']);
 const MAX_JOBS_PER_TICK = 3;
 const PRIORITIES = Object.freeze({critical:0,normal:1,background:2});
@@ -120,7 +124,7 @@ function candidate(job, local) {
   const slot = (job.slots || []).filter((value) => {
     const [h, m] = value.split(':').map(Number);
     const offset = local.minute - (h * 60 + m);
-    return offset >= 0 && offset < MAX_WINDOW_MINUTES;
+    return offset >= -EARLY_WAKE_GRACE_MINUTES && offset < MAX_WINDOW_MINUTES;
   }).sort().pop();
   if (!slot) return null;
   return { slotKey: local.day + '@' + slot, runId: job.id + '--' + local.day.replace(/-/g, '') + '--' + slot.replace(':', '') };
@@ -211,4 +215,4 @@ async function remove(input = {}) {
   await ref.delete();
   return { id, title: job.title, preservedRunHistory: history.docs.length, deleted: true };
 }
-module.exports = { list, upsert, remove, due, claim, finish, runs, RUNNER_SLOTS, MAX_JOBS_PER_TICK, candidate, validateSlots, validateCapacity, slotLoadsFor, jst };
+module.exports = { list, upsert, remove, due, claim, finish, runs, RUNNER_SLOTS, MAX_JOBS_PER_TICK, EARLY_WAKE_GRACE_MINUTES, candidate, validateSlots, validateCapacity, slotLoadsFor, jst };
