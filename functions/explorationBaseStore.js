@@ -1819,20 +1819,21 @@ function createStore(options) {
     if ((Number(base.revision) || 0) !== expectedRevision) throw new Error('Exploration Base revision conflict; reload before deleting');
     if (base.status !== 'closed') throw new Error('Only closed Exploration Bases can be permanently deleted');
     if (base.openRunId) throw new Error('Cannot delete an Exploration Base with an open run: ' + base.openRunId);
-    const [items, runs, events, trialDocs] = await Promise.all([
+    const [items, runs, events, trialDocs, edgeDocs] = await Promise.all([
       database.collection(COLLECTIONS.items).where('baseId', '==', id).limit(1001).get(),
       database.collection(COLLECTIONS.runs).where('baseId', '==', id).limit(501).get(),
       database.collection(COLLECTIONS.events).where('baseId', '==', id).limit(2001).get(),
       database.collection(COLLECTIONS.trials).where('baseId', '==', id).limit(3000).get(),
+      database.collection(COLLECTIONS.graphEdges).where('baseId', '==', id).limit(1001).get(),
     ]);
-    if (items.docs.length > 1000 || runs.docs.length > 500 || events.docs.length > 2000) {
+    if (items.docs.length > 1000 || runs.docs.length > 500 || events.docs.length > 2000 || edgeDocs.docs.length > 1000) {
       throw new Error('This Exploration Base has too much history for a single cleanup operation; no records were deleted');
     }
     if (runs.docs.some(doc => doc.data().status === 'open')) {
       throw new Error('Cannot delete an Exploration Base while a run is still open');
     }
     // Closed bases are immutable. Delete their owned ledger/run/event records, then the base itself.
-    for (const group of [items.docs, runs.docs, events.docs, trialDocs.docs]) {
+    for (const group of [items.docs, runs.docs, events.docs, trialDocs.docs, edgeDocs.docs]) {
       for (let i = 0; i < group.length; i += 25) {
         await Promise.all(group.slice(i, i + 25).map(doc => doc.ref.delete()));
       }
@@ -1841,6 +1842,7 @@ function createStore(options) {
     return {
       id, title: base.title, deleted: true,
       deletedItems: items.docs.length, deletedRuns: runs.docs.length, deletedEvents: events.docs.length,
+      deletedHypothesisEdges: edgeDocs.docs.length,
     };
   }
 
