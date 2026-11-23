@@ -2009,7 +2009,16 @@ function createStore(options) {
       saveBase(tx, base);
     });
     const loop = await refreshLoop(id);
-    return { baseId: id, rated, loop };
+    // Return a concrete post-rating handoff; a human verdict is not a
+    // diagnosis. The next agent must compare cases and review the specific
+    // TARGET Skill before suggesting a tested body edit and dojo release.
+    return { baseId: id, rated, loop,
+      skillImprovementReview: rated.some(x=>x.verdict!=='withdrawn')
+        ? {state:'required_after_human_rating',tool:'exploration_skill_graph_get',
+          args:{baseId:id,view:'full'},
+          paths:['stewardship.feedbackReview','stewardship.skillImprovement.routes'],
+          nextStep:'Compare real accepted and rejected cases, resource/model versions and counterfactual hypotheses before a target Skill body revision. Preserve that Skill dojo release gate.'}
+        : {state:'no_new_human_verdict'} };
   }
 
   // Samples waiting for the user across every 道場, oldest first, so they can be rated in one place.
