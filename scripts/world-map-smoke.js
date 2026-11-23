@@ -54,8 +54,7 @@ try {
     return originalLoad.call(this, request, parent, isMain);
   };
   const world = require('../functions/worldMap');
-  Module._load = originalLoad;
-
+  // Keep the registry mocks active until the asynchronous world index has finished loading.
   (async () => {
     assert.equal(world.ROUTES.some(r => r.id === 'site-seo' && r.primary === 'Sites Operator'), true);
     assert.equal(world.ROUTES.some(r => r.id === 'seo-research' && r.primary.includes('My Portal')), true);
@@ -201,7 +200,9 @@ try {
       await assert.rejects(()=>world.update({confirm:true,expectedRevision:guideEdited.metadataRevision,agentGuideEdits:[{find:'not in the guide',replace:'x'}]}),/text not found/);
     }
     console.log('world-map-smoke: ok — meta directory, live registries, writes and routes');
-  })().catch(error => { console.error(error); process.exitCode = 1; });
-} finally {
+  })().catch(error => { console.error(error); process.exitCode = 1; })
+    .finally(() => { Module._load = originalLoad; });
+} catch(error) {
   Module._load = originalLoad;
+  throw error;
 }
