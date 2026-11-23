@@ -51,12 +51,22 @@ function checkBuzzSubmissionRecovery({base,trial,run,existing=[],sources=[],loop
     }
   }
   if(failStreak<FAILURE_STREAK)return {recoveryRequired:false,quarantined};
+  if(!(run?.negativeTargets||[]).length)
+    throw Error('Buzz quality recovery: during prolonged non-passes, compare at least one still-usable negative hypothesis; internal rejection is not a human fail.');
+  const pool=trial.editorialScreen?.pool||[];
+  const lanes=new Set(pool.map(x=>x.hypothesisId).filter(Boolean));
+  if(pool.some(x=>!x.hypothesisId)||lanes.size<2)
+    throw Error('Buzz quality recovery: editorial candidates must show at least two distinct hypothesis arms, not three wordings of the same idea. Supply pool[].hypothesisId from real H records.');
+  const primary=pool.find(x=>x.decision==='selected');
+  if(primary?.hypothesisId!==positiveH[0])
+    throw Error('Buzz quality recovery: selected candidate hypothesisId must match the trial\'s single primary H.');
+
   if(!run?.experimentDesign)throw Error('Buzz quality recovery: '+failStreak+
     ' consecutive non-passes require a preregistered discriminating experimentDesign, not another one-shot variant of a broad positive hypothesis.');
   const eligible=(run.targets||[]).some(t=>t.hypothesisId===positiveH[0])
     ||(run.researchReview?.appliedHypothesisIds||[]).includes(positiveH[0]);
   if(!eligible)throw Error('Buzz quality recovery: primary hypothesis must be precommitted or explicitly derived during this research run.');
-  const selected=trial.editorialScreen?.pool?.find(x=>x.decision==='selected');
+  const selected=primary;
   if(!selected)throw Error('Buzz quality recovery: selected candidate and source must be recorded in editorialScreen.');
   const source=sources.find(x=>x.id===selected.sourceId);
   if(!sourceHasPrimaryText(source))throw Error('Buzz quality recovery: selected source '+selected.sourceId+
