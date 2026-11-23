@@ -670,6 +670,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
       const canonicalTrials = new Map((baseData.full?.trials || []).map((t: any) => [t.id, t]));
       const hypotheses = (graph.hypotheses || []).map((h: any) => ({
         id: h.id, title: h.title, statement: h.statement, mechanism: h.mechanism,
+        researchProtocol: h.researchProtocol || null,
         limits: h.limits, polarity: h.polarity, status: h.status,
         targetModuleIds: h.targetModuleIds || [], moduleAssignment: h.moduleAssignment || null,
         promotion: h.promotion ? {
