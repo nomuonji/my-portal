@@ -521,6 +521,8 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
   if (name === "exploration_skill_graph_get") return structured(await explorationBaseStore.graphGet(args));
   if (name === "exploration_hypothesis_relation_upsert") return structured(await explorationBaseStore.graphRelationUpsert(args));
   if (name === "exploration_skill_rule_proposal_upsert") return structured(await explorationBaseStore.ruleProposalUpsert(args));
+  if (name === "exploration_skill_improvement_seed") return structured(await explorationBaseStore.seedSkillImprovementInbox(args));
+  if (name === "exploration_skill_improvement_review") return structured(await explorationBaseStore.reviewSkillImprovement(args));
   if (name === "exploration_base_create") return structured(await explorationBaseStore.create(args));
   if (name === "exploration_outcome_set") return structured(await explorationBaseStore.setOutcome(args));
   if (name === "exploration_method_version_set") return structured(await explorationBaseStore.setMethodVersion(args));
