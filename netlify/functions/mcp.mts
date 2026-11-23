@@ -505,6 +505,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
   if (name === "intelligence_get") return structured(await agentIntelligenceRegistry.getPack(args));
   if (name === "skill_pack_list") return structured(await skillPackRegistry.list());
   if (name === "skill_pack_get") return structured(await skillPackRegistry.get(args));
+  if (name === "skill_pack_version_create") return structured(await skillPackRegistry.createVersion(args));
   if (name === "intelligence_pack_list") return structured(await agentIntelligenceRegistry.listPacks(args));
   if (name === "intelligence_pack_get") return structured(await agentIntelligenceRegistry.getPack(args));
   // Read-only registry audit includes resolved submarine loadout; never rewrite gear.
