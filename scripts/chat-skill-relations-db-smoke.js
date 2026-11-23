@@ -72,3 +72,18 @@ test('structured resource policy preserves exact model/tool references across le
   benchmark:{passed:true,ref:'skill-resource-evidence-smoke',cases:'Unknown tool must be refused'},confirm:true}),
   /does not reference resource resolver/);
 });
+
+test('approved parametric tool calls satisfy resource policy validation',async()=>{
+ const db=new Db();
+ const sourceBody='Use `consumer_model_list({status:"active"})` to discover models and `consumer_model_get({id:"daishu-consumer"})` to read evidence.';
+ const store=createStore({getDb:()=>db,sourceSkill:async()=>({revision:2,versionPolicy:'latest_registry_version',body:sourceBody})});
+ const resources=[
+  {kind:'consumer_model',id:'audience',requiredness:'required',intents:['serious_creation'],rationale:'Read the concrete audience model before acting.'},
+  {kind:'tool',id:'consumer_model_get',requiredness:'required',intents:['serious_creation'],rationale:'Read the currently approved audience model evidence.'},
+  {kind:'tool',id:'consumer_model_list',requiredness:'recommended',intents:['serious_creation'],rationale:'List possible audience models for the current task.'},
+ ];
+ const res=await store.publish({policy:{id:'consumer-model-context',defaultIntent:'serious_creation',relations:[],resources},
+  expectedRevision:0,changeReason:'Support actual parameterized MCP tool references in approved Skill text',
+  benchmark:{passed:true,ref:'skill-resource-evidence-smoke',cases:'Model get and list calls are explicit in the source body'},confirm:true});
+ assert.equal(res.revision,1);assert.equal(res.resources.length,3);
+});
