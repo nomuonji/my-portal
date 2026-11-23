@@ -1038,6 +1038,15 @@ function createStore(options) {
     return get({ id });
   }
 
+  // New structured research contracts begin with the user-directed bci-v7.7
+  // release. Earlier pinned experiments and legacy H/T fixture behavior stay
+  // readable and executable until that explicit release, never rewritten.
+  function needsBuzzProtocol(base) {
+    if (base?.id !== 'viral-post-method-discovery') return false;
+    const m = /^bci-v(\d+)\.(\d+)/.exec(base.method?.version || '');
+    return !!m && (Number(m[1]) > 7 || (Number(m[1]) === 7 && Number(m[2]) >= 7));
+  }
+
   function applyLedgerItem(kind, prior, raw, runId, base) {
     const creating = !prior;
     const item = prior ? { ...prior } : {
@@ -1060,11 +1069,11 @@ function createStore(options) {
           throw new Error('hypothesis.researchProtocol: acquisition, selection, transformation, control, prediction and falsification must describe DISTINCT steps.');
         item.researchProtocol = clean;
       }
-      if (creating && base.id === 'viral-post-method-discovery' && !item.researchProtocol)
+      if (creating && needsBuzzProtocol(base) && !item.researchProtocol)
         throw new Error('Buzz hypothesis recovery: new H requires researchProtocol with concrete acquisition, selection, transformation, control, prediction and falsification; do not create a vague H name.');
       if (raw.pipelineStage !== undefined) item.pipelineStage = oneOf(raw.pipelineStage, PIPELINE_STAGES, 'hypothesis.pipelineStage');
       if (creating) item.pipelineStage = item.pipelineStage || 'unknown';
-      if (creating && base.id === 'viral-post-method-discovery'
+      if (creating && needsBuzzProtocol(base)
         && (!raw.pipelineStage || raw.pipelineStage === 'unknown'
           || !Array.isArray(raw.targetModuleIds) || !raw.targetModuleIds.length))
         throw new Error('Buzz hypothesis recovery: choose a non-unknown pipelineStage and explicit Skill targetModuleIds for a new H.');
@@ -1761,7 +1770,7 @@ function createStore(options) {
           }
         });
         if (!backfill && !hypothesisIds.length) throw new Error('trial.hypothesisIds is required: name the hypothesis this sample tests (register it first with exploration_item_upsert). A sample tied to no hypothesis settles nothing when it is rated.');
-        if (!backfill && id === 'viral-post-method-discovery'
+        if (!backfill && needsBuzzProtocol(base)
           && (!hypothesisIds.length || !hypotheses.get(hypothesisIds[0])?.researchProtocol)) {
           throw new Error('Buzz trial requires a concrete preregistered researchProtocol on the primary H: source acquisition, inclusion/exclusion rule, transformation, control, predicted outcome and falsifier. Revise the old H or register a new operational H before submitting another sample. Historical H/T are unchanged.');
         }
