@@ -11,6 +11,7 @@ const COLLECTION = 'chatSkillRelationPolicies';
 const VERSIONS = 'chatSkillRelationPolicyVersions';
 const ID = /^[a-z][a-z0-9-]{1,89}$/;
 const NEEDS = new Set(['required','recommended','optional']);
+const RESOURCE_KINDS = new Set(['tool','consumer_model']);
 
 function cleanPolicy(raw) {
   const id=String(raw?.id||'').trim();
@@ -35,7 +36,34 @@ function cleanPolicy(raw) {
     if (rawLink.versionNumber !== undefined) throw new Error('Related Skill versions are resolved at runtime, never pinned');
     return {skillId,requiredness,intents,rationale};
   });
-  return {id,defaultIntent,relations};
+  // Structured dependency contract: Skill text explains WHY; the policy
+  // names HOW it is fetched. Resources never perform writes or claim tool use.
+  const rawResources=raw.resources;
+  if(rawResources!==undefined&&(!Array.isArray(rawResources)||rawResources.length>16))
+    throw Error('resources must contain at most 16 entries');
+  const seenResources=new Set();
+  const resources=(rawResources||[]).map(link=>{
+    const kind=String(link?.kind||'');
+    const resourceId=String(link?.id||'').trim();
+    if(!RESOURCE_KINDS.has(kind)||!(/^[a-z][a-z0-9_-]{1,89}$/.test(resourceId))
+       ||(kind==='consumer_model'&&resourceId!=='audience')
+       ||(kind==='tool'&&resourceId.includes('-')))
+      throw Error('Invalid Skill resource reference');
+    const key=kind+':'+resourceId;
+    if(seenResources.has(key))throw Error('Duplicate Skill resource reference: '+key);
+    seenResources.add(key);
+    if(!NEEDS.has(link.requiredness))throw Error('Invalid resource requiredness');
+    const intents=link.intents;
+    if(!Array.isArray(intents)||!intents.length||intents.length>INTENTS.size
+      ||intents.some(i=>!INTENTS.has(i))||new Set(intents).size!==intents.length)
+      throw Error('Invalid resource intent list');
+    const rationale=String(link.rationale||'').trim();
+    if(rationale.length<8||rationale.length>700)throw Error('Resource rationale required');
+    return {kind,id:resourceId,requiredness:link.requiredness,intents,rationale,
+      versionPolicy:kind==='consumer_model'?'explicit_version_or_current':'tool_invocation_at_execution'};
+  });
+  return {id,defaultIntent,relations,
+    ...(rawResources!==undefined?{resources}:{})};
 }
 function decorate(policy,intent){
   const chosen=intent&&INTENTS.has(intent) ? intent : (policy.defaultIntent||'');
@@ -69,12 +97,23 @@ function createStore(opts={}) {
   async function publish(input={}) {
     if(input.confirm!==true)throw new Error('Explicit confirmation required');
     const definition=cleanPolicy(input.policy);
+    // Older clients that only know Skill-to-Skill links cannot accidentally
+    // delete the structured resource contract on the next policy revision.
+    if(input.policy?.resources===undefined) {
+      const previous=await get({id:definition.id});
+      definition.resources=previous.resources||[];
+    }
     const expected=Number(input.expectedRevision);
     if(!Number.isInteger(expected)||expected<0)throw new Error('expectedRevision must be nonnegative');
     const changeReason=String(input.changeReason||'').trim();
     if(changeReason.length<12||changeReason.length>800)throw new Error('A concrete change reason is required');
     const approved=await sourceSkill(definition.id);
     if(!approved?.body||!Number.isInteger(Number(approved.revision)))throw new Error('Approved source Skill required');
+    for(const resource of definition.resources||[]) {
+      const ref=resource.kind==='consumer_model'?'consumer_model_get':resource.id;
+      if(!approved.body.includes('`'+ref+'`'))
+        throw Error('Approved Skill body does not reference resource resolver: '+ref);
+    }
     for(const link of definition.relations){
       // The approved body is the authority. Stale or invented references cannot
       // silently acquire runtime load privileges via a policy document.
@@ -82,7 +121,8 @@ function createStore(opts={}) {
         throw new Error('Approved source body does not reference '+link.skillId);
     }
     const legacy=MANIFEST[definition.id]||[];
-    const initialIdentical=expected===0 && JSON.stringify(definition.relations)===JSON.stringify(legacy)
+    const initialIdentical=expected===0 && !(definition.resources||[]).length
+      && JSON.stringify(definition.relations)===JSON.stringify(legacy)
       && definition.defaultIntent===(DEFAULT_INTENT[definition.id]||'');
     const benchmark=input.benchmark;
     if(!initialIdentical && !(benchmark?.passed===true&&
