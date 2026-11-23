@@ -46,7 +46,7 @@ function database() {
 }
 try {
   Module._load = function(request, parent, isMain) {
-    if (request === './documentDb' && ['worldMap.js','chatContextRegistry.js','contextRegistry.js','skillPackRegistry.js'].some(name=>parent?.filename?.endsWith(path.join('functions',name)))) {
+    if (request === './documentDb' && ['worldMap.js','chatContextRegistry.js','contextRegistry.js','skillPackRegistry.js','agentIntelligenceRegistry.js'].some(name=>parent?.filename?.endsWith(path.join('functions',name)))) {
       return { getDocumentDb: database, FieldValue: { serverTimestamp: () => new Date('2026-10-10T02:00:00Z') } };
     }
     return originalLoad.call(this, request, parent, isMain);
