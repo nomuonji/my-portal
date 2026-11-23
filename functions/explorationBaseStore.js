@@ -15,7 +15,7 @@ const { projectGraph, graphEdges, validateEdges, MODULE_IDS } = require('./dojoE
 const { checkBuzzSubmissionRecovery, unreliableNegativeReviews } = require('./dojoBuzzRecovery');
 const { makeRuleProposal, assessRuleProposal } = require('./dojoRuleMerge');
 const { planSkillTransfers } = require('./dojoSkillTransfer');
-const { enqueueFeedback, validateReview, applyReviews } = require('./dojoSkillFeedbackQueue');
+const { enqueueFeedback, validateReview, applyReviews, cyclePreflight, assertCyclePrepared } = require('./dojoSkillFeedbackQueue');
 
 const DEFAULT_DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTIONS = Object.freeze({
@@ -804,6 +804,7 @@ function createStore(options) {
         outcome: { revision: base.outcome?.revision, confirmedCount: confirmed, awaitingConfirmation: (base.progress?.achievements || []).filter((a) => a.status === 'candidate').map(({ id, label, ref }) => ({ id, label, ref })) },
         position: { runCount: base.runCount || 0, stalledRuns: base.stalledRuns || 0, openRunId: base.openRunId || null, lastRuns: (base.lastRuns || []).slice(0, 1) },
         loop: loopView({ trials, feedbackLog: base.feedbackLog, base, hypotheses }),
+        cycle:cyclePreflight(base),
         skillImprovement:{pending:(base.skillImprovementInbox||[]).filter(x=>x.status==='pending_review').length,
           inbox:(base.skillImprovementInbox||[]).slice(0,20)},
         warnings,
@@ -829,6 +830,7 @@ function createStore(options) {
     }
     if ((base.proposals || []).some((p) => p.status === 'pending')) warnings.push('There are pending proposals waiting for the user.');
     const result = {
+      cycle:cyclePreflight(base),
       base: {
         id: base.id, title: base.title, summary: base.summary, status: base.status, revision: base.revision,
         projectIds: base.projectIds || [], domains: base.domains || [], canonicalData: base.canonicalData || [],
@@ -1401,6 +1403,7 @@ function createStore(options) {
       put(tx, runRef(id, runId), run);
       base.openRunId = runId;
       receipt = { runId, methodVersion: run.methodVersion, outcomeRevision: run.outcomeRevision,
+        cycle:cyclePreflight(base),
         crossDojoEvidenceCount: crossDojoEvidence.length, negativeTargetCount: negativeTargets.length,
         negativeTargetOrigin: negativeTargetOrigin || null };
       pushEvent(tx, base, { type: 'run_started', runId, summary: run.objective, actor: input.actor, detail: { targets: cleanTargets, negativeTargets, methodVersion: run.methodVersion } });
@@ -1760,6 +1763,10 @@ function createStore(options) {
         return false;
       });
       if (!backfill && fresh.length) {
+        // New output is prohibited until all human feedback and specialist
+        // Skill reviews from the preceding iteration are reconciled.
+        // Research runs and finishing existing media remain permitted.
+        assertCyclePrepared(base);
         if (base.outcome?.confirmedBy !== 'measurement' && recallRequired(existing, base.feedbackLog || [])
           && (!run?.recallProbe || run.recallProbe.status !== 'passed')) {
           throw new Error('Historical recall check required: start a run, call exploration_recall_prepare and pass exploration_recall_check before recording user-facing trials. Agent-only learningAudit does not replace the check.');
@@ -1955,6 +1962,7 @@ function createStore(options) {
     if (input.ratings.length > 30) throw new Error('At most 30 ratings per call');
     const rated = [];
     let queuedSkillReviews=[];
+    let postRatingCycle=null;
     await db().runTransaction(async (tx) => {
       const base = await loadBase(tx, id);
       // Firestore transactions read first: load every trial and every hypothesis they touch, then write.
@@ -2020,6 +2028,7 @@ function createStore(options) {
         updatedAt:now(),
       };
       queuedSkillReviews=(base.skillImprovementInbox||[]).filter(x=>x.status==='pending_review');
+      postRatingCycle=cyclePreflight(base);
       pushEvent(tx, base, { type: 'trials_rated', actor: input.actor, summary: rated.map((t) => t.id + ':' + t.verdict).join(', '), detail: { rated,skillReviewIds:queuedSkillReviews.map(x=>x.id) } });
       saveBase(tx, base);
     });
@@ -2027,7 +2036,7 @@ function createStore(options) {
     // Return a concrete post-rating handoff; a human verdict is not a
     // diagnosis. The next agent must compare cases and review the specific
     // TARGET Skill before suggesting a tested body edit and dojo release.
-    return { baseId: id, rated, loop,
+    return { baseId: id, rated, loop,cycle:postRatingCycle,
       pendingSpecialistSkillReviews:queuedSkillReviews.map(({id,targetSkillId,moduleId,pendingTrialIds})=>({id,targetSkillId,moduleId,pendingTrialIds})),
       skillImprovementReview: rated.some(x=>x.verdict!=='withdrawn')
         ? {state:'required_after_human_rating',tool:'exploration_skill_graph_get',
