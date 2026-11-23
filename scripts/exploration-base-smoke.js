@@ -1368,8 +1368,11 @@ test('legacy dojo graph API projects H/T/feedback without rewriting originals an
   assert.equal(projected.migration.mode,'virtual_non_destructive');
   assert.equal(projected.hypotheses.length,2);
   assert.equal(projected.trials.length,2);
-  assert.equal(projected.trials[0].body,before[0].body);
-  assert.equal(projected.trials[0].userWords,before[0].userWords);
+  const originals=new Map(before.map(t=>[t.id,t]));
+  for(const t of projected.trials){
+    assert.equal(t.body,originals.get(t.id).body);
+    assert.equal(t.userWords,originals.get(t.id).userWords);
+  }
   assert.equal(projected.promotions.find(x=>x.hypothesisId==='H-001').eligibleForMerge,false);
   assert.deepEqual((await store.get({id:'test-base',view:'full'})).full.trials,before);
   await assert.rejects(store.graphRelationUpsert({baseId:'test-base',relations:[{
