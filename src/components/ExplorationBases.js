@@ -627,6 +627,31 @@ function SkillEvidenceGraph({ baseId }) {
       {busy&&!graph&&<CircularProgress size={22} sx={{m:2}}/>}
       {graph&&(
         <>
+          {!!graph.stewardship&&(
+            <Box sx={{border:'1px solid',borderColor:'divider',borderRadius:2,p:1.5,mb:2,background:V.accentSoft}}>
+              <Typography sx={{fontSize:13.5,fontWeight:900}}>Agent のツリー管理・次の研究枝</Typography>
+              <Typography sx={{fontSize:12.2,color:V.muted,mt:0.35}}>
+                現時点の機械的な研究候補。AIが全履歴・対立仮説を再確認したうえで試験計画と評価物を作る。
+                未評価 {graph.stewardship.userReview.awaiting}件 / 新規提示の推奨上限 {graph.stewardship.userReview.suggestedVisibleBatchSize}件。
+              </Typography>
+              <Stack direction={{xs:'column',md:'row'}} gap={1} sx={{mt:1.2}}>
+                {graph.stewardship.portfolio.selectedBranches.map(b=>(
+                  <Box key={b.hypothesisId} sx={{flex:1,p:1.1,border:'1px solid',borderColor:'divider',
+                    borderRadius:1.5,background:'background.paper'}}>
+                    <Typography sx={{fontSize:12.5,fontWeight:800}}>{b.hypothesisId} · {b.moduleId}</Typography>
+                    <Typography sx={{fontSize:11.5,color:V.muted,mt:0.3}}>
+                      {PROMOTION_LABEL[b.state]||b.state} / {b.intent.replace(/_/g,' ')}
+                    </Typography>
+                    <Typography sx={{fontSize:11.3,color:V.muted,mt:0.3}}>本人評価 {b.rated}件（合格 {b.pass} / ボツ {b.fail}）</Typography>
+                  </Box>
+                ))}
+              </Stack>
+              <Typography sx={{fontSize:11.5,color:V.muted,mt:0.9}}>
+                AI：複数枝を手入れ・複数評価物を制作 → 本人：合否 → システム：支持/昇格候補を計算。
+                Skill規則の自動マージは未実装。
+              </Typography>
+            </Box>
+          )}
           <Box sx={{overflowX:'auto',pb:1}}>
             <Box sx={{minWidth:1000,display:'grid',gridTemplateColumns:'190px 205px minmax(270px,1fr) minmax(270px,1fr)',gap:1.7,alignItems:'start'}}>
               <Box sx={{...boxStyle,background:'#FFF6DD',borderColor:'#E9CA83'}}>
