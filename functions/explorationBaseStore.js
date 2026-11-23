@@ -12,6 +12,7 @@ const { buildResearchInventory, researchPage, validateResearchSynthesis } = requ
 const { recallRequired, buildRecallProbe, checkRecallPredictions, buildHistoricalHypotheses, checkHypothesisReviews } = require('./dojoRecall');
 const { trialArtifactStatus, publicMediaUrl } = require('./dojoArtifactReadiness');
 const { projectGraph, graphEdges, validateEdges, MODULE_IDS } = require('./dojoEvidenceGraph');
+const { makeRuleProposal, assessRuleProposal } = require('./dojoRuleMerge');
 
 const DEFAULT_DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTIONS = Object.freeze({
@@ -21,6 +22,7 @@ const COLLECTIONS = Object.freeze({
   events: 'explorationBaseEvents',
   trials: 'explorationBaseTrials',
   graphEdges: 'explorationHypothesisEdges',
+  ruleProposals: 'explorationSkillRuleProposals',
 });
 const ID_PATTERN = /^[a-z][a-z0-9-]{1,79}$/;
 const STAGES = ['conjecture', 'observed', 'reproduced', 'yielded_candidate', 'yielded_outcome'];
@@ -359,6 +361,7 @@ function createStore(options) {
   const runRef = (baseId, id) => db().collection(COLLECTIONS.runs).doc(docId(baseId, id));
   const trialRef = (baseId, id) => db().collection(COLLECTIONS.trials).doc(docId(baseId, id));
   const graphEdgeRef = (baseId, id) => db().collection(COLLECTIONS.graphEdges).doc(docId(baseId, id));
+  const ruleProposalRef = (baseId, id) => db().collection(COLLECTIONS.ruleProposals).doc(docId(baseId, id));
   const eventRef = (baseId, seq) => db().collection(COLLECTIONS.events).doc(docId(baseId, 'E' + String(seq).padStart(6, '0')));
 
   // JSON round-trip drops undefined fields, which Firestore refuses.
@@ -462,14 +465,25 @@ function createStore(options) {
   async function graphGet(input) {
     const id = requireBaseId(input?.baseId);
     const view = oneOf(input?.view, ['summary','full'], 'view', 'summary');
-    const [baseSnap,items,trials,edgeSnap] = await Promise.all([
+    const [baseSnap,items,trials,edgeSnap,ruleSnap] = await Promise.all([
       baseRef(id).get(),loadItems(id),loadTrials(id),
       db().collection(COLLECTIONS.graphEdges).where('baseId','==',id).limit(1000).get(),
+      db().collection(COLLECTIONS.ruleProposals).where('baseId','==',id).limit(1000).get(),
     ]);
     const base = value(baseSnap);
     if(!base)throw new Error('Exploration Base not found: '+id);
-    return projectGraph({base,items,trials,feedbackLog:base.feedbackLog||[],
+    const graph=projectGraph({base,items,trials,feedbackLog:base.feedbackLog||[],
       relations:edgeSnap.docs.map(doc=>doc.data()),view});
+    const proposals=ruleSnap.docs.map(doc=>doc.data());
+    graph.skillRules={status:'candidate_rule_mapping',rules:proposals.map(p=>({
+      id:p.id,sourceRuleId:p.sourceRuleId,action:p.action,moduleId:p.moduleId,
+      sourceMethodVersion:p.sourceMethodVersion,
+      existingRuleAnchor:view==='full'?p.existingRuleAnchor:undefined,
+      replacementText:view==='full'?p.replacementText:undefined,
+      hypothesisIds:p.hypothesisIds,
+      eligibility:assessRuleProposal(p,{method:base.method,graph,trials}),
+    })),note:'Explicit rule anchors and adoption proposals only. No historic Skill text has been silently split into rules; none is automatically released.'};
+    return graph;
   }
 
   async function graphRelationUpsert(input) {
@@ -512,6 +526,42 @@ function createStore(options) {
     });
     return {baseId:id,created:changed,existing:newEdges.length-changed.length,
       note:'Semantic relationships are agent-proposed edges, not scientifically proven contradictions or user ratings.'};
+  }
+
+  async function ruleProposalUpsert(input) {
+    const id=requireBaseId(input?.baseId);
+    const [snap,items,trials]=await Promise.all([baseRef(id).get(),loadItems(id),loadTrials(id)]);
+    const base=value(snap);
+    if(!base)throw Error('Exploration Base not found');
+    const bodyRef=base.method?.bodyRef||{};
+    let targetBody=base.method?.body||'';
+    if(['chat_skill','intelligence_pack'].includes(bodyRef.kind)){
+      const target=await resolveTarget({kind:bodyRef.kind,id:bodyRef.location,versionNumber:bodyRef.versionNumber});
+      targetBody=target.body||'';
+    }
+    const proposal=makeRuleProposal(input?.proposal,{method:base.method,body:targetBody,hypotheses:items,trials});
+    const ref=ruleProposalRef(id,proposal.id);
+    let outcome;
+    await db().runTransaction(async tx=>{
+      const current=await loadBase(tx,id);
+      if(current.method?.version!==proposal.sourceMethodVersion)
+        throw Error('Method version changed while preparing rule mapping; reread the pinned version');
+      const already=value(await tx.get(ref));
+      if(already){
+        outcome={...already,duplicate:true};return;
+      }
+      const record={...proposal,baseId:id,createdAt:now(),actor:text(input?.actor,120,'actor',false)||'agent'};
+      put(tx,ref,record);
+      pushEvent(tx,current,{type:'rule_merge_proposed',actor:input?.actor,
+        summary:proposal.action+' '+proposal.moduleId+' '+proposal.id,
+        detail:{proposalId:proposal.id,hypothesisIds:proposal.hypothesisIds}});
+      saveBase(tx,current);
+      outcome={...record,duplicate:false};
+    });
+    const graph=await graphGet({baseId:id});
+    return {baseId:id,proposalId:proposal.id,duplicate:outcome.duplicate,
+      eligibility:assessRuleProposal(outcome,{method:base.method,graph,trials}),
+      status:'proposal_only_never_auto_released'};
   }
 
   async function researchRead(input) {
@@ -1823,21 +1873,22 @@ function createStore(options) {
     if ((Number(base.revision) || 0) !== expectedRevision) throw new Error('Exploration Base revision conflict; reload before deleting');
     if (base.status !== 'closed') throw new Error('Only closed Exploration Bases can be permanently deleted');
     if (base.openRunId) throw new Error('Cannot delete an Exploration Base with an open run: ' + base.openRunId);
-    const [items, runs, events, trialDocs, edgeDocs] = await Promise.all([
+    const [items, runs, events, trialDocs, edgeDocs, ruleDocs] = await Promise.all([
       database.collection(COLLECTIONS.items).where('baseId', '==', id).limit(1001).get(),
       database.collection(COLLECTIONS.runs).where('baseId', '==', id).limit(501).get(),
       database.collection(COLLECTIONS.events).where('baseId', '==', id).limit(2001).get(),
       database.collection(COLLECTIONS.trials).where('baseId', '==', id).limit(3000).get(),
       database.collection(COLLECTIONS.graphEdges).where('baseId', '==', id).limit(1001).get(),
+      database.collection(COLLECTIONS.ruleProposals).where('baseId', '==', id).limit(1001).get(),
     ]);
-    if (items.docs.length > 1000 || runs.docs.length > 500 || events.docs.length > 2000 || edgeDocs.docs.length > 1000) {
+    if (items.docs.length > 1000 || runs.docs.length > 500 || events.docs.length > 2000 || edgeDocs.docs.length > 1000 || ruleDocs.docs.length > 1000) {
       throw new Error('This Exploration Base has too much history for a single cleanup operation; no records were deleted');
     }
     if (runs.docs.some(doc => doc.data().status === 'open')) {
       throw new Error('Cannot delete an Exploration Base while a run is still open');
     }
     // Closed bases are immutable. Delete their owned ledger/run/event records, then the base itself.
-    for (const group of [items.docs, runs.docs, events.docs, trialDocs.docs, edgeDocs.docs]) {
+    for (const group of [items.docs, runs.docs, events.docs, trialDocs.docs, edgeDocs.docs, ruleDocs.docs]) {
       for (let i = 0; i < group.length; i += 25) {
         await Promise.all(group.slice(i, i + 25).map(doc => doc.ref.delete()));
       }
@@ -1846,7 +1897,7 @@ function createStore(options) {
     return {
       id, title: base.title, deleted: true,
       deletedItems: items.docs.length, deletedRuns: runs.docs.length, deletedEvents: events.docs.length,
-      deletedHypothesisEdges: edgeDocs.docs.length,
+      deletedHypothesisEdges: edgeDocs.docs.length, deletedRuleProposals: ruleDocs.docs.length,
     };
   }
 
@@ -1864,7 +1915,7 @@ function createStore(options) {
   // Compact summary used by the Agent Intelligence bundle resolver.
   async function brief(input) { return get({ id: input?.id, view: 'brief' }); }
 
-  return { create, list: listBases, get, remove, brief, graphGet, graphRelationUpsert, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, researchRead, researchSynthesize, prepareRecall, checkRecall, recordTrials, rateTrials, awaitingTrials, refreshLoop, trainersOf };
+  return { create, list: listBases, get, remove, brief, graphGet, graphRelationUpsert, ruleProposalUpsert, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, researchRead, researchSynthesize, prepareRecall, checkRecall, recordTrials, rateTrials, awaitingTrials, refreshLoop, trainersOf };
 }
 
 const store = createStore();
