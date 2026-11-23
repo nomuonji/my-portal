@@ -228,6 +228,7 @@ export default async (request: Request) => {
       if (resource === "contexts") return json(await contextRegistry.list({projectId:url.searchParams.get("projectId")||undefined,domain:url.searchParams.get("domain")||undefined,includeArchived:url.searchParams.get("includeArchived")==="true"}));
       if (resource === "context") return json(await contextRegistry.get({id:url.searchParams.get("id")||""}));
       if (resource === "context_history") return json(await contextRegistry.listEvents({contextId:url.searchParams.get("id")||""}));
+      if (resource === "intelligence") return json(await agentIntelligenceRegistry.getPack({id:url.searchParams.get("id")||""}));
       if (resource === "skill_packs") return json(await skillPackRegistry.list());
       if (resource === "skill_pack") return json(await skillPackRegistry.get({id:url.searchParams.get("id")||"",resolve:url.searchParams.get("resolve")==="true"}));
       if (resource === "world_map") {
