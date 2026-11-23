@@ -14,6 +14,7 @@ const { trialArtifactStatus, publicMediaUrl } = require('./dojoArtifactReadiness
 const { projectGraph, graphEdges, validateEdges, MODULE_IDS } = require('./dojoEvidenceGraph');
 const { checkBuzzSubmissionRecovery, unreliableNegativeReviews } = require('./dojoBuzzRecovery');
 const { makeRuleProposal, assessRuleProposal } = require('./dojoRuleMerge');
+const { planSkillTransfers } = require('./dojoSkillTransfer');
 
 const DEFAULT_DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTIONS = Object.freeze({
@@ -484,6 +485,7 @@ function createStore(options) {
       lastReviewedRunId:base.treeMaintenance?.lastReviewedRunId||null,
       status:((base.treeMaintenance?.pendingTrialIds||[]).length||(base.treeMaintenance?.pendingExternalRefs||[]).length)?'needs_hypothesis_tree_review':'up_to_date',
     };
+    graph.stewardship.skillImprovement=planSkillTransfers({base,items,trials});
     const proposals=ruleSnap.docs.map(doc=>doc.data());
     graph.skillRules={status:proposals.length?'candidate_rule_mapping':'unmapped_legacy_skill_body',rules:proposals.map(p=>({
       id:p.id,sourceRuleId:p.sourceRuleId,action:p.action,moduleId:p.moduleId,
@@ -1084,6 +1086,11 @@ function createStore(options) {
         if(!moduleIds.length || moduleIds.some(m=>!MODULE_IDS.has(m)))
           throw new Error('hypothesis.targetModuleIds requires 1-7 known module IDs');
         item.targetModuleIds = moduleIds;
+      }
+      if (raw.targetSkillIds !== undefined) {
+        const targetIds = list(raw.targetSkillIds, 12, 90);
+        if (targetIds.some(id=>!ID_PATTERN.test(id))) throw new Error('hypothesis.targetSkillIds requires valid canonical Skill IDs');
+        item.targetSkillIds = targetIds;
       }
       if (creating) item.polarity = item.polarity || 'positive';
     } else {
