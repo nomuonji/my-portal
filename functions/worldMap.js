@@ -4,6 +4,7 @@
  */
 const { getDocumentDb, FieldValue } = require('./documentDb');
 const chatContext = require('./chatContextRegistry');
+const skillPacks = require('./skillPackRegistry');
 const contexts = require('./contextRegistry');
 const { applyTextEdits } = require('./textEdits');
 const { DEFAULT_GUIDE, validateGuide } = require('./worldHomeGuide');
@@ -229,8 +230,9 @@ async function get() {
     chatContext.listSkills(), contexts.list(),
     listCollection('explorationBases'),
     listCollection('submarines'),
+    skillPacks.list(),
   ]);
-  const names = ['directory', 'projects', 'spaces', 'methods', 'chatSkills', 'contexts', 'explorationBases', 'submarines'];
+  const names = ['directory', 'projects', 'spaces', 'methods', 'chatSkills', 'contexts', 'explorationBases', 'submarines', 'skillPacks'];
   const warnings = results.flatMap((r, i) => r.status === 'rejected' ? [`${names[i]}: unavailable (${safeText(r.reason?.message || r.reason, 160)})`] : []);
   const settings = results[0].status === 'fulfilled' && results[0].value.exists ? results[0].value.data() : {};
   const edited = Array.isArray(settings.routes) ? settings.routes : [];
@@ -257,6 +259,7 @@ async function get() {
     spaces: items(2).filter(s=>s.themeOwner!=='assistant').map(summarizeSpace).sort((a,b) => a.title.localeCompare(b.title)),
     contexts: contextRows,
     chatSkills: results[4].status === 'fulfilled' ? results[4].value.items : [],
+    skillPacks: results[8].status === 'fulfilled' ? (results[8].value.items || []) : [],
     methods: items(3).map(summarizeMethod).sort((a,b) => a.title.localeCompare(b.title)),
     explorationBases: items(6).map(summarizeExplorationBase).sort((a,b) => a.title.localeCompare(b.title)),
     submarines: items(7).filter((s) => s.status !== 'decommissioned').map(summarizeSubmarine).sort((a,b) => String(a.hull || a.name).localeCompare(String(b.hull || b.name))),
@@ -274,8 +277,9 @@ const LAYERS = [
   { layer: 'Context', question: 'このプロジェクトで何が決まっていて、今どこか', holds: '目的・決定・訂正・現在地・次の行動', tools: 'context_list / context_get' },
   { layer: 'Project Submarine（潜水艦）', question: '何を探していて、何が見つかったか', holds: '任務（何を探すか・合格条件）、装備（スキル/Pack。版は道場が決める）、出航の記録、持ち帰った成果、海図（対象について分かったこと）。探索系の定期ジョブは潜水艦を出航させる', tools: 'submarine_list / submarine_get / submarine_sortie_start / submarine_sortie_finish' },
   { layer: 'スキル錬成道場 (Exploration Base)', question: 'このスキルは何を目指して鍛えていて、実行ではどの版を使うか', holds: '鍛えるスキル/Packと実行で使う版、探し方の見立て・情報源・制約・練習記録（潜水艦の出航ごとに1回）。版を上げると、それを積む潜水艦すべてが次の出航から使う', tools: 'exploration_base_list / exploration_base_get' },
-  { layer: 'Chat Skill', question: 'どうやるか', holds: '手順', tools: 'chat_skill_list / chat_skill_get' },
-  { layer: 'Agent Profile / Intelligence Pack', question: 'どう判断するか', holds: '証拠の読み方・領域の認識・既知の失敗の型。手順と閾値は置かない', tools: 'agent_profile_get / intelligence_pack_get / cognitive_bundle_resolve' },
+  { layer: 'Skill Pack', question: 'どのSkill群をどう組み合わせて成果を作るか', holds: '作業工程・入口Skill・専門Skillの参照・評価道場へのリンク。個別Skill本文は複製しない', tools: 'skill_pack_list / skill_pack_get' },
+  { layer: 'Chat Skill', question: '具体的な能力・工程をどう実行するか', holds: '再利用可能な個別手順と版', tools: 'chat_skill_list / chat_skill_get' },
+  { layer: 'Agent Profile / Intelligence', question: '何を重視し、どう判断するか', holds: '判断原則・世界モデル・証拠の読み方。旧 intelligencePacks DB/APIは互換維持', tools: 'agent_profile_get / intelligence_pack_get / cognitive_bundle_resolve' },
   { layer: 'HQ Method', question: '定期・委譲の仕事の運用契約は何か', holds: 'Manager/Worker専用。チャットの手順には使わない', tools: 'method_get_context' },
   { layer: 'Thinking Space', question: '本人の長期テーマは何か', holds: '人間側の思考。会話記録やAIの作業状態は置かない', tools: 'space_get_context' },
 ];
@@ -303,6 +307,7 @@ function compact(full) {
       id: c.id, title: c.title, summary: cut(c.summary, 140), projectIds: (c.projectIds || []).join(', '), domains: (c.domains || []).slice(0, 4).join(', '),
       updatedAt: String(c.updatedAt || '').slice(0, 10),
     })),
+    skillPacks: (full.skillPacks || []).map(p => ({ id:p.id,title:p.title,entrySkillId:p.entrySkillId,dojoBaseId:p.dojoBaseId,intelligenceIds:p.intelligenceIds,memberCount:p.memberCount })),
     chatSkills: full.chatSkills.filter(s => s.status !== 'archived').map(s => ({
       id: s.id, title: s.title, summary: cut(s.summary, 120), triggers: (s.triggers || []).slice(0, 5).join(' / '),
     })),
