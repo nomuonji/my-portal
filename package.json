@@ -43,7 +43,7 @@
     "test:dojo-calibration": "node --test scripts/dojo-calibration-smoke.js",
     "test:skill-pack": "node --test scripts/skill-pack-migration-smoke.js scripts/skill-pack-version-smoke.js scripts/skill-resource-evidence-smoke.js",
     "test:workspace-tree": "node --test scripts/workspace-tree-smoke.js",
-    "test:skill-transfer": "node --test scripts/dojo-skill-transfer-smoke.js",
+    "test:skill-transfer": "node --test scripts/dojo-skill-transfer-smoke.js scripts/dojo-skill-feedback-queue-smoke.js",
     "test:skill-graph": "node --test scripts/skill-graph-resolution-smoke.js",
     "test:hq-dispatch": "node scripts/hq-dispatch-smoke.js",
     "test:organization-lifecycle": "node scripts/organization-lifecycle-smoke.js",
