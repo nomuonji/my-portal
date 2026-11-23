@@ -1861,6 +1861,7 @@ function createStore(options) {
           label: text(raw.label, 300, 'trial.label', true), body: text(raw.body, 4000, 'trial.body', false),
           ref: text(raw.ref, 600, 'trial.ref', false), imageUrl: imageUrl(raw.imageUrl),
           mediaUrl: publicMediaUrl(raw.mediaUrl), hypothesisIds, sourceIds: list(raw.sourceIds, 10, 20),
+          executionResources: require('./dojoResourceEvidence').cleanExecutionResources(raw.executionResources),
           ...cleanGraphTrialMetadata(raw),
           predictedPass: predicted, predictionNote: text(raw.predictionNote, 600, 'trial.predictionNote', false),
           ...(editorialScreen ? { format: editorialScreen.format, editorialScreen } : {}),
@@ -1987,7 +1988,8 @@ function createStore(options) {
             item.updatedAt = now();
           });
         }
-        rated.push({ id: trial.id, label: trial.label, verdict: rating.verdict, version: trial.version, hypothesisIds: trial.hypothesisIds || [] });
+        rated.push({ id: trial.id, label: trial.label, verdict: rating.verdict, version: trial.version,
+          hypothesisIds: trial.hypothesisIds || [], executionResources:trial.executionResources||[] });
       });
       touched.forEach((item, hid) => { if (item) put(tx, itemRef(id, hid), item); });
       // A real human verdict creates a maintenance obligation. The next
