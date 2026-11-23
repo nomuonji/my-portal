@@ -662,7 +662,12 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
       // hidden re-rating, automatic support promotion, or duplicate ledger.
       const id = args.projectId.slice("dojo:__graph:".length);
       if (!/^[a-z0-9-]{1,80}$/.test(id)) throw new Error("Invalid dojo graph ID");
-      const graph = await explorationBaseStore.graphGet({ baseId: id, view: "full" });
+      const [graph, baseData] = await Promise.all([
+        explorationBaseStore.graphGet({ baseId: id, view: "full" }),
+        explorationBaseStore.get({ id, view: "full" }),
+      ]);
+      const sourceItems: any[] = baseData.full?.sources || [];
+      const canonicalTrials = new Map((baseData.full?.trials || []).map((t: any) => [t.id, t]));
       const hypotheses = (graph.hypotheses || []).map((h: any) => ({
         id: h.id, title: h.title, statement: h.statement, mechanism: h.mechanism,
         limits: h.limits, polarity: h.polarity, status: h.status,
@@ -677,6 +682,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
       }));
       const trials = (graph.trials || []).map((t: any) => ({
         id: t.id, label: t.label, body: t.body, hypothesisIds: t.hypothesisIds || [],
+        sourceIds: (canonicalTrials.get(t.id) as any)?.sourceIds || [],
         verdict: t.verdict || null, userWords: t.userWords || "", runId: t.runId,
         ratedAt: t.ratedAt, methodVersion: t.methodVersion, segmentKey: t.segmentKey,
         materialKey: t.materialKey, comparisonKey: t.comparisonKey,
@@ -689,6 +695,15 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
           source: m.source || null,
         })),
         hypotheses, hypothesisEdges: graph.hypothesisEdges || [], trials,
+        sources: sourceItems.filter((source: any) => source.kind === "source").map((source: any) => ({
+          id: source.id, title: source.title, locator: source.locator,
+          stage: source.stage, status: source.status,
+          originalProof: source.originalProof ? {
+            originalUrl: source.originalProof.originalUrl,
+            excerpt: source.originalProof.excerpt,
+            verification: source.originalProof.verification,
+          } : null,
+        })),
         qualityReview: graph.stewardship?.qualityReview || null,
         portfolio: graph.stewardship?.portfolio || null,
         feedbackReview: graph.stewardship?.feedbackReview || null,
