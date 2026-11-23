@@ -508,6 +508,7 @@ const tools = [
                   pool: { type: 'array', minItems: 3, maxItems: 12, items: { type: 'object', properties: {
                     title: string('Candidate premise (short, distinct).', 100),
                     sourceId: string('Observed source S-nnn from this dojo.', 20),
+                    hypothesisId: string('Hypothesis H-nnn for this candidate. Mandatory in prolonged Buzz recovery, with >=2 distinct conceptual arms in the pool.',20),
                     decision: { type: 'string', enum: ['selected', 'rejected'] },
                     reason: string('Specific reason selected or rejected; not a numeric self-score.', 350),
                   }, required: ['title', 'sourceId', 'decision', 'reason'], additionalProperties: false } },
