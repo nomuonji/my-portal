@@ -83,4 +83,15 @@ test('Skill Pack shares immutable version lifecycle but never bypasses Dojo rele
   assert.equal((await packs.get({id:manifest.id,resolve:true})).definition.versionNumber,2);
   assert.equal(documents.has('skillPackVersions/skill-pack-example--v1'),true);
   assert.equal(documents.has('skillPackVersions/skill-pack-example--v2'),true);
+  const newUnreleased={...manifest,id:'unreleased-pack',dojoBaseId:'fresh-dojo'};
+  await packs.createVersion({pack:newUnreleased,expectedCurrentVersion:0,
+    changeSummary:'A candidate Pack with no approval yet',confirm:true});
+  await assert.rejects(()=>packs.get({id:newUnreleased.id,resolve:true}),/no released dojo version/);
+  const buzzV2={...packs.SEED,summary:'A candidate revision to the originally approved Buzz Pack'};
+  await packs.createVersion({pack:buzzV2,expectedCurrentVersion:1,
+    changeSummary:'Candidate Pack composition change requires dojo review',confirm:true});
+  const buzzLive=await packs.get({id:'viral-post-pack',resolve:true});
+  assert.equal(buzzLive.definition.versionNumber,1,'legacy Buzz Pack v2 must not auto-activate');
+  assert.equal(buzzLive.versionPolicy,'legacy_entry_approved_pack_baseline');
+  await assert.rejects(()=>packs.get({id:'viral-post-pack',versionNumber:2,resolve:true}),/Unapproved/);
 });
