@@ -89,6 +89,7 @@ jobs:
       - run: node --check functions/contextRegistryToolSchemas.js
       - run: node --check functions/chatContextToolSchemas.js
       - run: npm run test:world-home
+      - run: node scripts/turso-transaction-smoke.js # mirror Netlify build prerequisite
       - run: CI=false npm run build
       - run: node --check functions/managerRunRecovery.js
       - run: node --check functions/hqDispatcher.js
