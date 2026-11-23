@@ -928,12 +928,16 @@ function createStore(options) {
 
   async function setMethodVersion(input) {
     const id = requireBaseId(input?.baseId);
-    const trials = await loadTrials(id);
+    const [trials,items] = await Promise.all([loadTrials(id),loadItems(id)]);
     await db().runTransaction(async (tx) => {
       const base = await loadBase(tx, id);
       if (base.openRunId) throw new Error('Run ' + base.openRunId + ' is open. The method version cannot change during a run; finish the run first.');
       const method = cleanMethod(input.method, base.method?.bodyRef?.location);
-      if (TARGET_KINDS.has(method.bodyRef.kind)) await resolveTarget({ kind: method.bodyRef.kind, id: method.bodyRef.location, versionNumber: method.bodyRef.versionNumber });
+      let targetBody=method.body||'';
+      if (TARGET_KINDS.has(method.bodyRef.kind)) {
+        const resolved=await resolveTarget({kind:method.bodyRef.kind,id:method.bodyRef.location,versionNumber:method.bodyRef.versionNumber});
+        targetBody=resolved.body||'';
+      }
       if ((base.methodHistory || []).some((entry) => entry.version === method.version)) {
         throw new Error('Method version label already used: ' + method.version + '. Version labels are never reused.');
       }
@@ -985,10 +989,36 @@ function createStore(options) {
         passed: rawBenchmark.passed === true, ref: text(rawBenchmark.ref, 500, 'benchmark.ref', false),
         cases: text(rawBenchmark.cases, 1000, 'benchmark.cases', false),
       } : { passed: null, noBenchmarkReason };
+      // If the agent explicitly links a release to machine-reviewed rule
+      // proposals, reject stale/unsupported evidence and text diffs that do
+      // not actually implement the proposed change. The legacy unlinked
+      // release path remains unchanged for existing dojos.
+      const ruleProposalIds=list(input.ruleProposalIds,12,40);
+      const linkedRuleReviews=[];
+      if(ruleProposalIds.length){
+        const graph=projectGraph({base,items,trials,feedbackLog:base.feedbackLog||[]});
+        for(const proposalId of ruleProposalIds){
+          const proposal=value(await tx.get(ruleProposalRef(id,proposalId)));
+          if(!proposal)throw Error('Skill rule merge proposal not found: '+proposalId);
+          const eligibility=assessRuleProposal(proposal,{method:base.method,graph,trials});
+          if(!eligibility.evidenceEligible&&!userDirected)
+            throw Error('Skill rule change cannot be released with unsupported or stale evidence: '+proposalId+' '+eligibility.blockingReasons.join(', '));
+          if(proposal.action==='replace'||proposal.action==='retire'){
+            if(targetBody.includes(proposal.existingRuleAnchor))
+              throw Error('Revised Skill still contains the supposedly replaced/retired rule: '+proposalId);
+          }
+          if(proposal.action!=='retire'&&!targetBody.includes(proposal.replacementText))
+            throw Error('Released Skill body does not contain the exact proposed replacement rule: '+proposalId);
+          linkedRuleReviews.push({proposalId,evidenceEligible:eligibility.evidenceEligible,
+            overrideByDirectUserInstruction:Boolean(userDirected&&!eligibility.evidenceEligible),
+            sourceMethodVersion:proposal.sourceMethodVersion});
+        }
+      }
       const at = now();
       base.method = { ...method, setAt: at };
       base.methodHistory = [...(base.methodHistory || []), {
         version: method.version, summary: method.summary, setAt: at, motivatingRunIds: motivating, benchmark,
+        ...(linkedRuleReviews.length?{ruleMergeReview:linkedRuleReviews}:{}),
         replaced: base.method ? { version: loop.current.version, rated: loop.current.rated, pass: loop.current.pass, passRate: loop.current.passRate } : null,
         ...(userDirected ? { authorizationNote: userDirected } : {}),
       }].slice(-100);
