@@ -231,7 +231,7 @@ export default function WorldHome() {
       const skill = {
         id:skillDetail.id,title:skillDraft.title,summary:skillDraft.summary,
         triggers:skillDraft.triggersText.split(/[,、\n]/).map(v=>v.trim()).filter(Boolean),
-        body:skillDraft.body,status:skillDraft.status||'available',
+        body:skillDraft.body,status:skillDraft.status||'available',skillType:skillDraft.skillType||'standard',
       };
       await fetchPortalWorld('',{method:'POST',body:JSON.stringify({
         action:'chat_skill_upsert',skill,expectedRevision:skillDetail.revision,
@@ -412,9 +412,9 @@ export default function WorldHome() {
       )}
 
       {!loading && show('skills') && (
-        <section aria-label="Skill Pack階層とIntelligence">
-          <SectionHeading eyebrow="03 — Pack / Skill / Intelligence" title="複合Skills（Pack）"
-            subtitle="能力はSkillに統一。単体Skillと、複数Skillを組み合わせる複合Skill（Pack）がある。MCC等のIntelligenceは専門判断モデル、Agent ProfileはAI全体の共通設定。"
+        <section aria-label="Skill Packと個別Skill">
+          <SectionHeading eyebrow="03 — Skills" title="Skill Packs"
+            subtitle="Agent Profile・Skill Pack・Skillを区別。Intelligenceは思考や判断に特化したSkill／Packの一形態で、独立階層ではありません。"
             count={skillPacks.length} icon={<TreeIcon color="primary" />} />
           {skillPacks.map(pack=>(
             <Paper key={pack.id} variant="outlined" sx={{p:{xs:1.6,md:2.2},borderRadius:2.5,borderColor:line,mb:1.5}}>
@@ -423,14 +423,14 @@ export default function WorldHome() {
                   <Typography variant="h6" sx={{fontWeight:850}}>{pack.title}</Typography>
                   <Typography variant="body2" color="text.secondary">{pack.summary}</Typography>
                 </Box>
-                <Chip size="small" color="success" variant="outlined" label={`Skill Pack v${pack.currentVersionNumber||1}`} />
+                <Chip size="small" color="success" variant="outlined" label={`${pack.skillType==='intelligence'?'Intelligence Pack':'Skill Pack'} v${pack.currentVersionNumber||1}`} />
               </Stack>
               <Box sx={{mt:1.6,pl:{xs:1,md:2},borderLeft:'3px solid',borderColor:'primary.light'}}>
-                <Typography variant="caption" color="text.secondary" sx={{display:'block',mb:.45}}>実行入口（旧統括SkillのIDと道場版を維持）</Typography>
-                <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+                <Typography variant="caption" color="text.secondary" sx={{display:'block',mb:.45}}>{pack.entrySkillId?'実行入口（既存Skillと道場承認版）':'専門知性の構成要素'}</Typography>
+                {pack.entrySkillId&&<Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
                   <Typography variant="subtitle2" sx={{fontFamily:fonts.mono,overflowWrap:'anywhere'}}>{pack.entrySkillId}</Typography>
-                  <Button size="small" onClick={()=>openSkill((data.chatSkills||[]).find(x=>x.id===pack.entrySkillId)||{id:pack.entrySkillId,title:pack.entrySkillId})}>原文を開く</Button>
-                </Stack>
+                  <Button size="small" onClick={()=>openSkill((data.chatSkills||[]).find(x=>x.id===pack.entrySkillId)||{id:pack.entrySkillId,title:pack.entrySkillId})}>Skill本文を開く</Button>
+                </Stack>}
                 <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:1.6,mb:.7}}>専門Skill群（各Skillは独立した版を持ち、共通利用される）</Typography>
                 <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',md:'repeat(2,minmax(0,1fr))'},gap:.8}}>
                   {(pack.skills||[]).map(member=>(
@@ -447,11 +447,11 @@ export default function WorldHome() {
               </Box>
               <Stack direction={{xs:'column',md:'row'}} useFlexGap gap={1} sx={{mt:1.5}}>
                 <Paper variant="outlined" sx={{p:1.25,flex:1,borderRadius:1.5}}>
-                  <Typography fontWeight={850} fontSize={13}>Intelligence（判断の知性）</Typography>
-                  {(pack.intelligenceIds||[]).map(id=>(
-                    <Button key={id} size="small" onClick={()=>openIntelligence(id)} sx={{display:'block',fontFamily:fonts.mono,fontSize:12.5,mt:.3,overflowWrap:'anywhere',textAlign:'left'}}>{id} — 内容を見る</Button>
+                  <Typography fontWeight={850} fontSize={13}>共有する関連Skill Pack</Typography>
+                  {(pack.supportingPackIds||pack.intelligenceIds||[]).map(id=>(
+                    <Button key={id} size="small" onClick={()=>fetchPortalWorld(`?resource=skill_pack&id=${encodeURIComponent(id)}`).then(res=>setIntelligenceDetail({id,title:res.pack?.title||id,components:res.definition?.stages||[],summary:res.definition?.summary||'',loading:false})).catch(error=>setIntelligenceDetail({id,error:error.message,loading:false}))} sx={{display:'block',fontFamily:fonts.mono,fontSize:12.5,mt:.3,overflowWrap:'anywhere',textAlign:'left'}}>{id} — Packを開く</Button>
                   ))}
-                  <Typography variant="caption" color="text.secondary">MCCはここ。Skill群の親ではなくPackが参照する共通知性です。</Typography>
+                  <Typography variant="caption" color="text.secondary">MCCもIntelligence型Skill Packとして参照します。関連Packは独立した版を持ちます。</Typography>
                 </Paper>
                 <Paper variant="outlined" sx={{p:1.25,flex:1,borderRadius:1.5}}>
                   <Typography fontWeight={850} fontSize={13}>錬成道場（評価と改善）</Typography>
@@ -467,7 +467,7 @@ export default function WorldHome() {
 
       {!loading && show('skills') && (
         <section aria-label="チャット専用Skills">
-          <SectionHeading eyebrow="03 — Chat skills" title="単体Skills"
+          <SectionHeading eyebrow="03 — Chat skills" title="Skills（単体能力）"
             subtitle="Packからも共通参照されるチャット用スキルはMy PortalのDBで本文と履歴を管理。Agent HQ Manager / WorkerのMethodとは別です。"
             count={skills.length} icon={<SparkIcon color="primary" />} />
           <Alert severity="info" sx={{ mb: 1.5, '& .MuiAlert-message':{fontSize:13} }}>
@@ -478,7 +478,7 @@ export default function WorldHome() {
               <Paper key={skill.id} variant="outlined" sx={{ p:2,borderRadius:2.3,borderColor:line }}>
                 <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
                   <Typography variant="subtitle1" fontWeight={800}>{skill.title}</Typography>
-                  <Chip size="small" variant="outlined" color="success" label="My Portal DB" />
+                  <Chip size="small" variant="outlined" color="success" label={skill.skillType==='intelligence'?'Intelligence Skill':'Skill'} />
                 </Stack>
                 <Typography variant="body2" color="text.secondary" sx={{mt:.6,lineHeight:1.65}}>{skill.summary}</Typography>
                 <Stack direction="row" flexWrap="wrap" useFlexGap spacing={.5} sx={{mt:1.1}}>
@@ -533,7 +533,7 @@ export default function WorldHome() {
       </Typography>
 
       <Dialog open={Boolean(intelligenceDetail)} onClose={()=>setIntelligenceDetail(null)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{fontWeight:850}}>Intelligence — {intelligenceDetail?.title||intelligenceDetail?.id}</DialogTitle>
+        <DialogTitle sx={{fontWeight:850}}>関連Skill Pack — {intelligenceDetail?.title||intelligenceDetail?.id}</DialogTitle>
         <DialogContent dividers>
           {intelligenceDetail?.loading && <CircularProgress size={24}/>}
           {intelligenceDetail?.error && <Alert severity="error">{intelligenceDetail.error}</Alert>}
