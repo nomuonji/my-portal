@@ -1544,3 +1544,39 @@ test('feedback from submarine hauls also creates a durable tree maintenance obli
  graph=await store.graphGet({baseId:'test-base'});
  assert.equal(graph.stewardship.feedbackReview.pendingCount,0);
 });
+
+test('Buzz hypothesis creation requires a concrete six-stage research protocol and preserves historical records', async () => {
+  const db = new MemoryDb();
+  const store = createStore({ getDb: () => db });
+  const id = 'viral-post-method-discovery';
+  await store.create({ id, title: 'Buzz', summary: 'Hypothesis protocol', outcome: {
+    statement: 'User evaluates each individual standalone post', unit: 'one human-rated draft',
+    acceptance: 'Only direct user feedback counts as pass', confirmedBy: 'user',
+  }, method: { ...method, version: 'bci-v7.7' }, ...auth });
+  const draft = { title: 'Source selection test', statement: 'A source selection hypothesis with a measurable condition.',
+    mechanism: 'Observable source details may enable different transformations than summaries.',
+    pipelineStage: 'selection', targetModuleIds: ['selection'] };
+  await assert.rejects(store.upsertItems({ baseId: id, kind: 'hypothesis', items: [draft] }), /requires researchProtocol/);
+  await assert.rejects(store.upsertItems({ baseId: id, kind: 'hypothesis', items: [{
+    ...draft, researchProtocol: { acquisition: 'a vague source' },
+  }] }), /hypothesis.researchProtocol/);
+  const researchProtocol = {
+    acquisition: 'Query original one-person field reports for actual actions and record the exact source URL and retrieval date.',
+    selection: 'Only retain a case with an observed costly choice and a concrete consequence; reject hypothetical social commentary.',
+    transformation: 'Keep the actors and observed acts fixed; move the reader viewpoint to the person carrying the immediate cost.',
+    control: 'Compare an equal-length ordinary summary of the same material while preserving the original actors and basic facts.',
+    prediction: 'Precommit a difference in user pass versus fail on the same source family, never count an AI quality screen as acceptance.',
+    falsification: 'If repeated human-rated comparisons favor the ordinary summary or both arms fail, stop using this source selection.',
+  };
+  const created = await store.upsertItems({ baseId: id, kind: 'hypothesis', items: [{...draft, researchProtocol}] });
+  assert.equal(created.changed.length, 1);
+  const hid = created.changed[0].id;
+  let read = await store.get({ id, view: 'full' });
+  const saved = read.full.hypotheses.find(h => h.id === hid);
+  assert.deepEqual(saved.researchProtocol, researchProtocol);
+  assert.equal(saved.pipelineStage, 'selection');
+  // A normal historical update is not required to rewrite untouched fields.
+  await store.upsertItems({ baseId: id, kind: 'hypothesis', items: [{ id: hid, limits: 'Unknown effectiveness until human comparison.' }] });
+  read = await store.get({ id, view: 'full' });
+  assert.deepEqual(read.full.hypotheses.find(h => h.id === hid).researchProtocol, researchProtocol);
+});

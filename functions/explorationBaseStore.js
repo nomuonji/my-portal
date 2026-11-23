@@ -1038,6 +1038,15 @@ function createStore(options) {
     return get({ id });
   }
 
+  // New structured research contracts begin with the user-directed bci-v7.7
+  // release. Earlier pinned experiments and legacy H/T fixture behavior stay
+  // readable and executable until that explicit release, never rewritten.
+  function needsBuzzProtocol(base) {
+    if (base?.id !== 'viral-post-method-discovery') return false;
+    const m = /^bci-v(\d+)\.(\d+)/.exec(base.method?.version || '');
+    return !!m && (Number(m[1]) > 7 || (Number(m[1]) === 7 && Number(m[2]) >= 7));
+  }
+
   function applyLedgerItem(kind, prior, raw, runId, base) {
     const creating = !prior;
     const item = prior ? { ...prior } : {
@@ -1047,8 +1056,28 @@ function createStore(options) {
     if (kind === 'hypothesis') {
       if (creating || raw.statement !== undefined) item.statement = text(raw.statement, 1500, 'hypothesis.statement', true);
       if (creating || raw.mechanism !== undefined) item.mechanism = text(raw.mechanism, 2000, 'hypothesis.mechanism (why it would hold)', true);
+      if (raw.researchProtocol !== undefined) {
+        const plan = plain(raw.researchProtocol, 'hypothesis.researchProtocol');
+        const fields = ['acquisition', 'selection', 'transformation', 'control', 'prediction', 'falsification'];
+        const clean = Object.fromEntries(fields.map((key) => {
+          const value = text(plan[key], 900, 'hypothesis.researchProtocol.' + key, true);
+          if (value.length < 24) throw new Error('hypothesis.researchProtocol.' + key +
+            ' needs an actionable, specific explanation of at least 24 characters, not an abstract label.');
+          return [key, value];
+        }));
+        if (new Set(Object.values(clean)).size !== fields.length)
+          throw new Error('hypothesis.researchProtocol: acquisition, selection, transformation, control, prediction and falsification must describe DISTINCT steps.');
+        item.researchProtocol = clean;
+      }
+      if (creating && needsBuzzProtocol(base) && !item.researchProtocol)
+        throw new Error('Buzz hypothesis recovery: new H requires researchProtocol with concrete acquisition, selection, transformation, control, prediction and falsification; do not create a vague H name.');
       if (raw.pipelineStage !== undefined) item.pipelineStage = oneOf(raw.pipelineStage, PIPELINE_STAGES, 'hypothesis.pipelineStage');
       if (creating) item.pipelineStage = item.pipelineStage || 'unknown';
+      if (creating && needsBuzzProtocol(base)
+        && (!raw.pipelineStage || raw.pipelineStage === 'unknown'
+          || !Array.isArray(raw.targetModuleIds) || !raw.targetModuleIds.length))
+        throw new Error('Buzz hypothesis recovery: choose a non-unknown pipelineStage and explicit Skill targetModuleIds for a new H.');
+
       if (raw.polarity !== undefined) item.polarity = oneOf(raw.polarity, ['positive', NEGATIVE], 'hypothesis.polarity');
       if (raw.targetModuleIds !== undefined) {
         const moduleIds = list(raw.targetModuleIds, 7, 30);
@@ -1106,8 +1135,8 @@ function createStore(options) {
     // Preserve actual changes to a hypothesis, not just its latest wording. A rating/evidence
     // append is not a hypothesis revision, and does not erase earlier versions of the claim.
     if (!creating && kind === 'hypothesis') {
-      const fields = ['title', 'statement', 'mechanism', 'limits', 'pipelineStage', 'polarity', 'stage', 'status', 'targetModuleIds'];
-      const modified = fields.filter((field) => (item[field] || '') !== (prior[field] || ''));
+      const fields = ['title', 'statement', 'mechanism', 'limits', 'researchProtocol', 'pipelineStage', 'polarity', 'stage', 'status', 'targetModuleIds'];
+      const modified = fields.filter((field) => JSON.stringify(item[field] || '') !== JSON.stringify(prior[field] || ''));
       if (modified.length) {
         item.revisionHistory = [...(prior.revisionHistory || []), {
           at: now(), runId: runId || null, changedFields: modified,
@@ -1741,6 +1770,11 @@ function createStore(options) {
           }
         });
         if (!backfill && !hypothesisIds.length) throw new Error('trial.hypothesisIds is required: name the hypothesis this sample tests (register it first with exploration_item_upsert). A sample tied to no hypothesis settles nothing when it is rated.');
+        if (!backfill && needsBuzzProtocol(base)
+          && (!hypothesisIds.length || !hypotheses.get(hypothesisIds[0])?.researchProtocol)) {
+          throw new Error('Buzz trial requires a concrete preregistered researchProtocol on the primary H: source acquisition, inclusion/exclusion rule, transformation, control, predicted outcome and falsifier. Revise the old H or register a new operational H before submitting another sample. Historical H/T are unchanged.');
+        }
+
         if (!backfill && run?.recallProbe?.status === 'passed' && (run.recallProbe.hypothesisIds || []).length
           && !hypothesisIds.some(hid => run.recallProbe.hypothesisIds.includes(hid))
           && !hypothesisIds.some(hid => (run.researchReview?.appliedHypothesisIds || []).includes(hid))) {

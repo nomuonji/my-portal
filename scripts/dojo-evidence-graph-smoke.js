@@ -320,3 +320,23 @@ test('retired trial-specific hypotheses preserve human feedback but cannot accru
   assert.deepEqual(g.trials.map(x=>x.userWords),['こうなった。全然うまくいってない']);
   assert.deepEqual(g.stewardship.portfolio.selectedBranches,[]);
 });
+
+test('the evidence graph retains operational protocols without upgrading legacy H or human ratings', () => {
+  const plan = {
+    acquisition: 'Direct first-party sources with a repeatable query and observation window.',
+    selection: 'A real choice must produce an observable cost, no hypothetical character.',
+    transformation: 'Reframe only a recorded act and its consequence, without invented role labels.',
+    control: 'Compare the same original material with a neutral factual retelling.',
+    prediction: 'Human acceptance rate should exceed the factual retelling under matched conditions.',
+    falsification: 'Repeated rejection or better control results refute this hypothesis.',
+  };
+  const items = [h('H-101', 'selection', { researchProtocol: plan }), h('H-102', 'unknown')];
+  const trials = [rated('T-101', 'fail', ['H-101'])];
+  const snapshot = JSON.stringify({ items, trials });
+  const graph = projectGraph({ base, items, trials, feedbackLog: [], view: 'full' });
+  assert.equal(JSON.stringify({ items, trials }), snapshot);
+  assert.deepEqual(graph.hypotheses.find(x => x.id === 'H-101').researchProtocol, plan);
+  assert.equal(graph.hypotheses.find(x => x.id === 'H-102').researchProtocol, null);
+  assert.equal(graph.hypotheses.find(x => x.id === 'H-101').promotion.historical.fail, 1);
+  assert.equal(graph.hypotheses.find(x => x.id === 'H-101').promotion.eligibleForMerge, false);
+});
