@@ -148,6 +148,7 @@ export default function WorldHome() {
   const [expanded, setExpanded] = useState(null);
 
   const [skillDetail, setSkillDetail] = useState(null);
+  const [intelligenceDetail, setIntelligenceDetail] = useState(null);
   const [skillDraft, setSkillDraft] = useState(null);
   const [skillHistory, setSkillHistory] = useState([]);
   const [skillLoading, setSkillLoading] = useState(false);
@@ -196,6 +197,13 @@ export default function WorldHome() {
   }, [data.projects]);
   const show = (name) => tab === 'all' || tab === name;
 
+  const openIntelligence = async (id) => {
+    setIntelligenceDetail({id,loading:true});
+    try {
+      const res=await fetchPortalWorld(`?resource=intelligence&id=${encodeURIComponent(id)}`);
+      setIntelligenceDetail({id,title:res.pack?.title||id,components:res.definition?.components||[],summary:res.definition?.summary||'',loading:false});
+    } catch(error) { setIntelligenceDetail({id,error:error.message||'Intelligenceの取得に失敗しました',loading:false}); }
+  };
   const openSkill = async (skill) => {
     setSkillDetail({id:skill.id,title:skill.title});
     setSkillLoading(true);setSkillEditing(false);setSkillError('');
@@ -441,7 +449,7 @@ export default function WorldHome() {
                 <Paper variant="outlined" sx={{p:1.25,flex:1,borderRadius:1.5}}>
                   <Typography fontWeight={850} fontSize={13}>Intelligence（判断の知性）</Typography>
                   {(pack.intelligenceIds||[]).map(id=>(
-                    <Typography key={id} sx={{fontFamily:fonts.mono,fontSize:12.5,mt:.45,overflowWrap:'anywhere'}}>{id}</Typography>
+                    <Button key={id} size="small" onClick={()=>openIntelligence(id)} sx={{display:'block',fontFamily:fonts.mono,fontSize:12.5,mt:.3,overflowWrap:'anywhere',textAlign:'left'}}>{id} — 内容を見る</Button>
                   ))}
                   <Typography variant="caption" color="text.secondary">MCCはここ。Skill群の親ではなくPackが参照する共通知性です。</Typography>
                 </Paper>
@@ -523,6 +531,23 @@ export default function WorldHome() {
         このホームは既存DBの索引です。重要な方針と責務の変更のみ地図を更新し、実行状態はそれぞれの専門システムで確認してください。
         {data.generatedAt && ` · 最終取得 ${new Date(data.generatedAt).toLocaleString('ja-JP')}`}
       </Typography>
+
+      <Dialog open={Boolean(intelligenceDetail)} onClose={()=>setIntelligenceDetail(null)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{fontWeight:850}}>Intelligence — {intelligenceDetail?.title||intelligenceDetail?.id}</DialogTitle>
+        <DialogContent dividers>
+          {intelligenceDetail?.loading && <CircularProgress size={24}/>}
+          {intelligenceDetail?.error && <Alert severity="error">{intelligenceDetail.error}</Alert>}
+          {intelligenceDetail?.summary && <Typography variant="body2" color="text.secondary" sx={{mb:1.4}}>{intelligenceDetail.summary}</Typography>}
+          {(intelligenceDetail?.components||[]).map(component=>(
+            <Paper key={component.id} variant="outlined" sx={{p:1.3,mb:1,borderRadius:1.4}}>
+              <Typography variant="subtitle2" fontWeight={800}>{component.title||component.id}</Typography>
+              <Typography variant="caption" color="text.secondary">{component.summary}</Typography>
+            </Paper>
+          ))}
+          <Typography variant="caption" color="text.secondary">これは判断モデルであり、Skillの工程や道場の評価履歴を所有しません。</Typography>
+        </DialogContent>
+        <DialogActions><Button onClick={()=>setIntelligenceDetail(null)}>閉じる</Button></DialogActions>
+      </Dialog>
 
       <Dialog open={Boolean(skillDetail)} onClose={() => {if(!skillSaving)setSkillDetail(null);}} fullWidth maxWidth="md">
         <DialogTitle sx={{fontWeight:850}}>{skillDetail?.title || 'Chat Skill'} — My Portal DB</DialogTitle>
