@@ -52,3 +52,20 @@
 - **学習時**：`exploration_skill_graph_get` では各評価物のexecutionResourcesと、専門Skill別の資源・版別正例/反例を確認する。モデルやToolを使った群の合格率差は観測相関であり、選別・素材・作者・時期などの交絡を制御していない限り改善効果と断定しない。
 
 現行では本人評価→仮説の振り返り→改善候補ルーティング→対象Skillの改訂→対象道場でのリリース、という一連の**実行可能な操作**を既存APIで行う。AIが具体的な編集案と対照検証を行う責任を持つ。評価物の合否、データ改変、公開権限、版の自動昇格はシステムが勝手に補完・緩和しない。
+
+## 2026-11-24: 評価→専門Skill→再検証の実働キュー
+
+`exploration_trial_rate` は、ユーザーの本当の合否を H/T に保存する同じFirestoreトランザクション内で、`targetSkillIds` または監査済みバズ工程対応表から **Skill改善の未診断キュー** を作る。キーは `targetSkillId:moduleId`、正本は元道場の `skillImprovementInbox` と `skillImprovementReviews`。元のTrial/Hypothesisの本人評価は移動・複製・修正しない。
+
+- `exploration_skill_graph_get.stewardship.skillImprovement.inbox` と道場状態の `skillImprovement` で未処理の枝を確認する。道場Workspaceのツリーにも表示する。
+- 過去の既存評価は `exploration_skill_improvement_seed({baseId,confirm:true})` で**一度だけ**初期投入する。既に診断済みのキューを再オープンしない。
+- 新しい評価を受けたら、AIは関連Hの原文・実際の合否を読み、少なくとも2つの競合原因を提示する。 `exploration_skill_improvement_review` に Trial ID、診断、対立説明、識別可能な次実験、必要なら具体的な候補ルールを保存する。
+- 正例・反例の両方がない限り `rule_candidate` として保存できない。仮に両方あっても、**対応ルールは単なるAI仮説**。比較の独立性・交絡・自分の予測の外れ方を検証する。レビューの保存ではChat Skill本文を変えず、版リリースもしない。未診断のTrialだけが残る部分的レビューも可能。
+- `compare_more` で事前登録した素材・選定・加工の対照を試し、後続の本人評価で差分を測定する。 `not_a_skill_defect` で調べた結果は履歴に残し、同じ無根拠な修正案を繰り返さない。
+- 本文更新の根拠が揃った場合だけ **変更対象の専門Skill** を `chat_skill_upsert` で改訂し、**対象Skillの道場**で従来の `exploration_method_version_set` を使い承認版にする。対象の道場がない場合は、承認済み現行版を固定した専門道場を先に紐付ける。未承認のdraftを「効果が上がった」と呼ばない。
+
+この仕組みは計算・保管・追跡を強化するものであり、人間の採否をモデルが肩代わりするものでも、裏でAIワーカーが自律稼働するものでもない。本人は成果を評価するだけで、エージェントが同一の道場作業内で未診断の改善キューを処理する。Tool / Consumer Model 使用状態は `executionResources` で区別し、Tool宣言が成功済みという偽報告をしない。
+
+### Skill Pack と共有改善
+
+技能が共有される場所を正本とする。バズPackが `creative-thinking` を使用する場合、`creative-thinking` を改訂するのはその専門Skillの道場であり、バズPack本文に同じ規則をコピペしない。同じSkillを参照する動画・収益化Packは次の実行で**専門Skillの承認済み版**を読む。工程やSkillの組み合わせそのものを変える必要があるときだけ、独立したPack候補版を検証・承認する。
