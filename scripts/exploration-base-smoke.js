@@ -1083,7 +1083,18 @@ async function completePriorResearch(store, baseId, runId) {
   const thesis=hypotheses[0];
   const antithesis=hypotheses[1]||null;
   assert.ok(thesis,'research requires a preexisting hypothesis');
-  return store.researchSynthesize({baseId,runId,synthesis:{
+  const graph=await store.graphGet({baseId,view:'full'});
+  const pending=graph.stewardship.feedbackReview;
+  const treeReview=pending.pendingTrialIds.length ? {
+    reviewedTrialIds:pending.pendingTrialIds,
+    crossBranchSummary:'Recent user evaluations must be contrasted across the affected Skill branches; the agent can propose narrowed conditions but not infer motives from an unexplained rejection.',
+    branchDecisions:pending.touchedHypothesisIds.map(id=>({
+      hypothesisId:id,action:'retain',
+      rationale:'Keep the hypothesis provisional until a separate new comparison can distinguish mechanisms from incidental conditions.',
+      nextFalsification:'Create a source-matched independent control and treatment pair whose user verdict can contradict the current explanation.',
+    })),
+  }:undefined;
+  return store.researchSynthesize({baseId,runId,...(treeReview?{treeReview}:{}),synthesis:{
     thesisId:thesis.id,antithesisId:antithesis?.id,
     thesisAnchor:thesis.statement.slice(0,Math.min(40,thesis.statement.length)),
     antithesisAnchor:antithesis?.statement.slice(0,Math.min(40,antithesis.statement.length)),
@@ -1396,4 +1407,57 @@ test('legacy dojo graph API projects H/T/feedback without rewriting originals an
   }]}),/cycle/);
   assert.deepEqual((await store.get({id:'test-base',view:'full'})).full.trials,before,
     'relations must never mutate the actual rated historical sample');
+});
+
+test('new human feedback creates cross-branch maintenance debt that cannot be skipped in next run',async()=>{
+ const store=await setup();
+ await store.upsertItems({baseId:'test-base',kind:'hypothesis',items:[{
+   ...hypothesis,pipelineStage:'voice'
+ },{
+   ...hypothesis,title:'Information source effect',pipelineStage:'source',
+   statement:'A verified source changes user reaction to the generated material.',
+ }]});
+ const opened=await store.startRun({baseId:'test-base',
+   objective:'Measure the difference between a concrete and generic premise.',
+   targets:[{hypothesisId:'H-001',prediction:'The concrete material will have a larger acceptance rate'}],
+   responseMode:'compact'});
+ const made=await store.recordTrials({baseId:'test-base',runId:opened.runId,trials:[{
+    label:'New candidate 1',body:'A person explicitly reveals the selfish reason for an ordinary decision.',
+    hypothesisIds:['H-001','H-002'],predictedPass:0.5,
+  }]});
+ await store.rateTrials({baseId:'test-base',ratings:[{id:made.created[0].id,verdict:'pass',userWords:'合格。動機がある'}]});
+ let graph=await store.graphGet({baseId:'test-base',view:'full'});
+ assert.equal(graph.stewardship.feedbackReview.status,'needs_hypothesis_tree_review');
+ assert.deepEqual(graph.stewardship.feedbackReview.pendingTrialIds,[made.created[0].id]);
+ assert.deepEqual(graph.stewardship.feedbackReview.touchedHypothesisIds,['H-001','H-002']);
+ await store.finishRun({baseId:'test-base',runId:opened.runId,
+   summary:'Received a real user verdict; comparing both branches is needed before the next generation.',
+   verdicts:[{hypothesisId:'H-001',result:'inconclusive',
+    observed:'An accepted sample exists but it tests multiple mechanisms, so causal status is unknown.'}],
+   notMovedReason:'The observed acceptance is in the ratings ledger, not a separately validated hypothesis revision.',
+   responseMode:'compact'});
+ const next=await store.startRun({baseId:'test-base',
+   objective:'Compare the two previously combined mechanisms without making up a cause.',
+   targets:[{hypothesisId:'H-002',prediction:'Source verification may matter in the next independent sample.'}],
+   responseMode:'compact'});
+ const page=await store.researchRead({baseId:'test-base',runId:next.runId,page:0});
+ const root=page.hypotheses.find(x=>x.id==='H-001');
+ const synthesis={thesisId:'H-001',thesisAnchor:root.statement.slice(0,36),action:'retain',
+   tension:'Multiple hypotheses explained the same accepted sample; no unique cause follows from that observation.',
+   proposedClaim:'Concrete motivations could help, but source verification may still be confounded with the wording.',
+   comparison:'Create separate matched comparisons under one stable source while only the wording changes.',
+   falsification:'The human prefers the generic version under a matched source or rejects both tested variants.',
+   passFeedbackId:made.created[0].id,passFeedbackAnchor:'合格',
+ };
+ await assert.rejects(store.researchSynthesize({baseId:'test-base',runId:next.runId,synthesis}),/treeReview/);
+ const review={reviewedTrialIds:[made.created[0].id],
+   crossBranchSummary:'The accepted sample relates to both writing style and source quality. No unique explanation has emerged, and the next experiment should separate these factors.',
+   branchDecisions:['H-001','H-002'].map(hypothesisId=>({hypothesisId,action:'retain',
+     rationale:'This user-accepted example is consistent with this hypothesis, but simultaneous changes make attribution uncertain.',
+     nextFalsification:'Use separate matched pairs to vary one feature and check whether the human still accepts the result.'}))};
+ const accepted=await store.researchSynthesize({baseId:'test-base',runId:next.runId,synthesis,treeReview:review});
+ assert.equal(accepted.status,'synthesized');
+ graph=await store.graphGet({baseId:'test-base'});
+ assert.equal(graph.stewardship.feedbackReview.status,'up_to_date');
+ assert.equal(graph.stewardship.feedbackReview.lastReviewedRunId,next.runId);
 });
