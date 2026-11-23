@@ -98,7 +98,7 @@ const item = {
       type: 'object',
       description: 'Required on NEW Skill/Pack H. One-off examples and ideas belong to source S-nnn instead. Server checks case IDs and evidence state, not causal truth.',
       properties: {
-        caseRefs: {type:'array',minItems:2,maxItems:8,uniqueItems:true,items:string('An existing observed S-nnn source or a genuinely human-rated T-nnn trial in this base.',20)},
+        caseRefs: {type:'array',minItems:2,maxItems:8,uniqueItems:true,items:string('An S-nnn with sourceRole=observation and observed evidence, or a genuinely human-rated T-nnn in this base.',20)},
         changedOperation: string('The concrete method operation varied before inspecting the new artifact, not a topic label.',900),
         rivalExplanation: string('Competing explanation for past outcomes and at least one confound.',900),
         transferTest: string('Compare this method against a control on a different independent material; predict a falsifier.',900),
