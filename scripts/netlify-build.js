@@ -32,8 +32,8 @@ run('npm', ['run', 'build'], { shell: process.platform === 'win32' });
 
 // One-shot source-preserving enrichment of old human-rated Buzz Trials.
 // Runs only in production, never in preview; idempotent until flag removal.
-if (process.env.CONTEXT === 'production' && process.env.DOJO_SKILL_FEEDBACK_BOOTSTRAP === '2026-11-24') {
-  run(process.execPath,['scripts/dojo-skill-feedback-bootstrap.js']);
+if (process.env.CONTEXT === 'production' && process.env.DOJO_SKILL_REVIEW_CYCLE === '2026-11-24') {
+  run(process.execPath,['scripts/dojo-skill-first-review.js']);
 }
 
 // Explicit, one-time, production-only import authorized by the owner. No source deletion or cutover.
