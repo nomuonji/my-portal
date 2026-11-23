@@ -377,8 +377,9 @@ const tools = [
       },required:['thesisId','thesisAnchor','tension','proposedClaim','comparison','falsification','action'],additionalProperties:false},
       treeReview:{type:'object',description:'Required whenever new user-rated Trials exist since the last tree synthesis; reconcile every newly affected hypothesis branch before new output.',properties:{
         reviewedTrialIds:strings('ALL pending newly human-rated T-nnn IDs exposed by graph.stewardship.feedbackReview (max 120).',120),
+        reviewedExternalRefs:strings('ALL newly confirmed/declined submarine haul refs in graph.stewardship.feedbackReview (max 120).',120),
         crossBranchSummary:string('How the latest real feedback changes the relation among branches, rather than only restating verdicts (40-1500 chars).',1500),
-        branchDecisions:{type:'array',minItems:1,maxItems:120,items:{type:'object',properties:{
+        branchDecisions:{type:'array',minItems:0,maxItems:120,items:{type:'object',properties:{
           hypothesisId:string('One affected H-nnn ID; each affected branch must be reviewed once.',20),
           action:{type:'string',enum:['retain','refine','split','merge_candidate','retire','unresolved']},
           rationale:string('Compare actual human feedback with the hypothesis; do not assert an unknown rejection cause as fact (30-900 chars).',900),
