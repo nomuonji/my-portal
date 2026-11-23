@@ -116,3 +116,50 @@ test('long paired samples cannot cause sign-test underflow to falsely certify su
   const v=binomialTail(1500,3000);
   assert.ok(v>0.45&&v<0.55);
 });
+
+test('tree steward allocates research across distinct Skill modules and caps user artifacts',()=>{
+  const h1=h('H-001','voice');
+  const h2=h('H-002','source');
+  const h3=h('H-003','transform');
+  const h4=h('H-004','voice');
+  const g=projectGraph({base,items:[h1,h2,h3,h4],trials:[]});
+  assert.equal(g.stewardship.policyVersion,'tree-steward-v1');
+  assert.deepEqual(g.stewardship.portfolio.selectedBranches.map(x=>x.hypothesisId),
+    ['H-001','H-002','H-003']);
+  assert.deepEqual(g.stewardship.portfolio.selectedBranches.map(x=>x.moduleId),
+    ['voice','source','transform']);
+  assert.equal(g.stewardship.userReview.suggestedVisibleBatchSize,3);
+  assert.equal(g.stewardship.guardrails.autoMergeSkill,false);
+  assert.equal(g.stewardship.portfolio.untestedBranches,4);
+});
+test('tree steward reviews existing unscored artifacts before proposing more human-facing ones',()=>{
+  const hs=[h('H-001','voice'),h('H-002','source')];
+  const waiting=Array.from({length:5},(_,i)=>({
+    id:'T-0'+i,status:'awaiting',hypothesisIds:[i%2?'H-001':'H-002'],
+    label:'Waiting evaluation #'+i,
+  }));
+  const g=projectGraph({base,items:hs,trials:waiting});
+  assert.equal(g.stewardship.userReview.awaiting,5);
+  assert.equal(g.stewardship.userReview.suggestedVisibleBatchSize,0);
+  assert.equal(g.stewardship.userReview.constraint,'review_existing_before_creating_more');
+  assert.equal(g.stewardship.portfolio.selectedBranches.length,2,
+    'research branch selection may continue when user-facing output is blocked');
+});
+test('tree steward distinguishes exploratory partial evidence from user partial verdicts',()=>{
+  const hs=[h('H-001','voice'),h('H-002','source')];
+  const trial=[
+    ...Array.from({length:7},(_,i)=>rated('T-A'+i,'pass',['H-001'],{
+      runId:i%2?'R-010':'R-011',segmentKey:'specific'})),
+    ...Array.from({length:7},(_,i)=>rated('T-B'+i,'fail',['H-001'],{
+      runId:i%2?'R-010':'R-011',segmentKey:'generic'})),
+    rated('T-partial','partial',['H-002']),
+  ];
+  const g=projectGraph({base,items:hs,trials:trial});
+  const p=g.stewardship.portfolio.selectedBranches.find(x=>x.hypothesisId==='H-001');
+  assert.equal(p.state,'exploratory_partial');
+  assert.equal(p.intent,'split_and_independently_retest');
+  assert.equal(p.eligibleForMerge,false);
+  const s=g.stewardship.portfolio.selectedBranches.find(x=>x.hypothesisId==='H-002');
+  assert.equal(s.state,'collecting');
+  assert.equal(s.pass,0);
+});
