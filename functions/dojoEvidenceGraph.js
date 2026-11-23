@@ -4,6 +4,7 @@
 // The historical H/T IDs, human verdicts, skill pointer and revision history
 // remain canonical. No writes, guessed classifications or historical backfill.
 const { createHash } = require('node:crypto');
+const { planTreeStewardship } = require('./dojoTreeStewardship');
 
 const MODULES = Object.freeze([
   { id:'root',name:'Skill全体',pipelineStages:['unknown'] },
@@ -227,6 +228,7 @@ function projectGraph({base,items=[],trials=[],feedbackLog=[],relations=[],view=
     trials:view==='full'?trials.map(simple):trials.filter(isRated).slice(-40).map(simple),
     externalFeedback:dangling,
     promotions,
+    stewardship:planTreeStewardship({hypotheses:nodes,trials,hypothesisEdges:edges,base}),
     skillRules:{status:'unmapped_legacy_skill_body',rules:[],
       warning:'Do not infer machine-adopted rule IDs from prose or old method versions.'},
     migration:{mode:'virtual_non_destructive',historicalHypotheses:hypotheses.length,
