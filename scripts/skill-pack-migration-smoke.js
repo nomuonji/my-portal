@@ -26,7 +26,7 @@ test('required Skills load by default; humor and distribution load only for sele
 test('a Pack must not create recursive or duplicate Skill ownership',()=>{
   assert.throws(()=>clean({...SEED,skills:[{skillId:SEED.entrySkillId,stage:'transform'}]}),/recursive/);
   assert.throws(()=>clean({...SEED,skills:[SEED.skills[0],SEED.skills[0]]}),/duplicate/);
-  assert.throws(()=>clean({...SEED,skills:[{skillId:'creative-thinking',stage:'imaginary'}]}),/Invalid/);
+  assert.throws(()=>clean({...SEED,skills:[{skillId:'creative-thinking',stage:'invalid stage'}]}),/Invalid/);
 });
 
 const {projectLegacy,cognitionBody,LEGACY_PACKS}=require('../functions/intelligenceSkillBridge');
