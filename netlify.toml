@@ -9,7 +9,6 @@
 # Owner-authorized, one-time exact-copy import. The persisted marker makes later builds no-ops.
 [context.production.environment]
   CONSUMER_MODEL_SNAPSHOT_IMPORT = "2026-11-18"
-  DOJO_SKILL_REVIEW_CYCLE = "2026-11-24"
 
 [functions]
   directory = "netlify/functions"
