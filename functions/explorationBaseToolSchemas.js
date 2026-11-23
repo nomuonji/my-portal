@@ -45,9 +45,9 @@ const method = {
     bodyRef: {
       type: 'object',
       properties: {
-        kind: { type: 'string', enum: ['chat_skill', 'intelligence_pack', 'inline', 'repo', 'document', 'hq_method'], description: 'Prefer chat_skill or intelligence_pack: the base then trains that DB skill/pack and releases one pinned version of it.' },
-        location: string('chat_skill / intelligence_pack: its id. Otherwise repo full name, document URL or ID.', 500),
-        versionNumber: { type: 'integer', minimum: 1, description: 'chat_skill / intelligence_pack: the version this base releases for execution.' },
+        kind: { type: 'string', enum: ['chat_skill', 'skill_pack', 'intelligence_pack', 'inline', 'repo', 'document', 'hq_method'], description: 'Prefer chat_skill or skill_pack: they use one dojo release discipline. intelligence_pack remains legacy compatibility.' },
+        location: string('chat_skill / skill_pack / intelligence_pack: its id. Otherwise repo full name, document URL or ID.', 500),
+        versionNumber: { type: 'integer', minimum: 1, description: 'chat_skill / skill_pack / intelligence_pack: the version this base releases for execution.' },
         path: string('Path inside the repo.', 500),
         commit: string('Commit of this version, when known.', 80),
       },
@@ -220,8 +220,21 @@ const tools = [
     },
   },
   {
+    name: 'exploration_method_target_migrate',
+    description: 'One-time classification-only migration of an already released legacy Intelligence workflow to Skill Pack. Requires original canonical dojo and matching id/version, no open run, confirm=true. Preserves method.version, every H/T verdict, history and existing approved version; does not release a draft or alter success gates.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        baseId: string('Canonical existing dojo ID', 160),
+        packId: string('Legacy composite Intelligence ID (now Skill Pack ID)', 90),
+        confirm: {type:'boolean',enum:[true]},
+        actor: string('Agent/source of authorized migration', 200),
+      },required:['baseId','packId','confirm'],additionalProperties:false,
+    },
+  },
+  {
     name: 'exploration_method_version_set',
-    description: 'Release a new version of what this base trains: point at a Chat Skill or Intelligence Pack version in the DB (bodyRef.kind chat_skill / intelligence_pack, location = id, versionNumber), or an inline/pointer body for older bases. Refused while a run is open. After the first version it requires motivatingRunIds (finished runs that justify it) — or userAuthorized with authorizationNote when the user decided the change — and benchmark.passed=true, or noBenchmarkReason. When the base records trials, the released version also needs loop.gates.minRatedPerVersion rated trials first (so the two versions can be compared by pass rate) unless the user directed the change. Prefer an inline body (bodyRef.kind=inline): the base then holds the method text itself. Version labels are never reused. One insight from one run is a ledger entry, not a method version.',
+    description: 'Release a new version of what this base trains: point at a Chat Skill or Skill Pack version (bodyRef.kind chat_skill / skill_pack; legacy intelligence_pack is still accepted, location=id, versionNumber), or an inline/pointer body for older bases. Refused while a run is open. After the first version it requires motivatingRunIds (finished runs that justify it) — or userAuthorized with authorizationNote when the user decided the change — and benchmark.passed=true, or noBenchmarkReason. When the base records trials, the released version also needs loop.gates.minRatedPerVersion rated trials first (so the two versions can be compared by pass rate) unless the user directed the change. Prefer an inline body (bodyRef.kind=inline): the base then holds the method text itself. Version labels are never reused. One insight from one run is a ledger entry, not a method version.',
     inputSchema: {
       type: 'object',
       properties: {
