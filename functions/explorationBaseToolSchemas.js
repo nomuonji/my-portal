@@ -82,7 +82,7 @@ const item = {
     mechanism: string('Hypothesis: why it would hold (required on create).', 2000),
     researchProtocol: {
       type: 'object',
-      description: 'New Buzz hypotheses: concrete, preregistered sourcing -> selection -> transformation -> control -> measurable prediction -> falsification. Required on newly created Buzz H; legacy H are preserved unchanged. This is agent-authored design, not human-rated proof.',
+      description: 'New Skill/Pack hypotheses require this six-stage research protocol plus formationReview citing two real observed S/T cases. Legacy hypotheses retain their original data. This is a design check, not proof of a method.',
       properties: {
         acquisition: string('Exactly where and how to collect comparable original cases (source, query, sample window).', 900),
         selection: string('Observable inclusion/exclusion criteria BEFORE seeing the target output; distinguish strong/weak source material.', 900),
@@ -94,11 +94,25 @@ const item = {
       required: ['acquisition','selection','transformation','control','prediction','falsification'],
       additionalProperties: false,
     },
+    formationReview: {
+      type: 'object',
+      description: 'Required on NEW Skill/Pack H. One-off examples and ideas belong to source S-nnn instead. Server checks case IDs and evidence state, not causal truth.',
+      properties: {
+        caseRefs: {type:'array',minItems:2,maxItems:8,uniqueItems:true,items:string('An existing observed S-nnn source or a genuinely human-rated T-nnn trial in this base.',20)},
+        changedOperation: string('The concrete method operation varied before inspecting the new artifact, not a topic label.',900),
+        rivalExplanation: string('Competing explanation for past outcomes and at least one confound.',900),
+        transferTest: string('Compare this method against a control on a different independent material; predict a falsifier.',900),
+        priorArtDecision: string('Why observation/idea or a refinement of an existing H is insufficient; cite relevant older H.',900),
+      },
+      required:['caseRefs','changedOperation','rivalExplanation','transferTest','priorArtDecision'],
+      additionalProperties:false,
+    },
     pipelineStage: { type: 'string', enum: ['source', 'selection', 'transform', 'voice', 'gate', 'audience', 'unknown'], description: 'Hypothesis only: which part of the full sourcing-to-evaluation pipeline is under test. Not the evidence maturity stage.' },
     polarity: { type: 'string', enum: ['positive', 'negative'], description: 'All dojos: positive predicts successful outcomes (default for legacy), negative predicts a falsifiable failure mode. Negative hypotheses are validated separately and cannot be ranked as positive win patterns.' },
     limits: string('Hypothesis/source: where it does not apply.', 1500),
     locator: string('Source: URL, search query or tool call that reaches it (required on create).', 600),
     coverage: string('Source: what it yields for this outcome and why it is worth trying (required on create).', 1500),
+    sourceRole: {type:'string',enum:['source','observation','idea'],description:'S-nnn: acquisition channel, observed case, or unvalidated idea. Idea records cannot be formation evidence.'},
     originalProof:{type:'object',description:'Optional direct-original citation with an exact excerpt observed by the agent. Needed for Buzz recovery after persistent user rejections. The server verifies format and link within source metadata, but cannot independently attest that the external text is real.',properties:{
       originalUrl:string('Direct original post/page permalink, HTTPS; not a search result/summary feed.',1000),
       excerpt:string('At least 16 exact characters from the original text, not a summary of it.',1100),
@@ -250,7 +264,7 @@ const tools = [
   },
   {
     name: 'exploration_item_upsert',
-    description: 'Create or update hypotheses, sources or constraints of an Exploration Base (up to 40 per call). Sources are where candidates come from (a site, feed, search query, API); they climb the same verified ladder as hypotheses, so record hits as evidence and misses as counterexamples, and reject sources that keep yielding nothing. Hypothesis stages: conjecture → observed → reproduced → yielded_candidate → yielded_outcome; the server enforces the evidence each stage needs, and only the last two are win patterns. Rejected hypotheses are kept with their reason. Constraints carry an owner; user-owned ones need userAuthorized. Pass runId when the change comes from the open run.',
+    description: 'Create or update hypotheses, sources or constraints of an Exploration Base (up to 40 per call). New Skill/Pack H requires researchProtocol AND formationReview backed by two observed S/T refs, a method operation, a rival cause, a cross-material test and a prior-art decision. One-off ideas/observations use sourceRole on S, not H. Existing H remain editable. Sources are where candidates come from (a site, feed, search query, API); they climb the same verified ladder as hypotheses, so record hits as evidence and misses as counterexamples, and reject sources that keep yielding nothing. Hypothesis stages: conjecture → observed → reproduced → yielded_candidate → yielded_outcome; the server enforces the evidence each stage needs, and only the last two are win patterns. Rejected hypotheses are kept with their reason. Constraints carry an owner; user-owned ones need userAuthorized. Pass runId when the change comes from the open run.',
     inputSchema: {
       type: 'object',
       properties: {
