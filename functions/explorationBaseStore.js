@@ -11,6 +11,7 @@ const { validateLearningAudit } = require('./dojoLearning');
 const { buildResearchInventory, researchPage, validateResearchSynthesis } = require('./dojoResearchInventory');
 const { recallRequired, buildRecallProbe, checkRecallPredictions, buildHistoricalHypotheses, checkHypothesisReviews } = require('./dojoRecall');
 const { trialArtifactStatus, publicMediaUrl } = require('./dojoArtifactReadiness');
+const { projectGraph, validateEdges, MODULE_IDS } = require('./dojoEvidenceGraph');
 
 const DEFAULT_DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTIONS = Object.freeze({
@@ -19,6 +20,7 @@ const COLLECTIONS = Object.freeze({
   runs: 'explorationBaseRuns',
   events: 'explorationBaseEvents',
   trials: 'explorationBaseTrials',
+  graphEdges: 'explorationHypothesisEdges',
 });
 const ID_PATTERN = /^[a-z][a-z0-9-]{1,79}$/;
 const STAGES = ['conjecture', 'observed', 'reproduced', 'yielded_candidate', 'yielded_outcome'];
@@ -57,6 +59,7 @@ const PROTOCOL = [
   'When the user reacts, exploration_trial_rate with their own words. The rating lands on the version and on each hypothesis the trial tested, so a rated hypothesis can no longer be closed as inconclusive.',
   'A new version waits until the released one has enough ratings to be compared (loop.gates). Three consecutive non-passes require a research run with a structured failureAnalysis: two actual failed examples, a confirmed pass or externally verifiable positive contrast, two competing causes with contradictory evidence and falsification, uncertainty, and a discriminating next test. A mere finished run or agent self-score never clears the gate.',
   'feedback holds what the user said about each thing the gear produced (action and comment), grouped by the version that produced it. Read it before proposing a new version and cite it as the reason; a version is better only if the user said so more often, not if self-scores rose.',
+  'The Skill-Hypothesis-Evidence graph is an additive view of canonical H/T/user-feedback records. Read exploration_skill_graph_get for module relationships and mechanically computed evidence states. Proposed edges and historical AI verdicts never by themselves certify a causal claim or authorize Skill release.',
 ];
 
 function database() { return getDocumentDb(DEFAULT_DATABASE_ID); }
@@ -351,6 +354,7 @@ function createStore(options) {
   const itemRef = (baseId, id) => db().collection(COLLECTIONS.items).doc(docId(baseId, id));
   const runRef = (baseId, id) => db().collection(COLLECTIONS.runs).doc(docId(baseId, id));
   const trialRef = (baseId, id) => db().collection(COLLECTIONS.trials).doc(docId(baseId, id));
+  const graphEdgeRef = (baseId, id) => db().collection(COLLECTIONS.graphEdges).doc(docId(baseId, id));
   const eventRef = (baseId, seq) => db().collection(COLLECTIONS.events).doc(docId(baseId, 'E' + String(seq).padStart(6, '0')));
 
   // JSON round-trip drops undefined fields, which Firestore refuses.
@@ -451,6 +455,60 @@ function createStore(options) {
     const snap = await db().collection(COLLECTIONS.trials).where('baseId', '==', baseId).limit(3000).get();
     return snap.docs.map((doc) => doc.data()).sort((a, b) => String(a.id).localeCompare(String(b.id)));
   }
+  async function graphGet(input) {
+    const id = requireBaseId(input?.baseId);
+    const view = oneOf(input?.view, ['summary','full'], 'view', 'summary');
+    const [baseSnap,items,trials,edgeSnap] = await Promise.all([
+      baseRef(id).get(),loadItems(id),loadTrials(id),
+      db().collection(COLLECTIONS.graphEdges).where('baseId','==',id).limit(1000).get(),
+    ]);
+    const base = value(baseSnap);
+    if(!base)throw new Error('Exploration Base not found: '+id);
+    return projectGraph({base,items,trials,feedbackLog:base.feedbackLog||[],
+      relations:edgeSnap.docs.map(doc=>doc.data()),view});
+  }
+
+  async function graphRelationUpsert(input) {
+    const id = requireBaseId(input?.baseId);
+    const [items,trials,edgesSnapshot] = await Promise.all([
+      loadItems(id),loadTrials(id),
+      db().collection(COLLECTIONS.graphEdges).where('baseId','==',id).limit(1000).get(),
+    ]);
+    const known=edgesSnapshot.docs.map(doc=>doc.data());
+    const newEdges=validateEdges(input?.relations,items.filter(x=>x.kind==='hypothesis'),known);
+    const trialIds=new Set(trials.map(t=>t.id));
+    for(const edge of newEdges){
+      if(edge.evidenceIds.some(e=>!trialIds.has(e))) {
+        throw new Error('Proposed relation evidence must refer to existing T-nnn IDs in this dojo; do not fabricate support');
+      }
+    }
+    const changed=[];
+    await db().runTransaction(async tx=>{
+      const base=await loadBase(tx,id);
+      const records=[];
+      for(const edge of newEdges){
+        const ref=graphEdgeRef(id,edge.id);
+        const existing=value(await tx.get(ref));
+        records.push({edge,ref,existing});
+      }
+      for(const {edge,ref,existing} of records){
+        if(existing)continue;
+        const record={...edge,baseId:id,createdAt:now(),
+          actor:text(input?.actor,120,'actor',false)||'agent'};
+        put(tx,ref,record);
+        changed.push({id:edge.id,sourceId:edge.sourceId,targetId:edge.targetId,relation:edge.relation,status:'proposed'});
+      }
+      if(changed.length){
+        pushEvent(tx,base,{type:'hypothesis_edges_proposed',actor:input?.actor,
+          summary:changed.map(e=>e.sourceId+' '+e.relation+' '+e.targetId).join(' / ').slice(0,600),
+          detail:{edgeIds:changed.map(e=>e.id)}});
+        saveBase(tx,base);
+      }
+    });
+    return {baseId:id,created:changed,existing:newEdges.length-changed.length,
+      note:'Semantic relationships are agent-proposed edges, not scientifically proven contradictions or user ratings.'};
+  }
+
   async function researchRead(input) {
     const id = requireBaseId(input?.baseId);
     const runId = text(input?.runId, 20, 'runId', true);
@@ -859,6 +917,12 @@ function createStore(options) {
       if (raw.pipelineStage !== undefined) item.pipelineStage = oneOf(raw.pipelineStage, PIPELINE_STAGES, 'hypothesis.pipelineStage');
       if (creating) item.pipelineStage = item.pipelineStage || 'unknown';
       if (raw.polarity !== undefined) item.polarity = oneOf(raw.polarity, ['positive', NEGATIVE], 'hypothesis.polarity');
+      if (raw.targetModuleIds !== undefined) {
+        const moduleIds = list(raw.targetModuleIds, 7, 30);
+        if(!moduleIds.length || moduleIds.some(m=>!MODULE_IDS.has(m)))
+          throw new Error('hypothesis.targetModuleIds requires 1-7 known module IDs');
+        item.targetModuleIds = moduleIds;
+      }
       if (creating) item.polarity = item.polarity || 'positive';
     } else {
       if (creating || raw.locator !== undefined) item.locator = text(raw.locator, 600, 'source.locator (URL, query or tool call that reaches it)', true);
@@ -899,7 +963,7 @@ function createStore(options) {
     // Preserve actual changes to a hypothesis, not just its latest wording. A rating/evidence
     // append is not a hypothesis revision, and does not erase earlier versions of the claim.
     if (!creating && kind === 'hypothesis') {
-      const fields = ['title', 'statement', 'mechanism', 'limits', 'pipelineStage', 'polarity', 'stage', 'status'];
+      const fields = ['title', 'statement', 'mechanism', 'limits', 'pipelineStage', 'polarity', 'stage', 'status', 'targetModuleIds'];
       const modified = fields.filter((field) => (item[field] || '') !== (prior[field] || ''));
       if (modified.length) {
         item.revisionHistory = [...(prior.revisionHistory || []), {
@@ -1587,6 +1651,7 @@ function createStore(options) {
           label: text(raw.label, 300, 'trial.label', true), body: text(raw.body, 4000, 'trial.body', false),
           ref: text(raw.ref, 600, 'trial.ref', false), imageUrl: imageUrl(raw.imageUrl),
           mediaUrl: publicMediaUrl(raw.mediaUrl), hypothesisIds, sourceIds: list(raw.sourceIds, 10, 20),
+          ...cleanGraphTrialMetadata(raw),
           predictedPass: predicted, predictionNote: text(raw.predictionNote, 600, 'trial.predictionNote', false),
           ...(editorialScreen ? { format: editorialScreen.format, editorialScreen } : {}),
           ...(learningAudit ? { learningAudit } : {}),
@@ -1619,6 +1684,37 @@ function createStore(options) {
     });
     const loop = created.length ? await refreshLoop(id) : null;
     return { baseId: id, created, skipped, imaged, loop: loop ? loopSummary(loop) : undefined };
+  }
+
+  function cleanGraphTrialMetadata(raw) {
+    const phase = raw.evaluationPhase === undefined ? null :
+      oneOf(raw.evaluationPhase,['exploration','validation'],'trial.evaluationPhase');
+    const segmentKey=text(raw.segmentKey,120,'trial.segmentKey',false);
+    const materialKey=text(raw.materialKey,120,'trial.materialKey',false);
+    const comparisonKey=text(raw.comparisonKey,120,'trial.comparisonKey',false);
+    const arm=raw.experimentArm === undefined ? null :
+      oneOf(raw.experimentArm,['treatment','control'],'trial.experimentArm');
+    const factors=raw.plannedFactors===undefined?null:plain(raw.plannedFactors,'trial.plannedFactors');
+    if(factors){
+      const entries=Object.entries(factors);
+      if(entries.length>8||entries.some(([k,v])=>!/^[a-z][a-z0-9_]{1,29}$/.test(k) ||
+        typeof v!=='string'||!v.trim()||v.length>100))
+        throw new Error('trial.plannedFactors must have up to eight stable snake_case string factors');
+    }
+    if(phase==='validation' && (!comparisonKey||!materialKey||!arm||!segmentKey))
+      throw new Error('Validation trial requires preregistered segmentKey, comparisonKey, materialKey and experimentArm');
+    if((arm||comparisonKey) && phase!=='validation')
+      throw new Error('Comparison arm and key are restricted to pre-rating validation trials');
+    if(arm==='treatment'&&raw.hypothesisIds?.length!==1)
+      throw new Error('Validation treatment requires exactly one target hypothesis (no co-occurrence claiming independent proof)');
+    return {
+      ...(phase?{evaluationPhase:phase}:{}),
+      ...(segmentKey?{segmentKey}:{}),
+      ...(materialKey?{materialKey}:{}),
+      ...(comparisonKey?{comparisonKey}:{}),
+      ...(arm?{experimentArm:arm}:{}),
+      ...(factors?{plannedFactors:Object.fromEntries(Object.entries(factors).map(([k,v])=>[k,v.trim()]))}:{}),
+    };
   }
 
   // The user's words are the rating. A verdict without them would be the agent grading itself.
@@ -1761,7 +1857,7 @@ function createStore(options) {
   // Compact summary used by the Agent Intelligence bundle resolver.
   async function brief(input) { return get({ id: input?.id, view: 'brief' }); }
 
-  return { create, list: listBases, get, remove, brief, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, researchRead, researchSynthesize, prepareRecall, checkRecall, recordTrials, rateTrials, awaitingTrials, refreshLoop, trainersOf };
+  return { create, list: listBases, get, remove, brief, graphGet, graphRelationUpsert, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, researchRead, researchSynthesize, prepareRecall, checkRecall, recordTrials, rateTrials, awaitingTrials, refreshLoop, trainersOf };
 }
 
 const store = createStore();
