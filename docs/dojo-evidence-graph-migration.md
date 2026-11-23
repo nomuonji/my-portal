@@ -94,3 +94,34 @@
 ## 検証
 
 `npm run test:exploration-base` に新しいグラフ検証を追加。既存H/Tを変更せず読めること、負仮説の合格率誤用を防ぐこと、対立仮説と系譜DAGの検証、偽Trial証拠の拒否、マッチド検証がない旧試作品から自動採用しないこと、事前登録された新しい本人FBに限定して暫定昇格することを確認する。
+
+## v0.4: Skill規則の証拠連鎖、本人評価後のツリー再審査、比較の保守性（2026-11-23）
+
+### 1. Post-rating Tree Maintenance
+
+- ユーザーが `exploration_trial_rate` で実際に評価したら、そのT番号と影響するH番号を `base.treeMaintenance` に保存（既存H/Tを上書きしない）。
+- `exploration_skill_graph_get.stewardship.feedbackReview` とWeb「仮説の系譜」タブにレビュー待ちを表示。次のrunで **全ページの履歴確認＋新しい本人評価の全件照合＋影響する全Hの方針** が必要。
+- `exploration_research_synthesize.treeReview` に `reviewedTrialIds`、`branchDecisions` （維持・再定義・分割・統合候補・引退・保留）、反証計画、枝横断の要約を保存しないと旧研究の合否だけ引用して進めない。完了時に待ちを消す。意味的な判断はAgent、実在ID・欠落の拒否はServer。
+- 既存データのバックフィルは新しい待ちを発生させないが、全履歴readの対象には残る。新しい本人評価を使ってSkillを自動で書き換えない。複数run同時実行は引き続き不可。
+
+### 2. Evidence audit: matched-pair reproducibility
+
+- 評価物の `comparisonKey` と `materialKey` を別々のrunへ再利用したものは同一比較とみなさない。比較するtreatment/controlは**同じrun**で収集すること。
+- 同一 `materialKey` は同一仮説・同一条件の統計内で1回のみ数える。agentの同一素材ラベルの使い回しでは統計上の独立性を水増しできない。
+- 検証対象の仮説×事前登録セグメント数を補正したBonferroniの `adjustedSignTestP` を計算。事後探索の多数の仮説から都合の良い少数のみを採用候補にしない。
+- `validated_scope` は「同一素材に対する人間の対応ある採否が複数runで差を見せた」という参考判定。無作為化、評価者の独立性、作者/学習データからの情報漏洩や真の因果までは担保できない。
+
+### 3. Skill Rule Merge（提案・審査まで）
+
+- `exploration_skill_rule_proposal_upsert` は、現在リリースされている正本Skill/Pack本文の**一意の完全一致引用**（既存の規則を置換/撤回する場合）、対象モジュール、関連する実在する正仮説、本人による合格・非合格の評価物を検査して**不変の `MR-...` 候補**として新collection `explorationSkillRuleProposals` に保存する。昔のSkill本文を曖昧に自動分割・採用ルール扱いしない。
+- 追加・置換・撤回の区別がある。機械審査は `graph.skillRules.rules[].eligibility` として動的に再計算し、独立の対応比較が実証不足なら `evidence_incomplete`。別の版へ切り替われば旧候補は `base_method_version_changed` となる。
+- `exploration_method_version_set.ruleProposalIds` を任意指定したとき、サーバーは候補の本体引用と新Skill/Pack本文への実際の差分（追加/置換/撤回）を検査。普通のAIによる版更新では `evidenceEligible=true` を要求。本人がその変更を**明示的に指示**したときだけ非実証の変更を許可し、methodHistoryへoverrideと未検証を残す。従来のrun・版別評価数・ベンチマーク・公開ゲートを弱めない。
+- **自動で本番リリースはしない。** 旧Skill/Packの全規則の正本化、独立した候補版の回帰検証、本人評価で改善が確認された後の段階的なリリースとロールバックは今後の未完了範囲。コンポーネントが `eligible=true` と返すことはSkillの品質保証ではない。
+
+### 4. 実データとの照合（読取のみ）
+
+`exploration_base_get(view=full)` で、バズ投稿・ユーモア・マネタイズの3道場を読み取って確認。既存Hレコードの `targetModuleIds` 明示設定数は現時点でいずれもゼロで、これらのSkill規則は**自動同定できない**。旧コードの `pipelineStage` 互換投影を維持する。ユーザーが合格と評価した過去の本文を含めて全て再利用するが、機械的な因果証明や新規の本人評価は発生させない。
+
+### 5. 継続中の重要課題
+
+旧Hの全てを一括で機械昇格させることはできない。独立した比較の事前登録を今後積み上げる。既存のhistory取得数上限と失われた古い汎用feedbackについては、全件保証を表明しない。RuleMergeは提案/ゲート段階で、Agentが生成する新規Trialの自動起床や公開後の自動ロールバックは別途検証が必要。クライアントのMCPスキーマに新ツールが出ない場合は接続の再読み込みを行う。
