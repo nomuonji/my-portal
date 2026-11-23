@@ -2,16 +2,16 @@
 
 ## 認知負荷を減らす呼び方
 
-- **Pack＝頭脳**。判断原則・市場や受け手の世界モデル。特定の投稿制作手順は所有しない。
-- **Skill＝技術／手順**。独立したSkill本文と版を持つ。 `buzz-content-ideation` は複数の専門SkillとPackを組み立てる「統括Skill」だが、MCC Packの子ではない。
+- **Pack＝複数Skillの統括**。目的・工程・専門Skillの参照と使い分けを持つ。バズ投稿Packは `viral-post-pack` で、旧 `buzz-content-ideation` を実行入口に利用する（正本や版は複製しない）。
+- **Intelligence＝判断の知性**。市場や受け手の世界モデルを保持する。MCCは `marketing-creative-cognition` というIntelligenceであり、Packではない。旧Registry名 `intelligencePacks` / `intelligence_pack_get` は互換維持。
+- **Skill＝技術／手順**。独立したSkill本文と版を持つ。従来「統括Skill」と呼んだ `buzz-content-ideation` は、バズ投稿Packの入口を実装する互換Skillとして残す。
 - **道場＝訓練・評価・版リリース**。道場は所有対象Skillを持つが、実験で観察した能力上の問題は別の専門Skillにも波及し得る。
 
 ```text
-                       Agent Profile
-                            │
-                MCC Pack（判断のレンズ）
-                            ↕ 必要時に解決
-バズ投稿道場 → buzz-content-ideation（統括Skill）
+             MCC Intelligence（判断のレンズ）
+                            ↕ 必要時に参照
+バズ投稿道場 → バズ投稿Pack（Skill群の統括）
+                            └─ buzz-content-ideation（旧入口Skill）
      │             ├─ creative-thinking（発想）
      │             ├─ text-native-social-copywriting（文章）
      │             ├─ humor-craft（ユーモア）
@@ -34,7 +34,7 @@
 1. 本人の合否を現行 `exploration_trial_rate` で保存し、`exploration_skill_graph_get` の `stewardship.skillImprovement.routes` を読む。
 2. 対象専門Skillの原文を `chat_skill_get` で読む。特に本人採用・不採用の原文と他道場の対照を見て、どの規則が不適切かを**仮説として**切り分ける。推測だけの改訂はしない。
 3. 十分な独立した対照試験・反証・具体的差分が揃って初めて、対象Skillに `chat_skill_upsert` で改訂を保存する。Packの抽象的な判断原則に本来Skill側の手順を複製しない。変更前のSkill原文は版履歴に保存される。
-4. 対象Skillが道場で錬成されていれば、その道場の `exploration_method_version_set` を使い、**その対象Skill自身の**評価・ベンチマーク・公開ゲートに従ってリリースする。別道場の合格例を移植先の合格例として混算しない。
+4. 対象Skillが道場で錬成されていれば、その道場の `exploration_method_version_set` を使い、**その対象Skill自身の**評価・ベンチマーク・公開ゲートに従ってリリースする。Packの構成情報とSkill本文・版履歴は別の正本なので、リリースを自動的に上書きしない。別道場の合格例を移植先の合格例として混算しない。
 5. 現行の `exploration_skill_rule_proposal_upsert` は「自道場の固定された主Skill/Pack」の規則候補用であり、専門Skillへの横断書込みを勝手に許可するものではない。移植先の新規対照が不足する場合は改訂せず、検証対象として保持する。
 
 ### 既知の限界
