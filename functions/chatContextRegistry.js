@@ -38,6 +38,7 @@ function cleanSkill(value) {
   id,title,summary:safeString(value?.summary,1100),
   triggers:safeStrings(value?.triggers,25), body,
   status:['available','paused','archived'].includes(value.status)?value.status:'available',
+  skillType:value?.skillType==='intelligence'?'intelligence':'standard',
   sourceOfTruth:'My Portal DB', kind:'chat_skill',
   importProvenance:safeString(value?.importProvenance,350)||null,
  };
@@ -45,7 +46,7 @@ function cleanSkill(value) {
 function summary(skill) {
  return {
   id:skill.id,title:skill.title,summary:skill.summary,triggers:skill.triggers,
-  status:skill.status||'available',kind:'chat_skill',
+  status:skill.status||'available',kind:'chat_skill',skillType:skill.skillType||'standard',
   sourceOfTruth:'My Portal DB',revision:Number(skill.revision)||0,
   updatedAt:skill.updatedAt?.toDate?.()?.toISOString?.() || skill.updatedAt || null,
   importProvenance:skill.importProvenance||null,
@@ -183,7 +184,7 @@ async function upsertSkill(input) {
   if(!existing.exists)throw new Error('bodyEdits needs an existing skill');
   const current=existing.data();
   // Unspecified fields keep their stored value; the revision check below still guards against races.
-  draft={id:current.id||existing.id,title:current.title,summary:current.summary,triggers:current.triggers,status:current.status,...draft,
+  draft={id:current.id||existing.id,title:current.title,summary:current.summary,triggers:current.triggers,status:current.status,skillType:current.skillType||'standard',...draft,
    body:applyTextEdits(current.body,input.bodyEdits,'bodyEdits')};
  }
  const cleaned=cleanSkill(draft);
