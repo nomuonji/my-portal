@@ -55,7 +55,7 @@ async function fetchPortalWorld(path = '?resource=world_map', options = {}) {
 const EMPTY = { routes: [], projects: [], spaces: [], methods: [], chatSkills: [], skillPacks: [], contexts: [], warnings: [], coverage: {} };
 const SEARCH_TABS = [
   { id: 'all', label: 'すべて' }, { id: 'guide', label: 'Agent Guide' }, { id: 'routes', label: '分野・入口' },
-  { id: 'projects', label: 'Projects' }, { id: 'skills', label: 'Pack / Skills' },
+  { id: 'projects', label: 'Projects' }, { id: 'skills', label: 'Skills' },
   { id: 'contexts', label: 'Contexts' },
 ];
 function searchable(item) {
@@ -413,8 +413,8 @@ export default function WorldHome() {
 
       {!loading && show('skills') && (
         <section aria-label="Skill Pack階層とIntelligence">
-          <SectionHeading eyebrow="03 — Pack / Skill / Intelligence" title="Skill Packs"
-            subtitle="Packが複数Skillを統括します。Intelligenceは判断に使う独立した知性。道場はPackとSkillを鍛えます。"
+          <SectionHeading eyebrow="03 — Pack / Skill / Intelligence" title="複合Skills（Pack）"
+            subtitle="能力はSkillに統一。単体Skillと、複数Skillを組み合わせる複合Skill（Pack）がある。MCC等のIntelligenceは専門判断モデル、Agent ProfileはAI全体の共通設定。"
             count={skillPacks.length} icon={<TreeIcon color="primary" />} />
           {skillPacks.map(pack=>(
             <Paper key={pack.id} variant="outlined" sx={{p:{xs:1.6,md:2.2},borderRadius:2.5,borderColor:line,mb:1.5}}>
@@ -467,7 +467,7 @@ export default function WorldHome() {
 
       {!loading && show('skills') && (
         <section aria-label="チャット専用Skills">
-          <SectionHeading eyebrow="03 — Chat skills" title="個別Skills"
+          <SectionHeading eyebrow="03 — Chat skills" title="単体Skills"
             subtitle="Packからも共通参照されるチャット用スキルはMy PortalのDBで本文と履歴を管理。Agent HQ Manager / WorkerのMethodとは別です。"
             count={skills.length} icon={<SparkIcon color="primary" />} />
           <Alert severity="info" sx={{ mb: 1.5, '& .MuiAlert-message':{fontSize:13} }}>
