@@ -108,11 +108,16 @@ async function get(input={}){
   const index=snapshot(await db().collection(PACKS).doc(id).get());
   if(!index)throw Error('Skill Pack not found: '+id);
   const release=input.resolve===true?await require('./explorationBaseStore').trainersOf({kind:'skill_pack',id}):[];
-  const approved=[...new Set(release.map(x=>Number(x.releasedVersion)).filter(Number.isInteger))];
+  const approved=[...new Set(release.map(x=>Number(x.releasedVersion)).filter(n=>Number.isInteger(n)&&n>0))];
   if(approved.length>1)throw Error('Conflicting Skill Pack dojo releases: '+id);
-  if(input.resolve===true&&approved.length&&input.versionNumber!==undefined&&Number(input.versionNumber)!==approved[0])
+  // The old Buzz Pack is an approved v1 wrapper around a separately released
+  // coordinator Skill. A new manifest version must NOT go live by default.
+  const legacyBaseline=index.migratedFrom?.entrySkillId&&index.migratedFrom?.dojoBaseId?1:null;
+  const released=approved[0]||legacyBaseline;
+  if(input.resolve===true&&!released)throw Error('Skill Pack has no released dojo version: '+id);
+  if(input.resolve===true&&input.versionNumber!==undefined&&Number(input.versionNumber)!==released)
     throw Error('Unapproved Skill Pack version for execution: '+id+' v'+input.versionNumber);
-  const versionNumber=input.resolve===true&&approved.length?approved[0]:
+  const versionNumber=input.resolve===true?released:
     (input.versionNumber===undefined?index.currentVersionNumber:Number(input.versionNumber));
   if(!Number.isInteger(versionNumber)||versionNumber<1)throw Error('Invalid Skill Pack version');
   const definition=snapshot(await db().collection(VERSIONS).doc(versionDocId(id,versionNumber)).get());
@@ -121,7 +126,7 @@ async function get(input={}){
     executionPolicy:'Read current dojo-approved Skills; referenced MCC is an Intelligence-type Skill Pack, not a separate layer',
     legacyEntryAlias:definition.entrySkillId,
     historicDojoRetained:definition.dojoBaseId,
-    versionPolicy:approved.length?'latest_dojo_release':'latest_registry_version',
+    versionPolicy:approved.length?'latest_dojo_release':(input.resolve===true&&legacyBaseline?'legacy_entry_approved_pack_baseline':'latest_registry_version'),
     dojos:release};
   if(input.resolve!==true)return result;
   const selected=selectMemberSkills(definition,input.stages);
