@@ -73,6 +73,7 @@ async function ensureLegacyPack(){
 }
 function listSummary(p){
   return {id:p.id,title:p.title,summary:p.summary,entrySkillId:p.entrySkillId,
+    skillType:p.skillType||'workflow',supportingPackIds:p.intelligenceIds||[],
     intelligenceIds:p.intelligenceIds||[],dojoBaseId:p.dojoBaseId,
     memberCount:(p.skills||[]).length,skills:p.skills||[],
     currentVersionNumber:p.currentVersionNumber,status:p.status};
@@ -105,7 +106,7 @@ async function get(input={}){
   const definition=snapshot(await db().collection(VERSIONS).doc(versionDocId(id,versionNumber)).get());
   if(!definition)throw Error('Skill Pack version not found: '+id+' v'+versionNumber);
   const result={pack:listSummary(index),definition,
-    executionPolicy:'read live dojo-approved Chat Skills; Intelligence is a separate reference, not a child Pack',
+    executionPolicy:'Read current dojo-approved Skills; referenced MCC is an Intelligence-type Skill Pack, not a separate layer',
     legacyEntryAlias:definition.entrySkillId,
     historicDojoRetained:definition.dojoBaseId};
   if(input.resolve!==true)return result;
@@ -116,9 +117,10 @@ async function get(input={}){
       versionPolicy:entry.versionPolicy,body:entry.body},
     members:members.map((s,i)=>({...selected[i],title:s.title,
       revision:s.revision,versionPolicy:s.versionPolicy,body:s.body})),
-    intelligenceReferences:definition.intelligenceIds.map(id=>({id,registry:'intelligencePacks',
-      resolver:'intelligence_pack_get / cognitive_bundle_resolve'})),
-    note:'A Skill Pack orchestrates skills; it does not duplicate the Intelli­gence definition or override individual dojo approvals.'};
+    supportingPacks:(definition.intelligenceIds||[]).map(id=>({id,registry:'skillPacks',resolver:'skill_pack_get'})),
+    intelligenceReferences:(definition.intelligenceIds||[]).map(id=>({id,registry:'intelligencePacks',
+      resolver:'intelligence_pack_get (legacy compatibility)'})),
+    note:'MCC is available as an Intelligence-type Skill Pack, and specialist Skill bodies retain their own approved versions.'};
   return result;
 }
 async function getLegacyPack(input={}){
