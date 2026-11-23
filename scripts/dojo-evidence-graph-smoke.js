@@ -266,7 +266,9 @@ test('T-128 regression: self-cleared repeatedly failing gate, unverified source,
  const run={targets:[{hypothesisId:'H-084'}],
    negativeTargets:[{hypothesisId:'H-081'}]};
  const draft={hypothesisIds:['H-003','H-075','H-084'],predictedPass:0.29,
-   editorialScreen:{pool:[{sourceId:'S-296',decision:'selected'}]}};
+   editorialScreen:{pool:[{sourceId:'S-296',hypothesisId:'H-084',decision:'selected'},
+    {sourceId:'S-297',hypothesisId:'H-075',decision:'rejected'},
+    {sourceId:'S-298',hypothesisId:'H-003',decision:'rejected'}]}};
  const sources=[{id:'S-296',locator:'https://imabazu.com/funny/',
    coverage:'二次ランキングで要約。原典未取得。'}];
  const check=(trial=draft,r=run,src=sources)=>checkBuzzSubmissionRecovery({
