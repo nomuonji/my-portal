@@ -139,6 +139,25 @@ const tools = [
     },required:['baseId','relations'],additionalProperties:false},
   },
   {
+    name:'exploration_skill_rule_proposal_upsert',
+    description:'Attach an exact existing rule quotation from the pinned released Skill/Pack version to real hypothesis IDs and genuine human-rated trial evidence. Create an immutable add/replace/retire proposal. Server calculates evidence eligibility (not quality, causal proof, release authorization or automatic text modification). When there are no independent matched comparisons, a proposal stays blocked. This never edits the released Skill.',
+    inputSchema:{type:'object',properties:{
+      baseId,actor,
+      proposal:{type:'object',properties:{
+        action:{type:'string',enum:['add','replace','retire']},
+        moduleId:{type:'string',enum:['root','source','selection','transform','voice','gate','audience']},
+        sourceMethodVersion:string('Exact method version label currently pinned by this dojo.',80),
+        existingRuleAnchor:string('For replace/retire: exact unique 16-600 character quote from the pinned Skill or Pack body. Not inferred by LLM.',600),
+        replacementText:string('For add/replace: proposed 16-1200 character new rule. Never auto-adopted.',1200),
+        hypothesisIds:strings('1-4 real positive H-nnn hypotheses governing this rule.',4),
+        supportingTrialIds:strings('1-20 genuine human PASS T-nnn IDs linked to hypotheses.',20),
+        counterexampleTrialIds:strings('1-20 human non-PASS T-nnn IDs. Not counted as support.',20),
+        rationale:string('Specific reason to add/change/retire this Skill rule (30-1200 chars).',1200),
+        refutingObservation:string('What new human feedback would refute this rule change (30-900 chars).',900),
+      },required:['action','moduleId','sourceMethodVersion','hypothesisIds','supportingTrialIds','counterexampleTrialIds','rationale','refutingObservation'],additionalProperties:false}
+    },required:['baseId','proposal'],additionalProperties:false},
+  },
+  {
     name: 'exploration_base_create',
     description: 'Create an Exploration Base for one exploration. Fixes the user-owned outcome contract, so it requires userAuthorized=true and authorizationNote. Canonical measurement data stays in its operator; the base only points to it.',
     inputSchema: {
