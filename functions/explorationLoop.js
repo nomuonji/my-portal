@@ -59,6 +59,30 @@ function failStreakOf(entries) {
 }
 
 // Everything the 道場 shows about its loop. `base` supplies the released version and the last finished run.
+function wilson95(passed,n) {
+  if(!n)return null;
+  const z=1.96,p=passed/n,den=1+(z*z)/n;
+  const c=(p+(z*z)/(2*n))/den;
+  const margin=z*Math.sqrt(p*(1-p)/n+(z*z)/(4*n*n))/den;
+  return {low:round(Math.max(0,c-margin)),high:round(Math.min(1,c+margin))};
+}
+// Monitoring provides a review signal, never an automatic Skill rollback.
+function releaseRegressionHealth(current,previous,measurementMode=false) {
+  const minimum=8;
+  const currentCI=wilson95(current.pass||0,current.rated||0);
+  const previousCI=previous?wilson95(previous.pass||0,previous.rated||0):null;
+  const status=measurementMode?'measurement_mode_requires_operator_data'
+    :!previous?'no_comparable_previous_version'
+    :current.rated<minimum||previous.rated<minimum?'too_few_human_ratings'
+    :currentCI.high<previousCI.low?'regression_alert'
+    :currentCI.low>previousCI.high?'improvement_signal':'inconclusive_difference';
+  return {status,minimumRatedPerVersion:minimum,currentCI,previousCI,
+    automaticRollback:false,
+    nextAction:status==='regression_alert'?'Review changed Skill rules and prepare a separately authorized revert.'
+      :status==='too_few_human_ratings'?'Gather more genuine user-rated samples before concluding the new Skill is worse.'
+      :'Continue comparing future human-rated results under the current release gates.'};
+}
+
 function loopView({ trials, feedbackLog, base, hypotheses }) {
   const entries = ratedEntries(trials || [], feedbackLog);
   const { trialArtifactStatus } = require('./dojoArtifactReadiness');
@@ -74,6 +98,7 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
   const current = byVersion.find((g) => g.released) || { version: currentKey, released: true, ...tally([]) };
   // The version to beat: the most recently rated earlier version with enough ratings to compare.
   const previous = byVersion.find((g) => !g.released && g.rated >= LIMITS.minRatedPerVersion) || null;
+  const releaseHealth=releaseRegressionHealth(current,previous,base?.outcome?.confirmedBy==='measurement');
 
   const { measureCalibration } = require('./dojoCalibration');
   const calibration = measureCalibration(entries);
@@ -144,6 +169,7 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
     .forEach((h) => nextActions.push(h.id + ' は ' + h.rated + ' 回試して合格 0。棄却する（exploration_item_upsert status=rejected）。'));
   scoreboard.filter((h) => h.status === 'open' && h.rated >= LIMITS.hypothesisMinTrials && h.passRate >= 0.6)
     .forEach((h) => nextActions.push(h.id + ' は合格率 ' + Math.round(h.passRate * 100) + '%（' + h.rated + ' 回）。勝ち筋の候補。本文に入れるなら、既存の規則を書き換え・統合して入れる（末尾への追記はしない）。'));
+  if(releaseHealth.status==='regression_alert') nextActions.push('現行版の合格率が前版より統計的に悪化している可能性。規則差分・素材と評価条件を監査し、根拠のない昇格を止め、独立の差戻し案を審査する。');
   if (usesTrials && !canRelease) nextActions.push('いまの版の評価は ' + current.rated + ' 件。' + LIMITS.minRatedPerVersion + ' 件たまるまで版を上げない。');
   if (previous && current.rated >= LIMITS.minRatedPerVersion && current.passRate < previous.passRate) {
     nextActions.push('いまの版の合格率 ' + Math.round(current.passRate * 100) + '% は、前の版 ' + previous.version + ' の ' + Math.round(previous.passRate * 100) + '% を下回っている。増やした規則を疑う。');
@@ -153,7 +179,7 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
     metric: measurementMode ? 'measured_outcome' : 'pass_rate',
     overall: tally(entries),
     recent: tally(entries.slice(-10)),
-    current, previous, byVersion,
+    current, previous, byVersion, releaseHealth,
     awaiting: awaiting.map((t) => ({ id: t.id, label: t.label, body: t.body || '',
       ref: t.ref || '', imageUrl: t.imageUrl || '', mediaUrl: t.mediaUrl || '',
       reviewStatus: trialArtifactStatus(t).status, reviewReason: trialArtifactStatus(t).reason,

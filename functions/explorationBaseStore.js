@@ -12,6 +12,7 @@ const { buildResearchInventory, researchPage, validateResearchSynthesis } = requ
 const { recallRequired, buildRecallProbe, checkRecallPredictions, buildHistoricalHypotheses, checkHypothesisReviews } = require('./dojoRecall');
 const { trialArtifactStatus, publicMediaUrl } = require('./dojoArtifactReadiness');
 const { projectGraph, graphEdges, validateEdges, MODULE_IDS } = require('./dojoEvidenceGraph');
+const { makeRuleProposal, assessRuleProposal } = require('./dojoRuleMerge');
 
 const DEFAULT_DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTIONS = Object.freeze({
@@ -21,6 +22,7 @@ const COLLECTIONS = Object.freeze({
   events: 'explorationBaseEvents',
   trials: 'explorationBaseTrials',
   graphEdges: 'explorationHypothesisEdges',
+  ruleProposals: 'explorationSkillRuleProposals',
 });
 const ID_PATTERN = /^[a-z][a-z0-9-]{1,79}$/;
 const STAGES = ['conjecture', 'observed', 'reproduced', 'yielded_candidate', 'yielded_outcome'];
@@ -359,6 +361,7 @@ function createStore(options) {
   const runRef = (baseId, id) => db().collection(COLLECTIONS.runs).doc(docId(baseId, id));
   const trialRef = (baseId, id) => db().collection(COLLECTIONS.trials).doc(docId(baseId, id));
   const graphEdgeRef = (baseId, id) => db().collection(COLLECTIONS.graphEdges).doc(docId(baseId, id));
+  const ruleProposalRef = (baseId, id) => db().collection(COLLECTIONS.ruleProposals).doc(docId(baseId, id));
   const eventRef = (baseId, seq) => db().collection(COLLECTIONS.events).doc(docId(baseId, 'E' + String(seq).padStart(6, '0')));
 
   // JSON round-trip drops undefined fields, which Firestore refuses.
@@ -462,14 +465,34 @@ function createStore(options) {
   async function graphGet(input) {
     const id = requireBaseId(input?.baseId);
     const view = oneOf(input?.view, ['summary','full'], 'view', 'summary');
-    const [baseSnap,items,trials,edgeSnap] = await Promise.all([
+    const [baseSnap,items,trials,edgeSnap,ruleSnap] = await Promise.all([
       baseRef(id).get(),loadItems(id),loadTrials(id),
       db().collection(COLLECTIONS.graphEdges).where('baseId','==',id).limit(1000).get(),
+      db().collection(COLLECTIONS.ruleProposals).where('baseId','==',id).limit(1000).get(),
     ]);
     const base = value(baseSnap);
     if(!base)throw new Error('Exploration Base not found: '+id);
-    return projectGraph({base,items,trials,feedbackLog:base.feedbackLog||[],
+    const graph=projectGraph({base,items,trials,feedbackLog:base.feedbackLog||[],
       relations:edgeSnap.docs.map(doc=>doc.data()),view});
+    graph.stewardship.feedbackReview={
+      pendingTrialIds:base.treeMaintenance?.pendingTrialIds||[],
+      pendingExternalRefs:base.treeMaintenance?.pendingExternalRefs||[],
+      touchedHypothesisIds:base.treeMaintenance?.touchedHypothesisIds||[],
+      pendingCount:(base.treeMaintenance?.pendingTrialIds||[]).length+(base.treeMaintenance?.pendingExternalRefs||[]).length,
+      overflowCount:base.treeMaintenance?.overflowCount||0,
+      lastReviewedRunId:base.treeMaintenance?.lastReviewedRunId||null,
+      status:((base.treeMaintenance?.pendingTrialIds||[]).length||(base.treeMaintenance?.pendingExternalRefs||[]).length)?'needs_hypothesis_tree_review':'up_to_date',
+    };
+    const proposals=ruleSnap.docs.map(doc=>doc.data());
+    graph.skillRules={status:proposals.length?'candidate_rule_mapping':'unmapped_legacy_skill_body',rules:proposals.map(p=>({
+      id:p.id,sourceRuleId:p.sourceRuleId,action:p.action,moduleId:p.moduleId,
+      sourceMethodVersion:p.sourceMethodVersion,
+      existingRuleAnchor:view==='full'?p.existingRuleAnchor:undefined,
+      replacementText:view==='full'?p.replacementText:undefined,
+      hypothesisIds:p.hypothesisIds,
+      eligibility:assessRuleProposal(p,{method:base.method,graph,trials}),
+    })),note:'Explicit rule anchors and adoption proposals only. No historic Skill text has been silently split into rules; none is automatically released.'};
+    return graph;
   }
 
   async function graphRelationUpsert(input) {
@@ -512,6 +535,42 @@ function createStore(options) {
     });
     return {baseId:id,created:changed,existing:newEdges.length-changed.length,
       note:'Semantic relationships are agent-proposed edges, not scientifically proven contradictions or user ratings.'};
+  }
+
+  async function ruleProposalUpsert(input) {
+    const id=requireBaseId(input?.baseId);
+    const [snap,items,trials]=await Promise.all([baseRef(id).get(),loadItems(id),loadTrials(id)]);
+    const base=value(snap);
+    if(!base)throw Error('Exploration Base not found');
+    const bodyRef=base.method?.bodyRef||{};
+    let targetBody=base.method?.body||'';
+    if(['chat_skill','intelligence_pack'].includes(bodyRef.kind)){
+      const target=await resolveTarget({kind:bodyRef.kind,id:bodyRef.location,versionNumber:bodyRef.versionNumber});
+      targetBody=target.body||'';
+    }
+    const proposal=makeRuleProposal(input?.proposal,{method:base.method,body:targetBody,hypotheses:items,trials});
+    const ref=ruleProposalRef(id,proposal.id);
+    let outcome;
+    await db().runTransaction(async tx=>{
+      const current=await loadBase(tx,id);
+      if(current.method?.version!==proposal.sourceMethodVersion)
+        throw Error('Method version changed while preparing rule mapping; reread the pinned version');
+      const already=value(await tx.get(ref));
+      if(already){
+        outcome={...already,duplicate:true};return;
+      }
+      const record={...proposal,baseId:id,createdAt:now(),actor:text(input?.actor,120,'actor',false)||'agent'};
+      put(tx,ref,record);
+      pushEvent(tx,current,{type:'rule_merge_proposed',actor:input?.actor,
+        summary:proposal.action+' '+proposal.moduleId+' '+proposal.id,
+        detail:{proposalId:proposal.id,hypothesisIds:proposal.hypothesisIds}});
+      saveBase(tx,current);
+      outcome={...record,duplicate:false};
+    });
+    const graph=await graphGet({baseId:id});
+    return {baseId:id,proposalId:proposal.id,duplicate:outcome.duplicate,
+      eligibility:assessRuleProposal(outcome,{method:base.method,graph,trials}),
+      status:'proposal_only_never_auto_released'};
   }
 
   async function researchRead(input) {
@@ -564,7 +623,45 @@ function createStore(options) {
       const inventory = buildResearchInventory(items, trials, base.feedbackLog || [], runDocs.docs.map(doc => doc.data()));
       if (run.researchReview.digest !== inventory.hash) throw new Error('Historical evidence changed after reading; restart research review');
       const synthesis = validateResearchSynthesis(input?.synthesis, inventory);
+      const pending=base.treeMaintenance?.pendingTrialIds||[];
+      const pendingExternal=base.treeMaintenance?.pendingExternalRefs||[];
+      const touched=base.treeMaintenance?.touchedHypothesisIds||[];
+      let treeReview=null;
+      if(pending.length||pendingExternal.length){
+        const supplied=plain(input?.treeReview,'treeReview (review every newly rated example or externally confirmed/declined haul)');
+        const ids=list(supplied.reviewedTrialIds,120,20);
+        if(ids.length!==pending.length||pending.some(id=>!ids.includes(id)))
+          throw Error('Review all newly human-rated T-nnn cases before proceeding; treeReview.reviewedTrialIds must cover pending trials');
+        const reviewedExternal=list(supplied.reviewedExternalRefs,120,600);
+        if(reviewedExternal.length!==pendingExternal.length
+          ||pendingExternal.some(ref=>!reviewedExternal.includes(ref)))
+          throw Error('Tree review must include every newly evaluated external haul reference');
+        if(reviewedExternal.some(ref=>!(base.feedbackLog||[]).some(f=>f.ref===ref&&['confirmed','declined'].includes(f.decision))))
+          throw Error('Tree review claims an external reaction not confirmed by a real user');
+        const entries=new Map(inventory.feedback.map(f=>[f.id,f]));
+        if(ids.some(id=>!entries.has(id)))throw Error('Tree review includes an unknown human-rated trial');
+        const decisions=Array.isArray(supplied.branchDecisions)?supplied.branchDecisions:[];
+        const idsSeen=new Set();
+        for(const rawDecision of decisions){
+          const d=plain(rawDecision,'treeReview.branchDecision');
+          const hid=text(d.hypothesisId,20,'branchDecision.hypothesisId',true);
+          if(!touched.includes(hid)||idsSeen.has(hid))throw Error('Tree review must classify each affected hypothesis exactly once');
+          idsSeen.add(hid);
+          oneOf(d.action,['retain','refine','split','merge_candidate','retire','unresolved'],'branchDecision.action');
+          if(text(d.rationale,900,'branchDecision.rationale',true).length<30
+            ||text(d.nextFalsification,900,'branchDecision.nextFalsification',true).length<25)
+            throw Error('Tree review needs a concrete rationale and refuting experiment for every affected hypothesis');
+        }
+        if(touched.some(id=>!idsSeen.has(id)))throw Error('Tree review is missing affected hypothesis branches');
+        if(text(supplied.crossBranchSummary,1500,'treeReview.crossBranchSummary',true).length<40)
+          throw Error('Tree review needs a cross-branch comparison, not just a verdict recap');
+        treeReview={reviewedTrialIds:ids,reviewedExternalRefs:reviewedExternal,branchDecisions:decisions,crossBranchSummary:supplied.crossBranchSummary};
+        base.treeMaintenance={pendingTrialIds:[],pendingExternalRefs:[],touchedHypothesisIds:[],
+          overflowCount:0,lastReviewedAt:now(),lastReviewedRunId:runId};
+        saveBase(tx,base);
+      }
       run.researchReview = { ...run.researchReview, status:'synthesized', synthesizedAt:now(),
+        treeReview,
         feedbackDigest:inventory.feedbackDigest, synthesis };
       put(tx, runRef(id, runId), run);
       result = { baseId:id, runId, status:'synthesized', inventoryDigest:inventory.hash,
@@ -839,12 +936,16 @@ function createStore(options) {
 
   async function setMethodVersion(input) {
     const id = requireBaseId(input?.baseId);
-    const trials = await loadTrials(id);
+    const [trials,items] = await Promise.all([loadTrials(id),loadItems(id)]);
     await db().runTransaction(async (tx) => {
       const base = await loadBase(tx, id);
       if (base.openRunId) throw new Error('Run ' + base.openRunId + ' is open. The method version cannot change during a run; finish the run first.');
       const method = cleanMethod(input.method, base.method?.bodyRef?.location);
-      if (TARGET_KINDS.has(method.bodyRef.kind)) await resolveTarget({ kind: method.bodyRef.kind, id: method.bodyRef.location, versionNumber: method.bodyRef.versionNumber });
+      let targetBody=method.body||'';
+      if (TARGET_KINDS.has(method.bodyRef.kind)) {
+        const resolved=await resolveTarget({kind:method.bodyRef.kind,id:method.bodyRef.location,versionNumber:method.bodyRef.versionNumber});
+        targetBody=resolved.body||'';
+      }
       if ((base.methodHistory || []).some((entry) => entry.version === method.version)) {
         throw new Error('Method version label already used: ' + method.version + '. Version labels are never reused.');
       }
@@ -896,10 +997,36 @@ function createStore(options) {
         passed: rawBenchmark.passed === true, ref: text(rawBenchmark.ref, 500, 'benchmark.ref', false),
         cases: text(rawBenchmark.cases, 1000, 'benchmark.cases', false),
       } : { passed: null, noBenchmarkReason };
+      // If the agent explicitly links a release to machine-reviewed rule
+      // proposals, reject stale/unsupported evidence and text diffs that do
+      // not actually implement the proposed change. The legacy unlinked
+      // release path remains unchanged for existing dojos.
+      const ruleProposalIds=list(input.ruleProposalIds,12,40);
+      const linkedRuleReviews=[];
+      if(ruleProposalIds.length){
+        const graph=projectGraph({base,items,trials,feedbackLog:base.feedbackLog||[]});
+        for(const proposalId of ruleProposalIds){
+          const proposal=value(await tx.get(ruleProposalRef(id,proposalId)));
+          if(!proposal)throw Error('Skill rule merge proposal not found: '+proposalId);
+          const eligibility=assessRuleProposal(proposal,{method:base.method,graph,trials});
+          if(!eligibility.evidenceEligible&&!userDirected)
+            throw Error('Skill rule change cannot be released with unsupported or stale evidence: '+proposalId+' '+eligibility.blockingReasons.join(', '));
+          if(proposal.action==='replace'||proposal.action==='retire'){
+            if(targetBody.includes(proposal.existingRuleAnchor))
+              throw Error('Revised Skill still contains the supposedly replaced/retired rule: '+proposalId);
+          }
+          if(proposal.action!=='retire'&&!targetBody.includes(proposal.replacementText))
+            throw Error('Released Skill body does not contain the exact proposed replacement rule: '+proposalId);
+          linkedRuleReviews.push({proposalId,evidenceEligible:eligibility.evidenceEligible,
+            overrideByDirectUserInstruction:Boolean(userDirected&&!eligibility.evidenceEligible),
+            sourceMethodVersion:proposal.sourceMethodVersion});
+        }
+      }
       const at = now();
       base.method = { ...method, setAt: at };
       base.methodHistory = [...(base.methodHistory || []), {
         version: method.version, summary: method.summary, setAt: at, motivatingRunIds: motivating, benchmark,
+        ...(linkedRuleReviews.length?{ruleMergeReview:linkedRuleReviews}:{}),
         replaced: base.method ? { version: loop.current.version, rated: loop.current.rated, pass: loop.current.pass, passRate: loop.current.passRate } : null,
         ...(userDirected ? { authorizationNote: userDirected } : {}),
       }].slice(-100);
@@ -1402,6 +1529,13 @@ function createStore(options) {
         runId: text(input.runId, 20, 'runId', false) || previous.runId || '',
       };
       base.feedbackLog = [entry, ...log.filter((f) => f.ref !== ref)].slice(0, 300);
+      if(['confirmed','declined'].includes(entry.decision)){
+        const prior=base.treeMaintenance||{};
+        const external=[...new Set([...(prior.pendingExternalRefs||[]),ref])];
+        base.treeMaintenance={...prior,pendingExternalRefs:external.slice(-120),
+          overflowCount:(prior.overflowCount||0)+Math.max(0,external.length-120),
+          updatedAt:now()};
+      }
       saveBase(tx, base);
       changed = true;
     });
@@ -1784,6 +1918,19 @@ function createStore(options) {
         rated.push({ id: trial.id, label: trial.label, verdict: rating.verdict, version: trial.version, hypothesisIds: trial.hypothesisIds || [] });
       });
       touched.forEach((item, hid) => { if (item) put(tx, itemRef(id, hid), item); });
+      // A real human verdict creates a maintenance obligation. The next
+      // research synthesis cannot silently skip the latest feedback or its
+      // affected branches, even when an unrelated old pass/fail pair is cited.
+      const previous=base.treeMaintenance||{};
+      const pending=[...new Set([...(previous.pendingTrialIds||[]),
+        ...rated.filter(t=>t.verdict!=='withdrawn').map(t=>t.id)])];
+      base.treeMaintenance={...previous,
+        pendingTrialIds:pending.slice(-120),
+        touchedHypothesisIds:[...new Set([...(previous.touchedHypothesisIds||[]),
+          ...rated.filter(t=>t.verdict!=='withdrawn').flatMap(t=>t.hypothesisIds||[])])].slice(-120),
+        overflowCount:(previous.overflowCount||0)+Math.max(0,pending.length-120),
+        updatedAt:now(),
+      };
       pushEvent(tx, base, { type: 'trials_rated', actor: input.actor, summary: rated.map((t) => t.id + ':' + t.verdict).join(', '), detail: { rated } });
       saveBase(tx, base);
     });
@@ -1823,21 +1970,22 @@ function createStore(options) {
     if ((Number(base.revision) || 0) !== expectedRevision) throw new Error('Exploration Base revision conflict; reload before deleting');
     if (base.status !== 'closed') throw new Error('Only closed Exploration Bases can be permanently deleted');
     if (base.openRunId) throw new Error('Cannot delete an Exploration Base with an open run: ' + base.openRunId);
-    const [items, runs, events, trialDocs, edgeDocs] = await Promise.all([
+    const [items, runs, events, trialDocs, edgeDocs, ruleDocs] = await Promise.all([
       database.collection(COLLECTIONS.items).where('baseId', '==', id).limit(1001).get(),
       database.collection(COLLECTIONS.runs).where('baseId', '==', id).limit(501).get(),
       database.collection(COLLECTIONS.events).where('baseId', '==', id).limit(2001).get(),
       database.collection(COLLECTIONS.trials).where('baseId', '==', id).limit(3000).get(),
       database.collection(COLLECTIONS.graphEdges).where('baseId', '==', id).limit(1001).get(),
+      database.collection(COLLECTIONS.ruleProposals).where('baseId', '==', id).limit(1001).get(),
     ]);
-    if (items.docs.length > 1000 || runs.docs.length > 500 || events.docs.length > 2000 || edgeDocs.docs.length > 1000) {
+    if (items.docs.length > 1000 || runs.docs.length > 500 || events.docs.length > 2000 || edgeDocs.docs.length > 1000 || ruleDocs.docs.length > 1000) {
       throw new Error('This Exploration Base has too much history for a single cleanup operation; no records were deleted');
     }
     if (runs.docs.some(doc => doc.data().status === 'open')) {
       throw new Error('Cannot delete an Exploration Base while a run is still open');
     }
     // Closed bases are immutable. Delete their owned ledger/run/event records, then the base itself.
-    for (const group of [items.docs, runs.docs, events.docs, trialDocs.docs, edgeDocs.docs]) {
+    for (const group of [items.docs, runs.docs, events.docs, trialDocs.docs, edgeDocs.docs, ruleDocs.docs]) {
       for (let i = 0; i < group.length; i += 25) {
         await Promise.all(group.slice(i, i + 25).map(doc => doc.ref.delete()));
       }
@@ -1846,7 +1994,7 @@ function createStore(options) {
     return {
       id, title: base.title, deleted: true,
       deletedItems: items.docs.length, deletedRuns: runs.docs.length, deletedEvents: events.docs.length,
-      deletedHypothesisEdges: edgeDocs.docs.length,
+      deletedHypothesisEdges: edgeDocs.docs.length, deletedRuleProposals: ruleDocs.docs.length,
     };
   }
 
@@ -1864,7 +2012,7 @@ function createStore(options) {
   // Compact summary used by the Agent Intelligence bundle resolver.
   async function brief(input) { return get({ id: input?.id, view: 'brief' }); }
 
-  return { create, list: listBases, get, remove, brief, graphGet, graphRelationUpsert, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, researchRead, researchSynthesize, prepareRecall, checkRecall, recordTrials, rateTrials, awaitingTrials, refreshLoop, trainersOf };
+  return { create, list: listBases, get, remove, brief, graphGet, graphRelationUpsert, ruleProposalUpsert, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, researchRead, researchSynthesize, prepareRecall, checkRecall, recordTrials, rateTrials, awaitingTrials, refreshLoop, trainersOf };
 }
 
 const store = createStore();

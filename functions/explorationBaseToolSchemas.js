@@ -139,6 +139,25 @@ const tools = [
     },required:['baseId','relations'],additionalProperties:false},
   },
   {
+    name:'exploration_skill_rule_proposal_upsert',
+    description:'Attach an exact existing rule quotation from the pinned released Skill/Pack version to real hypothesis IDs and genuine human-rated trial evidence. Create an immutable add/replace/retire proposal. Server calculates evidence eligibility (not quality, causal proof, release authorization or automatic text modification). When there are no independent matched comparisons, a proposal stays blocked. This never edits the released Skill.',
+    inputSchema:{type:'object',properties:{
+      baseId,actor,
+      proposal:{type:'object',properties:{
+        action:{type:'string',enum:['add','replace','retire']},
+        moduleId:{type:'string',enum:['root','source','selection','transform','voice','gate','audience']},
+        sourceMethodVersion:string('Exact method version label currently pinned by this dojo.',80),
+        existingRuleAnchor:string('For replace/retire: exact unique 16-600 character quote from the pinned Skill or Pack body. Not inferred by LLM.',600),
+        replacementText:string('For add/replace: proposed 16-1200 character new rule. Never auto-adopted.',1200),
+        hypothesisIds:strings('1-4 real positive H-nnn hypotheses governing this rule.',4),
+        supportingTrialIds:strings('1-20 genuine human PASS T-nnn IDs linked to hypotheses.',20),
+        counterexampleTrialIds:strings('1-20 human non-PASS T-nnn IDs. Not counted as support.',20),
+        rationale:string('Specific reason to add/change/retire this Skill rule (30-1200 chars).',1200),
+        refutingObservation:string('What new human feedback would refute this rule change (30-900 chars).',900),
+      },required:['action','moduleId','sourceMethodVersion','hypothesisIds','supportingTrialIds','counterexampleTrialIds','rationale','refutingObservation'],additionalProperties:false}
+    },required:['baseId','proposal'],additionalProperties:false},
+  },
+  {
     name: 'exploration_base_create',
     description: 'Create an Exploration Base for one exploration. Fixes the user-owned outcome contract, so it requires userAuthorized=true and authorizationNote. Canonical measurement data stays in its operator; the base only points to it.',
     inputSchema: {
@@ -188,6 +207,7 @@ const tools = [
       properties: {
         baseId, method,
         motivatingRunIds: strings('Finished run IDs whose results justify this version.', 20),
+        ruleProposalIds: strings('Optional exact MR-... Skill-rule proposals to include in this release; must pass live evidence eligibility, pinned-version checks, and the actual new body diff unless the user explicitly authorized a change. Never self-certifies quality.',12),
         benchmark: { type: 'object', properties: { passed: { type: 'boolean' }, ref: string('Test/command/record.', 500), cases: string('Known cases checked.', 1000) }, additionalProperties: false },
         noBenchmarkReason: string('Why there is no benchmark yet.', 600),
         userAuthorized, authorizationNote, actor,
@@ -336,7 +356,7 @@ const tools = [
   },
   {
     name:'exploration_research_synthesize',
-    description:'After ALL hypothesis/feedback pages are read, register a dialectical proposal: cite a real prior thesis and competing hypothesis (if at least 2 exist), quote their actual claims, cite real human pass and fail feedback, explain tension, propose a testable synthesis/revision and its falsifying observation. Required before existing recall tests and trial recording. Does not itself change hypotheses or certify user acceptance.',
+    description:'After ALL hypothesis/feedback pages are read, register a dialectical proposal and, if new human ratings await maintenance, treeReview must cover all rated cases and every touched hypothesis branch. Then it can propose refinements, splits, or merges; all agent interpretations remain hypotheses. Prior flow: cite a real prior thesis and competing hypothesis (if at least 2 exist), quote their actual claims, cite real human pass and fail feedback, explain tension, propose a testable synthesis/revision and its falsifying observation. Required before existing recall tests and trial recording. Does not itself change hypotheses or certify user acceptance.',
     inputSchema: { type:'object', properties: {
       baseId,runId:string('Open run ID with completed research reading.',20),
       synthesis:{type:'object',properties:{
@@ -355,6 +375,17 @@ const tools = [
         comparison:string('Observable contrast/controls and how the alternative explanations would be distinguished.',1200),
         falsification:string('What future observation or human response would specifically refute the proposal.',1200),
       },required:['thesisId','thesisAnchor','tension','proposedClaim','comparison','falsification','action'],additionalProperties:false},
+      treeReview:{type:'object',description:'Required whenever new user-rated Trials exist since the last tree synthesis; reconcile every newly affected hypothesis branch before new output.',properties:{
+        reviewedTrialIds:strings('ALL pending newly human-rated T-nnn IDs exposed by graph.stewardship.feedbackReview (max 120).',120),
+        reviewedExternalRefs:strings('ALL newly confirmed/declined submarine haul refs in graph.stewardship.feedbackReview (max 120).',120),
+        crossBranchSummary:string('How the latest real feedback changes the relation among branches, rather than only restating verdicts (40-1500 chars).',1500),
+        branchDecisions:{type:'array',minItems:0,maxItems:120,items:{type:'object',properties:{
+          hypothesisId:string('One affected H-nnn ID; each affected branch must be reviewed once.',20),
+          action:{type:'string',enum:['retain','refine','split','merge_candidate','retire','unresolved']},
+          rationale:string('Compare actual human feedback with the hypothesis; do not assert an unknown rejection cause as fact (30-900 chars).',900),
+          nextFalsification:string('Specific new test or observation that could refute the chosen next action (25-900 chars).',900),
+        },required:['hypothesisId','action','rationale','nextFalsification'],additionalProperties:false}},
+      },required:['reviewedTrialIds','crossBranchSummary','branchDecisions'],additionalProperties:false},
     },required:['baseId','runId','synthesis'],additionalProperties:false},
   },
   {

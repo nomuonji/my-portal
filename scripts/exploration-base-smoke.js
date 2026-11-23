@@ -1083,7 +1083,18 @@ async function completePriorResearch(store, baseId, runId) {
   const thesis=hypotheses[0];
   const antithesis=hypotheses[1]||null;
   assert.ok(thesis,'research requires a preexisting hypothesis');
-  return store.researchSynthesize({baseId,runId,synthesis:{
+  const graph=await store.graphGet({baseId,view:'full'});
+  const pending=graph.stewardship.feedbackReview;
+  const treeReview=pending.pendingTrialIds.length ? {
+    reviewedTrialIds:pending.pendingTrialIds,
+    crossBranchSummary:'Recent user evaluations must be contrasted across the affected Skill branches; the agent can propose narrowed conditions but not infer motives from an unexplained rejection.',
+    branchDecisions:pending.touchedHypothesisIds.map(id=>({
+      hypothesisId:id,action:'retain',
+      rationale:'Keep the hypothesis provisional until a separate new comparison can distinguish mechanisms from incidental conditions.',
+      nextFalsification:'Create a source-matched independent control and treatment pair whose user verdict can contradict the current explanation.',
+    })),
+  }:undefined;
+  return store.researchSynthesize({baseId,runId,...(treeReview?{treeReview}:{}),synthesis:{
     thesisId:thesis.id,antithesisId:antithesis?.id,
     thesisAnchor:thesis.statement.slice(0,Math.min(40,thesis.statement.length)),
     antithesisAnchor:antithesis?.statement.slice(0,Math.min(40,antithesis.statement.length)),
@@ -1396,4 +1407,140 @@ test('legacy dojo graph API projects H/T/feedback without rewriting originals an
   }]}),/cycle/);
   assert.deepEqual((await store.get({id:'test-base',view:'full'})).full.trials,before,
     'relations must never mutate the actual rated historical sample');
+});
+
+test('new human feedback creates cross-branch maintenance debt that cannot be skipped in next run',async()=>{
+ const store=await setup();
+ await store.upsertItems({baseId:'test-base',kind:'hypothesis',items:[{
+   ...hypothesis,pipelineStage:'voice'
+ },{
+   ...hypothesis,title:'Information source effect',pipelineStage:'source',
+   statement:'A verified source changes user reaction to the generated material.',
+ }]});
+ const opened=await store.startRun({baseId:'test-base',
+   objective:'Measure the difference between a concrete and generic premise.',
+   targets:[{hypothesisId:'H-001',prediction:'The concrete material will have a larger acceptance rate'}],
+   responseMode:'compact'});
+ const made=await store.recordTrials({baseId:'test-base',runId:opened.runId,trials:[{
+    label:'New candidate 1',body:'A person explicitly reveals the selfish reason for an ordinary decision.',
+    hypothesisIds:['H-001','H-002'],predictedPass:0.5,
+  }]});
+ await store.rateTrials({baseId:'test-base',ratings:[{id:made.created[0].id,verdict:'pass',userWords:'合格。動機がある'}]});
+ let graph=await store.graphGet({baseId:'test-base',view:'full'});
+ assert.equal(graph.stewardship.feedbackReview.status,'needs_hypothesis_tree_review');
+ assert.deepEqual(graph.stewardship.feedbackReview.pendingTrialIds,[made.created[0].id]);
+ assert.deepEqual(graph.stewardship.feedbackReview.touchedHypothesisIds,['H-001','H-002']);
+ await store.finishRun({baseId:'test-base',runId:opened.runId,
+   summary:'Received a real user verdict; comparing both branches is needed before the next generation.',
+   verdicts:[{hypothesisId:'H-001',result:'supported',
+    observed:'The submitted user-rated artifact passed; because it tests multiple hypotheses, causal attribution remains unproven.'}],
+   notMovedReason:'The observed acceptance is in the ratings ledger, not a separately validated hypothesis revision.',
+   responseMode:'compact'});
+ const next=await store.startRun({baseId:'test-base',
+   objective:'Compare the two previously combined mechanisms without making up a cause.',
+   targets:[{hypothesisId:'H-002',prediction:'Source verification may matter in the next independent sample.'}],
+   responseMode:'compact'});
+ const page=await store.researchRead({baseId:'test-base',runId:next.runId,page:0});
+ const root=page.hypotheses.find(x=>x.id==='H-001');
+ const synthesis={thesisId:'H-001',thesisAnchor:root.statement.slice(0,36),action:'retain',
+   tension:'Multiple hypotheses explained the same accepted sample; no unique cause follows from that observation.',
+   proposedClaim:'Concrete motivations could help, but source verification may still be confounded with the wording.',
+   comparison:'Create separate matched comparisons under one stable source while only the wording changes.',
+   falsification:'The human prefers the generic version under a matched source or rejects both tested variants.',
+   passFeedbackId:made.created[0].id,passFeedbackAnchor:'合格',
+ };
+ await assert.rejects(store.researchSynthesize({baseId:'test-base',runId:next.runId,synthesis}),/treeReview/);
+ const review={reviewedTrialIds:[made.created[0].id],
+   crossBranchSummary:'The accepted sample relates to both writing style and source quality. No unique explanation has emerged, and the next experiment should separate these factors.',
+   branchDecisions:['H-001','H-002'].map(hypothesisId=>({hypothesisId,action:'retain',
+     rationale:'This user-accepted example is consistent with this hypothesis, but simultaneous changes make attribution uncertain.',
+     nextFalsification:'Use separate matched pairs to vary one feature and check whether the human still accepts the result.'}))};
+ const accepted=await store.researchSynthesize({baseId:'test-base',runId:next.runId,synthesis,treeReview:review});
+ assert.equal(accepted.status,'synthesized');
+ graph=await store.graphGet({baseId:'test-base'});
+ assert.equal(graph.stewardship.feedbackReview.status,'up_to_date');
+ assert.equal(graph.stewardship.feedbackReview.lastReviewedRunId,next.runId);
+});
+
+test('Skill rule proposals bind exact evidence without rewriting the old Skill, and verified diffs are recorded on explicit releases',async()=>{
+ const store=await setup();
+ await store.upsertItems({baseId:'test-base',kind:'hypothesis',items:[{
+   ...hypothesis,pipelineStage:'voice',targetModuleIds:['voice'],
+ }]});
+ await store.recordTrials({baseId:'test-base',backfill:true,trials:[{
+   label:'Human pass example',body:'A specific observable motive reverses the role of the speaker.',
+   hypothesisIds:['H-001'],rating:{verdict:'pass',userWords:'合格。動機に納得'}
+ },{
+   label:'Human reject example',body:'The same idea is repeated in a generic way.',
+   hypothesisIds:['H-001'],rating:{verdict:'fail',userWords:'ボツ。抽象的'}
+ }]});
+ const before=(await store.get({id:'test-base',view:'full'})).full.trials;
+ const proposal={sourceMethodVersion:'m-v1',action:'add',moduleId:'voice',
+   replacementText:'Describe a concrete person and motive before allowing the final role reversal.',
+   hypothesisIds:['H-001'],supportingTrialIds:['T-001'],counterexampleTrialIds:['T-002'],
+   rationale:'The accepted sample has a concrete motive, while the rejected one only rephrases the premise.',
+   refutingObservation:'If another controlled generic premise beats a concrete motive under matched conditions, the rule needs reversal.',
+ };
+ await assert.rejects(store.ruleProposalUpsert({baseId:'test-base',proposal:{
+   ...proposal,supportingTrialIds:['T-002']}}),/real human pass/);
+ const saved=await store.ruleProposalUpsert({baseId:'test-base',proposal});
+ assert.match(saved.proposalId,/^MR-/);
+ assert.equal(saved.eligibility.evidenceEligible,false);
+ assert.equal(saved.status,'proposal_only_never_auto_released');
+ const existing=await store.ruleProposalUpsert({baseId:'test-base',proposal});
+ assert.equal(existing.duplicate,true);
+ const graph=await store.graphGet({baseId:'test-base',view:'full'});
+ assert.equal(graph.skillRules.rules.length,1);
+ assert.equal(graph.skillRules.rules[0].eligibility.automaticRelease,false);
+ assert.equal(graph.skillRules.rules[0].hypothesisIds[0],'H-001');
+ assert.deepEqual((await store.get({id:'test-base',view:'full'})).full.trials,before);
+ const next={title:'Method',version:'m-v2',summary:'Explicitly requested test of the new rule',
+   bodyRef:{kind:'inline'},body:'# Method\n\n'+proposal.replacementText};
+ const bad={...next,body:'# Method\n\nThe linked rule is absent'};
+ await assert.rejects(store.setMethodVersion({baseId:'test-base',method:bad,
+   ruleProposalIds:[saved.proposalId],userAuthorized:true,
+   authorizationNote:'User explicitly approved method rule change',noBenchmarkReason:'User asked for this change.'}),
+ /does not contain the exact proposed replacement rule/);
+ const update=await store.setMethodVersion({baseId:'test-base',method:next,
+   ruleProposalIds:[saved.proposalId],userAuthorized:true,
+   authorizationNote:'User explicitly approved method rule change',noBenchmarkReason:'User requested the change, future testing required.'});
+ assert.equal(update.method.version,'m-v2');
+ const history=(await store.get({id:'test-base',view:'full'})).full.methodHistory;
+ const last=history.at(-1);
+ assert.equal(last.ruleMergeReview[0].proposalId,saved.proposalId);
+ assert.equal(last.ruleMergeReview[0].evidenceEligible,false);
+ assert.equal(last.ruleMergeReview[0].overrideByDirectUserInstruction,true);
+ const stale=(await store.graphGet({baseId:'test-base'})).skillRules.rules[0].eligibility;
+ assert.ok(stale.blockingReasons.includes('base_method_version_changed'));
+});
+
+test('feedback from submarine hauls also creates a durable tree maintenance obligation',async()=>{
+ const store=await setup();
+ await store.upsertItems({baseId:'test-base',kind:'hypothesis',items:[hypothesis]});
+ await store.recordFeedback({baseId:'test-base',ref:'haul:verified-human-1',decision:'confirmed',
+   label:'A user approved output',comment:'本人が良いと明言した'});
+ let graph=await store.graphGet({baseId:'test-base'});
+ assert.deepEqual(graph.stewardship.feedbackReview.pendingExternalRefs,['haul:verified-human-1']);
+ assert.equal(graph.stewardship.feedbackReview.pendingCount,1);
+ const run=await store.startRun({baseId:'test-base',
+   objective:'Review external user feedback without inventing a linked hypothesis.',
+   targets:[{hypothesisId:'H-001',prediction:'A future controlled example may be accepted.'}],responseMode:'compact'});
+ const page=await store.researchRead({baseId:'test-base',runId:run.runId,page:0});
+ const yes=page.feedback.find(x=>x.verdict==='pass');
+ assert.ok(yes);
+ const h=page.hypotheses.find(x=>x.id==='H-001');
+ const synth={thesisId:'H-001',thesisAnchor:h.statement.slice(0,36),action:'retain',
+   passFeedbackId:yes.id,passFeedbackAnchor:yes.userWords.slice(0,16),
+   tension:'The outside haul acceptance has no recorded causal link to the existing text-mechanism hypothesis.',
+   proposedClaim:'External acceptance should not be treated as proof until an independently controlled sample is judged.',
+   comparison:'Keep the source unchanged, submit a contrasted message, and record human responses on both.',
+   falsification:'A follow-up independent, source-matched case is rejected by the human despite meeting the proposed rule.'};
+ await assert.rejects(store.researchSynthesize({baseId:'test-base',runId:run.runId,synthesis:synth}),/treeReview/);
+ const ok=await store.researchSynthesize({baseId:'test-base',runId:run.runId,synthesis:synth,treeReview:{
+    reviewedTrialIds:[],reviewedExternalRefs:['haul:verified-human-1'],branchDecisions:[],
+    crossBranchSummary:'The external user acceptance is important, but has no causal H linkage. Hold the earlier theory as conjecture and design a genuine comparison.'
+ }});
+ assert.equal(ok.status,'synthesized');
+ graph=await store.graphGet({baseId:'test-base'});
+ assert.equal(graph.stewardship.feedbackReview.pendingCount,0);
 });

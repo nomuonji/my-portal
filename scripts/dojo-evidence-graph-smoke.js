@@ -163,3 +163,92 @@ test('tree steward distinguishes exploratory partial evidence from user partial 
   assert.equal(s.state,'collecting');
   assert.equal(s.pass,0);
 });
+
+test('evidence audit rejects cross-run faux pairs and repeated material IDs',()=>{
+ const hi=h('H-001');
+ const x=(id,arm,run,mat,key,verdict)=>rated(id,verdict,arm==='treatment'?['H-001']:['H-002'],{
+   runId:run,materialKey:mat,comparisonKey:key,experimentArm:arm,
+   evaluationPhase:'validation',segmentKey:'s'});
+ const misleading=[];
+ for(let i=0;i<8;i++){
+  misleading.push(x('A'+i,'treatment','R-001','same-source','C-'+i,'pass'));
+  misleading.push(x('B'+i,'control','R-002','same-source','C-'+i,'fail'));
+ }
+ const tested=promotion(hi,misleading.filter(t=>t.hypothesisIds.includes('H-001')),misleading);
+ assert.equal(tested.eligibleForMerge,false);
+ assert.equal(tested.segments[0].pairs,0,'comparators in different runs are not matched samples');
+ const duplicates=misleading.map(t=>({...t,runId:'R-'+(Number(t.id.slice(1))%2+1)}));
+ const repeated=promotion(hi,duplicates.filter(t=>t.hypothesisIds.includes('H-001')),duplicates);
+ assert.equal(repeated.segments[0].pairs,1,'same source is not eight independent pieces of evidence');
+ assert.equal(repeated.eligibleForMerge,false);
+});
+
+test('multiple hypothesis and segment comparisons increase the evidentiary bar',()=>{
+ const xs=[];
+ for(let i=0;i<7;i++){
+  const runId=i%2?'R-001':'R-002';
+  xs.push(rated('T-pos'+i,'pass',['H-001'],{
+    runId,materialKey:'matter'+i,comparisonKey:'C',segmentKey:'s',
+    evaluationPhase:'validation',experimentArm:'treatment'}));
+  xs.push(rated('T-neg'+i,'fail',[],{
+    runId,materialKey:'matter'+i,comparisonKey:'C',segmentKey:'s',
+    evaluationPhase:'validation',experimentArm:'control'}));
+ }
+ const h1=h('H-001');
+ const single=promotion(h1,xs.filter(t=>t.hypothesisIds.includes(h1.id)),xs,1);
+ assert.equal(single.eligibleForMerge,true);
+ const twenty=promotion(h1,xs.filter(t=>t.hypothesisIds.includes(h1.id)),xs,20);
+ assert.equal(twenty.eligibleForMerge,false,'seven favorable pairs cannot clear the bar for 20 searched claims');
+ assert.equal(twenty.segments[0].multipleComparisons,20);
+ assert.ok(twenty.segments[0].adjustedSignTestP>=0.05);
+});
+
+test('Rule merge proposals require exact pinned text, real human verdicts and independent validation',()=>{
+ const {makeRuleProposal,assessRuleProposal}=require('../functions/dojoRuleMerge');
+ const rule='Use a concrete motivation rather than a generic label.';
+ const method={version:'v68'};
+ const hs=[h('H-001','voice')];
+ const trials=[
+  rated('T-100','pass',['H-001']),
+  rated('T-101','fail',['H-001'])
+ ];
+ const input={sourceMethodVersion:'v68',moduleId:'voice',action:'replace',
+  existingRuleAnchor:rule,replacementText:'Build a motivated reversal grounded in an actual observed behavior.',
+  hypothesisIds:['H-001'],supportingTrialIds:['T-100'],counterexampleTrialIds:['T-101'],
+  rationale:'Historical passing cases may depend on concrete motive, rather than simple novelty alone.',
+  refutingObservation:'If independently rated motive variants fail against a generic control, this claim is false.'};
+ const record=makeRuleProposal(input,{method,body:'## Voice\n'+rule+'\n',hypotheses:hs,trials});
+ assert.equal(record.status,'proposed');
+ assert.ok(record.sourceRuleId.startsWith('rule-'));
+ assert.throws(()=>makeRuleProposal({...input,existingRuleAnchor:'invented rule text not here'},
+  {method,body:rule,hypotheses:hs,trials}),/unique exact/);
+ assert.throws(()=>makeRuleProposal({...input,supportingTrialIds:['T-101']},
+  {method,body:rule,hypotheses:hs,trials}),/real human pass/);
+ const blocked=assessRuleProposal(record,{
+  method,graph:{hypotheses:hs,promotions:[{hypothesisId:'H-001',eligibleForMerge:false}]},trials});
+ assert.equal(blocked.evidenceEligible,false);
+ const ready=assessRuleProposal(record,{
+  method,graph:{hypotheses:hs,promotions:[{hypothesisId:'H-001',eligibleForMerge:true}]},trials});
+ assert.equal(ready.evidenceEligible,true);
+ assert.equal(ready.automaticRelease,false);
+ const stale=assessRuleProposal(record,{
+  method:{version:'v69'},graph:{hypotheses:hs,promotions:[{hypothesisId:'H-001',eligibleForMerge:true}]},trials});
+ assert.equal(stale.evidenceEligible,false);
+});
+
+test('release regression monitor warns only after enough human ratings and disjoint intervals',()=>{
+ const {loopView}=require('../functions/explorationLoop');
+ const r=(id,version,verdict)=>rated(id,verdict,['H-001'],{version,methodVersion:version===2?'v2':'v1'});
+ const prior=Array.from({length:28},(_,i)=>r('T-old-'+i,1,'pass'));
+ const newer=Array.from({length:28},(_,i)=>r('T-new-'+i,2,'fail'));
+ const baseNow={method:{version:'v2',bodyRef:{versionNumber:2}},outcome:{confirmedBy:'user'}};
+ const full=loopView({trials:[...prior,...newer],feedbackLog:[],base:baseNow,hypotheses:[h('H-001')]});
+ assert.equal(full.releaseHealth.status,'regression_alert');
+ assert.equal(full.releaseHealth.automaticRollback,false);
+ assert.ok(full.releaseHealth.currentCI.high<full.releaseHealth.previousCI.low);
+ const early=loopView({trials:[...prior,...newer.slice(0,2)],feedbackLog:[],base:baseNow,hypotheses:[h('H-001')]});
+ assert.equal(early.releaseHealth.status,'too_few_human_ratings');
+ const positive=loopView({trials:[...prior.map(x=>({...x,verdict:'fail'})),
+   ...newer.map(x=>({...x,verdict:'pass'}))],feedbackLog:[],base:baseNow,hypotheses:[h('H-001')]});
+ assert.equal(positive.releaseHealth.status,'improvement_signal');
+});
