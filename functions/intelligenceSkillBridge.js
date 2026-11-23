@@ -82,7 +82,10 @@ async function legacyGet(input={}){
 }
 async function legacyList(){
   const registry=require('./agentIntelligenceRegistry');
-  const results=await Promise.all(Object.keys(LEGACY_PACKS).map(id=>registry.getPack({id})));
+  const index=await registry.listPacks({limit:100});
+  const available=new Set((index.items||[]).map(x=>x.id));
+  const ids=Object.keys(LEGACY_PACKS).filter(id=>available.has(id));
+  const results=await Promise.all(ids.map(id=>registry.getPack({id})));
   return results.map(projectLegacy).map(x=>x.pack);
 }
 async function resolvedVersionForPack(id){
