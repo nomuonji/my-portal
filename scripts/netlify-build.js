@@ -29,9 +29,6 @@ run('npm', ['run', 'build'], { shell: process.platform === 'win32' });
 
 // A one-time, production-only pointer reclassification. It fails closed on
 // unexpected versions or open runs and is idempotent across later builds.
-if (process.env.CONTEXT === 'production' && process.env.SKILL_RESOURCE_POLICY_MIGRATION === '2026-11-24') {
-  run(process.execPath, ['scripts/skill-resource-policy-migration.js']);
-}
 
 // Explicit, one-time, production-only import authorized by the owner. No source deletion or cutover.
 if (process.env.CONTEXT === 'production' && process.env.CONSUMER_MODEL_SNAPSHOT_IMPORT === '2026-11-18') {
