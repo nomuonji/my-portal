@@ -1513,3 +1513,34 @@ test('Skill rule proposals bind exact evidence without rewriting the old Skill, 
  const stale=(await store.graphGet({baseId:'test-base'})).skillRules.rules[0].eligibility;
  assert.ok(stale.blockingReasons.includes('base_method_version_changed'));
 });
+
+test('feedback from submarine hauls also creates a durable tree maintenance obligation',async()=>{
+ const store=await setup();
+ await store.upsertItems({baseId:'test-base',kind:'hypothesis',items:[hypothesis]});
+ await store.recordFeedback({baseId:'test-base',ref:'haul:verified-human-1',decision:'confirmed',
+   label:'A user approved output',comment:'本人が良いと明言した'});
+ let graph=await store.graphGet({baseId:'test-base'});
+ assert.deepEqual(graph.stewardship.feedbackReview.pendingExternalRefs,['haul:verified-human-1']);
+ assert.equal(graph.stewardship.feedbackReview.pendingCount,1);
+ const run=await store.startRun({baseId:'test-base',
+   objective:'Review external user feedback without inventing a linked hypothesis.',
+   targets:[{hypothesisId:'H-001',prediction:'A future controlled example may be accepted.'}],responseMode:'compact'});
+ const page=await store.researchRead({baseId:'test-base',runId:run.runId,page:0});
+ const yes=page.feedback.find(x=>x.verdict==='pass');
+ assert.ok(yes);
+ const h=page.hypotheses.find(x=>x.id==='H-001');
+ const synth={thesisId:'H-001',thesisAnchor:h.statement.slice(0,36),action:'retain',
+   passFeedbackId:yes.id,passFeedbackAnchor:yes.userWords.slice(0,16),
+   tension:'The outside haul acceptance has no recorded causal link to the existing text-mechanism hypothesis.',
+   proposedClaim:'External acceptance should not be treated as proof until an independently controlled sample is judged.',
+   comparison:'Keep the source unchanged, submit a contrasted message, and record human responses on both.',
+   falsification:'A follow-up independent, source-matched case is rejected by the human despite meeting the proposed rule.'};
+ await assert.rejects(store.researchSynthesize({baseId:'test-base',runId:run.runId,synthesis:synth}),/treeReview/);
+ const ok=await store.researchSynthesize({baseId:'test-base',runId:run.runId,synthesis:synth,treeReview:{
+    reviewedTrialIds:[],reviewedExternalRefs:['haul:verified-human-1'],branchDecisions:[],
+    crossBranchSummary:'The external user acceptance is important, but has no causal H linkage. Hold the earlier theory as conjecture and design a genuine comparison.'
+ }});
+ assert.equal(ok.status,'synthesized');
+ graph=await store.graphGet({baseId:'test-base'});
+ assert.equal(graph.stewardship.feedbackReview.pendingCount,0);
+});
