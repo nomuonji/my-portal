@@ -592,7 +592,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
     }));
     return {
       content: [{ type: "text", text: "Opened My Portal Workspace. Select a Skill Dojo or Project/Context." }],
-      structuredContent: { projects, dojos },
+      structuredContent: { projects, dojos, skillPacks:world.skillPacks || [] },
     };
   }
   if (name === "portal_workspace_contexts") {
