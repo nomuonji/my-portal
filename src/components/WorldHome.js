@@ -52,10 +52,10 @@ async function fetchPortalWorld(path = '?resource=world_map', options = {}) {
   return data;
 }
 
-const EMPTY = { routes: [], projects: [], spaces: [], methods: [], chatSkills: [], contexts: [], warnings: [], coverage: {} };
+const EMPTY = { routes: [], projects: [], spaces: [], methods: [], chatSkills: [], skillPacks: [], contexts: [], warnings: [], coverage: {} };
 const SEARCH_TABS = [
   { id: 'all', label: 'すべて' }, { id: 'guide', label: 'Agent Guide' }, { id: 'routes', label: '分野・入口' },
-  { id: 'projects', label: 'Projects' }, { id: 'skills', label: 'Skills' },
+  { id: 'projects', label: 'Projects' }, { id: 'skills', label: 'Pack / Skills' },
   { id: 'contexts', label: 'Contexts' },
 ];
 function searchable(item) {
@@ -180,7 +180,9 @@ export default function WorldHome() {
   const q = query.trim().toLocaleLowerCase();
   const routes = useMemo(() => (data.routes || []).filter(item => routeMatches(item, q)), [data.routes, q]);
   const projects = useMemo(() => (data.projects || []).filter(item => !q || searchable(item).includes(q)), [data.projects, q]);
-  const skills = useMemo(() => (data.chatSkills || []).filter(item => !q || searchable(item).includes(q)), [data.chatSkills, q]);
+  const packEntries = useMemo(() => new Set((data.skillPacks || []).map(p => p.entrySkillId)), [data.skillPacks]);
+  const skillPacks = useMemo(() => (data.skillPacks || []).filter(item => !q || searchable(item).includes(q) || (data.chatSkills||[]).some(s=>s.id===item.entrySkillId && searchable(s).includes(q))), [data.skillPacks, data.chatSkills, q]);
+  const skills = useMemo(() => (data.chatSkills || []).filter(item => !packEntries.has(item.id) && (!q || searchable(item).includes(q))), [data.chatSkills, packEntries, q]);
 
   const tools = useMemo(() => {
     const results = new Map();
@@ -402,39 +404,63 @@ export default function WorldHome() {
       )}
 
       {!loading && show('skills') && (
-        <section aria-label="Pack・Skill・道場の役割">
-          <SectionHeading eyebrow="03 — How it works" title="頭脳・Skill・道場は別のもの"
-            subtitle="入れ子ではなく、仕事に応じて参照する関係。道場は評価から統括Skillと専門Skillの両方に改善候補を届けます。"
-            icon={<HubIcon color="primary" />} />
-          <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',md:'repeat(3,minmax(0,1fr))'},gap:1.2}}>
-            {[
-              {name:'Pack / 頭脳',example:'Marketing & Creative Cognition',detail:'市場・受け手・創造性をどう判断するか。投稿の手順は持たない。'},
-              {name:'統括Skill / 作業レシピ',example:'buzz-content-ideation',detail:'バズ投稿の工程を進め、必要な頭脳と専門Skillを呼び出す。Packの内部ではない。'},
-              {name:'専門Skill / 個々の技術',example:'creative-thinking / humor-craft / quality-gate',detail:'発想・ユーモア・文章化・審査を担当。各Skillが独立した本文と版を持つ。'},
-            ].map((item)=>(
-              <Paper key={item.name} variant="outlined" sx={{p:1.7,borderColor:line,borderRadius:2}}>
-                <Typography variant="subtitle2" fontWeight={850}>{item.name}</Typography>
-                <Typography variant="caption" sx={{display:'block',fontFamily:fonts.mono,mt:.5,overflowWrap:'anywhere'}}>{item.example}</Typography>
-                <Typography variant="body2" color="text.secondary" sx={{mt:1,lineHeight:1.65,fontSize:13}}>{item.detail}</Typography>
-              </Paper>
-            ))}
-          </Box>
-          <Paper variant="outlined" sx={{mt:1.2,p:1.6,borderRadius:2,borderColor:line}}>
-            <Stack direction={{xs:'column',md:'row'}} alignItems={{xs:'flex-start',md:'center'}} gap={1}>
-              <Chip size="small" label="道場 / 訓練" color="primary" variant="outlined"/>
-              <Typography variant="body2" sx={{flex:1,lineHeight:1.65}}>
-                本人評価 → 仮説ツリー → 改善先のSkillを特定 → 原文の改訂候補。
-                統括Skillだけでなく専門Skillも対象。異なる道場へ影響する原文変更は、比較検証とそのSkill側のリリース審査が必要です。
-              </Typography>
-            </Stack>
-          </Paper>
+        <section aria-label="Skill Pack階層とIntelligence">
+          <SectionHeading eyebrow="03 — Pack / Skill / Intelligence" title="Skill Packs"
+            subtitle="Packが複数Skillを統括します。Intelligenceは判断に使う独立した知性。道場はPackとSkillを鍛えます。"
+            count={skillPacks.length} icon={<TreeIcon color="primary" />} />
+          {skillPacks.map(pack=>(
+            <Paper key={pack.id} variant="outlined" sx={{p:{xs:1.6,md:2.2},borderRadius:2.5,borderColor:line,mb:1.5}}>
+              <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} flexWrap="wrap">
+                <Box>
+                  <Typography variant="h6" sx={{fontWeight:850}}>{pack.title}</Typography>
+                  <Typography variant="body2" color="text.secondary">{pack.summary}</Typography>
+                </Box>
+                <Chip size="small" color="success" variant="outlined" label={`Skill Pack v${pack.currentVersionNumber||1}`} />
+              </Stack>
+              <Box sx={{mt:1.6,pl:{xs:1,md:2},borderLeft:'3px solid',borderColor:'primary.light'}}>
+                <Typography variant="caption" color="text.secondary" sx={{display:'block',mb:.45}}>実行入口（旧統括SkillのIDと道場版を維持）</Typography>
+                <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+                  <Typography variant="subtitle2" sx={{fontFamily:fonts.mono,overflowWrap:'anywhere'}}>{pack.entrySkillId}</Typography>
+                  <Button size="small" onClick={()=>openSkill((data.chatSkills||[]).find(x=>x.id===pack.entrySkillId)||{id:pack.entrySkillId,title:pack.entrySkillId})}>原文を開く</Button>
+                </Stack>
+                <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:1.6,mb:.7}}>専門Skill群（各Skillは独立した版を持ち、共通利用される）</Typography>
+                <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',md:'repeat(2,minmax(0,1fr))'},gap:.8}}>
+                  {(pack.skills||[]).map(member=>(
+                    <Box key={member.skillId} sx={{border:'1px solid',borderColor:line,borderRadius:1.3,p:1.1,minWidth:0}}>
+                      <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+                        <Typography sx={{fontFamily:fonts.mono,fontSize:12,overflowWrap:'anywhere'}}>{member.skillId}</Typography>
+                        <Chip variant="outlined" size="small" label={member.stage} sx={{fontSize:10.5,height:21,flexShrink:0}}/>
+                      </Stack>
+                      <Button size="small" sx={{mt:.45,p:0,minWidth:0}} onClick={()=>openSkill((data.chatSkills||[]).find(x=>x.id===member.skillId)||{id:member.skillId,title:member.skillId})}>Skill本文</Button>
+                      {!member.required && <Typography variant="caption" color="text.secondary" sx={{ml:1}}>必要時のみ</Typography>}
+                    </Box>
+                  ))}
+                </Box>
+              </Box>
+              <Stack direction={{xs:'column',md:'row'}} useFlexGap gap={1} sx={{mt:1.5}}>
+                <Paper variant="outlined" sx={{p:1.25,flex:1,borderRadius:1.5}}>
+                  <Typography fontWeight={850} fontSize={13}>Intelligence（判断の知性）</Typography>
+                  {(pack.intelligenceIds||[]).map(id=>(
+                    <Typography key={id} sx={{fontFamily:fonts.mono,fontSize:12.5,mt:.45,overflowWrap:'anywhere'}}>{id}</Typography>
+                  ))}
+                  <Typography variant="caption" color="text.secondary">MCCはここ。Skill群の親ではなくPackが参照する共通知性です。</Typography>
+                </Paper>
+                <Paper variant="outlined" sx={{p:1.25,flex:1,borderRadius:1.5}}>
+                  <Typography fontWeight={850} fontSize={13}>錬成道場（評価と改善）</Typography>
+                  <Typography sx={{fontFamily:fonts.mono,fontSize:12.5,mt:.45,overflowWrap:'anywhere'}}>{pack.dojoBaseId}</Typography>
+                  <Typography variant="caption" color="text.secondary">既存の仮説・評価・リリース版を引き継いでいます。</Typography>
+                </Paper>
+              </Stack>
+            </Paper>
+          ))}
+          {!skillPacks.length && <Typography color="text.secondary">表示可能なSkill Packがありません。</Typography>}
         </section>
       )}
 
       {!loading && show('skills') && (
         <section aria-label="チャット専用Skills">
-          <SectionHeading eyebrow="03 — Chat skills" title="Skills"
-            subtitle="チャット用スキルはMy PortalのDBで本文と履歴を管理。Agent HQ Manager / WorkerのMethodとは別です。"
+          <SectionHeading eyebrow="03 — Chat skills" title="個別Skills"
+            subtitle="Packからも共通参照されるチャット用スキルはMy PortalのDBで本文と履歴を管理。Agent HQ Manager / WorkerのMethodとは別です。"
             count={skills.length} icon={<SparkIcon color="primary" />} />
           <Alert severity="info" sx={{ mb: 1.5, '& .MuiAlert-message':{fontSize:13} }}>
             Skill本文の正本はMy Portal DB（chatSkills）。GitHubは旧版・エクスポート先です。DB登録とChatGPTへのインストールは別です。
