@@ -46,6 +46,8 @@ function database() {
 }
 try {
   Module._load = function(request, parent, isMain) {
+    if (request === './agentIntelligenceRegistry' && parent?.filename?.endsWith(path.join('functions','intelligenceSkillBridge.js')))
+      return {listPacks:async()=>({items:[]}),getPack:async()=>{throw Error('No legacy fixtures in world-map smoke')}};
     if (request === './documentDb' && ['worldMap.js','chatContextRegistry.js','contextRegistry.js','skillPackRegistry.js','agentIntelligenceRegistry.js'].some(name=>parent?.filename?.endsWith(path.join('functions',name)))) {
       return { getDocumentDb: database, FieldValue: { serverTimestamp: () => new Date('2026-10-10T02:00:00Z') } };
     }
