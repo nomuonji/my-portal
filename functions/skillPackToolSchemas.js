@@ -9,6 +9,27 @@ const TOOL_DEFINITIONS=[
   { name:'skill_pack_list',
     description:'List Skill Packs, including workflow and Intelligence subtypes. The four historical composite Intelligences are projected from immutable versions; original approved Dojo releases are preserved.',
     inputSchema:{type:'object',properties:{},additionalProperties:false}},
+  { name:'skill_pack_version_create',
+    description:'Create or revise a canonical Skill Pack with one immutable version. Requires revision check, specific change reason and explicit confirmation. This only creates a candidate: the linked Dojo must approve/release that version for execution. Historical Intelligence Packs remain read-only projections, never duplicated.',
+    inputSchema:{type:'object',properties:{
+      pack:{type:'object',properties:{
+        id:{type:'string',minLength:2,maxLength:90},
+        title:{type:'string',minLength:1,maxLength:160},
+        summary:{type:'string',maxLength:800},
+        skillType:{type:'string',enum:['workflow','intelligence']},
+        entrySkillId:{type:['string','null'],maxLength:90},
+        dojoBaseId:{type:'string',maxLength:90},
+        supportingPackIds:{type:'array',items:{type:'string'},maxItems:8,uniqueItems:true},
+        skills:{type:'array',minItems:1,maxItems:30,items:{type:'object',properties:{
+          skillId:{type:'string',minLength:2,maxLength:90},
+          stage:{type:'string',minLength:1,maxLength:80},
+          required:{type:'boolean'},
+        },required:['skillId','stage'],additionalProperties:false}},
+      },required:['id','title','dojoBaseId','skills'],additionalProperties:false},
+      expectedCurrentVersion:{type:'integer',minimum:0},
+      changeSummary:{type:'string',minLength:8,maxLength:1200},
+      confirm:{type:'boolean',enum:[true]},
+    },required:['pack','expectedCurrentVersion','changeSummary','confirm'],additionalProperties:false}},
   { name:'skill_pack_get',
     description:'Read a Skill Pack manifest or historical composite projection. resolve=true follows the original Dojo release and loads approved member Skill texts; unapproved versions cannot be executed.',
     inputSchema:{type:'object',properties:{

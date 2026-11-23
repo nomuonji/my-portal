@@ -1,7 +1,7 @@
 'use strict';
 
-// Skill Packs assemble canonical Chat Skills. They are NOT Intelligence Packs:
-// intelligence provides task-specific judgment; Skill Packs own the workflow.
+// Skill Packs assemble canonical Chat Skills. Intelligence is a Skill or Pack subtype,
+// not a fourth registry concept; legacy Intelligence history is projected read-only.
 // The legacy coordinator remains a referenced Skill so its dojo history and
 // released version survive this additive migration without copying its body.
 const { getDocumentDb } = require('./documentDb');
@@ -11,7 +11,7 @@ const bridge = require('./intelligenceSkillBridge');
 const DB_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const PACKS = 'skillPacks', VERSIONS = 'skillPackVersions';
 const ID = /^[a-z][a-z0-9-]{1,89}$/;
-const STAGES = new Set(['source','selection','audience','transform','humor','voice','gate','distribution']);
+const STAGE_ID = /^[a-z][a-z0-9-]{0,79}$/;
 const SEED = Object.freeze({
   id: 'viral-post-pack', title: 'バズ投稿 Pack',
   summary: '市場観測から企画・ユーモア・文章化・品質審査までのSkill群を統括する制作Pack',
@@ -37,21 +37,26 @@ const snapshot = s => s?.exists ? s.data() : null;
 const versionDocId = (id, n) => id+'--v'+n;
 function clean(def){
   if(!def || typeof def!=='object')throw Error('Skill Pack definition is required');
-  if(!ID.test(String(def.id||'')) || !ID.test(String(def.entrySkillId||'')))throw Error('Invalid Skill Pack or entry Skill ID');
-  const ids = Array.isArray(def.intelligenceIds)?def.intelligenceIds:[];
-  if(ids.some(x=>!ID.test(String(x))) || ids.length>8)throw Error('Invalid Intelligence reference');
+  const skillType=def.skillType==='intelligence'?'intelligence':'workflow';
+  if(!ID.test(String(def.id||'')) || (def.entrySkillId && !ID.test(String(def.entrySkillId)))
+     || (skillType!=='intelligence' && !ID.test(String(def.entrySkillId||''))))
+    throw Error('Invalid Skill Pack or entry Skill ID');
+  if(!String(def.title||'').trim())throw Error('Skill Pack title is required');
+  const ids = Array.isArray(def.supportingPackIds)?def.supportingPackIds:(Array.isArray(def.intelligenceIds)?def.intelligenceIds:[]);
+  if(ids.some(x=>!ID.test(String(x))||x===def.id) || ids.length>8)throw Error('Invalid supporting Pack reference');
   if(!ID.test(String(def.dojoBaseId||'')))throw Error('A canonical existing dojoBaseId is required');
   const seen=new Set(), skills=[];
   for(const s of def.skills||[]){
-    if(!ID.test(String(s.skillId||''))||!STAGES.has(s.stage)||seen.has(s.skillId)||s.skillId===def.entrySkillId)
+    if(!ID.test(String(s.skillId||''))||!STAGE_ID.test(String(s.stage||''))||seen.has(s.skillId)||s.skillId===def.entrySkillId)
       throw Error('Invalid, duplicate or recursive Pack Skill');
     seen.add(s.skillId);
     skills.push({skillId:s.skillId,stage:s.stage,required:s.required===true});
   }
   if(!skills.length || skills.length>30)throw Error('Skill Pack requires 1–30 unique member Skills');
   return {id:def.id,title:String(def.title||'').trim().slice(0,160),
-    summary:String(def.summary||'').trim().slice(0,800),entrySkillId:def.entrySkillId,
-    intelligenceIds:[...new Set(ids)],dojoBaseId:def.dojoBaseId,skills};
+    summary:String(def.summary||'').trim().slice(0,800),entrySkillId:def.entrySkillId||null,
+    skillType,supportingPackIds:[...new Set(ids)],intelligenceIds:[...new Set(ids)],
+    dojoBaseId:def.dojoBaseId,skills};
 }
 
 // Idempotent, migration-safe bootstrap. Existing Skill versions, dojo method,
@@ -73,7 +78,7 @@ async function ensureLegacyPack(){
 }
 function listSummary(p){
   return {id:p.id,title:p.title,summary:p.summary,entrySkillId:p.entrySkillId,
-    skillType:p.skillType||'workflow',supportingPackIds:p.intelligenceIds||[],
+    skillType:p.skillType||'workflow',supportingPackIds:p.supportingPackIds||p.intelligenceIds||[],
     intelligenceIds:p.intelligenceIds||[],dojoBaseId:p.dojoBaseId,
     memberCount:(p.skills||[]).length,skills:p.skills||[],
     currentVersionNumber:p.currentVersionNumber,status:p.status};
@@ -90,7 +95,8 @@ async function list(){
     classification:'Skill Pack is a distinct composite concept; Intelligence is a Skill subtype'};
 }
 function selectMemberSkills(definition,stages){
-  if(stages!==undefined&&(!Array.isArray(stages)||stages.some(x=>!STAGES.has(x))))
+  const registered=new Set((definition.skills||[]).map(s=>s.stage));
+  if(stages!==undefined&&(!Array.isArray(stages)||stages.some(x=>!registered.has(x))))
     throw Error('stages must contain recognized Skill stages');
   return definition.skills.filter(s=>s.required || (stages||[]).includes(s.stage));
 }
@@ -101,20 +107,31 @@ async function get(input={}){
   if(!ID.test(id))throw Error('Skill Pack id is required');
   const index=snapshot(await db().collection(PACKS).doc(id).get());
   if(!index)throw Error('Skill Pack not found: '+id);
-  const versionNumber=input.versionNumber===undefined?index.currentVersionNumber:Number(input.versionNumber);
+  const release=input.resolve===true?await require('./explorationBaseStore').trainersOf({kind:'skill_pack',id}):[];
+  const approved=[...new Set(release.map(x=>Number(x.releasedVersion)).filter(Number.isInteger))];
+  if(approved.length>1)throw Error('Conflicting Skill Pack dojo releases: '+id);
+  if(input.resolve===true&&approved.length&&input.versionNumber!==undefined&&Number(input.versionNumber)!==approved[0])
+    throw Error('Unapproved Skill Pack version for execution: '+id+' v'+input.versionNumber);
+  const versionNumber=input.resolve===true&&approved.length?approved[0]:
+    (input.versionNumber===undefined?index.currentVersionNumber:Number(input.versionNumber));
   if(!Number.isInteger(versionNumber)||versionNumber<1)throw Error('Invalid Skill Pack version');
   const definition=snapshot(await db().collection(VERSIONS).doc(versionDocId(id,versionNumber)).get());
   if(!definition)throw Error('Skill Pack version not found: '+id+' v'+versionNumber);
   const result={pack:listSummary(index),definition,
     executionPolicy:'Read current dojo-approved Skills; referenced MCC is an Intelligence-type Skill Pack, not a separate layer',
     legacyEntryAlias:definition.entrySkillId,
-    historicDojoRetained:definition.dojoBaseId};
+    historicDojoRetained:definition.dojoBaseId,
+    versionPolicy:approved.length?'latest_dojo_release':'latest_registry_version',
+    dojos:release};
   if(input.resolve!==true)return result;
   const selected=selectMemberSkills(definition,input.stages);
-  const [entry,...members]=await Promise.all([definition.entrySkillId,...selected.map(s=>s.skillId)]
-    .map(id=>chatSkills.getExecutableSkill({id,includeRelations:false})));
-  result.execution={entry:{id:entry.id,title:entry.title,revision:entry.revision,
-      versionPolicy:entry.versionPolicy,body:entry.body},
+  const resolved=await Promise.all([definition.entrySkillId,...selected.map(s=>s.skillId)]
+    .filter(Boolean).map(id=>chatSkills.getExecutableSkill({id,includeRelations:false})));
+  const hasEntry=Boolean(definition.entrySkillId);
+  const entry=hasEntry?resolved[0]:null;
+  const members=hasEntry?resolved.slice(1):resolved;
+  result.execution={entry:entry?{id:entry.id,title:entry.title,revision:entry.revision,
+      versionPolicy:entry.versionPolicy,body:entry.body}:null,
     members:members.map((s,i)=>({...selected[i],title:s.title,
       revision:s.revision,versionPolicy:s.versionPolicy,body:s.body})),
     supportingPacks:(definition.intelligenceIds||[]).map(id=>({id,registry:'skillPacks',resolver:'skill_pack_get'})),
@@ -122,6 +139,34 @@ async function get(input={}){
       resolver:'intelligence_pack_get (legacy compatibility)'})),
     note:'MCC is available as an Intelligence-type Skill Pack, and specialist Skill bodies retain their own approved versions.'};
   return result;
+}
+async function createVersion(input={}){
+  if(input.confirm!==true)throw Error('skill_pack_version_create requires confirm=true');
+  const definition=clean(input.pack);
+  if(bridge.owned(definition.id))throw Error('Historical Intelligence Pack versions remain with the original immutable registry; do not create a second live source of truth for '+definition.id);
+  const expected=Number(input.expectedCurrentVersion);
+  if(!Number.isInteger(expected)||expected<0)throw Error('expectedCurrentVersion must be a nonnegative integer');
+  const changeSummary=String(input.changeSummary||'').trim();
+  if(changeSummary.length<8||changeSummary.length>1200)throw Error('A specific changeSummary (8-1200 chars) is required');
+  await ensureLegacyPack();
+  const packRef=db().collection(PACKS).doc(definition.id);
+  const next=expected+1;
+  const versionRef=db().collection(VERSIONS).doc(versionDocId(definition.id,next));
+  await db().runTransaction(async tx=>{
+    const [rootSnap,versionSnap]=await Promise.all([tx.get(packRef),tx.get(versionRef)]);
+    const existing=snapshot(rootSnap);
+    const current=Number(existing?.currentVersionNumber)||0;
+    if(current!==expected)throw Error('Skill Pack version conflict: expected '+expected+', current '+current);
+    if(existing?.status==='archived')throw Error('Archived Skill Pack cannot be revised');
+    if(versionSnap.exists)throw Error('Immutable Skill Pack version already exists: '+definition.id+' v'+next);
+    const at=new Date().toISOString();
+    tx.set(versionRef,{...definition,versionNumber:next,changeSummary,createdAt:at});
+    tx.set(packRef,{...definition,currentVersionNumber:next,revision:(Number(existing?.revision)||0)+1,
+      status:'active',createdAt:existing?.createdAt||at,updatedAt:at,
+      ...(existing?.migratedFrom?{migratedFrom:existing.migratedFrom}:{})});
+  });
+  // A new Registry version is only a candidate until its dojo explicitly releases it.
+  return get({id:definition.id,versionNumber:next});
 }
 async function getLegacyPack(input={}){
   const id=String(input.id||'');
@@ -160,4 +205,4 @@ async function getLegacyPack(input={}){
   };
   return result;
 }
-module.exports={list,get,getLegacyPack,ensureLegacyPack,clean,selectMemberSkills,SEED};
+module.exports={list,get,createVersion,getLegacyPack,ensureLegacyPack,clean,selectMemberSkills,SEED};

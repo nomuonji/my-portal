@@ -41,7 +41,7 @@
     "test:skill-relations": "node --test scripts/skill-relations-smoke.js",
     "test:skill-relations-db": "node --test scripts/chat-skill-relations-db-smoke.js",
     "test:dojo-calibration": "node --test scripts/dojo-calibration-smoke.js",
-    "test:skill-pack": "node --test scripts/skill-pack-migration-smoke.js",
+    "test:skill-pack": "node --test scripts/skill-pack-migration-smoke.js scripts/skill-pack-version-smoke.js",
     "test:workspace-tree": "node --test scripts/workspace-tree-smoke.js",
     "test:skill-transfer": "node --test scripts/dojo-skill-transfer-smoke.js",
     "test:skill-graph": "node --test scripts/skill-graph-resolution-smoke.js",
