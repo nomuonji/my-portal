@@ -47,12 +47,11 @@ function wilson(k,n){
 }
 function binomialTail(k,n){
   if(n<=0)return 1;
-  let sum=0;
-  // Stable iterative binomial probabilities for <=3000 historical entries.
-  let p=Math.pow(0.5,n);
+  // Evaluate the upper binomial tail in log space to avoid underflow at n>1024.
+  let logCombination=0,sum=0;
   for(let i=0;i<=n;i++){
-    if(i>=k)sum+=p;
-    if(i<n)p=p*(n-i)/(i+1);
+    if(i>0) logCombination+=Math.log(n-i+1)-Math.log(i);
+    if(i>=k)sum+=Math.exp(logCombination-n*Math.LN2);
   }
   return Math.min(1,sum);
 }
@@ -132,10 +131,11 @@ function matchedPairs(hypothesisId,trials,segment){
   // are agent-declared and cannot by themselves establish randomized causality.
   const groups=new Map();
   for(const t of trials){
-    if(!isRated(t)||t.evaluationPhase!=='validation'||!t.comparisonKey||
+    if(!isRated(t)||t.backfilled===true||t.evaluationPhase!=='validation'||!t.comparisonKey||
       !t.materialKey||t.segmentKey!==segment||!t.runId||!['control','treatment'].includes(t.experimentArm))continue;
     if(t.experimentArm==='treatment'&&
        (!(t.hypothesisIds||[]).includes(hypothesisId)||(t.hypothesisIds||[]).length!==1))continue;
+    if(t.experimentArm==='control'&&(t.hypothesisIds||[]).includes(hypothesisId))continue;
     const group=t.comparisonKey+'|'+t.materialKey;
     const k=groups.get(group)||{control:[],treatment:[]};
     k[t.experimentArm].push(t);groups.set(group,k);
@@ -237,5 +237,5 @@ function projectGraph({base,items=[],trials=[],feedbackLog=[],relations=[],view=
       note:'PromotionDecision is a reproducible shadow classification until provenance and benchmark checks are calibrated.'},
   };
 }
-module.exports={MODULES,MODULE_IDS,RELATIONS,LINEAGE,POLICY,validateEdges,graphHasCycle,
+module.exports={MODULES,MODULE_IDS,RELATIONS,LINEAGE,POLICY,graphEdges,validateEdges,graphHasCycle,
   promotion,projectGraph,counts,wilson,binomialTail};
