@@ -279,7 +279,7 @@ const LAYERS = [
   { layer: 'スキル錬成道場 (Exploration Base)', question: 'このスキルは何を目指して鍛えていて、実行ではどの版を使うか', holds: '鍛えるスキル/Packと実行で使う版、探し方の見立て・情報源・制約・練習記録（潜水艦の出航ごとに1回）。版を上げると、それを積む潜水艦すべてが次の出航から使う', tools: 'exploration_base_list / exploration_base_get' },
   { layer: 'Agent Profile', question: 'エージェント全体に共通する判断姿勢は何か', holds: '知的主体・価値観・行動原則・権限境界', tools: 'agent_profile_get' },
   { layer: 'Skill Pack', question: '何を達成するため、どのSkillを組み合わせるか', holds: '複数Skillを統括する独立した概念。工程型とIntelligence型の両方がある。道場の版・専門Skill本文は参照する', tools: 'skill_pack_list / skill_pack_get' },
-  { layer: 'Skill', question: '個別の思考・判断・調査・制作・実行をどう行うか', holds: '再利用する単体能力。Intelligence Skillも通常Skillの一種で、同じ版管理と錬成を使う', tools: 'chat_skill_list / chat_skill_get' }
+  { layer: 'Skill', question: '個別の思考・判断・調査・制作・実行をどう行うか', holds: '再利用する単体能力。Intelligence Skillも通常Skillの一種で、同じ版管理と錬成を使う', tools: 'chat_skill_list / chat_skill_get' },
   { layer: 'HQ Method', question: '定期・委譲の仕事の運用契約は何か', holds: 'Manager/Worker専用。チャットの手順には使わない', tools: 'method_get_context' },
   { layer: 'Thinking Space', question: '本人の長期テーマは何か', holds: '人間側の思考。会話記録やAIの作業状態は置かない', tools: 'space_get_context' },
 ];
