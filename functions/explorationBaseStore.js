@@ -483,7 +483,7 @@ function createStore(options) {
       status:(base.treeMaintenance?.pendingTrialIds||[]).length?'needs_hypothesis_tree_review':'up_to_date',
     };
     const proposals=ruleSnap.docs.map(doc=>doc.data());
-    graph.skillRules={status:'candidate_rule_mapping',rules:proposals.map(p=>({
+    graph.skillRules={status:proposals.length?'candidate_rule_mapping':'unmapped_legacy_skill_body',rules:proposals.map(p=>({
       id:p.id,sourceRuleId:p.sourceRuleId,action:p.action,moduleId:p.moduleId,
       sourceMethodVersion:p.sourceMethodVersion,
       existingRuleAnchor:view==='full'?p.existingRuleAnchor:undefined,
