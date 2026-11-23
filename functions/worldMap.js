@@ -277,9 +277,9 @@ const LAYERS = [
   { layer: 'Context', question: 'このプロジェクトで何が決まっていて、今どこか', holds: '目的・決定・訂正・現在地・次の行動', tools: 'context_list / context_get' },
   { layer: 'Project Submarine（潜水艦）', question: '何を探していて、何が見つかったか', holds: '任務（何を探すか・合格条件）、装備（スキル/Pack。版は道場が決める）、出航の記録、持ち帰った成果、海図（対象について分かったこと）。探索系の定期ジョブは潜水艦を出航させる', tools: 'submarine_list / submarine_get / submarine_sortie_start / submarine_sortie_finish' },
   { layer: 'スキル錬成道場 (Exploration Base)', question: 'このスキルは何を目指して鍛えていて、実行ではどの版を使うか', holds: '鍛えるスキル/Packと実行で使う版、探し方の見立て・情報源・制約・練習記録（潜水艦の出航ごとに1回）。版を上げると、それを積む潜水艦すべてが次の出航から使う', tools: 'exploration_base_list / exploration_base_get' },
-  { layer: 'Skill Pack', question: 'どのSkill群をどう組み合わせて成果を作るか', holds: '作業工程・入口Skill・専門Skillの参照・評価道場へのリンク。個別Skill本文は複製しない', tools: 'skill_pack_list / skill_pack_get' },
-  { layer: 'Chat Skill', question: '具体的な能力・工程をどう実行するか', holds: '再利用可能な個別手順と版', tools: 'chat_skill_list / chat_skill_get' },
-  { layer: 'Agent Profile / Intelligence', question: '何を重視し、どう判断するか', holds: '判断原則・世界モデル・証拠の読み方。旧 intelligencePacks DB/APIは互換維持', tools: 'agent_profile_get / intelligence_pack_get / cognitive_bundle_resolve' },
+  { layer: 'Skill（単体 / Pack）', question: '何をどう実行して成果を作るか', holds: '単体Skillは手順と版。Packは複数Skillの組合せ・順序・道場参照を持つ複合Skillであり別の知性階層ではない', tools: 'chat_skill_list / chat_skill_get / skill_pack_list / skill_pack_get' },
+  { layer: 'Intelligence', question: 'その領域の証拠や世界をどう解釈するか', holds: 'MCC等の専門判断モデル。作業工程と本人のTrial評価は持たない。旧intelligencePacks APIは互換維持', tools: 'intelligence_pack_get / cognitive_bundle_resolve' },
+  { layer: 'Agent Profile', question: 'エージェント全体に共通する判断姿勢は何か', holds: '共通の知的主体・行動原則・権限境界。モード/キャラクターは別の人格階層にしない', tools: 'agent_profile_get' },
   { layer: 'HQ Method', question: '定期・委譲の仕事の運用契約は何か', holds: 'Manager/Worker専用。チャットの手順には使わない', tools: 'method_get_context' },
   { layer: 'Thinking Space', question: '本人の長期テーマは何か', holds: '人間側の思考。会話記録やAIの作業状態は置かない', tools: 'space_get_context' },
 ];
