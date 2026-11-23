@@ -501,6 +501,8 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
   if (name === "consumer_model_seed_files") return structured(await consumerModels.seedFiles(args));
   if (name === "consumer_model_migration_status") return structured(await consumerModels.migrationStatus(args));
   if (name === "consumer_model_import_keywords_snapshot") return structured(await consumerModels.importSnapshot(args));
+  if (name === "intelligence_list") return structured(await agentIntelligenceRegistry.listPacks(args));
+  if (name === "intelligence_get") return structured(await agentIntelligenceRegistry.getPack(args));
   if (name === "skill_pack_list") return structured(await skillPackRegistry.list());
   if (name === "skill_pack_get") return structured(await skillPackRegistry.get(args));
   if (name === "intelligence_pack_list") return structured(await agentIntelligenceRegistry.listPacks(args));
