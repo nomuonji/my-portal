@@ -3,6 +3,11 @@ on:
   pull_request:
     paths:
       - 'functions/explorationBaseStore.js'
+      - 'functions/skillPackRegistry.js'
+      - 'functions/skillPackToolSchemas.js'
+      - 'functions/intelligenceSkillBridge.js'
+      - 'scripts/skill-pack-migration-smoke.js'
+      - 'scripts/skill-pack-version-smoke.js'
       - 'functions/explorationLoop.js'
       - 'functions/dojoArtifactReadiness.js'
       - 'functions/explorationBaseToolSchemas.js'
@@ -44,6 +49,11 @@ on:
     branches: [main]
     paths:
       - 'functions/explorationBaseStore.js'
+      - 'functions/skillPackRegistry.js'
+      - 'functions/skillPackToolSchemas.js'
+      - 'functions/intelligenceSkillBridge.js'
+      - 'scripts/skill-pack-migration-smoke.js'
+      - 'scripts/skill-pack-version-smoke.js'
       - 'functions/explorationLoop.js'
       - 'functions/dojoArtifactReadiness.js'
       - 'functions/explorationBaseToolSchemas.js'
