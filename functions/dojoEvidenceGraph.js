@@ -32,6 +32,7 @@ const simple = t => ({
   ratedAt:t.ratedAt||null,userWords:t.userWords||'',label:t.label||'',
   body:t.body||'',imageUrl:t.imageUrl||'',mediaUrl:t.mediaUrl||'',
   ratingHistory:t.ratingHistory||[],
+  executionResources:t.executionResources||[],
   ref:t.ref||'',materialKey:t.materialKey||null,
   evaluationPhase:t.evaluationPhase||'legacy_unclassified',
   segmentKey:t.segmentKey||'unsegmented',
@@ -243,7 +244,7 @@ function projectGraph({base,items=[],trials=[],feedbackLog=[],relations=[],view=
     verdict:f.decision==='confirmed'?'pass':'fail',hypothesisIds:[],
   }));
   const evidenceDigest=shortHash([hypotheses.map(x=>[x.id,x.status,x.revisionHistory]),
-    trials.map(x=>[x.id,x.runId,x.hypothesisIds,x.status,x.verdict,x.ratedAt,x.segmentKey,x.evaluationPhase,x.materialKey,x.comparisonKey]),
+    trials.map(x=>[x.id,x.runId,x.hypothesisIds,x.status,x.verdict,x.ratedAt,x.segmentKey,x.evaluationPhase,x.materialKey,x.comparisonKey,x.executionResources]),
     feedbackLog.map(x=>[x.haulId,x.ref,x.decision,x.comment]),relations.map(x=>x.id)]);
   return {
     baseId:base?.id,policyVersion:POLICY.version,evidenceDigest,
