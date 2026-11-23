@@ -232,7 +232,7 @@ function projectGraph({base,items=[],trials=[],feedbackLog=[],relations=[],view=
   const promotions=hypotheses.map(h=>promotion(h,rated.filter(t=>(t.hypothesisIds||[]).includes(h.id)),trials,familySize));
   const edges=graphEdges(hypotheses,relations);
   const nodes=hypotheses.map(h=>({
-    id:h.id,kind:'hypothesis',title:h.title,statement:h.statement||'',mechanism:h.mechanism||'',researchProtocol:h.researchProtocol||null,
+    id:h.id,kind:'hypothesis',title:h.title,statement:h.statement||'',mechanism:h.mechanism||'',researchProtocol:h.researchProtocol||null,formationReview:h.formationReview||null,
     polarity:h.polarity||'positive',status:h.status||'open',legacyStage:h.stage||'conjecture',
     targetModuleIds:moduleIds(h),moduleAssignment:!h.targetModuleIds?.length?'compatibility_inferred':'explicit',
     limits:h.limits||'',revisionHistory:view==='full'?(h.revisionHistory||[]):undefined,

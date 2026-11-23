@@ -1580,3 +1580,69 @@ test('Buzz hypothesis creation requires a concrete six-stage research protocol a
   read = await store.get({ id, view: 'full' });
   assert.deepEqual(read.full.hypotheses.find(h => h.id === hid).researchProtocol, researchProtocol);
 });
+
+test('Skill/Pack dojos reject one-off examples as new H without real formation evidence', async () => {
+  const db = new MemoryDb();
+  const store = createStore({ getDb: () => db, resolveTarget: async () => ({ title: 'fixture skill', body: 'fixture' }) });
+  const id = 'formation-gate-smoke';
+  await store.create({
+    id, title: 'Formation smoke', summary: 'Avoid topic-as-hypothesis',
+    outcome: { ...outcome, confirmedBy: 'user' },
+    method: { ...method, bodyRef: { kind: 'chat_skill', location: 'fixture-skill', versionNumber: 1 } },
+    ...auth,
+  });
+  const material = (label, sourceRole) => ({
+    title: 'Source ' + label, locator: 'https://example.org/' + label.toLowerCase(),
+    coverage: 'A mocked, quoted primary case, used only to validate evidence-linking behavior in a local test.',
+    sourceRole,
+    originalProof: {
+      originalUrl: 'https://example.org/' + label.toLowerCase(),
+      excerpt: 'A mocked original excerpt of sufficient length for source metadata validation.',
+      verification: 'direct_original',
+    },
+  });
+  const sources = await store.upsertItems({ baseId: id, kind: 'source', items: [
+    material('Alpha', 'observation'), material('Beta', 'observation'), material('Idea', 'idea'),
+  ] });
+  const [a, b, idea] = sources.changed.map(entry => entry.id);
+  const plan = {
+    acquisition: 'Collect independent firsthand reports from the same period and record direct original URLs.',
+    selection: 'Keep only verified action-and-consequence reports and exclude third-party conclusions.',
+    transformation: 'Switch one creative operation from naming an observed fact to deriving a documented next consequence.',
+    control: 'Keep language, target audience and original facts matched, while varying only the transformation.',
+    prediction: 'Compare later genuine user acceptance rates between the two operations, not internal self-ratings.',
+    falsification: 'If a matched control repeatedly outperforms the treatment, narrow or reject this method claim.',
+  };
+  const formationReview = {
+    caseRefs: [a, b],
+    changedOperation: 'Change the selection operation before drafting: require a documented secondary consequence.',
+    rivalExplanation: 'The source audience or topic could explain the result instead of the selection operation.',
+    transferTest: 'Try two unrelated documented subject areas, keep the word budget fixed and compare human verdicts.',
+    priorArtDecision: 'Unlike existing one-case observations, this identifies an intervention to compare across topics.',
+  };
+  const hypothesis = {
+    title: 'Documented consequences beat labels on distinct topics',
+    statement: 'Changing this specific sourcing gate may improve human acceptance versus ordinary summaries.',
+    mechanism: 'The reader encounters an independently new and documented consequence rather than a renamed fact.',
+    pipelineStage: 'selection', targetModuleIds: ['selection'], researchProtocol: plan,
+  };
+  await assert.rejects(store.upsertItems({
+    baseId: id, kind: 'hypothesis', items: [hypothesis],
+  }), /formationReview/);
+  await assert.rejects(store.upsertItems({
+    baseId: id, kind: 'hypothesis', items: [{ ...hypothesis, formationReview: { ...formationReview, caseRefs: [a, 'S-999'] } }],
+  }), /verified observed source/);
+  await assert.rejects(store.upsertItems({
+    baseId: id, kind: 'hypothesis', items: [{ ...hypothesis, formationReview: { ...formationReview, caseRefs: [a, idea] } }],
+  }), /ideas are not evidence|verified observed source/);
+  const created = await store.upsertItems({
+    baseId: id, kind: 'hypothesis', items: [{ ...hypothesis, formationReview }],
+  });
+  const hId = created.changed[0].id;
+  const result = await store.get({ id, view: 'full' });
+  assert.deepEqual(result.full.hypotheses.find(h => h.id === hId).formationReview.caseRefs, [a, b]);
+  const graph = await store.graphGet({ baseId: id });
+  assert.equal(graph.hypotheses.find(h => h.id === hId).formationReview.changedOperation, formationReview.changedOperation);
+  // Legacy H edits need not invent a formation history they never had.
+  await store.upsertItems({ baseId: id, kind: 'hypothesis', items: [{ id: hId, limits: 'Unproven before matched human comparison.' }] });
+});

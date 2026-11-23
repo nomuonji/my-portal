@@ -1065,6 +1065,24 @@ function createStore(options) {
     return !!m && (Number(m[1]) > 7 || (Number(m[1]) === 7 && Number(m[2]) >= 7));
   }
 
+  // Only new hypotheses in Skill/Pack dojos are gated; legacy H/T remain intact.
+  function needsFormationGate(base) {
+    return TARGET_KINDS.has(base?.method?.bodyRef?.kind);
+  }
+  function cleanFormationReview(value) {
+    const raw = plain(value, 'hypothesis.formationReview');
+    const caseRefs = list(raw.caseRefs, 8, 20);
+    if (caseRefs.length < 2 || caseRefs.some(id => !/^[ST]-\d{3,}$/.test(id)))
+      throw new Error('hypothesis.formationReview.caseRefs requires 2+ distinct S-nnn/T-nnn cases; an idea is not evidence.');
+    const result = {};
+    for (const name of ['changedOperation','rivalExplanation','transferTest','priorArtDecision']) {
+      const value = text(raw[name], 900, 'hypothesis.formationReview.' + name, true);
+      if (value.length < 24) throw new Error('hypothesis.formationReview.' + name + ' needs at least 24 characters of concrete reasoning.');
+      result[name] = value;
+    }
+    return { caseRefs, ...result };
+  }
+
   function applyLedgerItem(kind, prior, raw, runId, base) {
     const creating = !prior;
     const item = prior ? { ...prior } : {
@@ -1087,15 +1105,18 @@ function createStore(options) {
           throw new Error('hypothesis.researchProtocol: acquisition, selection, transformation, control, prediction and falsification must describe DISTINCT steps.');
         item.researchProtocol = clean;
       }
-      if (creating && needsBuzzProtocol(base) && !item.researchProtocol)
+      if (creating && (needsBuzzProtocol(base) || needsFormationGate(base)) && !item.researchProtocol)
         throw new Error('Buzz hypothesis recovery: new H requires researchProtocol with concrete acquisition, selection, transformation, control, prediction and falsification; do not create a vague H name.');
       if (raw.pipelineStage !== undefined) item.pipelineStage = oneOf(raw.pipelineStage, PIPELINE_STAGES, 'hypothesis.pipelineStage');
       if (creating) item.pipelineStage = item.pipelineStage || 'unknown';
-      if (creating && needsBuzzProtocol(base)
+      if (creating && (needsBuzzProtocol(base) || needsFormationGate(base))
         && (!raw.pipelineStage || raw.pipelineStage === 'unknown'
           || !Array.isArray(raw.targetModuleIds) || !raw.targetModuleIds.length))
         throw new Error('Buzz hypothesis recovery: choose a non-unknown pipelineStage and explicit Skill targetModuleIds for a new H.');
 
+      if (raw.formationReview !== undefined) item.formationReview = cleanFormationReview(raw.formationReview);
+      if (creating && needsFormationGate(base) && !item.formationReview)
+        throw new Error('New Skill/Pack hypothesis requires formationReview with real cases, reusable method change, rival explanation, transfer test, and prior-art decision. Store a single observation or idea as a source S-nnn instead.');
       if (raw.polarity !== undefined) item.polarity = oneOf(raw.polarity, ['positive', NEGATIVE], 'hypothesis.polarity');
       if (raw.targetModuleIds !== undefined) {
         const moduleIds = list(raw.targetModuleIds, 7, 30);
@@ -1113,6 +1134,8 @@ function createStore(options) {
       if (creating || raw.locator !== undefined) item.locator = text(raw.locator, 600, 'source.locator (URL, query or tool call that reaches it)', true);
       if (creating || raw.coverage !== undefined) item.coverage = text(raw.coverage, 1500, 'source.coverage (what it yields and why it is worth trying)', true);
       if (raw.statement !== undefined) item.statement = text(raw.statement, 1500, 'source.statement', false);
+      if (raw.sourceRole !== undefined) item.sourceRole = oneOf(raw.sourceRole, ['source','observation','idea'], 'source.sourceRole');
+      if (creating) item.sourceRole = item.sourceRole || 'source';
       if (raw.originalProof !== undefined) {
         const p=plain(raw.originalProof,'source.originalProof');
         const originalUrl=text(p.originalUrl,1000,'originalProof.originalUrl',true);
@@ -1215,6 +1238,23 @@ function createStore(options) {
         if (itemId) {
           prior = value(await tx.get(itemRef(id, itemId)));
           if (!prior || prior.kind !== kind) throw new Error(kind + ' not found: ' + itemId + '. Omit id to create; IDs are assigned by the base.');
+        }
+        // Read referenced material before writes. The server rejects invented IDs
+        // and observations that never yielded any evidence.
+        if (kind === 'hypothesis' && !prior && needsFormationGate(base) && raw.formationReview) {
+          const refs = cleanFormationReview(raw.formationReview).caseRefs;
+          for (const caseId of refs) {
+            if (caseId.startsWith('S-')) {
+              const source = value(await tx.get(itemRef(id, caseId)));
+              if (!source || source.kind !== 'source' || source.sourceRole !== 'observation' ||
+                  (!source.originalProof && !(source.evidence || []).length && source.stage === 'conjecture'))
+                throw new Error('hypothesis.formationReview: ' + caseId + ' is not a verified observed source/case; ideas are not evidence.');
+            } else {
+              const trial = value(await tx.get(trialRef(id, caseId)));
+              if (!trial || trial.status !== 'rated' || !['pass','partial','fail'].includes(trial.verdict))
+                throw new Error('hypothesis.formationReview: ' + caseId + ' is not a real human-rated trial.');
+            }
+          }
         }
         loaded.push({ raw, prior });
       }

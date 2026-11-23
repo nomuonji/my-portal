@@ -92,6 +92,20 @@ It is **advisory**, never a user evaluation or automatic method promotion.
    simply negate a failed wording pattern. Evaluate changes with subsequent
    user-rated cases, preserving the same outcome contract and quality gates.
 
+### Hypothesis formation gate (all Skill/Pack dojos; new H only)
+
+An observed case or untested idea is **not** a reusable production hypothesis. The existing `source` ledger now distinguishes `sourceRole=source|observation|idea` under the original S-nnn IDs. A field observation or idea goes into S-nnn first; do not mint an H-nnn for each topic, punchline or reformulation. Only evidence-bearing sources, not `sourceRole=idea`, can justify formation.
+
+For **new** H-nnn in Skill/Pack dojos (chat_skill, skill_pack, intelligence_pack), the server now requires the existing six-field `researchProtocol`, an explicit non-`unknown` `pipelineStage`, at least one `targetModuleIds` entry, and **`formationReview`**:
+
+- `caseRefs`: at least two distinct, server-resolved S-nnn/T-nnn examples. S must explicitly have `sourceRole=observation` **and** original proof or recorded observations (not a mere collection feed or idea); T must have a real pass/partial/fail verdict. Bare names or invented sample IDs are rejected. This is provenance verification, not independent factual attestation.
+- `changedOperation`: one operational change to sourcing, selection, transformation, voice, gating or audience judgment — not a phenomenon title.
+- `rivalExplanation`: another plausible cause, including confounds.
+- `transferTest`: a contrast test on a **different** material, with a falsifying result.
+- `priorArtDecision`: why to create a genuinely new mechanism rather than record the single anecdote/idea or refine an earlier H. Cite relevant historical H when applicable.
+
+The server validates fields, existing case IDs and recorded verdicts. It cannot determine semantic novelty or causal proof: the agent must compare actual originals, user feedback and similar H first. Repeat the same subject with different names is not an independent replication. New H remain conjectures until verified. **Legacy H/T/S, current method release pointers, manual acceptance, publication permissions and existing runtime gates remain unchanged.** The gate is applied at creation, so an ordinary revision to a legacy hypothesis does not require backfilling it.
+
 This is shared infrastructure for buzz posts, keyword discovery, SEO, video ideas,
 Discover, and other Exploration Bases. Topic-specific evidence checks and acceptance
 requirements stay in their respective operators and skills. A server-suggested
