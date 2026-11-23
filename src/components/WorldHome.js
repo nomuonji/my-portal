@@ -402,6 +402,36 @@ export default function WorldHome() {
       )}
 
       {!loading && show('skills') && (
+        <section aria-label="Pack・Skill・道場の役割">
+          <SectionHeading eyebrow="03 — How it works" title="頭脳・Skill・道場は別のもの"
+            subtitle="入れ子ではなく、仕事に応じて参照する関係。道場は評価から統括Skillと専門Skillの両方に改善候補を届けます。"
+            icon={<HubIcon color="primary" />} />
+          <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',md:'repeat(3,minmax(0,1fr))'},gap:1.2}}>
+            {[
+              {name:'Pack / 頭脳',example:'Marketing & Creative Cognition',detail:'市場・受け手・創造性をどう判断するか。投稿の手順は持たない。'},
+              {name:'統括Skill / 作業レシピ',example:'buzz-content-ideation',detail:'バズ投稿の工程を進め、必要な頭脳と専門Skillを呼び出す。Packの内部ではない。'},
+              {name:'専門Skill / 個々の技術',example:'creative-thinking / humor-craft / quality-gate',detail:'発想・ユーモア・文章化・審査を担当。各Skillが独立した本文と版を持つ。'},
+            ].map((item)=>(
+              <Paper key={item.name} variant="outlined" sx={{p:1.7,borderColor:line,borderRadius:2}}>
+                <Typography variant="subtitle2" fontWeight={850}>{item.name}</Typography>
+                <Typography variant="caption" sx={{display:'block',fontFamily:fonts.mono,mt:.5,overflowWrap:'anywhere'}}>{item.example}</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{mt:1,lineHeight:1.65,fontSize:13}}>{item.detail}</Typography>
+              </Paper>
+            ))}
+          </Box>
+          <Paper variant="outlined" sx={{mt:1.2,p:1.6,borderRadius:2,borderColor:line}}>
+            <Stack direction={{xs:'column',md:'row'}} alignItems={{xs:'flex-start',md:'center'}} gap={1}>
+              <Chip size="small" label="道場 / 訓練" color="primary" variant="outlined"/>
+              <Typography variant="body2" sx={{flex:1,lineHeight:1.65}}>
+                本人評価 → 仮説ツリー → 改善先のSkillを特定 → 原文の改訂候補。
+                統括Skillだけでなく専門Skillも対象。異なる道場へ影響する原文変更は、比較検証とそのSkill側のリリース審査が必要です。
+              </Typography>
+            </Stack>
+          </Paper>
+        </section>
+      )}
+
+      {!loading && show('skills') && (
         <section aria-label="チャット専用Skills">
           <SectionHeading eyebrow="03 — Chat skills" title="Skills"
             subtitle="チャット用スキルはMy PortalのDBで本文と履歴を管理。Agent HQ Manager / WorkerのMethodとは別です。"
