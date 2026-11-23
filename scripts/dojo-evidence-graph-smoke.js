@@ -252,3 +252,56 @@ test('release regression monitor warns only after enough human ratings and disjo
    ...newer.map(x=>({...x,verdict:'pass'}))],feedbackLog:[],base:baseNow,hypotheses:[h('H-001')]});
  assert.equal(positive.releaseHealth.status,'improvement_signal');
 });
+
+test('T-128 regression: self-cleared repeatedly failing gate, unverified source, three Hs, missing contrast and low confidence are not user-ready',()=>{
+ const {checkBuzzSubmissionRecovery,unreliableNegativeReviews}=require('../functions/dojoBuzzRecovery');
+ const historical=Array.from({length:6},(_,i)=>rated('T-prior'+i,'fail',['H-003'],{
+   negativeReview:{checks:[{hypothesisId:'H-081',decision:'cleared'}]},
+ }));
+ const quarantined=unreliableNegativeReviews(historical);
+ assert.equal(quarantined[0].hypothesisId,'H-081');
+ assert.equal(quarantined[0].clearedRejected,6);
+ const base={id:'viral-post-method-discovery'};
+ const loop={failStreak:13,overall:{passRate:0.32}};
+ const run={targets:[{hypothesisId:'H-084'}],
+   negativeTargets:[{hypothesisId:'H-081'}]};
+ const draft={hypothesisIds:['H-003','H-075','H-084'],predictedPass:0.29,
+   editorialScreen:{pool:[{sourceId:'S-296',decision:'selected'}]}};
+ const sources=[{id:'S-296',locator:'https://imabazu.com/funny/',
+   coverage:'二次ランキングで要約。原典未取得。'}];
+ const check=(trial=draft,r=run,src=sources)=>checkBuzzSubmissionRecovery({
+   base,trial,run:r,existing:historical,sources:src,loop});
+ assert.throws(()=>check(),/exactly one primary H/);
+ const one={...draft,hypothesisIds:['H-084']};
+ assert.throws(()=>check(one),/QUARANTINED/);
+ const newRisk={...run,negativeTargets:[{hypothesisId:'H-077'}]};
+ assert.throws(()=>check(one,newRisk),/experimentDesign/);
+ const designed={...newRisk,experimentDesign:{
+   contrastedHypothesisIds:['H-003'],changedStage:'source',
+   intervention:'Compare a verified new material',comparison:'Less original summary',
+   controls:'same audience',expectedDifference:'distinct real observation',
+   refutingObservation:'Human rejects an independently observable version',
+ }};
+ assert.throws(()=>check(one,designed),/no direct-original/);
+ const original=[{id:'S-296',locator:'https://x.com/actualwriter/status/123456789',
+   originalProof:{originalUrl:'https://x.com/actualwriter/status/123456789',
+     excerpt:'The direct original report is independently observed here.',
+     verification:'direct_original'}}];
+ assert.throws(()=>check(one,designed,original),/below the real historical base rate/);
+ const plausible={...one,predictedPass:0.45};
+ const result=check(plausible,designed,original);
+ assert.equal(result.recoveryRequired,true);
+ assert.equal(result.quarantined[0].hypothesisId,'H-081');
+ assert.match(result.note,/not a human prediction/);
+});
+test('negative preflight warnings distinguish systematic false clearances from a single recent miss',()=>{
+ const {unreliableNegativeReviews}=require('../functions/dojoBuzzRecovery');
+ const cases=[
+   rated('T-a','fail',['H-001'],{negativeReview:{checks:[{hypothesisId:'H-010',decision:'cleared'}]}}),
+   rated('T-b','pass',['H-001'],{negativeReview:{checks:[{hypothesisId:'H-010',decision:'cleared'}]}}),
+   rated('T-c','fail',['H-001'],{negativeReview:{checks:[{hypothesisId:'H-010',decision:'cleared'}]}}),
+   rated('T-d','fail',['H-001'],{negativeReview:{checks:[{hypothesisId:'H-011',decision:'cleared'}]}}),
+ ];
+ assert.deepEqual(unreliableNegativeReviews(cases),[],
+   'a rule with genuine cleared pass or only one missed case is not quarantined');
+});
