@@ -207,6 +207,7 @@ const tools = [
       properties: {
         baseId, method,
         motivatingRunIds: strings('Finished run IDs whose results justify this version.', 20),
+        ruleProposalIds: strings('Optional exact MR-... Skill-rule proposals to include in this release; must pass live evidence eligibility, pinned-version checks, and the actual new body diff unless the user explicitly authorized a change. Never self-certifies quality.',12),
         benchmark: { type: 'object', properties: { passed: { type: 'boolean' }, ref: string('Test/command/record.', 500), cases: string('Known cases checked.', 1000) }, additionalProperties: false },
         noBenchmarkReason: string('Why there is no benchmark yet.', 600),
         userAuthorized, authorizationNote, actor,
