@@ -113,6 +113,7 @@ const item = {
     rationale: string('Constraint: why it exists.', 1500),
     check: string('Constraint: how a violation is detected.', 800),
     legacyIds: strings('Earlier labels for the same thing (e.g. "P22", "I12 (tsk-v24)").', 12),
+    targetSkillIds: strings('Optional target Chat Skill IDs for cross-skill learning. Exact dependencies are reviewed, not automatically edited or released.',12),
     targetModuleIds: { type:'array',minItems:1,maxItems:7,uniqueItems:true,
       items:{type:'string',enum:['root','source','selection','transform','voice','gate','audience']},
       description:'Optional explicit Skill module(s) this hypothesis examines. Legacy H records retain inferred root or pipeline module without being rewritten.' },
@@ -138,7 +139,7 @@ const tools = [
   },
   {
     name:'exploration_skill_graph_get',
-    description:'Read the Skill-module → hypothesis lineage → original human-rated trials graph without rewriting any H/T/feedback record. Also returns stewardship.portfolio: cross-module branch worklist, partial-support and negative hypothesis follow-ups, unreviewed capacity and maintenance actions. Agent must consult the entire human-feedback and hypothesis history, steward multiple branches, generate as many distinct artifacts as research supports (usually 1–3 when capacity permits), and reconcile new user feedback before proposing a merge. Deterministic states are shadow estimates, not human ratings or approved Skill rules. summary returns recent trial excerpts; full returns original cases.',
+    description:'Read the Skill-module → hypothesis lineage → original human-rated trials graph without rewriting any H/T/feedback record. Also returns stewardship.skillImprovement: candidate routes from human-rated cases to individual target Skills; these require diagnosis, validation and target-dojo release, never auto-edit. Returns stewardship.portfolio: cross-module branch worklist, partial-support and negative hypothesis follow-ups, unreviewed capacity and maintenance actions. Agent must consult the entire human-feedback and hypothesis history, steward multiple branches, generate as many distinct artifacts as research supports (usually 1–3 when capacity permits), and reconcile new user feedback before proposing a merge. Deterministic states are shadow estimates, not human ratings or approved Skill rules. summary returns recent trial excerpts; full returns original cases.',
     inputSchema:{type:'object',properties:{
       baseId,view:{type:'string',enum:['summary','full'],description:'summary (default) or full legacy trial references'},
     },required:['baseId'],additionalProperties:false},
