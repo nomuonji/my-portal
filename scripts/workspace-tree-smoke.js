@@ -9,6 +9,10 @@ test('MCP Workspace tree script compiles and reuses compatible read-only tools',
   assert.ok(match, 'one live Workspace app script must exist');
   assert.doesNotThrow(() => new vm.Script(match[1], { filename: 'my-portal-workspace-app.js' }));
   assert.match(UI_HTML, /Skill → 工程 → 仮説 → 評価物/);
+  assert.match(UI_HTML, /function renderPacks/);
+  assert.match(UI_HTML, /id="pack-tab"/);
+  assert.match(UI_HTML, /MCCはここに属します/);
+  assert.match(UI_HTML, /このPackを会話で使う/);
   assert.match(UI_HTML, /dojo:__graph:/);
   assert.match(UI_HTML, /treeHypDetail/);
   assert.match(UI_HTML, /treeCaseDetail/);
