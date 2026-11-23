@@ -41,3 +41,34 @@ test('unknown Skills remain unlinked, malformed policies cannot add pins or cycl
   await assert.rejects(store.publish({policy:{id:old.id,defaultIntent:old.defaultIntent,relations:[extra]},expectedRevision:0,changeReason:'Verify unsafe relation policy fails',confirm:true}),/versions|self-referential/);
  }
 });
+
+test('structured resource policy preserves exact model/tool references across legacy-client revisions',async()=>{
+ const db=new Db();
+ const store=createStore({getDb:()=>db,sourceSkill:async()=>({
+  revision:72,versionPolicy:'latest_dojo_release',
+  body:'Use `consumer_model_get` and `consumer_model_list` with `consumer-model-context`; never invent an audience.',
+ })});
+ const resources=[{kind:'consumer_model',id:'audience',requiredness:'required',
+  intents:['distribution'],rationale:'Resolve an actual audience model for the stated buyer situation.'},
+  {kind:'tool',id:'consumer_model_get',requiredness:'required',
+  intents:['distribution'],rationale:'Fetch the exact My Portal current audience model.'}];
+ const original=await store.publish({policy:{
+  id:'buzz-content-ideation',defaultIntent:'distribution',relations:[],resources,
+ },expectedRevision:0,changeReason:'Introduce versioned consumer-model resource provenance',
+  benchmark:{passed:true,ref:'skill-resource-evidence-smoke',cases:'Missing audience blocks; explicit model id resolves'},confirm:true});
+ assert.equal(original.resources.length,2);
+ assert.equal(original.resources[0].versionPolicy,'explicit_version_or_current');
+ const oldClient=await store.publish({policy:{
+  id:'buzz-content-ideation',defaultIntent:'distribution',
+  relations:[{skillId:'consumer-model-context',requiredness:'required',intents:['distribution'],
+    rationale:'Select the currently appropriate audience model before generating a post.'}],
+ },expectedRevision:1,changeReason:'Add explicit approved Skill relation without re-sending resources',
+  benchmark:{passed:true,ref:'skill-resource-evidence-smoke',cases:'Approved source body mentions the relation'},confirm:true});
+ assert.equal(oldClient.resources.length,2,'an old MCP client must not wipe structured resources');
+ assert.equal((await store.get({id:'buzz-content-ideation'})).resources.length,2);
+ await assert.rejects(store.publish({policy:{id:'buzz-content-ideation',
+  relations:[],resources:[{...resources[1],id:'nonexistent_tool_foo'}]},
+  expectedRevision:2,changeReason:'Reject invented tool without approved Skill body',
+  benchmark:{passed:true,ref:'skill-resource-evidence-smoke',cases:'Unknown tool must be refused'},confirm:true}),
+  /does not reference resource resolver/);
+});
