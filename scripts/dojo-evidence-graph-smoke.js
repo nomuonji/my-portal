@@ -307,3 +307,16 @@ test('negative preflight warnings distinguish systematic false clearances from a
  assert.deepEqual(unreliableNegativeReviews(cases),[],
    'a rule with genuine cleared pass or only one missed case is not quarantined');
 });
+
+test('retired trial-specific hypotheses preserve human feedback but cannot accrue merge eligibility',()=>{
+  const retired=h('H-084','transform',{status:'retired',polarity:'positive'});
+  const row=rated('T-128','fail',['H-084'],{body:'A failed speculative 50-yen service post.',
+    userWords:'こうなった。全然うまくいってない'});
+  const g=projectGraph({base,items:[retired],trials:[row],view:'full'});
+  const result=g.promotions[0];
+  assert.equal(result.state,'retired');
+  assert.equal(result.eligibleForMerge,false);
+  assert.equal(result.historical.fail,1);
+  assert.deepEqual(g.trials.map(x=>x.userWords),['こうなった。全然うまくいってない']);
+  assert.deepEqual(g.stewardship.portfolio.selectedBranches,[]);
+});
