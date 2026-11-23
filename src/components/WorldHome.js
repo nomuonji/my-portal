@@ -200,8 +200,8 @@ export default function WorldHome() {
   const openIntelligence = async (id) => {
     setIntelligenceDetail({id,loading:true});
     try {
-      const res=await fetchPortalWorld(`?resource=intelligence&id=${encodeURIComponent(id)}`);
-      setIntelligenceDetail({id,title:res.pack?.title||id,components:res.definition?.components||[],summary:res.definition?.summary||'',loading:false});
+      const res=await fetchPortalWorld(`?resource=skill_pack&id=${encodeURIComponent(id)}`);
+      setIntelligenceDetail({id,title:res.pack?.title||id,components:res.definition?.stages||[],summary:res.definition?.summary||'',loading:false});
     } catch(error) { setIntelligenceDetail({id,error:error.message||'Intelligenceの取得に失敗しました',loading:false}); }
   };
   const openSkill = async (skill) => {
@@ -449,7 +449,7 @@ export default function WorldHome() {
                 <Paper variant="outlined" sx={{p:1.25,flex:1,borderRadius:1.5}}>
                   <Typography fontWeight={850} fontSize={13}>共有する関連Skill Pack</Typography>
                   {(pack.supportingPackIds||pack.intelligenceIds||[]).map(id=>(
-                    <Button key={id} size="small" onClick={()=>fetchPortalWorld(`?resource=skill_pack&id=${encodeURIComponent(id)}`).then(res=>setIntelligenceDetail({id,title:res.pack?.title||id,components:res.definition?.stages||[],summary:res.definition?.summary||'',loading:false})).catch(error=>setIntelligenceDetail({id,error:error.message,loading:false}))} sx={{display:'block',fontFamily:fonts.mono,fontSize:12.5,mt:.3,overflowWrap:'anywhere',textAlign:'left'}}>{id} — Packを開く</Button>
+                    <Button key={id} size="small" onClick={()=>openIntelligence(id)} sx={{display:'block',fontFamily:fonts.mono,fontSize:12.5,mt:.3,overflowWrap:'anywhere',textAlign:'left'}}>{id} — Packを開く</Button>
                   ))}
                   <Typography variant="caption" color="text.secondary">MCCもIntelligence型Skill Packとして参照します。関連Packは独立した版を持ちます。</Typography>
                 </Paper>
