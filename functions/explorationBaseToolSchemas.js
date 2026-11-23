@@ -119,7 +119,7 @@ const tools = [
   },
   {
     name:'exploration_skill_graph_get',
-    description:'Read the Skill-module → hypothesis lineage → original human-rated trials graph without migrating or rewriting any H/T/feedback record. Returns deterministic evidence aggregates and shadow promotion decisions with policy version. summary returns recent trial excerpts, full returns all canonical trial references. Proposed relation edges are never treated as confirmed causal facts.',
+    description:'Read the Skill-module → hypothesis lineage → original human-rated trials graph without rewriting any H/T/feedback record. Also returns stewardship.portfolio: cross-module branch worklist, partial-support and negative hypothesis follow-ups, unreviewed capacity and maintenance actions. Agent must consult the entire human-feedback and hypothesis history, steward multiple branches, generate as many distinct artifacts as research supports (usually 1–3 when capacity permits), and reconcile new user feedback before proposing a merge. Deterministic states are shadow estimates, not human ratings or approved Skill rules. summary returns recent trial excerpts; full returns original cases.',
     inputSchema:{type:'object',properties:{
       baseId,view:{type:'string',enum:['summary','full'],description:'summary (default) or full legacy trial references'},
     },required:['baseId'],additionalProperties:false},
