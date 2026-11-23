@@ -161,6 +161,13 @@ function promotion(h,trials,all,comparisonCount=1){
   const observed=trials.filter(isRated);
   const historical=counts(observed);
   const runs=[...new Set(observed.map(t=>t.runId).filter(Boolean))];
+  // Historical ratings remain visible, but an explicitly retired or rejected
+  // hypothesis cannot continue collecting adoption eligibility by accident.
+  if(['retired','rejected'].includes(h.status))
+    return {hypothesisId:h.id,state:h.status,policyVersion:POLICY.version,
+      eligibleForMerge:false,validatedSegments:[],historical,
+      reasonCodes:['hypothesis_not_open_no_promotion'],
+      caution:'Historical ratings are preserved; retiring a branch never rewrites its actual human results.'};
   if(h.polarity==='negative')
     return {hypothesisId:h.id,state:'negative_risk_review',policyVersion:POLICY.version,
       eligibleForMerge:false,reasonCodes:['negative_hypothesis_uses_risk_audit_not_positive_pass_rate'],
