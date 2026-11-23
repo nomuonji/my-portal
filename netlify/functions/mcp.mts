@@ -656,6 +656,46 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
       }
       return structured({ tasks, blocked, errors, generatedAt:new Date().toISOString(), limit:3, readOnly:true });
     }
+    if (args.projectId.startsWith("dojo:__graph:")) {
+      // Read-only graph projection for the MCP Workspace. The complete tree is
+      // derived from existing Skill/H/T/user feedback records; no migration,
+      // hidden re-rating, automatic support promotion, or duplicate ledger.
+      const id = args.projectId.slice("dojo:__graph:".length);
+      if (!/^[a-z0-9-]{1,80}$/.test(id)) throw new Error("Invalid dojo graph ID");
+      const graph = await explorationBaseStore.graphGet({ baseId: id, view: "full" });
+      const hypotheses = (graph.hypotheses || []).map((h: any) => ({
+        id: h.id, title: h.title, statement: h.statement, mechanism: h.mechanism,
+        limits: h.limits, polarity: h.polarity, status: h.status,
+        targetModuleIds: h.targetModuleIds || [], moduleAssignment: h.moduleAssignment || null,
+        promotion: h.promotion ? {
+          state: h.promotion.state, eligibleForMerge: !!h.promotion.eligibleForMerge,
+          historical: h.promotion.historical || null,
+          reasonCodes: h.promotion.reasonCodes || [],
+          validatedSegments: h.promotion.validatedSegments || [],
+          caution: h.promotion.caution || "",
+        } : null,
+      }));
+      const trials = (graph.trials || []).map((t: any) => ({
+        id: t.id, label: t.label, body: t.body, hypothesisIds: t.hypothesisIds || [],
+        verdict: t.verdict || null, userWords: t.userWords || "", runId: t.runId,
+        ratedAt: t.ratedAt, methodVersion: t.methodVersion, segmentKey: t.segmentKey,
+        materialKey: t.materialKey, comparisonKey: t.comparisonKey,
+        evaluationPhase: t.evaluationPhase, experimentArm: t.experimentArm,
+      }));
+      return structured({ graph: {
+        baseId: graph.baseId, target: graph.target || null,
+        modules: (graph.modules || []).map((m: any) => ({
+          id: m.id, name: m.name, hypothesisIds: m.hypothesisIds || [],
+          source: m.source || null,
+        })),
+        hypotheses, hypothesisEdges: graph.hypothesisEdges || [], trials,
+        qualityReview: graph.stewardship?.qualityReview || null,
+        portfolio: graph.stewardship?.portfolio || null,
+        feedbackReview: graph.stewardship?.feedbackReview || null,
+        migration: graph.migration || null,
+        evidencePolicy: graph.policyVersion || null,
+      }, readOnly: true });
+    }
     if (args.projectId.startsWith("dojo:")) {
       const id = args.projectId.slice(5);
       if (!/^[a-z0-9-]{1,80}$/.test(id)) throw new Error("Invalid dojo ID");
