@@ -98,7 +98,7 @@ An observed case or untested idea is **not** a reusable production hypothesis. T
 
 For **new** H-nnn in Skill/Pack dojos (chat_skill, skill_pack, intelligence_pack), the server now requires the existing six-field `researchProtocol`, an explicit non-`unknown` `pipelineStage`, at least one `targetModuleIds` entry, and **`formationReview`**:
 
-- `caseRefs`: at least two distinct, server-resolved S-nnn/T-nnn examples. S must have original proof or recorded observations; T must have a real pass/partial/fail verdict. Bare names or invented sample IDs are rejected. This is provenance verification, not independent factual attestation.
+- `caseRefs`: at least two distinct, server-resolved S-nnn/T-nnn examples. S must explicitly have `sourceRole=observation` **and** original proof or recorded observations (not a mere collection feed or idea); T must have a real pass/partial/fail verdict. Bare names or invented sample IDs are rejected. This is provenance verification, not independent factual attestation.
 - `changedOperation`: one operational change to sourcing, selection, transformation, voice, gating or audience judgment — not a phenomenon title.
 - `rivalExplanation`: another plausible cause, including confounds.
 - `transferTest`: a contrast test on a **different** material, with a falsifying result.
