@@ -178,6 +178,11 @@ async function getExecutableSkill(input={}) {
 async function upsertSkill(input) {
  if(input.confirm!==true)throw new Error('Explicit confirmation required');
  let draft=input.skill||{};
+ // A full-body edit that omits the subtype must never silently turn an Intelligence Skill into a standard Skill.
+ if(draft.id && draft.skillType===undefined && Number(input.expectedRevision)>0){
+  const saved=await db().collection(SKILLS).doc(safeString(draft.id,90)).get();
+  if(saved.exists)draft={...draft,skillType:saved.data().skillType||'standard'};
+ }
  if(input.bodyEdits!==undefined){
   if(draft.body!==undefined)throw new Error('Pass either skill.body or bodyEdits, not both');
   const existing=await db().collection(SKILLS).doc(safeString(draft.id,90)).get();
