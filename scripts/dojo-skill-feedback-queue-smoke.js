@@ -123,6 +123,12 @@ test('the next training cycle cannot produce a Trial before specialist triage an
   treeMaintenance:{pendingTrialIds:['T-001'],pendingExternalRefs:[],touchedHypothesisIds:['H-001']},
  };
  db.records.set('explorationBases/'+id,structuredClone(original));
+ // Provide a valid hypothesis so the test reaches the metabolism gate rather
+ // than the older independent missing-hypothesis refusal.
+ db.records.set('explorationBaseItems/'+id+'__H-001',{
+  id:'H-001',baseId:id,kind:'hypothesis',status:'open',polarity:'positive',
+  title:'Compare two transformation procedures',pipelineStage:'transform',
+ });
  const cycle=cyclePreflight(original);
  assert.equal(cycle.readyForTrialRegistration,false);
  assert.equal(cycle.pendingSkillReviews.length,1);
