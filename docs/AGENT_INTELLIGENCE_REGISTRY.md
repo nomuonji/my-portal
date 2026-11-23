@@ -1,12 +1,12 @@
 # Agent Intelligence Registry
 
-The Agent Intelligence Registry stores host-independent Agent Profiles and reusable Intelligence Packs. It does not create or run agents.
+The Agent Intelligence Registry stores host-independent Agent Profiles and reusable **Intelligences** (historical API name: Intelligence Pack). **Skill Packs** are now a separate workflow registry: `skillPacks` assembles Chat Skills by stage, and `intelligencePacks` stays the source of judgment and world models. It does not create or run agents.
 
 ## Canonical records
 
 - agentProfiles is the Profile index; agentProfileVersions stores immutable version documents.
-- intelligencePacks is the Pack index; intelligencePackVersions stores immutable version documents.
-- The first approved Composite Pack is marketing-creative-cognition (Marketing & Creative Cognition). Its five cognition areas are components within one Pack, not separate personas or operating modes.
+- intelligencePacks is the **legacy-named Intelligence** index; intelligencePackVersions stores immutable Intelligence versions. Retain these IDs and APIs to avoid invalidating references.
+- The first approved composite Intelligence is marketing-creative-cognition (Marketing & Creative Cognition). Its five cognition areas are components within one Pack, not separate personas or operating modes.
 - The Registry uses the existing AGENT_IDEAS_DATABASE_ID Document DB selection, including the Firestore/Turso adapter. It does not reuse intelligence_raw_documents, chatSkills, Agent HQ Methods, characters, or Contexts as Registry collections.
 
 Each root index holds summary, status, and currentVersionNumber. A version document is immutable and uses the ID plus a six-digit version suffix. Version writes require expectedCurrentVersion and confirm=true; stale writers and attempted version replacement are rejected.

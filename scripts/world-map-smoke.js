@@ -46,7 +46,7 @@ function database() {
 }
 try {
   Module._load = function(request, parent, isMain) {
-    if (request === './documentDb' && ['worldMap.js','chatContextRegistry.js','contextRegistry.js'].some(name=>parent?.filename?.endsWith(path.join('functions',name)))) {
+    if (request === './documentDb' && ['worldMap.js','chatContextRegistry.js','contextRegistry.js','skillPackRegistry.js'].some(name=>parent?.filename?.endsWith(path.join('functions',name)))) {
       return { getDocumentDb: database, FieldValue: { serverTimestamp: () => new Date('2026-10-10T02:00:00Z') } };
     }
     return originalLoad.call(this, request, parent, isMain);
@@ -78,6 +78,10 @@ try {
     assert.equal(before.contexts[0].id,'legacy-ai-space');
     assert.equal(before.contexts[0].legacySpaceId,'ai-space');
     assert.deepEqual(before.contexts[0].domains,['general']);
+    assert.equal(before.skillPacks.length,1);
+    assert.equal(before.skillPacks[0].id,'viral-post-pack');
+    assert.equal(before.skillPacks[0].entrySkillId,'buzz-content-ideation');
+    assert.deepEqual(before.skillPacks[0].intelligenceIds,['marketing-creative-cognition']);
     assert.equal(before.chatSkills.length,11);
     assert.equal(before.chatSkills[0].sourceOfTruth,'My Portal DB');
     assert.ok(before.chatSkills.every(s=>!('body' in s)));
