@@ -12,6 +12,7 @@ const { buildResearchInventory, researchPage, validateResearchSynthesis } = requ
 const { recallRequired, buildRecallProbe, checkRecallPredictions, buildHistoricalHypotheses, checkHypothesisReviews } = require('./dojoRecall');
 const { trialArtifactStatus, publicMediaUrl } = require('./dojoArtifactReadiness');
 const { projectGraph, graphEdges, validateEdges, MODULE_IDS } = require('./dojoEvidenceGraph');
+const { checkBuzzSubmissionRecovery, unreliableNegativeReviews } = require('./dojoBuzzRecovery');
 const { makeRuleProposal, assessRuleProposal } = require('./dojoRuleMerge');
 
 const DEFAULT_DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
@@ -1060,6 +1061,16 @@ function createStore(options) {
       if (creating || raw.locator !== undefined) item.locator = text(raw.locator, 600, 'source.locator (URL, query or tool call that reaches it)', true);
       if (creating || raw.coverage !== undefined) item.coverage = text(raw.coverage, 1500, 'source.coverage (what it yields and why it is worth trying)', true);
       if (raw.statement !== undefined) item.statement = text(raw.statement, 1500, 'source.statement', false);
+      if (raw.originalProof !== undefined) {
+        const p=plain(raw.originalProof,'source.originalProof');
+        const originalUrl=text(p.originalUrl,1000,'originalProof.originalUrl',true);
+        const excerpt=text(p.excerpt,1100,'originalProof.excerpt',true);
+        if (!/^https:\/\/\S+$/.test(originalUrl)||excerpt.length<16)
+          throw Error('source.originalProof needs a direct HTTPS original URL and at least 16 characters from that original');
+        const verification=oneOf(p.verification,['direct_original'],'originalProof.verification');
+        item.originalProof={originalUrl,excerpt,verification,
+          verifiedAt:now(),provenance:'agent_reported_not_server_confirmed'};
+      }
     }
     if (raw.limits !== undefined) item.limits = text(raw.limits, 1500, kind + '.limits', false);
     if (raw.legacyIds !== undefined) item.legacyIds = list(raw.legacyIds, 12, 60);
@@ -1215,9 +1226,14 @@ function createStore(options) {
     // Bounded read before the transaction: selecting a negative arm must not require
     // newer MCP clients or an agent remembering an extra field. A transaction then
     // verifies the selected item is still open before persisting the run.
-    const automaticNegativeCandidates = (Array.isArray(input.targets) && input.targets.length
-      && (!Array.isArray(input.negativeTargets) || input.negativeTargets.length === 0))
-      ? (await loadItems(id)).filter(item => item.kind === 'hypothesis' && item.polarity === NEGATIVE && item.status === 'open') : [];
+    let automaticNegativeCandidates = [];
+    if (Array.isArray(input.targets) && input.targets.length
+      && (!Array.isArray(input.negativeTargets) || input.negativeTargets.length===0)){
+      const [allItems,priorTrials]=await Promise.all([loadItems(id),id==='viral-post-method-discovery'?loadTrials(id):Promise.resolve([])]);
+      const quarantined=new Set(unreliableNegativeReviews(priorTrials).map(x=>x.hypothesisId));
+      automaticNegativeCandidates=allItems.filter(item=>item.kind==='hypothesis'&&item.polarity===NEGATIVE
+        &&item.status==='open'&&!quarantined.has(item.id));
+    }
     await db().runTransaction(async (tx) => {
       const base = await loadBase(tx, id);
       if (base.status !== 'active') throw new Error('Exploration Base is ' + base.status + '; runs start only on an active base.');
@@ -1752,6 +1768,11 @@ function createStore(options) {
           body: text(raw.body, 4000, 'trial.body', false) || text(raw.label, 300, 'trial.label', false),
         });
         if (negativeReview && legacyReview) negativeReview.status = 'preflight_legacy_derived_unverified';
+        if (!backfill && id==='viral-post-method-discovery') {
+          const loop=loopView({trials:existing,feedbackLog:base.feedbackLog,base,hypotheses:items});
+          checkBuzzSubmissionRecovery({base,trial:{...raw,hypothesisIds,editorialScreen,predictedPass:predicted},
+            run,existing,sources:sourceItems,loop,negativeReview});
+        }
         // All existing quality gates are evaluated first, preserving their
         // diagnostic errors. A valid candidate still cannot be saved without
         // the exhaustive research review of every earlier hypothesis and user
