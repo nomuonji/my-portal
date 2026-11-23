@@ -1606,6 +1606,7 @@ function createStore(options) {
       const row = plain(entry, 'editorialScreen.pool entry');
       const title = text(row.title, 100, 'candidate.title', true);
       const sourceId = text(row.sourceId, 20, 'candidate.sourceId', true);
+      const hypothesisId = text(row.hypothesisId, 20, 'candidate.hypothesisId', false);
       const decision = oneOf(row.decision, ['selected', 'rejected'], 'candidate.decision');
       const reason = text(row.reason, 350, 'candidate.reason', true);
       if (reason.length < 10) throw new Error('Buzz 道場: each candidate needs a concrete rejection/selection reason (10+ characters).');
@@ -1617,7 +1618,7 @@ function createStore(options) {
       }
       sourceIds.add(sourceId);
       (decision === 'selected' ? selected : rejected).push(title);
-      return { title, sourceId, decision, reason };
+      return { title, sourceId, ...(hypothesisId?{hypothesisId}:{}), decision, reason };
     });
     if (selected.length !== 1 || rejected.length < 2 || sourceIds.size < 2) {
       throw new Error('Buzz 道場: exactly one selected candidate, at least two rejected candidates and at least two observed source lanes are required.');
@@ -1770,7 +1771,7 @@ function createStore(options) {
         if (negativeReview && legacyReview) negativeReview.status = 'preflight_legacy_derived_unverified';
         if (!backfill && id==='viral-post-method-discovery') {
           const loop=loopView({trials:existing,feedbackLog:base.feedbackLog,base,hypotheses:items});
-          checkBuzzSubmissionRecovery({base,trial:{...raw,hypothesisIds,editorialScreen,predictedPass:predicted},
+          var qualityRecovery=checkBuzzSubmissionRecovery({base,trial:{...raw,hypothesisIds,editorialScreen,predictedPass:predicted},
             run,existing,sources:sourceItems,loop,negativeReview});
         }
         // All existing quality gates are evaluated first, preserving their
@@ -1814,6 +1815,7 @@ function createStore(options) {
           ...cleanGraphTrialMetadata(raw),
           predictedPass: predicted, predictionNote: text(raw.predictionNote, 600, 'trial.predictionNote', false),
           ...(editorialScreen ? { format: editorialScreen.format, editorialScreen } : {}),
+          ...(qualityRecovery?.recoveryRequired ? { qualityRecovery } : {}),
           ...(learningAudit ? { learningAudit } : {}),
           ...(negativeReview ? { negativeReview } : {}),
           ...(run?.researchReview?.status === 'synthesized' ? { researchEvidence: {
