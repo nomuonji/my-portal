@@ -1461,3 +1461,55 @@ test('new human feedback creates cross-branch maintenance debt that cannot be sk
  assert.equal(graph.stewardship.feedbackReview.status,'up_to_date');
  assert.equal(graph.stewardship.feedbackReview.lastReviewedRunId,next.runId);
 });
+
+test('Skill rule proposals bind exact evidence without rewriting the old Skill, and verified diffs are recorded on explicit releases',async()=>{
+ const store=await setup();
+ await store.upsertItems({baseId:'test-base',kind:'hypothesis',items:[{
+   ...hypothesis,pipelineStage:'voice',targetModuleIds:['voice'],
+ }]});
+ await store.recordTrials({baseId:'test-base',backfill:true,trials:[{
+   label:'Human pass example',body:'A specific observable motive reverses the role of the speaker.',
+   hypothesisIds:['H-001'],rating:{verdict:'pass',userWords:'合格。動機に納得'}
+ },{
+   label:'Human reject example',body:'The same idea is repeated in a generic way.',
+   hypothesisIds:['H-001'],rating:{verdict:'fail',userWords:'ボツ。抽象的'}
+ }]});
+ const before=(await store.get({id:'test-base',view:'full'})).full.trials;
+ const proposal={sourceMethodVersion:'m-v1',action:'add',moduleId:'voice',
+   replacementText:'Describe a concrete person and motive before allowing the final role reversal.',
+   hypothesisIds:['H-001'],supportingTrialIds:['T-001'],counterexampleTrialIds:['T-002'],
+   rationale:'The accepted sample has a concrete motive, while the rejected one only rephrases the premise.',
+   refutingObservation:'If another controlled generic premise beats a concrete motive under matched conditions, the rule needs reversal.',
+ };
+ await assert.rejects(store.ruleProposalUpsert({baseId:'test-base',proposal:{
+   ...proposal,supportingTrialIds:['T-002']}}),/real human pass/);
+ const saved=await store.ruleProposalUpsert({baseId:'test-base',proposal});
+ assert.match(saved.proposalId,/^MR-/);
+ assert.equal(saved.eligibility.evidenceEligible,false);
+ assert.equal(saved.status,'proposal_only_never_auto_released');
+ const existing=await store.ruleProposalUpsert({baseId:'test-base',proposal});
+ assert.equal(existing.duplicate,true);
+ const graph=await store.graphGet({baseId:'test-base',view:'full'});
+ assert.equal(graph.skillRules.rules.length,1);
+ assert.equal(graph.skillRules.rules[0].eligibility.automaticRelease,false);
+ assert.equal(graph.skillRules.rules[0].hypothesisIds[0],'H-001');
+ assert.deepEqual((await store.get({id:'test-base',view:'full'})).full.trials,before);
+ const next={title:'Method',version:'m-v2',summary:'Explicitly requested test of the new rule',
+   bodyRef:{kind:'inline'},body:'# Method\n\n'+proposal.replacementText};
+ const bad={...next,body:'# Method\n\nThe linked rule is absent'};
+ await assert.rejects(store.setMethodVersion({baseId:'test-base',method:bad,
+   ruleProposalIds:[saved.proposalId],userAuthorized:true,
+   authorizationNote:'User explicitly approved method rule change',noBenchmarkReason:'User asked for this change.'}),
+ /does not contain the exact proposed replacement rule/);
+ const update=await store.setMethodVersion({baseId:'test-base',method:next,
+   ruleProposalIds:[saved.proposalId],userAuthorized:true,
+   authorizationNote:'User explicitly approved method rule change',noBenchmarkReason:'User requested the change, future testing required.'});
+ assert.equal(update.method.version,'m-v2');
+ const history=(await store.get({id:'test-base',view:'full'})).full.methodHistory;
+ const last=history.at(-1);
+ assert.equal(last.ruleMergeReview[0].proposalId,saved.proposalId);
+ assert.equal(last.ruleMergeReview[0].evidenceEligible,false);
+ assert.equal(last.ruleMergeReview[0].overrideByDirectUserInstruction,true);
+ const stale=(await store.graphGet({baseId:'test-base'})).skillRules.rules[0].eligibility;
+ assert.ok(stale.blockingReasons.includes('base_method_version_changed'));
+});
