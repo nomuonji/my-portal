@@ -29,7 +29,8 @@ async function resolveSkillResources(input={}){
       if(resource.kind==='tool'){
         // Even when the tool is connected, only a real host action can confirm
         // the call. The runtime must not report that it has used this resource.
-        entry.loadState='tool_call_required';
+        entry.loadState=resource.id==='consumer_model_get'&&activeConsumerModel
+          ?'model_data_available_via_server_resolver':'tool_call_required';
       }else if(!selectedId){
         entry.loadState='consumer_selection_required';
       }else {
@@ -53,7 +54,7 @@ async function resolveSkillResources(input={}){
   }
   return {resources,selectedConsumerModel:activeConsumerModel?.model||null,
     requiredMissing:resources.filter(r=>r.active&&r.requiredness==='required'
-      &&!['resolved_in_my_portal'].includes(r.loadState))
+      &&!['resolved_in_my_portal','model_data_available_via_server_resolver'].includes(r.loadState))
       .map(r=>({sourceSkillId:r.sourceSkillId,kind:r.kind,id:r.id,
         loadState:r.loadState,toolName:r.toolName})),
     note:'Tool declarations are calls to make, not verified calls. Consumer models are hypotheses, not user ratings. Store real source receipts and model version with each evaluated trial.'};
