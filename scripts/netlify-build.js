@@ -30,6 +30,12 @@ run('npm', ['run', 'build'], { shell: process.platform === 'win32' });
 // A one-time, production-only pointer reclassification. It fails closed on
 // unexpected versions or open runs and is idempotent across later builds.
 
+// One-shot source-preserving enrichment of old human-rated Buzz Trials.
+// Runs only in production, never in preview; idempotent until flag removal.
+if (process.env.CONTEXT === 'production' && process.env.DOJO_SKILL_FEEDBACK_BOOTSTRAP === '2026-11-24') {
+  run(process.execPath,['scripts/dojo-skill-feedback-bootstrap.js']);
+}
+
 // Explicit, one-time, production-only import authorized by the owner. No source deletion or cutover.
 if (process.env.CONTEXT === 'production' && process.env.CONSUMER_MODEL_SNAPSHOT_IMPORT === '2026-11-18') {
   run(process.execPath, ['scripts/consumer-model-migration.js']);

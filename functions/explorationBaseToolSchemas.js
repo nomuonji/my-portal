@@ -569,6 +569,29 @@ const tools = [
     },
   },
   {
+    name: 'exploration_skill_improvement_seed',
+    description: 'One-time idempotent bootstrap of specialist Skill review work orders from original human-rated trials. Reads existing H/T without rewriting verdicts or approving any Skill. Can be used for older dojos whose ratings predate the durable inbox.',
+    inputSchema:{type:'object',properties:{
+      baseId,actor,confirm:{type:'boolean',enum:[true]},
+    },required:['baseId','confirm'],additionalProperties:false},
+  },
+  {
+    name: 'exploration_skill_improvement_review',
+    description: 'Record an agent evidence-based triage of an outstanding specialist Skill feedback work order. Compare actual user-rated cases and at least two plausible explanations, plan a discriminating test, and when appropriate propose a candidate rule. This does not edit/release Skills or invent user ratings. The target Skill requires its own dojo-approved release.',
+    inputSchema:{type:'object',properties:{
+      baseId,actor,review:{type:'object',properties:{
+        targetSkillId:string('Destination specialist Chat Skill ID.',90),
+        moduleId:string('Affected module ID (source/selection/transform/voice/gate/audience).',25),
+        trialIds:{type:'array',items:{type:'string',maxLength:20},minItems:1,maxItems:50,uniqueItems:true},
+        action:{type:'string',enum:['compare_more','rule_candidate','not_a_skill_defect']},
+        rationale:string('Evidence-based reason with exact observed case distinctions; distinguish human words from agent inference.',1800),
+        competingExplanations:string('At least two plausible causes and why current examples do not resolve them.',1800),
+        nextDiscriminatingExperiment:string('Concrete treatment/control, variables held constant, forecast and refuting observation.',1600),
+        candidateRule:string('Specific falsifiable replacement/addition to the target Skill (proposal only).',1200),
+      },required:['targetSkillId','moduleId','trialIds','action','rationale','competingExplanations','nextDiscriminatingExperiment'],additionalProperties:false},
+    },required:['baseId','review'],additionalProperties:false},
+  },
+  {
     name: 'exploration_trial_rate',
     description: 'Record what the user said about trials. verdict: pass (the user accepted it), partial (close, e.g. "60点" / "惜しい"), fail, or withdrawn (never shown or no longer relevant; needs reason). userWords must quote the user: a self-score is not a rating. The rating is added to the pass rate of the version that produced the sample and to each hypothesis the trial tested (a pass as evidence, a non-pass as a counterexample). failStage is where the pipeline lost it (source, selection, transform, voice, gate); mark it unknown unless the user said why. Returns the updated loop with nextActions.',
     inputSchema: {

@@ -15,6 +15,7 @@ const { projectGraph, graphEdges, validateEdges, MODULE_IDS } = require('./dojoE
 const { checkBuzzSubmissionRecovery, unreliableNegativeReviews } = require('./dojoBuzzRecovery');
 const { makeRuleProposal, assessRuleProposal } = require('./dojoRuleMerge');
 const { planSkillTransfers } = require('./dojoSkillTransfer');
+const { enqueueFeedback, validateReview, applyReviews } = require('./dojoSkillFeedbackQueue');
 
 const DEFAULT_DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTIONS = Object.freeze({
@@ -429,7 +430,7 @@ function createStore(options) {
         progress: { achievements: [], confirmedCount: 0 },
         method: method ? { ...method, setAt: at } : null,
         methodHistory: method ? [{ version: method.version, summary: method.summary, setAt: at, motivatingRunIds: [], benchmark: null }] : [],
-        proposals: [], lastRuns: [], openRunId: null, stalledRuns: 0, runCount: 0,
+        proposals: [], skillImprovementInbox: [], skillImprovementReviews: [], lastRuns: [], openRunId: null, stalledRuns: 0, runCount: 0,
         counters: { H: 0, K: 0, R: 0, A: 0, PR: 0, E: 0 },
         revision: 0, createdAt: at,
       };
@@ -494,6 +495,8 @@ function createStore(options) {
       status:((base.treeMaintenance?.pendingTrialIds||[]).length||(base.treeMaintenance?.pendingExternalRefs||[]).length)?'needs_hypothesis_tree_review':'up_to_date',
     };
     graph.stewardship.skillImprovement=planSkillTransfers({base,items,trials});
+    graph.stewardship.skillImprovement.inbox=(base.skillImprovementInbox||[]).map(x=>({...x}));
+    graph.stewardship.skillImprovement.recentReviews=(base.skillImprovementReviews||[]).slice(0,20);
     const proposals=ruleSnap.docs.map(doc=>doc.data());
     graph.skillRules={status:proposals.length?'candidate_rule_mapping':'unmapped_legacy_skill_body',rules:proposals.map(p=>({
       id:p.id,sourceRuleId:p.sourceRuleId,action:p.action,moduleId:p.moduleId,
@@ -555,7 +558,7 @@ function createStore(options) {
     if(!base)throw Error('Exploration Base not found');
     const bodyRef=base.method?.bodyRef||{};
     let targetBody=base.method?.body||'';
-    if(['chat_skill','intelligence_pack'].includes(bodyRef.kind)){
+    if(['chat_skill','skill_pack','intelligence_pack'].includes(bodyRef.kind)){
       const target=await resolveTarget({kind:bodyRef.kind,id:bodyRef.location,versionNumber:bodyRef.versionNumber});
       targetBody=target.body||'';
     }
@@ -801,6 +804,8 @@ function createStore(options) {
         outcome: { revision: base.outcome?.revision, confirmedCount: confirmed, awaitingConfirmation: (base.progress?.achievements || []).filter((a) => a.status === 'candidate').map(({ id, label, ref }) => ({ id, label, ref })) },
         position: { runCount: base.runCount || 0, stalledRuns: base.stalledRuns || 0, openRunId: base.openRunId || null, lastRuns: (base.lastRuns || []).slice(0, 1) },
         loop: loopView({ trials, feedbackLog: base.feedbackLog, base, hypotheses }),
+        skillImprovement:{pending:(base.skillImprovementInbox||[]).filter(x=>x.status==='pending_review').length,
+          inbox:(base.skillImprovementInbox||[]).slice(0,20)},
         warnings,
         note: 'Refresh only. Use view=brief if the method or contract changed, or to load constraints, ledgers and the released body.',
       };
@@ -1949,6 +1954,7 @@ function createStore(options) {
     if (!Array.isArray(input.ratings) || !input.ratings.length) throw new Error('ratings must be a non-empty array');
     if (input.ratings.length > 30) throw new Error('At most 30 ratings per call');
     const rated = [];
+    let queuedSkillReviews=[];
     await db().runTransaction(async (tx) => {
       const base = await loadBase(tx, id);
       // Firestore transactions read first: load every trial and every hypothesis they touch, then write.
@@ -1992,6 +1998,14 @@ function createStore(options) {
           hypothesisIds: trial.hypothesisIds || [], executionResources:trial.executionResources||[] });
       });
       touched.forEach((item, hid) => { if (item) put(tx, itemRef(id, hid), item); });
+      // Route new genuine user-rated cases to persistent specialist Skill work
+      // orders in the very same transaction. No Skill bodies or versions move.
+      base.skillImprovementInbox=enqueueFeedback({base,
+        hypotheses:[...touched.values()].filter(Boolean),
+        ratedTrials:loaded.map(({trial,rating})=>({...trial,...rating,
+          status:rating.verdict==='withdrawn'?'withdrawn':'rated'})),
+        timestamp:now(),
+      });
       // A real human verdict creates a maintenance obligation. The next
       // research synthesis cannot silently skip the latest feedback or its
       // affected branches, even when an unrelated old pass/fail pair is cited.
@@ -2005,7 +2019,8 @@ function createStore(options) {
         overflowCount:(previous.overflowCount||0)+Math.max(0,pending.length-120),
         updatedAt:now(),
       };
-      pushEvent(tx, base, { type: 'trials_rated', actor: input.actor, summary: rated.map((t) => t.id + ':' + t.verdict).join(', '), detail: { rated } });
+      queuedSkillReviews=(base.skillImprovementInbox||[]).filter(x=>x.status==='pending_review');
+      pushEvent(tx, base, { type: 'trials_rated', actor: input.actor, summary: rated.map((t) => t.id + ':' + t.verdict).join(', '), detail: { rated,skillReviewIds:queuedSkillReviews.map(x=>x.id) } });
       saveBase(tx, base);
     });
     const loop = await refreshLoop(id);
@@ -2013,10 +2028,12 @@ function createStore(options) {
     // diagnosis. The next agent must compare cases and review the specific
     // TARGET Skill before suggesting a tested body edit and dojo release.
     return { baseId: id, rated, loop,
+      pendingSpecialistSkillReviews:queuedSkillReviews.map(({id,targetSkillId,moduleId,pendingTrialIds})=>({id,targetSkillId,moduleId,pendingTrialIds})),
       skillImprovementReview: rated.some(x=>x.verdict!=='withdrawn')
         ? {state:'required_after_human_rating',tool:'exploration_skill_graph_get',
           args:{baseId:id,view:'full'},
-          paths:['stewardship.feedbackReview','stewardship.skillImprovement.routes'],
+          paths:['stewardship.feedbackReview','stewardship.skillImprovement.inbox','stewardship.skillImprovement.routes'],
+          reviewTool:'exploration_skill_improvement_review',
           nextStep:'Compare real accepted and rejected cases, resource/model versions and counterfactual hypotheses before a target Skill body revision. Preserve that Skill dojo release gate.'}
         : {state:'no_new_human_verdict'} };
   }
@@ -2153,10 +2170,79 @@ function createStore(options) {
     return get({id:baseId,view:'state'});
   }
 
+
+  // One-time, non-destructive bootstrap of older human ratings. All H/T and
+  // prior verdicts remain immutable; only the missing review inbox is seeded.
+  async function seedSkillImprovementInbox(input={}) {
+    if(input.confirm!==true)throw Error('Explicit confirmation required to seed historical Skill reviews');
+    const id=requireBaseId(input.baseId);
+    const [items,trials]=await Promise.all([loadItems(id),loadTrials(id)]);
+    let added=[];
+    await db().runTransaction(async tx=>{
+      const base=await loadBase(tx,id);
+      const old=base.skillImprovementInbox||[];
+      const proposed=enqueueFeedback({base,hypotheses:items,
+        ratedTrials:trials.filter(t=>t.status==='rated'),timestamp:now()});
+      const known=new Set(old.map(x=>x.id));
+      added=proposed.filter(x=>!known.has(x.id));
+      if(!added.length)return;
+      base.skillImprovementInbox=[...old,...added].slice(-50);
+      pushEvent(tx,base,{type:'historical_skill_review_seeded',actor:input.actor,
+        summary:added.length+' specialist Skill review routes seeded from original human-rated trials',
+        detail:{inboxIds:added.map(x=>x.id)}});
+      saveBase(tx,base);
+    });
+    return {baseId:id,added:added.map(x=>({id:x.id,targetSkillId:x.targetSkillId,
+      pendingTrialIds:x.pendingTrialIds})),addedCount:added.length,
+      note:'No H/T records or Skill bodies, ratings or released versions changed.'};
+  }
+
+  // Record the agent's evidence-based DIAGNOSIS, not a human rating, Skill
+  // revision, confirmed causal rule or permission to publish.
+  async function reviewSkillImprovement(input={}) {
+    const id=requireBaseId(input.baseId);
+    const raw=plain(input.review,'review');
+    const targetSkillId=text(raw.targetSkillId,90,'review.targetSkillId',true);
+    const moduleId=text(raw.moduleId,25,'review.moduleId',true);
+    const inboxId=targetSkillId+':'+moduleId;
+    let record;
+    await db().runTransaction(async tx=>{
+      const base=await loadBase(tx,id);
+      const entry=(base.skillImprovementInbox||[]).find(x=>x.id===inboxId);
+      if(!entry)throw Error('No queued, human-rated specialist Skill work order: '+inboxId);
+      const ids=raw.trialIds;
+      if(!Array.isArray(ids)||!ids.length||ids.length>50)
+        throw Error('review.trialIds must identify 1-50 real Trial IDs');
+      const records=[];
+      for(const trialId of ids){
+        const tid=text(trialId,20,'review.trialId',true);
+        records.push(value(await tx.get(trialRef(id,tid))));
+      }
+      const parsed=validateReview(raw,entry,records);
+      record={...parsed,inboxId,targetSkillId,moduleId,sourceBaseId:id,
+        hypothesisIds:entry.hypothesisIds.slice(),actor:text(input.actor,120,'actor',false)||'agent'};
+      const outcome=applyReviews(base.skillImprovementInbox||[],
+        base.skillImprovementReviews||[],[record],now());
+      base.skillImprovementInbox=outcome.inbox;
+      base.skillImprovementReviews=outcome.reviews;
+      pushEvent(tx,base,{type:'specialist_skill_reviewed',actor:input.actor,
+        summary:inboxId+' '+parsed.action,
+        detail:{trialIds:parsed.trialIds,action:parsed.action,
+          note:'No Skill changed; independent test and its target dojo release gate remain required.'}});
+      saveBase(tx,base);
+    });
+    const dojos=await trainersOf({kind:'chat_skill',id:targetSkillId});
+    return {baseId:id,review:record,targetSkillId,targetDojos:dojos,
+      nextAction:record.action==='rule_candidate'
+        ? dojos.length?'Design and evaluate controlled cases in target Skill dojo; only then edit target Skill and release a new version.':'This specialist Skill has no dojo. Create a targeted dojo before candidate-version execution; never treat a Registry edit as evaluated.'
+        :'Run the preregistered contrast and cite actual human-rated T-nnn cases; no automatic Skill revision.',
+      permission:'No automatic edits, releases or fabricated human ratings'};
+  }
+
   // Compact summary used by the Agent Intelligence bundle resolver.
   async function brief(input) { return get({ id: input?.id, view: 'brief' }); }
 
-  return { create, list: listBases, get, remove, brief, graphGet, graphRelationUpsert, ruleProposalUpsert, setOutcome, setMethodVersion, migrateLegacyPackTarget, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, researchRead, researchSynthesize, prepareRecall, checkRecall, recordTrials, rateTrials, awaitingTrials, refreshLoop, trainersOf };
+  return { create, list: listBases, get, remove, brief, graphGet, graphRelationUpsert, ruleProposalUpsert, seedSkillImprovementInbox, reviewSkillImprovement, setOutcome, setMethodVersion, migrateLegacyPackTarget, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, researchRead, researchSynthesize, prepareRecall, checkRecall, recordTrials, rateTrials, awaitingTrials, refreshLoop, trainersOf };
 }
 
 const store = createStore();

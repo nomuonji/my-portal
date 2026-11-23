@@ -65,6 +65,7 @@ function planSkillTransfers({base, items = [], trials = []}) {
     targetSkillId: c.targetSkillId, moduleId: c.moduleId,
     sourceBaseId: c.sourceBaseId, ownerSkillId: c.ownerSkillId,
     hypothesisIds: [...c.hypothesisIds].sort(),
+    trialIds:[...c.trialIds].sort(),
     evidence: {rated: c.pass + c.partial + c.fail,
       pass: c.pass, partial: c.partial, fail: c.fail, examples: c.examples,
       resources: resourceBreakdown(ratings.filter(t=>c.trialIds.has(t.id)))},
