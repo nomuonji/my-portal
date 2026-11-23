@@ -123,7 +123,7 @@ test('tree steward allocates research across distinct Skill modules and caps use
   const h3=h('H-003','transform');
   const h4=h('H-004','voice');
   const g=projectGraph({base,items:[h1,h2,h3,h4],trials:[]});
-  assert.equal(g.stewardship.policyVersion,'tree-steward-v1');
+  assert.equal(g.stewardship.policyVersion,'tree-steward-v2');
   assert.deepEqual(g.stewardship.portfolio.selectedBranches.map(x=>x.hypothesisId),
     ['H-001','H-002','H-003']);
   assert.deepEqual(g.stewardship.portfolio.selectedBranches.map(x=>x.moduleId),
