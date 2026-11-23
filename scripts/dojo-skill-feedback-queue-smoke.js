@@ -1,7 +1,7 @@
 'use strict';
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
-const {enqueueFeedback,validateReview,applyReviews}=require('../functions/dojoSkillFeedbackQueue');
+const {enqueueFeedback,validateReview,applyReviews,cyclePreflight}=require('../functions/dojoSkillFeedbackQueue');
 const {createStore}=require('../functions/explorationBaseStore');
 
 const BASE='viral-post-method-discovery';
@@ -102,4 +102,58 @@ test('historical H/T history is unmodified by idempotent inbox seed and agent tr
  assert.equal(db.records.get('explorationBases/'+BASE).method.bodyRef.versionNumber,72);
  assert.deepEqual([...db.records.entries()].filter(([key])=>key.includes('explorationBaseTrials/')),snapshot,
   'reviews may not edit original human-rated records');
+});
+
+test('the next training cycle cannot produce a Trial before specialist triage and tree synthesis',async()=>{
+ const db=new MemoryDb();
+ const id='specialist-cycle-preflight';
+ const store=createStore({getDb:()=>db,resolveTarget:async()=>({
+  title:'Approved Test Skill',body:'# Approved',latestVersion:2,
+ })});
+ const original={
+  id,status:'active',revision:1,title:'Cycle preflight test',
+  counters:{E:0,R:0},runCount:0,openRunId:null,
+  method:{title:'Approved Skill',version:'baseline-v2',bodyRef:{kind:'chat_skill',location:'creative-thinking',versionNumber:2}},
+  outcome:{revision:1,statement:'Evaluate a useful output',unit:'a sample',acceptance:'user approves',confirmedBy:'user'},
+  progress:{achievements:[],confirmedCount:0},feedbackLog:[],
+  skillImprovementInbox:[{
+   id:'creative-thinking:transform',targetSkillId:'creative-thinking',moduleId:'transform',
+   status:'pending_review',pendingTrialIds:['T-001'],hypothesisIds:['H-001'],
+  }],
+  treeMaintenance:{pendingTrialIds:['T-001'],pendingExternalRefs:[],touchedHypothesisIds:['H-001']},
+ };
+ db.records.set('explorationBases/'+id,structuredClone(original));
+ const cycle=cyclePreflight(original);
+ assert.equal(cycle.readyForTrialRegistration,false);
+ assert.equal(cycle.pendingSkillReviews.length,1);
+ assert.deepEqual(cycle.pendingTrialIds,['T-001']);
+ // A research run remains permitted: otherwise the agent could never complete
+ // the required historical synthesis before its next evaluated artifact.
+ const run=await store.startRun({baseId:id,objective:'Compare real human feedback and evidence before new content',
+  unknownTerritoryProbe:'Re-evaluate the skill-specific evidence from the last human rating',
+  responseMode:'compact'});
+ assert.equal(run.cycle.stage,'internal_metabolism_required');
+ assert.deepEqual(run.cycle.pendingSkillReviews.map(x=>x.id),['creative-thinking:transform']);
+ const proposal={label:'New candidate after prior review',ref:'https://example.org/proposed-artifact',
+   hypothesisIds:['H-001']};
+ const attempts=()=>store.recordTrials({baseId:id,trials:[proposal]});
+ await assert.rejects(attempts(),/pending specialist Skill reviews/);
+ assert.equal([...db.records.keys()].filter(x=>x.startsWith('explorationBaseTrials/')).length,0);
+ // Disposition of the specialist analysis does not rewrite the old human
+ // verdict. It still requires a new tree synthesis, not just a checkbox.
+ const b=db.records.get('explorationBases/'+id);
+ b.skillImprovementInbox[0].status='awaiting_new_comparison';
+ b.skillImprovementInbox[0].pendingTrialIds=[];
+ db.records.set('explorationBases/'+id,b);
+ await assert.rejects(attempts(),/hypothesis-tree research synthesis/);
+ const ready=structuredClone(db.records.get('explorationBases/'+id));
+ ready.treeMaintenance={pendingTrialIds:[],pendingExternalRefs:[],touchedHypothesisIds:[],
+   lastReviewedRunId:run.runId};
+ db.records.set('explorationBases/'+id,ready);
+ assert.equal(cyclePreflight(ready).readyForTrialRegistration,true);
+ // Now the metabolism-specific gate is open. Other existing run, recall,
+ // quality and hypothesis requirements still independently apply.
+ await assert.rejects(attempts(),err=>
+  !/Internal metabolism required/.test(String(err.message)),
+  'the next refusal, if any, must come from an independent legacy gate');
 });
