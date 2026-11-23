@@ -27,18 +27,20 @@ test('no unsupported slot can silently run without scheduled wake-up',()=>{
  assert.throws(()=>validateCapacity({id:'new-job',status:'active',slots:['18:00']},[]),/No ChatGPT runner/);
 });
 test('early ChatGPT wake-ups use the scheduled slot idempotently, not no-op',()=>{
- const job={id:'tweets-draft-replenishment',status:'active',slots:['04:30','10:30','14:30','20:30']};
- for (const [when,slot] of [
-  ['2026-11-22T19:25:00Z','04:30'],
-  ['2026-11-23T01:26:00Z','10:30'],
-  ['2026-11-23T05:27:00Z','14:30'],
-  ['2026-11-23T11:25:00Z','20:30'],
+ const writer={id:'tweets-draft-replenishment',status:'active',slots:['04:30','10:30','14:30','20:30']};
+ for (const [earlyTime,onTime,slot] of [
+  ['2026-11-22T19:25:00Z','2026-11-22T19:30:00Z','04:30'],
+  ['2026-11-23T01:26:00Z','2026-11-23T01:30:00Z','10:30'],
+  ['2026-11-23T05:27:00Z','2026-11-23T05:30:00Z','14:30'],
+  ['2026-11-23T11:25:00Z','2026-11-23T11:30:00Z','20:30'],
  ]) {
-  const early=candidate(job,jst(when));
-  const onTime=candidate(job,jst(when.replace(/T(\\d\\d):(\\d\\d):00Z/,(_m,h)=>`T${h}:${slot.slice(3)}:00Z`)));
-  assert.equal(early.slotKey,`2026-11-${slot==='04:30'?'23':'23'}@${slot}`);
-  assert.equal(early.runId,onTime.runId);
+  const early=candidate(writer,jst(earlyTime));
+  assert.equal(early.slotKey,'2026-11-23@'+slot);
+  assert.deepEqual(early,candidate(writer,jst(onTime)));
  }
+ const prep={id:'tweets-editorial-brief-preparation',status:'active',slots:['08:30','16:30']};
+ assert.equal(candidate(prep,jst('2026-11-22T23:26:00Z')).slotKey,'2026-11-23@08:30');
+ assert.equal(candidate(prep,jst('2026-11-23T07:27:00Z')).slotKey,'2026-11-23@16:30');
  assert.equal(candidate({id:'writer',status:'active',slots:['20:30']},jst('2026-11-23T11:19:00Z')),null);
 });
 test('due window accepts ten minutes early and closes after 120 minutes',()=>{
