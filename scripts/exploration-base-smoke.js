@@ -1432,8 +1432,8 @@ test('new human feedback creates cross-branch maintenance debt that cannot be sk
  assert.deepEqual(graph.stewardship.feedbackReview.touchedHypothesisIds,['H-001','H-002']);
  await store.finishRun({baseId:'test-base',runId:opened.runId,
    summary:'Received a real user verdict; comparing both branches is needed before the next generation.',
-   verdicts:[{hypothesisId:'H-001',result:'inconclusive',
-    observed:'An accepted sample exists but it tests multiple mechanisms, so causal status is unknown.'}],
+   verdicts:[{hypothesisId:'H-001',result:'supported',
+    observed:'The submitted user-rated artifact passed; because it tests multiple hypotheses, causal attribution remains unproven.'}],
    notMovedReason:'The observed acceptance is in the ratings ledger, not a separately validated hypothesis revision.',
    responseMode:'compact'});
  const next=await store.startRun({baseId:'test-base',
