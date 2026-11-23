@@ -1764,10 +1764,6 @@ function createStore(options) {
         return false;
       });
       if (!backfill && fresh.length) {
-        // New output is prohibited until all human feedback and specialist
-        // Skill reviews from the preceding iteration are reconciled.
-        // Research runs and finishing existing media remain permitted.
-        assertCyclePrepared(base);
         if (base.outcome?.confirmedBy !== 'measurement' && recallRequired(existing, base.feedbackLog || [])
           && (!run?.recallProbe || run.recallProbe.status !== 'passed')) {
           throw new Error('Historical recall check required: start a run, call exploration_recall_prepare and pass exploration_recall_check before recording user-facing trials. Agent-only learningAudit does not replace the check.');
@@ -1779,6 +1775,9 @@ function createStore(options) {
         if (loop.gates.researchDueBeforeNextTrial) {
           throw new Error('The last ' + loop.failStreak + ' rated samples did not pass. Finish the run with a verdict per hypothesis, then finish a run that re-derives the hypotheses from sourcing and selection (not wording) before recording new trials.');
         }
+        // Preserve established recall/failure-analysis refusal precedence;
+        // clearing those controls never bypasses this extra feedback gate.
+        assertCyclePrepared(base);
       }
       fresh.forEach((raw) => {
         const hypothesisIds = list(raw.hypothesisIds, 10, 20);
