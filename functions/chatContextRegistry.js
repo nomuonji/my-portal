@@ -163,12 +163,24 @@ async function getExecutableSkill(input={}) {
    maxDepth:3,maxRelated:10,
  });
  const policy=resolved.relationPolicy;
- if(!resolved.skillRelations.length) return executable;
+ const resources=await require('./skillResourceResolution').resolveSkillResources({
+   policies:resolved.policyById,rootSkillId:executable.id,intent:input.intent,
+   consumerModelId:input.consumerModelId,consumerModelVersion:input.consumerModelVersion,
+ });
+ if(!resolved.skillRelations.length&&!resources.resources.length) return executable;
  return {...executable,
-   skillRelations:resolved.skillRelations,
-   relatedSkills:resolved.relatedSkills,
-   dependencyGraph:{maxDepth:3,maxRelated:10,truncated:resolved.truncated,
-     loadedCount:resolved.relatedSkills.length},
+   ...(resolved.skillRelations.length?{
+     skillRelations:resolved.skillRelations,
+     relatedSkills:resolved.relatedSkills,
+     dependencyGraph:{maxDepth:3,maxRelated:10,truncated:resolved.truncated,
+       loadedCount:resolved.relatedSkills.length},
+   }:{}),
+   ...(resources.resources.length?{
+     resourceDependencies:resources.resources,
+     selectedConsumerModel:resources.selectedConsumerModel,
+     requiredResourcesNotYetUsed:resources.requiredMissing,
+     resourcePolicyNote:resources.note,
+   }:{}),
    relationPolicy:{source:policy.source,revision:policy.revision,
      sourceSkillVersion:policy.sourceSkillVersion||null,
      migrationRequired:policy.migrationRequired===true,

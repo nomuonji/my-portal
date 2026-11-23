@@ -135,8 +135,15 @@ async function get(input={}){
   const hasEntry=Boolean(definition.entrySkillId);
   const entry=hasEntry?resolved[0]:null;
   const members=hasEntry?resolved.slice(1):resolved;
+  const resourceView=entry?await chatSkills.getExecutableSkill({
+    id:entry.id,intent:input.intent,consumerModelId:input.consumerModelId,
+    consumerModelVersion:input.consumerModelVersion,includeRelations:true,
+  }):null;
   result.execution={entry:entry?{id:entry.id,title:entry.title,revision:entry.revision,
       versionPolicy:entry.versionPolicy,body:entry.body}:null,
+    resourceDependencies:resourceView?.resourceDependencies||[],
+    selectedConsumerModel:resourceView?.selectedConsumerModel||null,
+    requiredResourcesNotYetUsed:resourceView?.requiredResourcesNotYetUsed||[],
     members:members.map((s,i)=>({...selected[i],title:s.title,
       revision:s.revision,versionPolicy:s.versionPolicy,body:s.body})),
     supportingPacks:(definition.intelligenceIds||[]).map(id=>({id,registry:'skillPacks',resolver:'skill_pack_get'})),
@@ -198,7 +205,14 @@ async function getLegacyPack(input={}){
   const hasEntry=Boolean(result.definition.entrySkillId);
   const actualEntry=hasEntry?entry:null;
   const actualMembers=hasEntry?members:[entry,...members].filter(Boolean);
+  const resourceView=actualEntry?await chatSkills.getExecutableSkill({
+    id:actualEntry.id,intent:input.intent,consumerModelId:input.consumerModelId,
+    consumerModelVersion:input.consumerModelVersion,includeRelations:true,
+  }):null;
   result.execution={
+    resourceDependencies:resourceView?.resourceDependencies||[],
+    selectedConsumerModel:resourceView?.selectedConsumerModel||null,
+    requiredResourcesNotYetUsed:resourceView?.requiredResourcesNotYetUsed||[],
     instructions:result.definition.instructions,
     stages,
     entry:actualEntry?{id:actualEntry.id,title:actualEntry.title,revision:actualEntry.revision,

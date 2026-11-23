@@ -3,6 +3,15 @@ on:
   pull_request:
     paths:
       - 'functions/explorationBaseStore.js'
+      - 'functions/skillResourceResolution.js'
+      - 'functions/dojoResourceEvidence.js'
+      - 'functions/dojoSkillTransfer.js'
+      - 'functions/dojoEvidenceGraph.js'
+      - 'functions/chatSkillRelationsStore.js'
+      - 'functions/mcpWorkspaceApp.js'
+      - 'scripts/skill-resource-evidence-smoke.js'
+      - 'scripts/skill-resource-policy-migration.js'
+      - 'scripts/netlify-build.js'
       - 'functions/skillPackRegistry.js'
       - 'functions/skillPackToolSchemas.js'
       - 'functions/intelligenceSkillBridge.js'
@@ -49,6 +58,15 @@ on:
     branches: [main]
     paths:
       - 'functions/explorationBaseStore.js'
+      - 'functions/skillResourceResolution.js'
+      - 'functions/dojoResourceEvidence.js'
+      - 'functions/dojoSkillTransfer.js'
+      - 'functions/dojoEvidenceGraph.js'
+      - 'functions/chatSkillRelationsStore.js'
+      - 'functions/mcpWorkspaceApp.js'
+      - 'scripts/skill-resource-evidence-smoke.js'
+      - 'scripts/skill-resource-policy-migration.js'
+      - 'scripts/netlify-build.js'
       - 'functions/skillPackRegistry.js'
       - 'functions/skillPackToolSchemas.js'
       - 'functions/intelligenceSkillBridge.js'

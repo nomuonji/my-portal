@@ -3,12 +3,12 @@
 ## 認知負荷を減らす呼び方
 
 - **Pack＝複数Skillの統括**。目的・工程・専門Skillの参照と使い分けを持つ。バズ投稿Packは `viral-post-pack` で、旧 `buzz-content-ideation` を実行入口に利用する（正本や版は複製しない）。
-- **Intelligence＝判断の知性**。市場や受け手の世界モデルを保持する。MCCは `marketing-creative-cognition` というIntelligenceであり、Packではない。旧Registry名 `intelligencePacks` / `intelligence_pack_get` は互換維持。
+- **Intelligence＝Skill／Packの一種**。市場・顧客・文化の判断も個別Skillの能力。MCC（`marketing-creative-cognition`）はIntelligence型Skill Pack。旧Registry名 `intelligencePacks` / `intelligence_pack_get` は履歴互換のためだけに残す。
 - **Skill＝技術／手順**。独立したSkill本文と版を持つ。従来「統括Skill」と呼んだ `buzz-content-ideation` は、バズ投稿Packの入口を実装する互換Skillとして残す。
 - **道場＝訓練・評価・版リリース**。道場は所有対象Skillを持つが、実験で観察した能力上の問題は別の専門Skillにも波及し得る。
 
 ```text
-             MCC Intelligence（判断のレンズ）
+             MCC Intelligence型Skill Pack（判断のレンズ）
                             ↕ 必要時に参照
 バズ投稿道場 → バズ投稿Pack（Skill群の統括）
                             └─ buzz-content-ideation（旧入口Skill）
@@ -40,3 +40,15 @@
 ### 既知の限界
 
 今回の自動化範囲は**改善候補のルーティングと根拠表示まで**。サーバーがAIを呼んで勝手に別Skillの原文を編集したり、本人評価を生成したり、共通Skillのリリース条件を緩めたりはしない。実際の改訂・リリースは、評価を扱うAIが対象道場を調べて行う。人間の新規評価や独立対照が不足しているときは未検証として継続する。
+
+## Tool・Consumer Model・Skillの実行依存契約（2026-11-24）
+
+依存を**本文の文章にだけ書く運用は禁止**。責務を二つに分ける。
+
+- **Skill本文**：なぜ必要か、どの場面で参照し、情報をどう判断・反証するかを書く（価値判断、失敗時の扱いを含む）。観測資料・本人の評価原文・個別試作の全文はここに増やさない。
+- **版管理されたRelation Policy**：`relations` が他SkillのID/必要度/タスク意図を、`resources` がMCPツールや消費者モデルの解決要件を宣言する。道場承認済みSkill本文に名前のない資源への参照は拒否する。既存の `chat_skill_relation_policy_publish` で保存し、旧クライアントによる部分更新でも `resources` は消去しない。
+- **実行時**：`chat_skill_get` は関連Skillを最新の道場承認版からロードし、resourceDependenciesに必要なToolの未実行状態を示す。`consumerModelId`/必要なら`consumerModelVersion`が指定された場合にのみ該当モデルのデータをMy Portal正本から取得する。対象未指定なら勝手に大衆モデルへ固定しない。Tool宣言自体を実際のTool呼出しや成功とは報告しない。
+- **Trial時**：`exploration_trial_record.trials[].executionResources` に実際使用したTool/Consumer Model/SkillのID、モデル/Skill版、実行結果の参照、使った目的を保存。データはエージェント申告であり、サーバーが検証したTool成功・人間の評価ではない。実際の合否は別途 `exploration_trial_rate` に原文で保存する。
+- **学習時**：`exploration_skill_graph_get` では各評価物のexecutionResourcesと、専門Skill別の資源・版別正例/反例を確認する。モデルやToolを使った群の合格率差は観測相関であり、選別・素材・作者・時期などの交絡を制御していない限り改善効果と断定しない。
+
+現行では本人評価→仮説の振り返り→改善候補ルーティング→対象Skillの改訂→対象道場でのリリース、という一連の**実行可能な操作**を既存APIで行う。AIが具体的な編集案と対照検証を行う責任を持つ。評価物の合否、データ改変、公開権限、版の自動昇格はシステムが勝手に補完・緩和しない。

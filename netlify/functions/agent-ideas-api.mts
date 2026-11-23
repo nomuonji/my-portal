@@ -230,7 +230,7 @@ export default async (request: Request) => {
       if (resource === "context_history") return json(await contextRegistry.listEvents({contextId:url.searchParams.get("id")||""}));
       if (resource === "intelligence") return json(await agentIntelligenceRegistry.getPack({id:url.searchParams.get("id")||""}));
       if (resource === "skill_packs") return json(await skillPackRegistry.list());
-      if (resource === "skill_pack") return json(await skillPackRegistry.get({id:url.searchParams.get("id")||"",resolve:url.searchParams.get("resolve")==="true"}));
+      if (resource === "skill_pack") return json(await skillPackRegistry.get({id:url.searchParams.get("id")||"",resolve:url.searchParams.get("resolve")==="true",intent:url.searchParams.get("intent")||undefined,consumerModelId:url.searchParams.get("consumerModelId")||undefined,consumerModelVersion:url.searchParams.get("consumerModelVersion")||undefined}));
       if (resource === "world_map") {
         return json(await worldMap.get());
       }
