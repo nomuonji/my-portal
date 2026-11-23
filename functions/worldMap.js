@@ -178,7 +178,7 @@ function summarizeExplorationBase(p) {
     id: p.id, title: safeText(p.title, 220), status: safeText(p.status, 40),
     summary: safeText(p.summary, 400), projectIds: safeArray(p.projectIds, 20),
     methodVersion: safeText(p.method?.version, 60) || null,
-    trains: ['chat_skill', 'intelligence_pack'].includes(p.method?.bodyRef?.kind) && p.method.bodyRef.versionNumber
+    trains: ['chat_skill', 'skill_pack', 'intelligence_pack'].includes(p.method?.bodyRef?.kind) && p.method.bodyRef.versionNumber
       ? { kind: p.method.bodyRef.kind, id: safeText(p.method.bodyRef.location, 90), releasedVersion: Number(p.method.bodyRef.versionNumber) } : null,
     // A 道場 is measured by the pass rate of what its released version produces; there is no count target.
     passRate: loop?.passRate ?? null, rated: Number(loop?.rated) || 0,
