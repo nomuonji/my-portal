@@ -33,6 +33,8 @@ import * as outputToolsImport from "../../functions/outputToolSchemas.js";
 import * as intelligenceStoreImport from "../../functions/intelligenceCorpusStore.js";
 import * as intelligenceToolsImport from "../../functions/intelligenceCorpusToolSchemas.js";
 import * as agentIntelligenceRegistryImport from "../../functions/agentIntelligenceRegistry.js";
+import * as skillPackImport from "../../functions/skillPackRegistry.js";
+import * as skillPackToolsImport from "../../functions/skillPackToolSchemas.js";
 import * as agentIntelligenceToolsImport from "../../functions/agentIntelligenceToolSchemas.js";
 import * as explorationBaseStoreImport from "../../functions/explorationBaseStore.js";
 import * as explorationBaseToolsImport from "../../functions/explorationBaseToolSchemas.js";
@@ -82,6 +84,8 @@ const outputToolsModule: any = (outputToolsImport as any).default ?? outputTools
 const intelligenceStore: any = (intelligenceStoreImport as any).default ?? intelligenceStoreImport;
 const intelligenceToolsModule: any = (intelligenceToolsImport as any).default ?? intelligenceToolsImport;
 const agentIntelligenceRegistry: any = (agentIntelligenceRegistryImport as any).default ?? agentIntelligenceRegistryImport;
+const skillPackRegistry: any = (skillPackImport as any).default ?? skillPackImport;
+const skillPackTools: any = (skillPackToolsImport as any).default ?? skillPackToolsImport;
 const agentIntelligenceTools: any = (agentIntelligenceToolsImport as any).default ?? agentIntelligenceToolsImport;
 const explorationBaseStore: any = (explorationBaseStoreImport as any).default ?? explorationBaseStoreImport;
 const explorationBaseTools: any = (explorationBaseToolsImport as any).default ?? explorationBaseToolsImport;
@@ -102,7 +106,7 @@ const linearBridge: any = (linearBridgeImport as any).default ?? linearBridgeImp
 const migration: any = (migrationImport as any).default ?? migrationImport;
 const consumerModels: any = (consumerModelStoreImport as any).default ?? consumerModelStoreImport;
 const consumerModelTools: any = (consumerModelToolsImport as any).default ?? consumerModelToolsImport;
-const TOOLS: any[] = [...consumerModelTools.TOOLS, ...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...worldMapTools.TOOLS, ...chatContextTools.TOOLS, ...contextRegistryTools.TOOLS, ...portalToolsModule.TOOLS, ...jobOpportunityToolsModule.TOOLS, ...metaTools.TOOLS, ...personalFeedTools.TOOLS, ...discoverReaderTools.TOOLS, ...personalTasteTools.TOOLS, ...routineTools.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...outputToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS, ...agentIntelligenceTools.TOOLS, ...explorationBaseTools.TOOLS, ...submarineTools.TOOLS, ...workspaceApp.TOOLS];
+const TOOLS: any[] = [...consumerModelTools.TOOLS, ...agentToolsModule.TOOLS, ...contextToolsModule.TOOLS, ...worldMapTools.TOOLS, ...chatContextTools.TOOLS, ...contextRegistryTools.TOOLS, ...portalToolsModule.TOOLS, ...jobOpportunityToolsModule.TOOLS, ...metaTools.TOOLS, ...personalFeedTools.TOOLS, ...discoverReaderTools.TOOLS, ...personalTasteTools.TOOLS, ...routineTools.TOOLS, ...characterImageToolsModule.TOOLS, ...publicCmsToolsModule.TOOLS, ...socialToolsModule.TOOLS, ...outputToolsModule.TOOLS, ...intelligenceToolsModule.TOOLS, ...agentIntelligenceTools.TOOLS, ...skillPackTools.TOOLS, ...explorationBaseTools.TOOLS, ...submarineTools.TOOLS, ...workspaceApp.TOOLS];
 
 const SERVER_NAME = "my-portal";
 const SERVER_VERSION = "1.25.0-netlify";
@@ -497,6 +501,8 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
   if (name === "consumer_model_seed_files") return structured(await consumerModels.seedFiles(args));
   if (name === "consumer_model_migration_status") return structured(await consumerModels.migrationStatus(args));
   if (name === "consumer_model_import_keywords_snapshot") return structured(await consumerModels.importSnapshot(args));
+  if (name === "skill_pack_list") return structured(await skillPackRegistry.list());
+  if (name === "skill_pack_get") return structured(await skillPackRegistry.get(args));
   if (name === "intelligence_pack_list") return structured(await agentIntelligenceRegistry.listPacks(args));
   if (name === "intelligence_pack_get") return structured(await agentIntelligenceRegistry.getPack(args));
   // Read-only registry audit includes resolved submarine loadout; never rewrite gear.
