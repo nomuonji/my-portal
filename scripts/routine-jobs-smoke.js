@@ -26,13 +26,34 @@ test('existing 16:30 capacity full; other slots can still be used',()=>{
 test('no unsupported slot can silently run without scheduled wake-up',()=>{
  assert.throws(()=>validateCapacity({id:'new-job',status:'active',slots:['18:00']},[]),/No ChatGPT runner/);
 });
-test('due window is 120 minutes after actual Tokyo clock time',()=>{
- const job={status:'active',slots:['10:30']};
+test('early ChatGPT wake-ups use the scheduled slot idempotently, not no-op',()=>{
+ const job={id:'tweets-draft-replenishment',status:'active',slots:['04:30','10:30','14:30','20:30']};
+ for (const [when,slot] of [
+  ['2026-11-22T19:25:00Z','04:30'],
+  ['2026-11-23T01:26:00Z','10:30'],
+  ['2026-11-23T05:27:00Z','14:30'],
+  ['2026-11-23T11:25:00Z','20:30'],
+ ]) {
+  const early=candidate(job,jst(when));
+  const onTime=candidate(job,jst(when.replace(/T(\\d\\d):(\\d\\d):00Z/,(_m,h)=>`T${h}:${slot.slice(3)}:00Z`)));
+  assert.equal(early.slotKey,`2026-11-${slot==='04:30'?'23':'23'}@${slot}`);
+  assert.equal(early.runId,onTime.runId);
+ }
+ assert.equal(candidate({id:'writer',status:'active',slots:['20:30']},jst('2026-11-23T11:19:00Z')),null);
+});
+test('due window accepts ten minutes early and closes after 120 minutes',()=>{
+ const job={id:'writer',status:'active',slots:['10:30']};
  assert.deepEqual(jst('2026-10-17T01:35:00.000Z'),{day:'2026-10-17',minute:635});
- assert.equal(candidate(job,jst('2026-10-17T01:29:00Z')),null);
+ assert.equal(candidate(job,jst('2026-10-17T01:19:00Z')),null);
+ assert.equal(candidate(job,jst('2026-10-17T01:20:00Z')).slotKey,'2026-10-17@10:30');
+ assert.equal(candidate(job,jst('2026-10-17T01:29:00Z')).slotKey,'2026-10-17@10:30');
  assert.equal(candidate(job,jst('2026-10-17T01:35:00Z')).slotKey,'2026-10-17@10:30');
  assert.equal(candidate(job,jst('2026-10-17T03:00:00Z')).slotKey,'2026-10-17@10:30');
  assert.equal(candidate(job,jst('2026-10-17T03:30:00Z')),null);
+});
+test('early upcoming slot wins over earlier slot within the two-hour after-window',()=>{
+ const job={id:'writer',status:'active',slots:['08:30','10:30']};
+ assert.equal(candidate(job,jst('2026-11-23T01:25:00Z')).slotKey,'2026-11-23@10:30');
 });
 test('different JST dates produce distinct idempotent run ids',()=>{
  const job={id:'personal-discovery-curation',status:'active',slots:['04:30']};
