@@ -38,7 +38,7 @@ function cleanSkill(value) {
   id,title,summary:safeString(value?.summary,1100),
   triggers:safeStrings(value?.triggers,25), body,
   status:['available','paused','archived'].includes(value.status)?value.status:'available',
-  skillType:value?.skillType==='intelligence'?'intelligence':'standard',
+  skillType:(value?.skillType==='intelligence' || (value?.skillType===undefined && String(value?.importProvenance||'').startsWith('legacy-intelligence:')))?'intelligence':'standard',
   sourceOfTruth:'My Portal DB', kind:'chat_skill',
   importProvenance:safeString(value?.importProvenance,350)||null,
  };
