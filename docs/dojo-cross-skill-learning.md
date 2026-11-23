@@ -53,6 +53,16 @@
 
 現行では本人評価→仮説の振り返り→改善候補ルーティング→対象Skillの改訂→対象道場でのリリース、という一連の**実行可能な操作**を既存APIで行う。AIが具体的な編集案と対照検証を行う責任を持つ。評価物の合否、データ改変、公開権限、版の自動昇格はシステムが勝手に補完・緩和しない。
 
+## 錬成の実行順序：内部代謝を終えてから次の評価物へ
+
+ユーザーが「錬成して」と指示するたび、エージェントは制作に入る前に`exploration_base_get({view:"state"})`の`cycle`を確認する。既存のRunがある場合は安全に継続・終了処理を行い、本人が未評価の試作を増やさない。
+
+`cycle.stage === "internal_metabolism_required"` の場合、制作を先行しない。`cycle.pendingSkillReviews`は実際の本人合否を根拠として`exploration_skill_improvement_review`で各Skillの原因候補と反証実験を診断する。`cycle.pendingTrialIds` / `pendingExternalRefs` は、`exploration_research_read`の全ページ→`exploration_research_synthesize.treeReview`で横断整理を完了する。順序は任意だが**両方必要**。根拠が揃う場合のみSkill改訂→当該道場の承認版リリースを実施し、足りなければ`compare_more`と対照計画を保存して版を変えない。
+
+`exploration_trial_record`は、この両未処理項目が残る限り新規評価物を拒否する（**実サーバーのハードゲート**）。既存評価物の画像・メディア参照補完、過去の評価の読み込み、研究Run開始・分析は止めない。加えて従来の全件履歴・recall・quality・negativeReview・出典・未評価数制限は引き続き独立して適用する。
+
+1周目「内部代謝→必要なSkill改訂・承認→Trial制作・最大3件提出→本人の合否」を終えると、`exploration_trial_rate`は同じトランザクションでH/Tと専門Skill改善キューを更新する。次に「錬成して」と言われたら新しい`cycle`を読み、**次の2周目も内部代謝から**始める。AIによる思考・判断は次回チャットや許可された呼出しの実行中に行うもので、バックグラウンドで自動進行するという意味ではない。
+
 ## 2026-11-24: 評価→専門Skill→再検証の実働キュー
 
 `exploration_trial_rate` は、ユーザーの本当の合否を H/T に保存する同じFirestoreトランザクション内で、`targetSkillIds` または監査済みバズ工程対応表から **Skill改善の未診断キュー** を作る。キーは `targetSkillId:moduleId`、正本は元道場の `skillImprovementInbox` と `skillImprovementReviews`。元のTrial/Hypothesisの本人評価は移動・複製・修正しない。
