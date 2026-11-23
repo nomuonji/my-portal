@@ -2089,31 +2089,57 @@ function createStore(options) {
     const packId = text(input.packId, 90, 'packId', true);
     const bridge = require('./intelligenceSkillBridge');
     const conf = bridge.LEGACY_PACKS[packId];
-    if (!conf || conf.dojoBaseId !== baseId) throw Error('This dojo is not the canonical legacy target for ' + packId);
-    const current = value(await baseRef(baseId).get());
-    if (!current?.method?.bodyRef) throw Error('Dojo has no released target');
-    const originalRef = current.method.bodyRef;
-    if (originalRef.location !== packId || !Number.isInteger(Number(originalRef.versionNumber)))
+    if (!conf || conf.dojoBaseId !== baseId)
+      throw Error('This dojo is not the canonical legacy target for ' + packId);
+    const original = value(await baseRef(baseId).get());
+    const ref = original?.method?.bodyRef;
+    if (!ref || ref.location !== packId || !Number.isInteger(Number(ref.versionNumber)))
       throw Error('Legacy target identity/version mismatch');
-    if (originalRef.kind === 'skill_pack') return get({id:baseId});
-    if (originalRef.kind !== 'intelligence_pack') throw Error('Unexpected original target kind');
-    // The exact historical version must be readable through the new Pack interface.
-    await require('./skillPackRegistry').get({id:packId,versionNumber:originalRef.versionNumber});
+    if (!['intelligence_pack','skill_pack'].includes(ref.kind))
+      throw Error('Unexpected original target kind');
+    // Verify the exact immutable snapshot before touching live references.
+    await resolveTarget({kind:'skill_pack',id:packId,versionNumber:Number(ref.versionNumber)});
+    const submarineId = packId==='monetization-intelligence' ? 'monetization-ideas' : null;
     await db().runTransaction(async tx => {
+      // All transaction reads come first, including the corresponding submarine.
       const base=await loadBase(tx,baseId);
-      if (base.openRunId) throw Error('Cannot migrate a target while its run is open');
-      const ref=base.method?.bodyRef;
-      if (ref?.kind==='skill_pack' && ref.location===packId && Number(ref.versionNumber)===Number(originalRef.versionNumber))return;
-      if (ref?.kind!=='intelligence_pack' || ref.location!==packId
-          || Number(ref.versionNumber)!==Number(originalRef.versionNumber))
+      const subRef=submarineId?db().collection('submarines').doc(submarineId):null;
+      const subSnap=subRef?await tx.get(subRef):null;
+      const sub=subSnap?.exists?subSnap.data():null;
+      if (base.openRunId) throw Error('Cannot migrate a target while its dojo run is open');
+      if (sub?.openSortieId) throw Error('Cannot migrate gear while its submarine sortie is open');
+      const current=base.method?.bodyRef;
+      if (!current||current.location!==packId
+        ||Number(current.versionNumber)!==Number(ref.versionNumber)
+        ||!['intelligence_pack','skill_pack'].includes(current.kind))
         throw Error('Dojo changed since target migration was inspected');
-      base.method={...base.method,bodyRef:{...ref,kind:'skill_pack'}};
-      pushEvent(tx,base,{type:'method_target_reclassified',summary:'Legacy Intelligence → Skill Pack (same approved version)',
-        actor:input.actor||'agent',detail:{packId,versionNumber:ref.versionNumber,
-          preservedMethodVersion:base.method.version,historyLength:(base.methodHistory||[]).length}});
-      saveBase(tx,base);
+      const oldGear=(sub?.loadout||[]).filter(g=>g.id===packId);
+      if (sub && (!oldGear.length || oldGear.some(g=>g.dojoId!==baseId
+          ||!['intelligence_pack','skill_pack'].includes(g.kind))))
+        throw Error('Unexpected submarine gear relationship; nothing was migrated');
+      if (current.kind==='intelligence_pack') {
+        base.method={...base.method,bodyRef:{...current,kind:'skill_pack'}};
+        pushEvent(tx,base,{type:'method_target_reclassified',
+          summary:'Legacy Intelligence → Skill Pack, identical released version',
+          actor:input.actor||'agent',
+          detail:{packId,versionNumber:current.versionNumber,
+            preservedMethodVersion:base.method.version,historyLength:(base.methodHistory||[]).length}});
+        saveBase(tx,base);
+      }
+      // Gear belongs to the same live workflow. Retype it in the SAME transaction:
+      // otherwise the next sortie cannot bind its Pack to the renamed dojo.
+      if (sub && oldGear.some(g=>g.kind==='intelligence_pack')) {
+        sub.loadout=sub.loadout.map(g=>g.id===packId?{...g,kind:'skill_pack'}:g);
+        const at=now();
+        sub.events=[{at,type:'gear_kind_reclassified',
+          summary:packId+' uses Skill Pack; dojo and pinned release unchanged',
+          actor:input.actor||'agent'},...(sub.events||[])].slice(0,60);
+        sub.revision=(Number(sub.revision)||0)+1;
+        sub.updatedAt=at;
+        put(tx,subRef,sub);
+      }
     });
-    return get({id:baseId});
+    return get({id:baseId,view:'state'});
   }
 
   // Compact summary used by the Agent Intelligence bundle resolver.
