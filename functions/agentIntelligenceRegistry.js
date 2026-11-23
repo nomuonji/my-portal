@@ -404,7 +404,7 @@ function createRegistry(options) {
     const result = await getPack({ id: definition.id });
     // A Pack trained in a 道場 is used at the version the 道場 released; say so to whoever just made a new one.
     try {
-      const dojos = await explorationBases.trainersOf({ kind: 'intelligence_pack', id: definition.id });
+      const dojos = (await Promise.all(['intelligence_pack','skill_pack'].map(kind => explorationBases.trainersOf({kind,id:definition.id})))).flat();
       if (dojos.length) {
         result.dojos = dojos;
         result.dojoNotice = dojos.map((d) => 'このPackは道場「' + d.title + '」（' + d.baseId + '）で鍛えられている。実行で使うのは v' + d.releasedVersion
@@ -576,7 +576,7 @@ function createRegistry(options) {
       // A newer Registry revision may be a candidate awaiting approval from its
       // own dojo. The Bundle Resolver must not silently execute that draft.
       // Older explicit portfolio pins remain valid for regression comparisons.
-      const trainers = await explorationBases.trainersOf({ kind: 'intelligence_pack', id: packId });
+      const trainers = (await Promise.all(['intelligence_pack','skill_pack'].map(kind => explorationBases.trainersOf({kind,id:packId})))).flat();
       const released = [...new Set(trainers.map((item) => Number(item.releasedVersion)).filter((n) => Number.isInteger(n) && n > 0))];
       if (released.length > 1) throw new Error('Conflicting dojo Pack releases for ' + packId);
       const approved = released[0] || null;
@@ -911,7 +911,7 @@ function createRegistry(options) {
       const refs = [...body.matchAll(/`([a-z][a-z0-9-]{2,})`/g)].map((match) => match[1]);
       for (const ref of refs)
         if (!relationIds.has(ref)) targetBodyLinks.add(ref);
-    } else if (targetRef.kind === 'intelligence_pack') {
+    } else if (targetRef.kind === 'intelligence_pack' || targetRef.kind === 'skill_pack') {
       const pack = await getPack({ id: targetRef.id, versionNumber: targetRef.versionNumber });
       for (const dep of [
         ...(pack.definition.dependencies || []),

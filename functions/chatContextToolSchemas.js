@@ -8,6 +8,7 @@ const skillFields={
  triggers:{type:'array',items:{type:'string'},maxItems:25},
  body:string('Full executable chat Skill Markdown; canonical body is stored in My Portal DB.',45000),
  importProvenance:string('Optional one-time import provenance, not source of truth',350),
+ skillType:{type:'string',enum:['standard','intelligence'],description:'Intelligence Skill is a normal versioned Skill subtype, not another registry.'},
  status:{type:'string',enum:['available','paused','archived']},
 
 };

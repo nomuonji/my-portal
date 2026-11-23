@@ -2,41 +2,40 @@
 
 Every agent-side record belongs to exactly one layer. The layer is chosen by the question the record answers. `world_map_get` returns this table as `layers`.
 
-## Canonical model: three concepts
+## Canonical model: Profile / Skill Pack / Skill
 
-There are **three conceptual entities**, not four peer layers:
+Three *different* concepts remain, with a shared capability lifecycle for Skill and Skill Pack:
 
-1. **Agent Profile** — one default, cross-task identity: stable reasoning principles, values, behavior and authority boundaries. It is a setting, not an Agent Character or a selectable creative Mode.
-2. **Intelligence** — reusable domain-specific world models and rules for interpreting evidence (for example MCC). It does not own an ordered production workflow, tool execution or Dojo ratings.
-3. **Skill** — a procedure that produces a deliverable. An **atomic Skill** does one job; a **Skill Pack is a composite Skill** that chooses and sequences shared Skills. Pack is a subtype, not a fourth fundamental concept. A legacy coordinator Skill can remain as a compatibility entrypoint until the Dojo supports Pack releases.
+1. **Agent Profile** — the agent's default identity, cross-task principles, behavior and authority boundaries. No duplicate Agent Character/Modes hierarchy.
+2. **Skill Pack** — an intentional composition of specialist Skills, their stages and handoffs, for a larger capability. Packs can have an `intelligence` or `workflow` specialization; each Pack is versioned and evaluated, just like a Skill, while remaining conceptually distinct.
+3. **Skill** — a single reusable cognitive **or** operational capability. Thinking, observing, judgment and generating ideas are all valid Skills. `skillType=intelligence` is a specialization of Skill, not a separate registry or permission model.
 
-Dojo is the independent training/version authority, Agent HQ is run governance, and Character/SNS Persona describes a fictional or publishing actor. Neither is a fourth cognitive capability concept. Avoid separate Personas/Modes/Orchestrator types at this layer.
+**Intelligence is not a top-level concept.** It is a type label on a Skill or Skill Pack. A Skill is free to reason and judge; it does not need a separate Intelligence just to have a worldview or evaluation criteria. Extract a shared Intelligence Skill only when more than one independently useful Skill/Pack really needs the same model.
 
-**Ownership test:** agent-wide default principle → Profile; cross-task evidence interpretation → Intelligence; steps/tools/input→output → Skill; multiple Skills in one workflow → composite Skill/Pack; H/T, ratings and releases → Dojo; job status → HQ.
+Dojo owns H/T hypotheses, genuine human pass/fail feedback and approved version selection. Agent HQ owns work scheduling and permissions. Characters and SNS Personas are creative/publishing identities, not Agent Profiles.
 
-### Inventory and intended consolidation (2026-11-24)
+### Mapping of historical Intelligence IDs
 
-| Current record | Intended home |
-|---|---|
-| reality-grounded-integrative-agent | One default Agent Profile; do not multiply specialized identities |
-| marketing-creative-cognition (MCC) | Intelligence, retaining its market/audience/creative/commercial lenses |
-| treasure-keyword-intelligence | Intelligence: search and commercial evidence interpretation |
-| human-md-creative-intelligence | Optional Intelligence; consider merging with MCC creative lens only after comparative evidence |
-| exploration-operations | Shared Dojo operating policy, not domain Intelligence |
-| monetization-intelligence | Composite Skill / Monetization Pack |
-| youtube-view-growth-intelligence | Composite Skill / YouTube concept Pack |
-| video-production-intelligence | Composite Skill / finished Video production Pack |
-| viral-post-pack | Already a composite Skill; buzz-content-ideation remains a compatibility adapter |
+| Historical ID | New conceptual owner | Migration status |
+|---|---|---|
+| `marketing-creative-cognition` (MCC) | Intelligence-type **Skill Pack**, five cognitive areas | Legacy immutable versions projected through `skill_pack_get` without copying bodies |
+| `monetization-intelligence` | Workflow **Skill Pack** | Old stage/Skill references projected; original Dojo release version enforced in execution |
+| `youtube-view-growth-intelligence` | Workflow **Skill Pack** (YouTube show/concept) | Same projection and Dojo constraints |
+| `video-production-intelligence` | Workflow **Skill Pack** (finished videos) | Same projection and Dojo constraints |
+| `treasure-keyword-intelligence` | Intelligence **Skill** | Move method body to `chatSkills`, keep old immutable versions as historical provenance |
+| `human-md-creative-intelligence` | Intelligence **Skill** | Move body to `chatSkills`, keep old history as provenance |
+| `exploration-operations` | Shared exploration/governance **Skill** | Not a separate Intelligence. Respect Dojo's existing hard release rules |
+| `viral-post-pack` | Existing workflow **Skill Pack** | Continues to refer to the Dojo-released `buzz-content-ideation` coordinator and specialist Skills |
 
-Do not merge YouTube concept and video production just because both use video: their outputs and Dojos differ.
+MCC should reference existing `creative-thinking`, `consumer-model-context`, `market-research-orchestrator`, etc. Do not clone their full bodies. A reusable cognitive rule already fully owned by an existing Skill should not be replicated merely to fill an "Intelligence" category.
 
-### Migration rules
+### Non-destructive compatibility and release protection
 
-- Present a single **Skills** category with atomic/Pack subtypes, **Intelligence** as separate domain lenses, and **Agent Profile** under default settings. Do not add a new Registry, Capability or Orchestrator layer merely for renaming.
-- Preserve old DB/API IDs and immutable versions. The names intelligencePacks and skillPacks are legacy physical storage, not additional conceptual distinctions.
-- For the three workflow-shaped legacy Intelligences, extract actual stages and references into composite Skills **without copying their full bodies into competing live records**. Keep cognitive principles in Intelligence only if reusable beyond that workflow.
-- Existing explorationBaseStore release targets are chat_skill and intelligence_pack; skill_pack is not yet a trainable target. Migrate no Dojo pointer until Pack version release/resolution can preserve human evaluation history, pinned approved versions and all original gates.
-- Repoint consumers only after verifying live execution; retire old Intelligence aliases last, when no live Dojo, Submarine or client references remain. Do not overwrite trial verdicts or silently release unreviewed versions.
+- The collections `intelligencePacks` and `intelligencePackVersions` are **legacy immutable history and API compatibility** for earlier releases. Physical storage names do not establish an independent cognitive concept. Never delete them while Dojos, Submarines or Agent Profile portfolios still reference them.
+- The `skill_pack_get` bridge returns the exact requested immutable legacy version; when asked to execute, it selects the **actual Dojo-released version**, not an unapproved latest draft. Members resolve through their own approved Skill versions.
+- The release gate accepts both `chat_skill` and `skill_pack` targets, with `intelligence_pack` retained for old records. A dedicated migration operation rebinds only the three canonical workflow Dojos without rewriting the method label, human ratings, trials or history.
+- Migrating the latest draft into a new Pack without approval, silently increasing pass counts or resetting H/T history is prohibited. Legacy API names may remain until all callers migrate; their presence is not evidence that Intelligence remains an independent capability layer.
+- An optional Intelligence subtype is purely capability metadata. It does not grant permissions, change safety/publication policy or imply factual correctness.
 
 ## Other registries are operational storage, not cognitive concepts
 
@@ -59,8 +58,8 @@ World Home, Operator/Repo, Context, Exploration Base/Dojo, Agent HQ Method and T
 
 - Nothing is written in two layers. When two layers seem to fit, pick the one whose question the record answers and link from the other.
 - A procedure is a Chat Skill even when it began as an HQ Method. HQ Methods are for Manager/Worker runs.
-- State that changes run by run never goes into a Skill Pack, an Intelligence, or a Skill. Project state goes to a Context; exploration state goes to an Exploration Base.
-- Promotion goes upward and slowly: a hypothesis may revise an individual Skill or the Skill Pack's composition after independent evidence and the corresponding release gate. General world-model claims become Intelligence only after evidence across contexts; do not conflate those with production steps.
+- State that changes run by run never goes into a Skill Pack or Skill. Project state goes to a Context; exploration state goes to an Exploration Base.
+- Promotion goes upward and slowly: a hypothesis may revise an individual Skill or the Skill Pack's composition after independent evidence and the corresponding release gate. General world-model claims can become reusable Intelligence Skills only after independent evidence across contexts; do not force every local judgment into another Skill.
 
 ## Entry point
 

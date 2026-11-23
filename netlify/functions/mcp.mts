@@ -523,6 +523,7 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
   if (name === "exploration_base_create") return structured(await explorationBaseStore.create(args));
   if (name === "exploration_outcome_set") return structured(await explorationBaseStore.setOutcome(args));
   if (name === "exploration_method_version_set") return structured(await explorationBaseStore.setMethodVersion(args));
+  if (name === "exploration_method_target_migrate") return structured(await explorationBaseStore.migrateLegacyPackTarget(args));
   if (name === "exploration_item_upsert") return structured(await explorationBaseStore.upsertItems(args));
   if (name === "exploration_run_start") return structured(await explorationBaseStore.startRun(args));
   if (name === "exploration_run_finish") return structured(await explorationBaseStore.finishRun(args));

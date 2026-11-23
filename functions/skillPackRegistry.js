@@ -6,6 +6,7 @@
 // released version survive this additive migration without copying its body.
 const { getDocumentDb } = require('./documentDb');
 const chatSkills = require('./chatContextRegistry');
+const bridge = require('./intelligenceSkillBridge');
 
 const DB_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const PACKS = 'skillPacks', VERSIONS = 'skillPackVersions';
@@ -72,6 +73,7 @@ async function ensureLegacyPack(){
 }
 function listSummary(p){
   return {id:p.id,title:p.title,summary:p.summary,entrySkillId:p.entrySkillId,
+    skillType:p.skillType||'workflow',supportingPackIds:p.intelligenceIds||[],
     intelligenceIds:p.intelligenceIds||[],dojoBaseId:p.dojoBaseId,
     memberCount:(p.skills||[]).length,skills:p.skills||[],
     currentVersionNumber:p.currentVersionNumber,status:p.status};
@@ -79,9 +81,13 @@ function listSummary(p){
 async function list(){
   await ensureLegacyPack();
   const snap=await db().collection(PACKS).limit(100).get();
-  const items=snap.docs.map(d=>listSummary(d.data()))
-    .filter(p=>p.status==='active').sort((a,b)=>a.title.localeCompare(b.title));
-  return {items,count:items.length,kind:'skill_pack',databaseId:DB_ID};
+  const persisted=snap.docs.map(d=>listSummary(d.data())).filter(p=>p.status==='active');
+  const legacy=await bridge.legacyList();
+  const ids=new Set(persisted.map(p=>p.id));
+  const items=[...persisted,...legacy.filter(p=>!ids.has(p.id))]
+    .sort((a,b)=>a.title.localeCompare(b.title));
+  return {items,count:items.length,kind:'skill_pack',databaseId:DB_ID,
+    classification:'Skill Pack is a distinct composite concept; Intelligence is a Skill subtype'};
 }
 function selectMemberSkills(definition,stages){
   if(stages!==undefined&&(!Array.isArray(stages)||stages.some(x=>!STAGES.has(x))))
@@ -91,6 +97,7 @@ function selectMemberSkills(definition,stages){
 async function get(input={}){
   await ensureLegacyPack();
   const id=String(input.id||'');
+  if(bridge.owned(id))return getLegacyPack(input);
   if(!ID.test(id))throw Error('Skill Pack id is required');
   const index=snapshot(await db().collection(PACKS).doc(id).get());
   if(!index)throw Error('Skill Pack not found: '+id);
@@ -99,7 +106,7 @@ async function get(input={}){
   const definition=snapshot(await db().collection(VERSIONS).doc(versionDocId(id,versionNumber)).get());
   if(!definition)throw Error('Skill Pack version not found: '+id+' v'+versionNumber);
   const result={pack:listSummary(index),definition,
-    executionPolicy:'read live dojo-approved Chat Skills; Intelligence is a separate reference, not a child Pack',
+    executionPolicy:'Read current dojo-approved Skills; referenced MCC is an Intelligence-type Skill Pack, not a separate layer',
     legacyEntryAlias:definition.entrySkillId,
     historicDojoRetained:definition.dojoBaseId};
   if(input.resolve!==true)return result;
@@ -110,9 +117,47 @@ async function get(input={}){
       versionPolicy:entry.versionPolicy,body:entry.body},
     members:members.map((s,i)=>({...selected[i],title:s.title,
       revision:s.revision,versionPolicy:s.versionPolicy,body:s.body})),
-    intelligenceReferences:definition.intelligenceIds.map(id=>({id,registry:'intelligencePacks',
-      resolver:'intelligence_pack_get / cognitive_bundle_resolve'})),
-    note:'A Skill Pack orchestrates skills; it does not duplicate the Intelli­gence definition or override individual dojo approvals.'};
+    supportingPacks:(definition.intelligenceIds||[]).map(id=>({id,registry:'skillPacks',resolver:'skill_pack_get'})),
+    intelligenceReferences:(definition.intelligenceIds||[]).map(id=>({id,registry:'intelligencePacks',
+      resolver:'intelligence_pack_get (legacy compatibility)'})),
+    note:'MCC is available as an Intelligence-type Skill Pack, and specialist Skill bodies retain their own approved versions.'};
   return result;
 }
-module.exports={list,get,ensureLegacyPack,clean,selectMemberSkills,SEED};
+async function getLegacyPack(input={}){
+  const id=String(input.id||'');
+  const release=input.resolve===true?await bridge.resolvedVersionForPack(id):{versionNumber:null,dojos:[]};
+  if(input.resolve===true && input.versionNumber!==undefined && release.versionNumber!==null
+    && Number(input.versionNumber)!==release.versionNumber)
+    throw Error('Unapproved Skill Pack version for execution: '+id+' v'+input.versionNumber);
+  const effectiveVersion=release.versionNumber||input.versionNumber;
+  const result=await bridge.legacyGet({id,versionNumber:effectiveVersion});
+  result.executionPolicy='Legacy immutable Intelligence Pack history projected into the composite Skill interface. Skill texts use current dojo releases.';
+  result.versionPolicy=release.versionNumber?'latest_dojo_release':'latest_registry_version';
+  result.dojos=release.dojos;
+  if(input.resolve!==true)return result;
+  const stages=result.definition.stages||[];
+  if(input.stages!==undefined&&(!Array.isArray(input.stages)||input.stages.some(x=>!stages.some(s=>s.id===x))))
+    throw Error('Unknown selected Skill Pack stages for '+id);
+  const selectedStages=input.stages===undefined?stages.map(s=>s.id):input.stages;
+  const selected=result.definition.skills.filter(s=>s.required || (selectedStages.includes(s.stage)&&s.recommended));
+  const ids=[...new Set(selected.map(s=>s.skillId))];
+  const [entry,...members]=await Promise.all([
+    result.definition.entrySkillId,
+    ...ids,
+  ].filter(Boolean).map(skillId=>chatSkills.getExecutableSkill({id:skillId,includeRelations:false})));
+  const hasEntry=Boolean(result.definition.entrySkillId);
+  const actualEntry=hasEntry?entry:null;
+  const actualMembers=hasEntry?members:[entry,...members].filter(Boolean);
+  result.execution={
+    instructions:result.definition.instructions,
+    stages,
+    entry:actualEntry?{id:actualEntry.id,title:actualEntry.title,revision:actualEntry.revision,
+      versionPolicy:actualEntry.versionPolicy,body:actualEntry.body}:null,
+    members:actualMembers.map(s=>({id:s.id,skillId:s.id,title:s.title,revision:s.revision,
+      versionPolicy:s.versionPolicy,body:s.body})),
+    versionNumber:result.definition.versionNumber,
+    source:'Legacy immutable version served through Skill Pack; no copied mutable Intelligence record',
+  };
+  return result;
+}
+module.exports={list,get,getLegacyPack,ensureLegacyPack,clean,selectMemberSkills,SEED};

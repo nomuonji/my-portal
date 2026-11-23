@@ -49,7 +49,7 @@ function targetText(target) {
   if (!target) return '—';
   return target.max && target.max !== target.min ? target.min + '〜' + target.max : String(target.min);
 }
-const gearName = (g) => (g.kind === 'intelligence_pack' ? 'Pack ' : '') + g.id;
+const gearName = (g) => (['skill_pack','intelligence_pack'].includes(g.kind) ? 'Pack ' : '') + g.id;
 
 // One lamp per submarine: where it is and whether it needs the user.
 export function lampOf(sub) {
@@ -349,7 +349,7 @@ function GearPanel({ gear, onDojo }) {
         <Typography component="span" sx={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 800 }}>v{gear.version || '?'}</Typography>
       </Stack>
       <Typography sx={{ fontSize: 12.5, color: V.muted, mt: 0.4, lineHeight: 1.6 }}>
-        {gear.kind === 'intelligence_pack' ? 'Pack' : 'スキル'} {gear.id}
+        {['skill_pack','intelligence_pack'].includes(gear.kind) ? 'Pack' : 'スキル'} {gear.id}
         {gear.versionFrom === 'dojo'
           ? <>　版は道場 <Link component="button" type="button" onClick={() => onDojo(gear.dojoId)} sx={{ fontSize: 12.5, verticalAlign: 'baseline' }}>{gear.dojoTitle || gear.dojoId}</Link> が決めています{gear.train ? '。出航ごとに練習として記録されます' : ''}</>
           : '　道場なし（版を固定）'}

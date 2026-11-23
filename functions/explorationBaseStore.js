@@ -236,13 +236,13 @@ function cleanOutcome(raw) {
 }
 // A base trains one target: a Chat Skill or an Intelligence Pack in the DB, pinned to the version this base
 // released. Execution uses that version; the base never holds a second copy of the body.
-const TARGET_KINDS = new Set(['chat_skill', 'intelligence_pack']);
+const TARGET_KINDS = new Set(['chat_skill', 'skill_pack', 'intelligence_pack']);
 function cleanMethod(raw, fallbackLocation) {
   const input = plain(raw, 'method');
   const ref = input.bodyRef ? plain(input.bodyRef, 'method.bodyRef') : {};
   const body = text(input.body, 20000, 'method.body', false);
   const bodyRef = {
-    kind: oneOf(ref.kind, ['repo', 'inline', 'document', 'chat_skill', 'intelligence_pack', 'hq_method'], 'method.bodyRef.kind', body ? 'inline' : undefined),
+    kind: oneOf(ref.kind, ['repo', 'inline', 'document', 'chat_skill', 'skill_pack', 'intelligence_pack', 'hq_method'], 'method.bodyRef.kind', body ? 'inline' : undefined),
     // An inline body has no external location; only pointer bodies inherit the previous location.
     location: text(ref.location, 500, 'method.bodyRef.location', false) || ((ref.kind || (body ? 'inline' : '')) === 'inline' ? '' : (fallbackLocation || '')),
     path: text(ref.path, 500, 'method.bodyRef.path', false),
@@ -322,6 +322,14 @@ async function defaultResolveTarget({ kind, id, versionNumber }) {
     if (!pinned) throw new Error('Chat Skill version not found: ' + id + ' v' + versionNumber);
     const latest = Math.max(...items.map((item) => Number(item.versionNumber) || 0));
     return { title: pinned.title, latestVersion: latest, body: pinned.body || '' };
+  }
+  if (kind === 'skill_pack') {
+    const packs = require('./skillPackRegistry');
+    const { pack, definition } = await packs.get({ id, versionNumber });
+    const body = definition.instructions || (definition.skills || [])
+      .map(s => '- ' + s.stage + ': ' + s.skillId).join('\n');
+    if (!body || body.length < 20) throw Error('Skill Pack has no executable method body: ' + id);
+    return { title: definition.title || pack.title, latestVersion: Number(pack.currentVersionNumber) || versionNumber, body };
   }
   if (kind === 'intelligence_pack') {
     const registry = require('./agentIntelligenceRegistry');
@@ -2073,10 +2081,45 @@ function createStore(options) {
       .map((base) => ({ baseId: base.id, title: base.title, releasedVersion: base.method.bodyRef.versionNumber || null }));
   }
 
+  // Retarget a released legacy Intelligence workflow to its equivalent Skill Pack
+  // without creating a fake release, changing the approved version or resetting H/T history.
+  async function migrateLegacyPackTarget(input) {
+    if (input?.confirm !== true) throw Error('Explicit confirmation required for legacy Skill Pack target migration');
+    const baseId = requireBaseId(input.baseId);
+    const packId = text(input.packId, 90, 'packId', true);
+    const bridge = require('./intelligenceSkillBridge');
+    const conf = bridge.LEGACY_PACKS[packId];
+    if (!conf || conf.dojoBaseId !== baseId) throw Error('This dojo is not the canonical legacy target for ' + packId);
+    const current = value(await baseRef(baseId).get());
+    if (!current?.method?.bodyRef) throw Error('Dojo has no released target');
+    const originalRef = current.method.bodyRef;
+    if (originalRef.location !== packId || !Number.isInteger(Number(originalRef.versionNumber)))
+      throw Error('Legacy target identity/version mismatch');
+    if (originalRef.kind === 'skill_pack') return get({id:baseId});
+    if (originalRef.kind !== 'intelligence_pack') throw Error('Unexpected original target kind');
+    // The exact historical version must be readable through the new Pack interface.
+    await require('./skillPackRegistry').get({id:packId,versionNumber:originalRef.versionNumber});
+    await db().runTransaction(async tx => {
+      const base=await loadBase(tx,baseId);
+      if (base.openRunId) throw Error('Cannot migrate a target while its run is open');
+      const ref=base.method?.bodyRef;
+      if (ref?.kind==='skill_pack' && ref.location===packId && Number(ref.versionNumber)===Number(originalRef.versionNumber))return;
+      if (ref?.kind!=='intelligence_pack' || ref.location!==packId
+          || Number(ref.versionNumber)!==Number(originalRef.versionNumber))
+        throw Error('Dojo changed since target migration was inspected');
+      base.method={...base.method,bodyRef:{...ref,kind:'skill_pack'}};
+      pushEvent(tx,base,{type:'method_target_reclassified',summary:'Legacy Intelligence → Skill Pack (same approved version)',
+        actor:input.actor||'agent',detail:{packId,versionNumber:ref.versionNumber,
+          preservedMethodVersion:base.method.version,historyLength:(base.methodHistory||[]).length}});
+      saveBase(tx,base);
+    });
+    return get({id:baseId});
+  }
+
   // Compact summary used by the Agent Intelligence bundle resolver.
   async function brief(input) { return get({ id: input?.id, view: 'brief' }); }
 
-  return { create, list: listBases, get, remove, brief, graphGet, graphRelationUpsert, ruleProposalUpsert, setOutcome, setMethodVersion, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, researchRead, researchSynthesize, prepareRecall, checkRecall, recordTrials, rateTrials, awaitingTrials, refreshLoop, trainersOf };
+  return { create, list: listBases, get, remove, brief, graphGet, graphRelationUpsert, ruleProposalUpsert, setOutcome, setMethodVersion, migrateLegacyPackTarget, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, researchRead, researchSynthesize, prepareRecall, checkRecall, recordTrials, rateTrials, awaitingTrials, refreshLoop, trainersOf };
 }
 
 const store = createStore();
