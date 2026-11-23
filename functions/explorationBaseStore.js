@@ -1775,9 +1775,6 @@ function createStore(options) {
         if (loop.gates.researchDueBeforeNextTrial) {
           throw new Error('The last ' + loop.failStreak + ' rated samples did not pass. Finish the run with a verdict per hypothesis, then finish a run that re-derives the hypotheses from sourcing and selection (not wording) before recording new trials.');
         }
-        // Preserve established recall/failure-analysis refusal precedence;
-        // clearing those controls never bypasses this extra feedback gate.
-        assertCyclePrepared(base);
       }
       fresh.forEach((raw) => {
         const hypothesisIds = list(raw.hypothesisIds, 10, 20);
@@ -1797,6 +1794,9 @@ function createStore(options) {
           }
         });
         if (!backfill && !hypothesisIds.length) throw new Error('trial.hypothesisIds is required: name the hypothesis this sample tests (register it first with exploration_item_upsert). A sample tied to no hypothesis settles nothing when it is rated.');
+        // Pre-existing invalid-hypothesis/0-pass refusal takes precedence.
+        // Valid hypothesis still requires feedback metabolism before new output.
+        if (!backfill) assertCyclePrepared(base);
         if (!backfill && needsBuzzProtocol(base)
           && (!hypothesisIds.length || !hypotheses.get(hypothesisIds[0])?.researchProtocol)) {
           throw new Error('Buzz trial requires a concrete preregistered researchProtocol on the primary H: source acquisition, inclusion/exclusion rule, transformation, control, predicted outcome and falsifier. Revise the old H or register a new operational H before submitting another sample. Historical H/T are unchanged.');
