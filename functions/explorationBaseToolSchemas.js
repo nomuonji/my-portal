@@ -485,6 +485,15 @@ const tools = [
               mediaUrl: string('Public HTTPS URL of the completed artifact (video, image or external player). Do not use local paths, ephemeral sandbox:/// refs or planned: IDs as completion evidence. An awaiting sample can be completed by recording the same ref with a mediaUrl; its original prediction and hypothesis IDs are retained.', 1000),
               hypothesisIds: strings('H-nnn this sample tests. Required unless backfill.', 10),
               sourceIds: strings('S-nnn the material came from.', 10),
+              executionResources:{type:'array',maxItems:20,description:'Agent-reported actual resource use for attribution, not a planned dependency. This alone never independently verifies a tool call or consumer-model effect.',items:{
+                type:'object',properties:{
+                  kind:{type:'string',enum:['consumer_model','tool','skill']},
+                  id:string('Canonical consumer model, tool or Skill ID.',100),
+                  version:string('Exact model or Skill version used; optional for tools.',80),
+                  receiptRef:string('Concrete invocation/result reference: record ID, URL or call receipt.',600),
+                  purpose:string('How this resource influenced the actual sample.',500),
+                },required:['kind','id','receiptRef','purpose'],additionalProperties:false,
+              }},
               evaluationPhase:{type:'string',enum:['exploration','validation'],description:'Optional experiment phase fixed before user sees the trial; old ratings remain legacy_unclassified.'},
               segmentKey:string('Condition or subhypothesis segment, assigned BEFORE human evaluation; historical trials without this field are not retrospectively relabeled.',120),
               materialKey:string('Optional source identity for de-duplication and matched comparisons; not proof of randomization.',120),
