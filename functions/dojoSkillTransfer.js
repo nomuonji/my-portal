@@ -3,6 +3,7 @@
 // Human verdicts are a learning signal, not a diagnosis of a particular Skill.
 // Return a read-through improvement inbox keyed by the Skill that can own the fix.
 // No canonical H/T data, Chat Skill body or dojo release pointer is mutated here.
+const {resourceBreakdown}=require('./dojoResourceEvidence');
 const BUZZ_TARGETS = Object.freeze({
   source: ['creative-market-discovery'],
   selection: ['idea-resonance-lab'],
@@ -65,7 +66,8 @@ function planSkillTransfers({base, items = [], trials = []}) {
     sourceBaseId: c.sourceBaseId, ownerSkillId: c.ownerSkillId,
     hypothesisIds: [...c.hypothesisIds].sort(),
     evidence: {rated: c.pass + c.partial + c.fail,
-      pass: c.pass, partial: c.partial, fail: c.fail, examples: c.examples},
+      pass: c.pass, partial: c.partial, fail: c.fail, examples: c.examples,
+      resources: resourceBreakdown(ratings.filter(t=>c.trialIds.has(t.id)))},
     state: c.pass && (c.fail || c.partial)
       ? 'positive_and_negative_cases_need_controlled_comparison' : 'needs_comparison_cases',
     action: 'Review original human-rated cases, competing explanations and independent controls. If a rule is justified, edit the TARGET Skill (not only the coordinator), validate cases, and release through its own dojo. Never treat a verdict as a confirmed Skill defect.',
