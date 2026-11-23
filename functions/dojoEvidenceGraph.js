@@ -29,6 +29,8 @@ const simple = t => ({
   id:t.id,runId:t.runId||null,methodVersion:t.methodVersion||null,
   hypothesisIds:t.hypothesisIds||[],verdict:t.verdict||null,
   ratedAt:t.ratedAt||null,userWords:t.userWords||'',label:t.label||'',
+  body:t.body||'',imageUrl:t.imageUrl||'',mediaUrl:t.mediaUrl||'',
+  ratingHistory:t.ratingHistory||[],
   ref:t.ref||'',materialKey:t.materialKey||null,
   evaluationPhase:t.evaluationPhase||'legacy_unclassified',
   segmentKey:t.segmentKey||'unsegmented',
