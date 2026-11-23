@@ -1552,7 +1552,7 @@ test('Buzz hypothesis creation requires a concrete six-stage research protocol a
   await store.create({ id, title: 'Buzz', summary: 'Hypothesis protocol', outcome: {
     statement: 'User evaluates each individual standalone post', unit: 'one human-rated draft',
     acceptance: 'Only direct user feedback counts as pass', confirmedBy: 'user',
-  }, method, ...auth });
+  }, method: { ...method, version: 'bci-v7.7' }, ...auth });
   const draft = { title: 'Source selection test', statement: 'A source selection hypothesis with a measurable condition.',
     mechanism: 'Observable source details may enable different transformations than summaries.',
     pipelineStage: 'selection', targetModuleIds: ['selection'] };
