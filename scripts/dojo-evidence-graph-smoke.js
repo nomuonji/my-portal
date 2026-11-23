@@ -235,3 +235,20 @@ test('Rule merge proposals require exact pinned text, real human verdicts and in
   method:{version:'v69'},graph:{hypotheses:hs,promotions:[{hypothesisId:'H-001',eligibleForMerge:true}]},trials});
  assert.equal(stale.evidenceEligible,false);
 });
+
+test('release regression monitor warns only after enough human ratings and disjoint intervals',()=>{
+ const {loopView}=require('../functions/explorationLoop');
+ const r=(id,version,verdict)=>rated(id,verdict,['H-001'],{version,methodVersion:version===2?'v2':'v1'});
+ const prior=Array.from({length:28},(_,i)=>r('T-old-'+i,1,'pass'));
+ const newer=Array.from({length:28},(_,i)=>r('T-new-'+i,2,'fail'));
+ const baseNow={method:{version:'v2',bodyRef:{versionNumber:2}},outcome:{confirmedBy:'user'}};
+ const full=loopView({trials:[...prior,...newer],feedbackLog:[],base:baseNow,hypotheses:[h('H-001')]});
+ assert.equal(full.releaseHealth.status,'regression_alert');
+ assert.equal(full.releaseHealth.automaticRollback,false);
+ assert.ok(full.releaseHealth.currentCI.high<full.releaseHealth.previousCI.low);
+ const early=loopView({trials:[...prior,...newer.slice(0,2)],feedbackLog:[],base:baseNow,hypotheses:[h('H-001')]});
+ assert.equal(early.releaseHealth.status,'too_few_human_ratings');
+ const positive=loopView({trials:[...prior.map(x=>({...x,verdict:'fail'})),
+   ...newer.map(x=>({...x,verdict:'pass'}))],feedbackLog:[],base:baseNow,hypotheses:[h('H-001')]});
+ assert.equal(positive.releaseHealth.status,'improvement_signal');
+});
