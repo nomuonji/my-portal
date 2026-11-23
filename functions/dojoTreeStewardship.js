@@ -3,6 +3,7 @@
 // A deterministic coordination hint for the agent that maintains a whole Skill tree.
 // It never writes hypotheses, manufactures feedback, certifies a merge or schedules work.
 // Every proposed artifact still requires the existing research / trial gates and human rating.
+const { unreliableNegativeReviews,FAILURE_STREAK } = require('./dojoBuzzRecovery');
 const MAX_USER_BATCH = 3;
 const CONSERVATIVE_AWAITING_LIMIT = 5;
 
@@ -44,8 +45,12 @@ function describe(hypothesis) {
 
 function planTreeStewardship({hypotheses=[],trials=[],hypothesisEdges=[],base}={}) {
   const waiting=trials.filter(t=>t.status==='awaiting').length;
+  const quarantinedNegativeReviews=unreliableNegativeReviews(trials);
+  const quarantinedIds=new Set(quarantinedNegativeReviews.map(x=>x.hypothesisId));
+  const isBuzz=base?.id==='viral-post-method-discovery';
+  const failStreak=Number(base?.loop?.failStreak)||0;
   const headroom=Math.max(0,CONSERVATIVE_AWAITING_LIMIT-waiting);
-  const active=hypotheses.filter(h=>h.status==='open').map(describe)
+  const active=hypotheses.filter(h=>h.status==='open'&&h.polarity!=='negative').map(describe)
     .sort((a,b)=>b.priority-a.priority||a.rated-b.rated||
       a.hypothesisId.localeCompare(b.hypothesisId));
   const selection=[],visited=new Set(),modules=new Set();
@@ -80,11 +85,13 @@ function planTreeStewardship({hypotheses=[],trials=[],hypothesisEdges=[],base}={
       instruction:'Review the candidate parent/child, opposing and complementary hypotheses; propose splits, corrections, synthesizations, retirement or a falsifying test without inventing causal claims.'},
     {kind:'run_multiple_branch_experiments',responsible:'agent',required:false,
       instruction:'When research gates and user-review capacity allow, prepare distinct evaluable artifacts from up to three branch arms; do not require every batch to have three.'},
+    {kind:'repair_unreliable_negative_review',responsible:'agent',required:isBuzz&&quarantinedNegativeReviews.length>0,
+      instruction:'Quarantine risk-clearance rules that cleared >=3 real rejected artifacts with no passes. Inspect the actual body pairs, revise the failure test, and use another negative branch; do not just clear the same old check.'},
     {kind:'compute_promotion_and_merge_eligibility',responsible:'system',required:true,
       instruction:'Recompute human-rated evidence after feedback; deterministic promotion is advisory and must never release a Skill on its own.'},
   ];
   return {
-    policyVersion:'tree-steward-v1',
+    policyVersion:'tree-steward-v2',
     rootSkillId:base?.method?.bodyRef?.location||null,
     userReview:{awaiting:waiting,conservativeCapacity:headroom,
       suggestedVisibleBatchSize:Math.min(headroom,selection.length,MAX_USER_BATCH),
@@ -93,6 +100,12 @@ function planTreeStewardship({hypotheses=[],trials=[],hypothesisEdges=[],base}={
       distinctModules:branchCoverage,untestedBranches:staleBranches,
       byState,partialCandidates:byState.exploratory_partial||0,
       supportedScopesAwaitingRuleReview:eligible},
+    qualityReview:{
+      recoveryMode:isBuzz&&failStreak>=FAILURE_STREAK,
+      failStreak,quarantinedNegativeReviews,
+      safeNegativeCandidateIds:hypotheses.filter(h=>h.status==='open'&&h.polarity==='negative'&&!quarantinedIds.has(h.id)).map(h=>h.id),
+      observation:'Historical negative-rule clearance is not an independent quality judgment. The same check with repeated false clearances cannot be used to authorize a user-facing Buzz artifact.',
+    },
     maintenance:{
       proposedRelationCount:proposedRelations.length,
       proposedRelationIds:proposedRelations.slice(0,15).map(e=>e.id),

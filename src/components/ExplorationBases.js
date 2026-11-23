@@ -627,6 +627,16 @@ function SkillEvidenceGraph({ baseId }) {
       {busy&&!graph&&<CircularProgress size={22} sx={{m:2}}/>}
       {graph&&(
         <>
+          {!!graph.stewardship?.qualityReview?.quarantinedNegativeReviews?.length&&(
+            <Alert severity="warning" sx={{mb:2}}>
+              負の事前審査が本人評価を予測できていません：
+              {graph.stewardship.qualityReview.quarantinedNegativeReviews.map(x=>
+                ' '+x.hypothesisId+'（通過後に本人ボツ '+x.clearedRejected+'/'+x.clearedRated+'）').join('、')}。
+              これらの「問題なし」判定は現在のBuzz錬成では採用せず、別の失敗仮説・新しい検証条件へ切り替えます。
+              {graph.stewardship.qualityReview.recoveryMode?
+                ' 連続不合格中のため、原典の直接確認・別枝の対立比較・事前試験計画が必須です。':''}
+            </Alert>
+          )}
           {!!graph.stewardship?.feedbackReview?.pendingCount&&(
             <Alert severity="warning" sx={{mb:2}}>
               新しい本人評価 {graph.stewardship.feedbackReview.pendingCount}件によるツリー再整理が必要です。
