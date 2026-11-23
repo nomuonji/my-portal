@@ -1,9 +1,14 @@
 'use strict';
 const assert=require('node:assert/strict');
 const {test}=require('node:test');
-const {RUNNER_SLOTS,MAX_JOBS_PER_TICK,candidate,validateSlots,validateCapacity,slotLoadsFor,jst}
+const {RUNNER_SLOTS,MAX_JOBS_PER_TICK,candidate,validateSlots,validateCapacity,slotLoadsFor,jst,validatedInstructions}
  =require('../functions/routineJobStore');
 
+test('oversized routine instructions fail closed rather than truncating finish/readback rules',()=>{
+ assert.equal(validatedInstructions('  finish verified  '),'finish verified');
+ assert.equal(validatedInstructions('x'.repeat(12000)).length,12000);
+ assert.throws(()=>validatedInstructions('x'.repeat(12001)),/exceed 12000/);
+});
 test('six real ChatGPT wake-ups, 3 jobs maximum each',()=>{
  assert.deepEqual(RUNNER_SLOTS,['04:30','08:30','10:30','14:30','16:30','20:30']);
  assert.equal(MAX_JOBS_PER_TICK,3);
