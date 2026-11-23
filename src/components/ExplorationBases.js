@@ -587,6 +587,7 @@ const PROMOTION_LABEL = {
   exploratory_partial:'条件付き部分支持の候補',
   validated_scope:'事前登録比較の採用候補（正式採用前）',
   not_supported:'支持不十分', refuted_scope:'対象条件で反証',
+  retired:'引退済み（過去の実証は保存）', rejected:'棄却済み（再研究は別仮説）',
   negative_risk_review:'負の仮説：失敗条件を研究',
 };
 
