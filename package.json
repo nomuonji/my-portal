@@ -58,7 +58,7 @@
     "test:filmarks-trakt-migration": "node --test scripts/filmarks-trakt-migration-smoke.js",
     "test:job-opportunities": "node --test scripts/job-opportunities-smoke.js",
     "test:agent-intelligence": "node --test scripts/agent-intelligence-registry-smoke.js",
-    "test:exploration-base": "node --test scripts/exploration-base-smoke.js scripts/hypothesis-refinement-smoke.js",
+    "test:exploration-base": "node --test scripts/exploration-base-smoke.js scripts/hypothesis-refinement-smoke.js scripts/dojo-evidence-graph-smoke.js",
     "test:submarine": "node --test scripts/submarine-smoke.js",
     "test:partial-edits": "node --test scripts/partial-edits-smoke.js",
     "test:consumer-model-migration": "node --test scripts/consumer-model-migration-smoke.js"

@@ -1346,3 +1346,54 @@ test('a dialectical synthesis only counts as progress once linked to a real deri
   assert.deepEqual(finished.run.researchSynthesis.appliedHypothesisIds,['H-003']);
   assert.equal(finished.run.researchSynthesis.pendingApplication,false);
 });
+
+
+test('legacy dojo graph API projects H/T/feedback without rewriting originals and stores proposed edges only',async()=>{
+  const store=await setup();
+  const created=await store.upsertItems({baseId:'test-base',kind:'hypothesis',items:[
+    {...hypothesis,pipelineStage:'voice',targetModuleIds:['voice']},
+    {...hypothesis,title:'Alternative source',pipelineStage:'source'},
+  ]});
+  assert.deepEqual(created.changed.map(x=>x.id),['H-001','H-002']);
+  await store.recordTrials({baseId:'test-base',backfill:true,trials:[{
+    label:'User approved historical text',body:'A recognizably selfish speaker reveals the actual motive.',
+    hypothesisIds:['H-001'],rating:{verdict:'pass',userWords:'合格。いいね',ratedAt:'2026-10-21T00:00:00.000Z'},
+  },{
+    label:'Rejected original text',body:'An abstract restatement with no particular consequence.',
+    hypothesisIds:['H-001','H-002'],
+    rating:{verdict:'fail',userWords:'ボツ。つまらない',ratedAt:'2026-10-22T00:00:00.000Z'},
+  }]});
+  const before=(await store.get({id:'test-base',view:'full'})).full.trials;
+  const projected=await store.graphGet({baseId:'test-base',view:'full'});
+  assert.equal(projected.migration.mode,'virtual_non_destructive');
+  assert.equal(projected.hypotheses.length,2);
+  assert.equal(projected.trials.length,2);
+  const originals=new Map(before.map(t=>[t.id,t]));
+  for(const t of projected.trials){
+    assert.equal(t.body,originals.get(t.id).body);
+    assert.equal(t.userWords,originals.get(t.id).userWords);
+  }
+  assert.equal(projected.promotions.find(x=>x.hypothesisId==='H-001').eligibleForMerge,false);
+  assert.deepEqual((await store.get({id:'test-base',view:'full'})).full.trials,before);
+  await assert.rejects(store.graphRelationUpsert({baseId:'test-base',relations:[{
+    sourceId:'H-001',targetId:'H-002',relation:'derives_from',
+    rationale:'Hypothesis H-002 narrows the source compared to H-001.',evidenceIds:['T-999'],
+  }]}),/existing T-nnn/);
+  const payload={baseId:'test-base',relations:[{
+    sourceId:'H-001',targetId:'H-002',relation:'narrows',
+    rationale:'Hypothesis H-002 seems to narrow the premise from H-001, to be tested.',evidenceIds:['T-001','T-002'],
+  }]};
+  const change=await store.graphRelationUpsert(payload);
+  assert.equal(change.created.length,1);
+  assert.equal((await store.graphRelationUpsert(payload)).existing,1,'relation upserts are idempotent');
+  const after=await store.graphGet({baseId:'test-base'});
+  assert.equal(after.hypothesisEdges.length,1);
+  assert.equal(after.hypothesisEdges[0].status,'proposed');
+  assert.equal(after.hypothesisEdges[0].sourceId,'H-001');
+  await assert.rejects(store.graphRelationUpsert({baseId:'test-base',relations:[{
+    sourceId:'H-002',targetId:'H-001',relation:'derives_from',
+    rationale:'This reverse ancestry conflicts with the existing proposed edge.',
+  }]}),/cycle/);
+  assert.deepEqual((await store.get({id:'test-base',view:'full'})).full.trials,before,
+    'relations must never mutate the actual rated historical sample');
+});

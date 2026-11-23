@@ -280,7 +280,7 @@ function Run({ run, hypotheses }) {
 }
 
 const TABS = [
-  { key: 'goal', label: 'ゴール' }, { key: 'timeline', label: '経過' }, { key: 'guesses', label: '見立て' },
+  { key: 'goal', label: 'ゴール' }, { key: 'graph', label: '仮説の系譜' }, { key: 'timeline', label: '経過' }, { key: 'guesses', label: '見立て' },
   { key: 'sources', label: '情報源' }, { key: 'constraints', label: '制約' }, { key: 'method', label: 'スキル本文' },
 ];
 // Run start/finish events duplicate the run entries themselves, so the timeline leaves them out.
@@ -580,6 +580,158 @@ export function VersionFeedback({ feedback }) {
   );
 }
 
+
+const PROMOTION_LABEL = {
+  unexamined:'未評価', collecting:'検証データ蓄積中',
+  promising:'観察的に有望（実証未了）',
+  exploratory_partial:'条件付き部分支持の候補',
+  validated_scope:'事前登録比較の採用候補（正式採用前）',
+  not_supported:'支持不十分', refuted_scope:'対象条件で反証',
+  negative_risk_review:'負の仮説：失敗条件を研究',
+};
+
+function SkillEvidenceGraph({ baseId }) {
+  const [graph,setGraph]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
+  const [moduleKey,setModuleKey]=useState(null);
+  const [hypothesisKey,setHypothesisKey]=useState(null);
+  const load=useCallback(async()=>{
+    setBusy(true);setError('');
+    try {setGraph(await api('?resource=exploration_skill_graph&id='+encodeURIComponent(baseId)+'&view=full'));}
+    catch(e){setError(e.message||'仮説ネットワークを取得できません');}
+    finally{setBusy(false);}
+  },[baseId]);
+  useEffect(()=>{setGraph(null);setModuleKey(null);setHypothesisKey(null);load();},[load]);
+  const modules=graph?.modules||[];
+  const selectedModule=modules.find(m=>m.id===moduleKey)||modules.find(m=>m.hypothesisIds.length)||modules[0];
+  const hypotheses=(graph?.hypotheses||[]).filter(h=>(selectedModule?.hypothesisIds||[]).includes(h.id));
+  const selectedHypothesis=hypotheses.find(h=>h.id===hypothesisKey)||hypotheses[0];
+  const trials=(graph?.trials||[]).filter(t=>(t.hypothesisIds||[]).includes(selectedHypothesis?.id));
+  const edges=(graph?.hypothesisEdges||[]).filter(e=>e.sourceId===selectedHypothesis?.id||e.targetId===selectedHypothesis?.id);
+  const stats=selectedHypothesis?.promotion?.historical;
+  const boxStyle={border:'1px solid',borderColor:'divider',borderRadius:2,p:1.5,minWidth:0,
+    overflowWrap:'anywhere',backgroundColor:'background.paper'};
+  return (
+    <Box>
+      <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" alignItems={{sm:'center'}} gap={1} sx={{mb:2}}>
+        <Box>
+          <Typography sx={{fontWeight:900,fontSize:17}}>Skill → モジュール → 仮説 → 評価物</Typography>
+          <Typography sx={{fontSize:12.5,color:V.muted,mt:0.4}}>
+            既存のH/T番号と本人評価をそのまま参照。旧データの意味的な分類は暫定で、AIの支持判定を正式証明として扱いません。
+          </Typography>
+        </Box>
+        <Button size="small" variant="outlined" disabled={busy} onClick={load}>{busy?'照合中…':'最新の実証を再集計'}</Button>
+      </Stack>
+      {error&&<Alert severity="warning" sx={{mb:2}}>{error}</Alert>}
+      {busy&&!graph&&<CircularProgress size={22} sx={{m:2}}/>}
+      {graph&&(
+        <>
+          <Box sx={{overflowX:'auto',pb:1}}>
+            <Box sx={{minWidth:1000,display:'grid',gridTemplateColumns:'190px 205px minmax(270px,1fr) minmax(270px,1fr)',gap:1.7,alignItems:'start'}}>
+              <Box sx={{...boxStyle,background:'#FFF6DD',borderColor:'#E9CA83'}}>
+                <Typography sx={{fontSize:11.5,fontWeight:800,color:'#916615'}}>SKILL / PACK 本体</Typography>
+                <Typography sx={{fontWeight:900,fontSize:15,mt:1,overflowWrap:'anywhere'}}>
+                  {graph.target.id||'道場の方法論'}
+                </Typography>
+                <Typography sx={{fontSize:12,color:V.muted,mt:1}}>
+                  正式な実行版：{graph.target.releasedVersion?'v'+graph.target.releasedVersion:graph.target.methodVersion||'不明'}
+                </Typography>
+                <Typography sx={{fontSize:12,color:V.muted,mt:2}}>
+                  旧Skill本文は変更せず、保存済み仮説と本人評価を参照
+                </Typography>
+              </Box>
+              <Box sx={boxStyle}>
+                <Typography sx={{fontWeight:800,fontSize:12.5,mb:1}}>部位を選択 →</Typography>
+                <Stack gap={0.7}>
+                  {modules.map(m=>(
+                    <Box key={m.id} component="button" type="button"
+                      onClick={()=>{setModuleKey(m.id);setHypothesisKey(null);}}
+                      sx={{p:1.2,textAlign:'left',borderRadius:1.5,cursor:'pointer',
+                        border:'1px solid',borderColor:selectedModule?.id===m.id?V.blue:V.rule,
+                        background:selectedModule?.id===m.id?V.accentSoft:'transparent'}}>
+                      <Typography sx={{fontSize:13.2,fontWeight:800}}>{m.name}</Typography>
+                      <Typography sx={{fontSize:11.5,color:V.muted}}>{m.hypothesisIds.length}仮説{m.id==='root'?'（未分類を含む）':''}</Typography>
+                    </Box>
+                  ))}
+                </Stack>
+              </Box>
+              <Box sx={boxStyle}>
+                <Typography sx={{fontWeight:800,fontSize:12.5,mb:1}}>検証仮説の系譜 →</Typography>
+                {!hypotheses.length&&<Typography sx={{fontSize:12,color:V.muted}}>この部位に対応する仮説はありません。</Typography>}
+                <Stack gap={0.8}>
+                  {hypotheses.map(h=>(
+                    <Box key={h.id} component="button" type="button"
+                      onClick={()=>setHypothesisKey(h.id)}
+                      sx={{p:1.35,textAlign:'left',borderRadius:1.5,cursor:'pointer',border:'1px solid',
+                        borderColor:selectedHypothesis?.id===h.id?'#A884C8':V.rule,
+                        background:selectedHypothesis?.id===h.id?'#F4EEFA':'transparent'}}>
+                      <Typography sx={{fontSize:13.3,fontWeight:800}}>{h.id} · {h.title}</Typography>
+                      <Typography sx={{fontSize:11.5,color:V.muted,mt:0.35}}>
+                        {h.polarity==='negative'?'負仮説 · ':''}{PROMOTION_LABEL[h.promotion?.state]||h.promotion?.state}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Stack>
+                {!!selectedHypothesis&&(
+                  <Box sx={{mt:1.6,pt:1.4,borderTop:'1px solid '+V.rule}}>
+                    <Typography sx={{fontSize:12.5,fontWeight:800,mb:0.5}}>主張と検証条件</Typography>
+                    <Typography sx={{fontSize:12.3,lineHeight:1.75,whiteSpace:'pre-wrap'}}>{selectedHypothesis.statement||'主張未登録'}</Typography>
+                    {!!selectedHypothesis.limits&&<Typography sx={{fontSize:12,color:V.muted,mt:0.75}}>限界：{selectedHypothesis.limits}</Typography>}
+                    {edges.length>0&&(
+                      <Box sx={{mt:1.2}}>
+                        <Typography sx={{fontSize:12,fontWeight:800}}>関連する仮説</Typography>
+                        {edges.map(e=><Typography key={e.id} sx={{fontSize:11.5,color:V.muted,mt:0.35}}>
+                          {e.sourceId} → {e.targetId} · {e.relation}（{e.status==='proposed'?'提案': '旧研究記録'}）
+                        </Typography>)}
+                      </Box>
+                    )}
+                  </Box>
+                )}
+              </Box>
+              <Box sx={boxStyle}>
+                <Typography sx={{fontWeight:800,fontSize:12.5,mb:1}}>評価物と本人フィードバック</Typography>
+                {selectedHypothesis&&(
+                  <Box sx={{p:1.2,mb:1.2,borderRadius:1.5,background:'#EAF6F1'}}>
+                    <Typography sx={{fontSize:12.5,fontWeight:800}}>{PROMOTION_LABEL[selectedHypothesis.promotion?.state]||'未判定'}</Typography>
+                    <Typography sx={{fontSize:12,color:V.muted,mt:0.45}}>
+                      {stats?stats.n+'件中 '+stats.pass+'件合格 / '+stats.partial+'件惜しい / '+stats.fail+'件ボツ':'評価なし'}
+                      {stats?.passRate!==null&&stats?.passRate!==undefined?' · 合格率 '+percent(stats.passRate):''}
+                    </Typography>
+                    <Typography sx={{fontSize:11.5,color:V.muted,mt:0.4}}>
+                      Skillへの自動採用：無効（{selectedHypothesis.promotion?.eligibleForMerge?'比較候補あり':'検証不足'}）
+                    </Typography>
+                  </Box>
+                )}
+                {!trials.length&&<Typography sx={{fontSize:12,color:V.muted}}>紐付いた評価物はまだありません。</Typography>}
+                <Stack gap={1}>
+                  {trials.slice().reverse().slice(0,30).map(t=>(
+                    <Box key={t.id} sx={{p:1.2,border:'1px solid',borderColor:'divider',borderRadius:1.5}}>
+                      <Typography sx={{fontSize:12.5,fontWeight:800}}>{t.id} · {t.label}</Typography>
+                      <Typography sx={{fontSize:12,color:t.verdict==='pass'?V.green:t.verdict==='fail'?V.pink:V.amber,mt:0.4,fontWeight:700}}>
+                        {t.verdict==='pass'?'合格':t.verdict==='fail'?'ボツ':t.verdict==='partial'?'惜しい':'未評価'}
+                      </Typography>
+                      {!!t.body&&<Typography sx={{fontSize:12,whiteSpace:'pre-wrap',lineHeight:1.6,mt:0.6}}>{t.body.slice(0,420)}</Typography>}
+                      {!!t.userWords&&<Typography sx={{fontSize:12,color:V.muted,mt:0.5}}>本人の言葉：{t.userWords}</Typography>}
+                      {!!t.imageUrl&&<Link href={t.imageUrl} target="_blank" rel="noreferrer">画像を見る</Link>}
+                      {!!t.mediaUrl&&<Link href={t.mediaUrl} target="_blank" rel="noreferrer">評価物を見る</Link>}
+                    </Box>
+                  ))}
+                </Stack>
+                {trials.length>30&&<Typography sx={{fontSize:11.5,color:V.muted,mt:1}}>最新30件を表示。全履歴はMCPのfullビューで参照できます。</Typography>}
+              </Box>
+            </Box>
+          </Box>
+          <Typography sx={{fontSize:11.5,color:V.muted,mt:1.4}}>
+            {graph.migration.historicalHypotheses}仮説・{graph.migration.historicalTrials}Trialを元レコードから読込。
+            学習・リリースの既存ゲートは維持。証拠判定は {graph.policyVersion}（参考判定）です。
+          </Typography>
+        </>
+      )}
+    </Box>
+  );
+}
+
 function BaseDetail({ detail, onDecide, busy, onRate, onRateBatch, busyId }) {
   const [tab, setTab] = useState('goal');
   const { base, outcome = {}, method, full = {}, position = {} } = detail;
@@ -668,6 +820,8 @@ function BaseDetail({ detail, onDecide, busy, onRate, onRateBatch, busyId }) {
         <DetailRow label="期限">{outcome.deadline || 'なし'}</DetailRow>
       </Box>
       </>)}
+
+      {tab === 'graph' && <SkillEvidenceGraph baseId={base.id} />}
 
       {tab === 'timeline' && (<>
         <Typography sx={{ fontSize: 12.5, color: V.muted, mb: 1 }}>

@@ -509,6 +509,8 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
   if (name === "agent_intelligence_bootstrap") return structured(await agentIntelligenceRegistry.bootstrapInitialPack(args));
   if (name === "exploration_base_list") return structured(await explorationBaseStore.list(args));
   if (name === "exploration_base_get") return structured(await explorationBaseStore.get(args));
+  if (name === "exploration_skill_graph_get") return structured(await explorationBaseStore.graphGet(args));
+  if (name === "exploration_hypothesis_relation_upsert") return structured(await explorationBaseStore.graphRelationUpsert(args));
   if (name === "exploration_base_create") return structured(await explorationBaseStore.create(args));
   if (name === "exploration_outcome_set") return structured(await explorationBaseStore.setOutcome(args));
   if (name === "exploration_method_version_set") return structured(await explorationBaseStore.setMethodVersion(args));
