@@ -819,7 +819,7 @@ function BaseDetail({ detail, onDecide, busy, onRate, onRateBatch, busyId }) {
       <Typography component="h1" sx={{ fontSize: { xs: 22, md: 26 }, fontWeight: 900, letterSpacing: '-0.02em', lineHeight: 1.3 }}>{base.title}</Typography>
       {method?.target && (
         <Typography sx={{ fontSize: 13, color: V.accent, fontWeight: 700, mt: 0.5 }}>
-          鍛えている{method.target.kind === 'intelligence_pack' ? 'Pack' : 'スキル'}：{method.target.title || method.target.id}（実行は v{method.target.releasedVersion}）
+          鍛えている{['skill_pack','intelligence_pack'].includes(method.target.kind) ? 'Pack' : 'スキル'}：{method.target.title || method.target.id}（実行は v{method.target.releasedVersion}）
           {method.target.unreleasedNewer && <span style={{ color: 'var(--p-amber)' }}>　道場を通っていない v{method.target.latestVersion} があります</span>}
         </Typography>
       )}
@@ -942,7 +942,7 @@ function BaseDetail({ detail, onDecide, busy, onRate, onRateBatch, busyId }) {
       {method?.target && (
         <Box sx={{ mt: 1, py: 1, px: 1.5, borderLeft: '3px solid ' + (method.target.unreleasedNewer ? V.amber : V.accent), background: V.accentSoft }}>
           <Typography sx={{ fontSize: 13.5, lineHeight: 1.6 }}>
-            鍛えている{method.target.kind === 'intelligence_pack' ? 'Pack' : 'スキル'}：<b>{method.target.title || method.target.id}</b>　実行で使う版 <b>v{method.target.releasedVersion}</b>
+            鍛えている{['skill_pack','intelligence_pack'].includes(method.target.kind) ? 'Pack' : 'スキル'}：<b>{method.target.title || method.target.id}</b>　実行で使う版 <b>v{method.target.releasedVersion}</b>
           </Typography>
           {method.target.unreleasedNewer && (
             <Typography sx={{ fontSize: 12.5, color: V.muted, mt: 0.3 }}>
