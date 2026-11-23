@@ -111,7 +111,7 @@ function createStore(opts={}) {
     if(!approved?.body||!Number.isInteger(Number(approved.revision)))throw new Error('Approved source Skill required');
     for(const resource of definition.resources||[]) {
       const ref=resource.kind==='consumer_model'?'consumer_model_get':resource.id;
-      if(!approved.body.includes('`'+ref+'`'))
+      if(!approved.body.includes('`'+ref+'`') && !approved.body.includes('`'+ref+'('))
         throw Error('Approved Skill body does not reference resource resolver: '+ref);
     }
     for(const link of definition.relations){
