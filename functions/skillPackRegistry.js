@@ -83,6 +83,11 @@ async function list(){
     .filter(p=>p.status==='active').sort((a,b)=>a.title.localeCompare(b.title));
   return {items,count:items.length,kind:'skill_pack',databaseId:DB_ID};
 }
+function selectMemberSkills(definition,stages){
+  if(stages!==undefined&&(!Array.isArray(stages)||stages.some(x=>!STAGES.has(x))))
+    throw Error('stages must contain recognized Skill stages');
+  return definition.skills.filter(s=>s.required || (stages||[]).includes(s.stage));
+}
 async function get(input={}){
   await ensureLegacyPack();
   const id=String(input.id||'');
@@ -98,10 +103,7 @@ async function get(input={}){
     legacyEntryAlias:definition.entrySkillId,
     historicDojoRetained:definition.dojoBaseId};
   if(input.resolve!==true)return result;
-  const stages=input.stages;
-  if(stages!==undefined&&(!Array.isArray(stages)||stages.some(x=>!STAGES.has(x))))
-    throw Error('stages must contain recognized Skill stages');
-  const selected=definition.skills.filter(s=>s.required || (stages||[]).includes(s.stage));
+  const selected=selectMemberSkills(definition,input.stages);
   const [entry,...members]=await Promise.all([definition.entrySkillId,...selected.map(s=>s.skillId)]
     .map(id=>chatSkills.getExecutableSkill({id,includeRelations:false})));
   result.execution={entry:{id:entry.id,title:entry.title,revision:entry.revision,
@@ -113,4 +115,4 @@ async function get(input={}){
     note:'A Skill Pack orchestrates skills; it does not duplicate the Intelli­gence definition or override individual dojo approvals.'};
   return result;
 }
-module.exports={list,get,ensureLegacyPack,clean,SEED};
+module.exports={list,get,ensureLegacyPack,clean,selectMemberSkills,SEED};
