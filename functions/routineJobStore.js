@@ -16,6 +16,11 @@ const PRIORITIES = Object.freeze({critical:0,normal:1,background:2});
 
 function db() { return getDocumentDb(DATABASE); }
 function text(value, max) { return String(value == null ? '' : value).trim().slice(0, max); }
+function validatedInstructions(value) {
+  const instructions = String(value == null ? '' : value).trim();
+  if (instructions.length > 12000) throw new Error('Routine job instructions exceed 12000 characters; shorten before saving');
+  return instructions;
+}
 function validId(id) { if (!/^[a-z][a-z0-9-]{2,79}$/.test(id)) throw new Error('Invalid routine job ID'); return id; }
 function jst(now) {
   const date = new Date(now);
@@ -93,9 +98,9 @@ async function upsert(input = {}) {
     const title = text(input.title ?? previous?.title, 180);
     if (input.instructionEdits !== undefined && input.instructions !== undefined) throw new Error('Pass either instructions or instructionEdits, not both');
     if (input.instructionEdits !== undefined && !previous) throw new Error('instructionEdits needs an existing routine job');
-    const instructions = text(input.instructionEdits !== undefined
+    const instructions = validatedInstructions(input.instructionEdits !== undefined
       ? applyTextEdits(previous.instructions, input.instructionEdits, 'instructionEdits')
-      : (input.instructions ?? previous?.instructions), 12000);
+      : (input.instructions ?? previous?.instructions));
     const status = text(input.status ?? previous?.status ?? 'paused', 20);
     const slots = validateSlots(input.slots ?? previous?.slots);
     if (!title || !instructions) throw new Error('Title and instructions are required');
@@ -215,4 +220,4 @@ async function remove(input = {}) {
   await ref.delete();
   return { id, title: job.title, preservedRunHistory: history.docs.length, deleted: true };
 }
-module.exports = { list, upsert, remove, due, claim, finish, runs, RUNNER_SLOTS, MAX_JOBS_PER_TICK, EARLY_WAKE_GRACE_MINUTES, candidate, validateSlots, validateCapacity, slotLoadsFor, jst };
+module.exports = { list, upsert, remove, due, claim, finish, runs, RUNNER_SLOTS, MAX_JOBS_PER_TICK, EARLY_WAKE_GRACE_MINUTES, validatedInstructions, candidate, validateSlots, validateCapacity, slotLoadsFor, jst };
