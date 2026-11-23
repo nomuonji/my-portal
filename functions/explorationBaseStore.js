@@ -1246,7 +1246,7 @@ function createStore(options) {
           for (const caseId of refs) {
             if (caseId.startsWith('S-')) {
               const source = value(await tx.get(itemRef(id, caseId)));
-              if (!source || source.kind !== 'source' || source.sourceRole === 'idea' ||
+              if (!source || source.kind !== 'source' || source.sourceRole !== 'observation' ||
                   (!source.originalProof && !(source.evidence || []).length && source.stage === 'conjecture'))
                 throw new Error('hypothesis.formationReview: ' + caseId + ' is not a verified observed source/case; ideas are not evidence.');
             } else {
