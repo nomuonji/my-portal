@@ -627,6 +627,34 @@ function SkillEvidenceGraph({ baseId }) {
       {busy&&!graph&&<CircularProgress size={22} sx={{m:2}}/>}
       {graph&&(
         <>
+          {!!graph.stewardship?.feedbackReview?.pendingCount&&(
+            <Alert severity="warning" sx={{mb:2}}>
+              新しい本人評価 {graph.stewardship.feedbackReview.pendingCount}件によるツリー再整理が必要です。
+              次の研究runで対象Hの反例・条件を横断比較して、各枝の維持／分割／修正／統合／引退と反証条件を記録してください。
+              {graph.stewardship.feedbackReview.overflowCount>0?' 履歴レビュー待ちが上限を超えています。':''}
+            </Alert>
+          )}
+          {!!graph.skillRules?.rules?.length&&(
+            <Box sx={{border:'1px solid',borderColor:'divider',borderRadius:2,p:1.5,mb:2}}>
+              <Typography sx={{fontWeight:900,fontSize:13.5}}>Skill規則の変更候補と機械審査</Typography>
+              <Stack gap={0.7} sx={{mt:1}}>
+                {graph.skillRules.rules.map(rule=>(
+                  <Box key={rule.id} sx={{p:1,border:'1px solid',borderColor:'divider',borderRadius:1.5}}>
+                    <Typography sx={{fontSize:12.5,fontWeight:800}}>
+                      {rule.id} · {rule.action} · {rule.moduleId} →
+                      {rule.eligibility.evidenceEligible?' 実証条件を満たした検討候補':' 証拠不足・保留'}
+                    </Typography>
+                    <Typography sx={{fontSize:11.5,color:V.muted,mt:0.35}}>
+                      仮説：{rule.hypothesisIds.join(', ')} /
+                      根拠判定：{rule.eligibility.blockingReasons.join(', ')||'比較条件クリア'}
+                    </Typography>
+                    {!!rule.replacementText&&<Typography sx={{fontSize:12.2,mt:0.5,whiteSpace:'pre-wrap'}}>{rule.replacementText}</Typography>}
+                  </Box>
+                ))}
+              </Stack>
+              <Typography sx={{fontSize:11.5,color:V.muted,mt:0.7}}>規則の候補は正式Skill本文ではありません。採用には版差分と既存のリリースゲートが必要です。</Typography>
+            </Box>
+          )}
           {!!graph.stewardship&&(
             <Box sx={{border:'1px solid',borderColor:'divider',borderRadius:2,p:1.5,mb:2,background:V.accentSoft}}>
               <Typography sx={{fontSize:13.5,fontWeight:900}}>Agent のツリー管理・次の研究枝</Typography>
