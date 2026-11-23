@@ -15,7 +15,7 @@ const { projectGraph, graphEdges, validateEdges, MODULE_IDS } = require('./dojoE
 const { checkBuzzSubmissionRecovery, unreliableNegativeReviews } = require('./dojoBuzzRecovery');
 const { makeRuleProposal, assessRuleProposal } = require('./dojoRuleMerge');
 const { planSkillTransfers } = require('./dojoSkillTransfer');
-const { enqueueFeedback, validateReview, applyReviews } = require('./dojoSkillFeedbackQueue');
+const { enqueueFeedback, validateReview, applyReviews, cyclePreflight, assertCyclePrepared } = require('./dojoSkillFeedbackQueue');
 
 const DEFAULT_DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTIONS = Object.freeze({
@@ -44,6 +44,7 @@ const { NEGATIVE, checkNegativeTargets, checkNegativeReview, checkScreenedOut, l
 const STALL_WARNING_AT = 3;
 const PROTOCOL = [
   'Read this base before exploring; do not rely on memory of an earlier version.',
+  'Training-loop order is mandatory: read cycle and the graph/Skill queue; metabolize any prior actual human ratings through full hypothesis synthesis and evidence-grounded specialist review, evaluate whether a justified Skill/Pack change deserves a new dojo release (otherwise preserve the approved version), then produce at most the permitted user-reviewable trial count. After the user rates the trials, repeat the internal review before the next submission. Do not treat a review as proof or promise execution between chats.',
   'exploration_run_start: read loop.refinement, compare competing explanations, and precommit a discriminating experimentDesign (changed stage, controls, expected difference, falsification) where possible. An exploratory probe may have no design.',
   'Forecast calibration and hypothesis ranking are advisory, not proof or automatic method release. Do not inflate predictedPass to bypass a domain-specific quality gate.',
   'All dojos: register falsifiable failure modes as polarity=negative. Every positive-target run with registered open failure hypotheses automatically pins one negative arm (stage-matched if possible); explicitly declared negativeTargets override the automatic choice. Compare genuine accepted/rejected cases via negativeReview before showing a trial, and screen out unresolved risks.',
@@ -54,7 +55,7 @@ const PROTOCOL = [
   'Never change the method version during an open run. Bump it only between runs, with the motivating runs and a benchmark result.',
   'The outcome contract and user-owned constraints belong to the user: propose changes, never apply them without authorization.',
   'IDs are never reused. Rejected hypotheses stay in the ledger so the same inference is not repeated.',
-  'When the method is a chat_skill or intelligence_pack target, use exactly the released version (method.target.releasedVersion, body included here), not the latest one. A newer version made outside this base is unverified until it is released here.',
+  'When the method is a chat_skill, skill_pack or legacy intelligence_pack target, use exactly the released version (method.target.releasedVersion, body included here), not the latest one. A newer version made outside this base is unverified until it is released here.',
   'Sources (where candidates come from) are a ledger too: record which source a candidate came from (evidence on the source, sourceIds on the achievement) and reject sources that yield nothing, so the next run starts from proven ones.',
   'When a submarine (Project Submarine) carries this skill/pack, its sortie opens and closes the run here. What it finds is the submarine\'s haul; a haul the user confirms comes back here as an achievement.',
   'The measure of a 道場 is the pass rate of what its released version produces, by version (loop). There is no count target. Read loop.nextActions first.',
@@ -804,6 +805,7 @@ function createStore(options) {
         outcome: { revision: base.outcome?.revision, confirmedCount: confirmed, awaitingConfirmation: (base.progress?.achievements || []).filter((a) => a.status === 'candidate').map(({ id, label, ref }) => ({ id, label, ref })) },
         position: { runCount: base.runCount || 0, stalledRuns: base.stalledRuns || 0, openRunId: base.openRunId || null, lastRuns: (base.lastRuns || []).slice(0, 1) },
         loop: loopView({ trials, feedbackLog: base.feedbackLog, base, hypotheses }),
+        cycle:cyclePreflight(base),
         skillImprovement:{pending:(base.skillImprovementInbox||[]).filter(x=>x.status==='pending_review').length,
           inbox:(base.skillImprovementInbox||[]).slice(0,20)},
         warnings,
@@ -829,6 +831,7 @@ function createStore(options) {
     }
     if ((base.proposals || []).some((p) => p.status === 'pending')) warnings.push('There are pending proposals waiting for the user.');
     const result = {
+      cycle:cyclePreflight(base),
       base: {
         id: base.id, title: base.title, summary: base.summary, status: base.status, revision: base.revision,
         projectIds: base.projectIds || [], domains: base.domains || [], canonicalData: base.canonicalData || [],
@@ -1401,6 +1404,7 @@ function createStore(options) {
       put(tx, runRef(id, runId), run);
       base.openRunId = runId;
       receipt = { runId, methodVersion: run.methodVersion, outcomeRevision: run.outcomeRevision,
+        cycle:cyclePreflight(base),
         crossDojoEvidenceCount: crossDojoEvidence.length, negativeTargetCount: negativeTargets.length,
         negativeTargetOrigin: negativeTargetOrigin || null };
       pushEvent(tx, base, { type: 'run_started', runId, summary: run.objective, actor: input.actor, detail: { targets: cleanTargets, negativeTargets, methodVersion: run.methodVersion } });
@@ -1790,6 +1794,9 @@ function createStore(options) {
           }
         });
         if (!backfill && !hypothesisIds.length) throw new Error('trial.hypothesisIds is required: name the hypothesis this sample tests (register it first with exploration_item_upsert). A sample tied to no hypothesis settles nothing when it is rated.');
+        // Pre-existing invalid-hypothesis/0-pass refusal takes precedence.
+        // Valid hypothesis still requires feedback metabolism before new output.
+        if (!backfill) assertCyclePrepared(base);
         if (!backfill && needsBuzzProtocol(base)
           && (!hypothesisIds.length || !hypotheses.get(hypothesisIds[0])?.researchProtocol)) {
           throw new Error('Buzz trial requires a concrete preregistered researchProtocol on the primary H: source acquisition, inclusion/exclusion rule, transformation, control, predicted outcome and falsifier. Revise the old H or register a new operational H before submitting another sample. Historical H/T are unchanged.');
@@ -1955,6 +1962,7 @@ function createStore(options) {
     if (input.ratings.length > 30) throw new Error('At most 30 ratings per call');
     const rated = [];
     let queuedSkillReviews=[];
+    let postRatingCycle=null;
     await db().runTransaction(async (tx) => {
       const base = await loadBase(tx, id);
       // Firestore transactions read first: load every trial and every hypothesis they touch, then write.
@@ -2020,6 +2028,7 @@ function createStore(options) {
         updatedAt:now(),
       };
       queuedSkillReviews=(base.skillImprovementInbox||[]).filter(x=>x.status==='pending_review');
+      postRatingCycle=cyclePreflight(base);
       pushEvent(tx, base, { type: 'trials_rated', actor: input.actor, summary: rated.map((t) => t.id + ':' + t.verdict).join(', '), detail: { rated,skillReviewIds:queuedSkillReviews.map(x=>x.id) } });
       saveBase(tx, base);
     });
@@ -2027,7 +2036,7 @@ function createStore(options) {
     // Return a concrete post-rating handoff; a human verdict is not a
     // diagnosis. The next agent must compare cases and review the specific
     // TARGET Skill before suggesting a tested body edit and dojo release.
-    return { baseId: id, rated, loop,
+    return { baseId: id, rated, loop,cycle:postRatingCycle,
       pendingSpecialistSkillReviews:queuedSkillReviews.map(({id,targetSkillId,moduleId,pendingTrialIds})=>({id,targetSkillId,moduleId,pendingTrialIds})),
       skillImprovementReview: rated.some(x=>x.verdict!=='withdrawn')
         ? {state:'required_after_human_rating',tool:'exploration_skill_graph_get',

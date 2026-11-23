@@ -97,4 +97,41 @@ function applyReviews(inbox, existingReviews, reviewRecords, timestamp) {
   return {inbox:next,reviews:history.slice(0,120)};
 }
 
-module.exports={enqueueFeedback,validateReview,applyReviews};
+
+// Production is distinct from research: an open run may inspect case history,
+// but no new evaluation artifact can be registered before all *new* feedback is
+// metabolized. Prior reviews with awaiting_new_comparison are not blockers.
+function cyclePreflight(base={}) {
+  const pendingSkillReviews=(base.skillImprovementInbox||[])
+    .filter(x=>x.status==='pending_review'&&(x.pendingTrialIds||[]).length)
+    .map(x=>({id:x.id,targetSkillId:x.targetSkillId,
+      pendingTrialIds:[...x.pendingTrialIds]}));
+  const pendingTrialIds=[...(base.treeMaintenance?.pendingTrialIds||[])];
+  const pendingExternalRefs=[...(base.treeMaintenance?.pendingExternalRefs||[])];
+  const requiredActions=[];
+  if(pendingSkillReviews.length)
+    requiredActions.push('Review each pending specialist Skill work order via exploration_skill_improvement_review, with actual human-rated evidence and competing explanations. Do not force a Skill revision when evidence is weak.');
+  if(pendingTrialIds.length||pendingExternalRefs.length)
+    requiredActions.push('Read all historical H/T/user feedback pages and complete exploration_research_synthesize.treeReview for every newly rated trial and external reaction before creating another artifact.');
+  return {
+    stage:requiredActions.length?'internal_metabolism_required':'ready_for_trial_gates',
+    readyForTrialRegistration:requiredActions.length===0,
+    pendingSkillReviews,pendingTrialIds,pendingExternalRefs,requiredActions,
+    note:'This is a preflight only. Existing research, recall, negative-control, pending-user-rating and release gates still apply. A ready preflight does not certify output quality.',
+  };
+}
+
+function assertCyclePrepared(base) {
+  const status=cyclePreflight(base);
+  if(!status.readyForTrialRegistration) {
+    const skills=status.pendingSkillReviews.map(x=>x.id).join(', ');
+    throw Error('Internal metabolism required before registering new evaluation artifacts: '
+      +(skills?'pending specialist Skill reviews ['+skills+']. ':'')
+      +(status.pendingTrialIds.length||status.pendingExternalRefs.length
+        ? 'new human feedback requires a complete hypothesis-tree research synthesis. ':'')
+      +'Review evidence and approved Skill versions first; then create new trials.');
+  }
+  return status;
+}
+
+module.exports={enqueueFeedback,validateReview,applyReviews,cyclePreflight,assertCyclePrepared};
