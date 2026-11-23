@@ -20,6 +20,7 @@ import * as routineStoreImport from "../../functions/routineJobStore.js";
 import * as jobOpportunityStoreImport from "../../functions/jobOpportunityStore.js";
 import * as explorationBaseStoreImport from "../../functions/explorationBaseStore.js";
 import * as agentIntelligenceRegistryImport from "../../functions/agentIntelligenceRegistry.js";
+import * as skillPackImport from "../../functions/skillPackRegistry.js";
 import * as submarineStoreImport from "../../functions/submarineStore.js";
 import * as submarineFleetImport from "../../functions/submarineFleet.js";
 
@@ -41,6 +42,7 @@ const routineStore: any = (routineStoreImport as any).default ?? routineStoreImp
 const jobOpportunityStore: any = (jobOpportunityStoreImport as any).default ?? jobOpportunityStoreImport;
 const explorationBaseStore: any = (explorationBaseStoreImport as any).default ?? explorationBaseStoreImport;
 const agentIntelligenceRegistry: any = (agentIntelligenceRegistryImport as any).default ?? agentIntelligenceRegistryImport;
+const skillPackRegistry: any = (skillPackImport as any).default ?? skillPackImport;
 const submarineStore: any = (submarineStoreImport as any).default ?? submarineStoreImport;
 const submarineFleet: any = (submarineFleetImport as any).default ?? submarineFleetImport;
 const documentDb: any = (documentDbImport as any).default ?? documentDbImport;
@@ -226,6 +228,8 @@ export default async (request: Request) => {
       if (resource === "contexts") return json(await contextRegistry.list({projectId:url.searchParams.get("projectId")||undefined,domain:url.searchParams.get("domain")||undefined,includeArchived:url.searchParams.get("includeArchived")==="true"}));
       if (resource === "context") return json(await contextRegistry.get({id:url.searchParams.get("id")||""}));
       if (resource === "context_history") return json(await contextRegistry.listEvents({contextId:url.searchParams.get("id")||""}));
+      if (resource === "skill_packs") return json(await skillPackRegistry.list());
+      if (resource === "skill_pack") return json(await skillPackRegistry.get({id:url.searchParams.get("id")||"",resolve:url.searchParams.get("resolve")==="true"}));
       if (resource === "world_map") {
         return json(await worldMap.get());
       }
