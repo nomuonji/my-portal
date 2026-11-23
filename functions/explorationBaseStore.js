@@ -44,6 +44,7 @@ const { NEGATIVE, checkNegativeTargets, checkNegativeReview, checkScreenedOut, l
 const STALL_WARNING_AT = 3;
 const PROTOCOL = [
   'Read this base before exploring; do not rely on memory of an earlier version.',
+  'Training-loop order is mandatory: read cycle and the graph/Skill queue; metabolize any prior actual human ratings through full hypothesis synthesis and evidence-grounded specialist review, evaluate whether a justified Skill/Pack change deserves a new dojo release (otherwise preserve the approved version), then produce at most the permitted user-reviewable trial count. After the user rates the trials, repeat the internal review before the next submission. Do not treat a review as proof or promise execution between chats.',
   'exploration_run_start: read loop.refinement, compare competing explanations, and precommit a discriminating experimentDesign (changed stage, controls, expected difference, falsification) where possible. An exploratory probe may have no design.',
   'Forecast calibration and hypothesis ranking are advisory, not proof or automatic method release. Do not inflate predictedPass to bypass a domain-specific quality gate.',
   'All dojos: register falsifiable failure modes as polarity=negative. Every positive-target run with registered open failure hypotheses automatically pins one negative arm (stage-matched if possible); explicitly declared negativeTargets override the automatic choice. Compare genuine accepted/rejected cases via negativeReview before showing a trial, and screen out unresolved risks.',
@@ -54,7 +55,7 @@ const PROTOCOL = [
   'Never change the method version during an open run. Bump it only between runs, with the motivating runs and a benchmark result.',
   'The outcome contract and user-owned constraints belong to the user: propose changes, never apply them without authorization.',
   'IDs are never reused. Rejected hypotheses stay in the ledger so the same inference is not repeated.',
-  'When the method is a chat_skill or intelligence_pack target, use exactly the released version (method.target.releasedVersion, body included here), not the latest one. A newer version made outside this base is unverified until it is released here.',
+  'When the method is a chat_skill, skill_pack or legacy intelligence_pack target, use exactly the released version (method.target.releasedVersion, body included here), not the latest one. A newer version made outside this base is unverified until it is released here.',
   'Sources (where candidates come from) are a ledger too: record which source a candidate came from (evidence on the source, sourceIds on the achievement) and reject sources that yield nothing, so the next run starts from proven ones.',
   'When a submarine (Project Submarine) carries this skill/pack, its sortie opens and closes the run here. What it finds is the submarine\'s haul; a haul the user confirms comes back here as an achievement.',
   'The measure of a 道場 is the pass rate of what its released version produces, by version (loop). There is no count target. Read loop.nextActions first.',
