@@ -94,6 +94,9 @@ const item = {
     rationale: string('Constraint: why it exists.', 1500),
     check: string('Constraint: how a violation is detected.', 800),
     legacyIds: strings('Earlier labels for the same thing (e.g. "P22", "I12 (tsk-v24)").', 12),
+    targetModuleIds: { type:'array',minItems:1,maxItems:7,uniqueItems:true,
+      items:{type:'string',enum:['root','source','selection','transform','voice','gate','audience']},
+      description:'Optional explicit Skill module(s) this hypothesis examines. Legacy H records retain inferred root or pipeline module without being rewritten.' },
     reason: string('Why this change is made. Required for rejection, demotion, reopening and agent-constraint changes.', 1500),
   },
   additionalProperties: false,
@@ -113,6 +116,27 @@ const tools = [
       properties: { id: baseId, view: { type: 'string', enum: ['state', 'brief', 'full'] }, eventLimit: { type: 'integer', minimum: 1, maximum: 300 } },
       required: ['id'], additionalProperties: false,
     },
+  },
+  {
+    name:'exploration_skill_graph_get',
+    description:'Read the Skill-module → hypothesis lineage → original human-rated trials graph without migrating or rewriting any H/T/feedback record. Returns deterministic evidence aggregates and shadow promotion decisions with policy version. summary returns recent trial excerpts, full returns all canonical trial references. Proposed relation edges are never treated as confirmed causal facts.',
+    inputSchema:{type:'object',properties:{
+      baseId,view:{type:'string',enum:['summary','full'],description:'summary (default) or full legacy trial references'},
+    },required:['baseId'],additionalProperties:false},
+  },
+  {
+    name:'exploration_hypothesis_relation_upsert',
+    description:'Create 1-12 additional proposed hypothesis connections between existing H-nnn IDs: derivation, narrowing, contradiction, complement, synthesis, supersession. Append-only proposals: confirmed/causal status cannot be self-declared. Directed lineage cycles are rejected. Existing hypotheses, trial IDs and ratings remain unchanged.',
+    inputSchema:{type:'object',properties:{
+      baseId,actor,
+      relations:{type:'array',minItems:1,maxItems:12,items:{type:'object',properties:{
+        sourceId:string('Existing source hypothesis H-nnn in this dojo.',20),
+        targetId:string('Existing different target hypothesis H-nnn in this dojo.',20),
+        relation:{type:'string',enum:['derives_from','narrows','synthesizes','supersedes','contradicts','complements']},
+        rationale:string('Explain why these hypotheses may be related, 15-900 chars. This is an agent proposal, not an accepted fact.',900),
+        evidenceIds:strings('Optional exact existing T-nnn cases linked to this proposal.',16),
+      },required:['sourceId','targetId','relation','rationale'],additionalProperties:false}},
+    },required:['baseId','relations'],additionalProperties:false},
   },
   {
     name: 'exploration_base_create',
@@ -397,6 +421,13 @@ const tools = [
               mediaUrl: string('Public HTTPS URL of the completed artifact (video, image or external player). Do not use local paths, ephemeral sandbox:/// refs or planned: IDs as completion evidence. An awaiting sample can be completed by recording the same ref with a mediaUrl; its original prediction and hypothesis IDs are retained.', 1000),
               hypothesisIds: strings('H-nnn this sample tests. Required unless backfill.', 10),
               sourceIds: strings('S-nnn the material came from.', 10),
+              evaluationPhase:{type:'string',enum:['exploration','validation'],description:'Optional experiment phase fixed before user sees the trial; old ratings remain legacy_unclassified.'},
+              segmentKey:string('Condition or subhypothesis segment, assigned BEFORE human evaluation; historical trials without this field are not retrospectively relabeled.',120),
+              materialKey:string('Optional source identity for de-duplication and matched comparisons; not proof of randomization.',120),
+              comparisonKey:string('Validation comparison ID; paired treatment/control samples must use the same ID and materialKey.',120),
+              experimentArm:{type:'string',enum:['treatment','control'],description:'Validation arm fixed before user rating; the control sample may lack the target hypothesis.'},
+              plannedFactors:{type:'object',maxProperties:8,description:'Optional stable snake_case keys with string values fixed before feedback (no post-hoc segmentation).',additionalProperties:{type:'string',maxLength:100}},
+
               predictedPass: { type: 'number', minimum: 0, maximum: 1, description: 'Chance the user passes it, stated before showing. Required unless backfill.' },
               predictionNote: string('Why that chance. Older MCP clients use learning:v1:<compact JSON> for the general learning review, or screen:v1:<compact JSON> for the Buzz-specific screen. Each is limited to 600 characters.', 600),
               negativeReview: {
