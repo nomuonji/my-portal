@@ -11,7 +11,7 @@ const { validateLearningAudit } = require('./dojoLearning');
 const { buildResearchInventory, researchPage, validateResearchSynthesis } = require('./dojoResearchInventory');
 const { recallRequired, buildRecallProbe, checkRecallPredictions, buildHistoricalHypotheses, checkHypothesisReviews } = require('./dojoRecall');
 const { trialArtifactStatus, publicMediaUrl } = require('./dojoArtifactReadiness');
-const { projectGraph, validateEdges, MODULE_IDS } = require('./dojoEvidenceGraph');
+const { projectGraph, graphEdges, validateEdges, MODULE_IDS } = require('./dojoEvidenceGraph');
 
 const DEFAULT_DATABASE_ID = process.env.AGENT_IDEAS_DATABASE_ID || '(default)';
 const COLLECTIONS = Object.freeze({
@@ -475,7 +475,8 @@ function createStore(options) {
       db().collection(COLLECTIONS.graphEdges).where('baseId','==',id).limit(1000).get(),
     ]);
     const known=edgesSnapshot.docs.map(doc=>doc.data());
-    const newEdges=validateEdges(input?.relations,items.filter(x=>x.kind==='hypothesis'),known);
+    const hypotheses=items.filter(x=>x.kind==='hypothesis');
+    const newEdges=validateEdges(input?.relations,hypotheses,graphEdges(hypotheses,known));
     const trialIds=new Set(trials.map(t=>t.id));
     for(const edge of newEdges){
       if(edge.evidenceIds.some(e=>!trialIds.has(e))) {
