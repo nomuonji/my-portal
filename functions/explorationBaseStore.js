@@ -476,11 +476,12 @@ function createStore(options) {
       relations:edgeSnap.docs.map(doc=>doc.data()),view});
     graph.stewardship.feedbackReview={
       pendingTrialIds:base.treeMaintenance?.pendingTrialIds||[],
+      pendingExternalRefs:base.treeMaintenance?.pendingExternalRefs||[],
       touchedHypothesisIds:base.treeMaintenance?.touchedHypothesisIds||[],
-      pendingCount:(base.treeMaintenance?.pendingTrialIds||[]).length,
+      pendingCount:(base.treeMaintenance?.pendingTrialIds||[]).length+(base.treeMaintenance?.pendingExternalRefs||[]).length,
       overflowCount:base.treeMaintenance?.overflowCount||0,
       lastReviewedRunId:base.treeMaintenance?.lastReviewedRunId||null,
-      status:(base.treeMaintenance?.pendingTrialIds||[]).length?'needs_hypothesis_tree_review':'up_to_date',
+      status:((base.treeMaintenance?.pendingTrialIds||[]).length||(base.treeMaintenance?.pendingExternalRefs||[]).length)?'needs_hypothesis_tree_review':'up_to_date',
     };
     const proposals=ruleSnap.docs.map(doc=>doc.data());
     graph.skillRules={status:proposals.length?'candidate_rule_mapping':'unmapped_legacy_skill_body',rules:proposals.map(p=>({
@@ -623,13 +624,20 @@ function createStore(options) {
       if (run.researchReview.digest !== inventory.hash) throw new Error('Historical evidence changed after reading; restart research review');
       const synthesis = validateResearchSynthesis(input?.synthesis, inventory);
       const pending=base.treeMaintenance?.pendingTrialIds||[];
+      const pendingExternal=base.treeMaintenance?.pendingExternalRefs||[];
       const touched=base.treeMaintenance?.touchedHypothesisIds||[];
       let treeReview=null;
-      if(pending.length){
-        const supplied=plain(input?.treeReview,'treeReview (review every newly rated example and its affected hypothesis)');
+      if(pending.length||pendingExternal.length){
+        const supplied=plain(input?.treeReview,'treeReview (review every newly rated example or externally confirmed/declined haul)');
         const ids=list(supplied.reviewedTrialIds,120,20);
         if(ids.length!==pending.length||pending.some(id=>!ids.includes(id)))
           throw Error('Review all newly human-rated T-nnn cases before proceeding; treeReview.reviewedTrialIds must cover pending trials');
+        const reviewedExternal=list(supplied.reviewedExternalRefs,120,600);
+        if(reviewedExternal.length!==pendingExternal.length
+          ||pendingExternal.some(ref=>!reviewedExternal.includes(ref)))
+          throw Error('Tree review must include every newly evaluated external haul reference');
+        if(reviewedExternal.some(ref=>!(base.feedbackLog||[]).some(f=>f.ref===ref&&['confirmed','declined'].includes(f.decision))))
+          throw Error('Tree review claims an external reaction not confirmed by a real user');
         const entries=new Map(inventory.feedback.map(f=>[f.id,f]));
         if(ids.some(id=>!entries.has(id)))throw Error('Tree review includes an unknown human-rated trial');
         const decisions=Array.isArray(supplied.branchDecisions)?supplied.branchDecisions:[];
@@ -647,8 +655,8 @@ function createStore(options) {
         if(touched.some(id=>!idsSeen.has(id)))throw Error('Tree review is missing affected hypothesis branches');
         if(text(supplied.crossBranchSummary,1500,'treeReview.crossBranchSummary',true).length<40)
           throw Error('Tree review needs a cross-branch comparison, not just a verdict recap');
-        treeReview={reviewedTrialIds:ids,branchDecisions:decisions,crossBranchSummary:supplied.crossBranchSummary};
-        base.treeMaintenance={pendingTrialIds:[],touchedHypothesisIds:[],
+        treeReview={reviewedTrialIds:ids,reviewedExternalRefs:reviewedExternal,branchDecisions:decisions,crossBranchSummary:supplied.crossBranchSummary};
+        base.treeMaintenance={pendingTrialIds:[],pendingExternalRefs:[],touchedHypothesisIds:[],
           overflowCount:0,lastReviewedAt:now(),lastReviewedRunId:runId};
         saveBase(tx,base);
       }
@@ -1521,6 +1529,13 @@ function createStore(options) {
         runId: text(input.runId, 20, 'runId', false) || previous.runId || '',
       };
       base.feedbackLog = [entry, ...log.filter((f) => f.ref !== ref)].slice(0, 300);
+      if(['confirmed','declined'].includes(entry.decision)){
+        const prior=base.treeMaintenance||{};
+        const external=[...new Set([...(prior.pendingExternalRefs||[]),ref])];
+        base.treeMaintenance={...prior,pendingExternalRefs:external.slice(-120),
+          overflowCount:(prior.overflowCount||0)+Math.max(0,external.length-120),
+          updatedAt:now()};
+      }
       saveBase(tx, base);
       changed = true;
     });
