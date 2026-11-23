@@ -558,7 +558,7 @@ function createStore(options) {
     if(!base)throw Error('Exploration Base not found');
     const bodyRef=base.method?.bodyRef||{};
     let targetBody=base.method?.body||'';
-    if(['chat_skill','intelligence_pack'].includes(bodyRef.kind)){
+    if(['chat_skill','skill_pack','intelligence_pack'].includes(bodyRef.kind)){
       const target=await resolveTarget({kind:bodyRef.kind,id:bodyRef.location,versionNumber:bodyRef.versionNumber});
       targetBody=target.body||'';
     }
