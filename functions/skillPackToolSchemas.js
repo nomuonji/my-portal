@@ -1,5 +1,11 @@
 'use strict';
 const TOOL_DEFINITIONS=[
+  { name:'intelligence_list',
+    description:'List reusable Intelligences (judgment models, evidence interpretation). Legacy storage and API names call these Intelligence Packs; they are not Skill Packs. MCC is here.',
+    inputSchema:{type:'object',properties:{limit:{type:'integer',minimum:1,maximum:100},query:{type:'string',maxLength:200}},additionalProperties:false}},
+  { name:'intelligence_get',
+    description:'Read an Intelligence definition, such as marketing-creative-cognition (MCC). This is a compatibility alias for intelligence_pack_get, not a workflow Pack.',
+    inputSchema:{type:'object',properties:{id:{type:'string',minLength:2,maxLength:80},versionNumber:{type:'integer',minimum:1}},required:['id'],additionalProperties:false}},
   { name:'skill_pack_list',
     description:'List canonical Skill Packs: workflow groups of individual Chat Skills. Skill Packs are NOT Intelligence Packs. The migrated バズ投稿 Pack retains the released buzz-content-ideation coordinator as a backward-compatible entry and points to its original dojo.',
     inputSchema:{type:'object',properties:{},additionalProperties:false}},
