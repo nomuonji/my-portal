@@ -143,10 +143,21 @@ function matchedPairs(hypothesisId,trials,segment){
     const k=groups.get(group)||{control:[],treatment:[]};
     k[t.experimentArm].push(t);groups.set(group,k);
   }
-  return [...groups.values()].filter(g=>g.control.length===1&&g.treatment.length===1)
-    .map(g=>({control:g.control[0],treatment:g.treatment[0]}));
+  // Pair inside the same run, and count one independently identifiable material
+  // only once. Otherwise a single agent-authored example could be re-used under
+  // many comparisonKey values to manufacture statistical significance.
+  const pairs=[...groups.values()]
+    .filter(g=>g.control.length===1&&g.treatment.length===1)
+    .map(g=>({control:g.control[0],treatment:g.treatment[0]}))
+    .filter(p=>p.control.runId===p.treatment.runId)
+    .sort((a,b)=>String(a.treatment.id).localeCompare(String(b.treatment.id)));
+  const seenMaterials=new Set();
+  return pairs.filter(p=>{
+    if(seenMaterials.has(p.treatment.materialKey))return false;
+    seenMaterials.add(p.treatment.materialKey);return true;
+  });
 }
-function promotion(h,trials,all){
+function promotion(h,trials,all,comparisonCount=1){
   const observed=trials.filter(isRated);
   const historical=counts(observed);
   const runs=[...new Set(observed.map(t=>t.runId).filter(Boolean))];
@@ -163,15 +174,19 @@ function promotion(h,trials,all){
     const controlBetter=pairs.filter(p=>p.control.verdict==='pass'&&p.treatment.verdict!=='pass').length;
     const discordant=treatmentBetter+controlBetter;
     const pValue=binomialTail(treatmentBetter,discordant);
-    const pairRuns=new Set(pairs.flatMap(p=>[p.control.runId,p.treatment.runId])).size;
+    const pairRuns=new Set(pairs.map(p=>p.treatment.runId)).size;
+    // Every pre-examined hypothesis/segment comparison is part of the same
+    // family: correction discourages cherry-picking the one lucky branch.
+    const adjustedP=Math.min(1,pValue*Math.max(1,comparisonCount));
     const validated=pairs.length>=POLICY.minPairedComparisons
       &&discordant>=POLICY.minDiscordant&&treatmentBetter>controlBetter
-      &&pairRuns>=POLICY.minRuns&&pValue<=POLICY.maxSignTestP;
+      &&pairRuns>=POLICY.minRuns&&adjustedP<=POLICY.maxSignTestP;
     return {segmentKey:segment,...c,distinctRunCount:new Set(samples.map(x=>x.runId).filter(Boolean)).size,
       cooccurrenceCount:samples.filter(x=>(x.hypothesisIds||[]).length>1).length,
       preregisteredValidationCount:samples.filter(x=>x.evaluationPhase==='validation').length,
-      pairs:pairs.length,pairRuns,treatmentBetter,controlBetter,signTestP:round(pValue),
-      validated};
+      pairs:pairs.length,pairRuns,treatmentBetter,controlBetter,
+      signTestP:round(pValue),multipleComparisons:Math.max(1,comparisonCount),
+      adjustedSignTestP:round(adjustedP),validated};
   }).sort((a,b)=>b.n-a.n||a.segmentKey.localeCompare(b.segmentKey));
   const validated=segmentRows.filter(s=>s.validated);
   let state='unexamined',reasonCodes=[];
@@ -183,6 +198,7 @@ function promotion(h,trials,all){
     const legacy=observed.some(t=>!t.evaluationPhase||t.evaluationPhase==='legacy_unclassified');
     if(multi)reasonCodes.push('cooccurrence_not_causal_support');
     if(legacy)reasonCodes.push('historical_trials_not_preregistered_for_segment_validation');
+    if(segmentRows.some(s=>s.pairs>=POLICY.minPairedComparisons&&!s.validated))reasonCodes.push('paired_comparison_not_independently_reproduced_or_corrected');
     if(runs.length<POLICY.minRuns)reasonCodes.push('insufficient_run_diversity');
     const split=segmentRows.find(s=>s.segmentKey!=='unsegmented'
       &&s.n>=POLICY.minObservations&&s.distinctRunCount>=POLICY.minRuns
@@ -202,7 +218,10 @@ function projectGraph({base,items=[],trials=[],feedbackLog=[],relations=[],view=
   const modules=MODULES.map(m=>({...m,source:'compatibility_projection',
     hypothesisIds:hypotheses.filter(h=>moduleIds(h).includes(m.id)).map(h=>h.id)}));
   const rated=trials.filter(isRated);
-  const promotions=hypotheses.map(h=>promotion(h,rated.filter(t=>(t.hypothesisIds||[]).includes(h.id)),trials));
+  const testedScopes=new Set(trials.filter(t=>isRated(t)&&t.evaluationPhase==='validation'&&t.experimentArm==='treatment')
+    .flatMap(t=>(t.hypothesisIds||[]).map(id=>id+'|'+(t.segmentKey||'unsegmented'))));
+  const familySize=Math.max(1,testedScopes.size);
+  const promotions=hypotheses.map(h=>promotion(h,rated.filter(t=>(t.hypothesisIds||[]).includes(h.id)),trials,familySize));
   const edges=graphEdges(hypotheses,relations);
   const nodes=hypotheses.map(h=>({
     id:h.id,kind:'hypothesis',title:h.title,statement:h.statement||'',mechanism:h.mechanism||'',
@@ -221,6 +240,9 @@ function projectGraph({base,items=[],trials=[],feedbackLog=[],relations=[],view=
     feedbackLog.map(x=>[x.haulId,x.ref,x.decision,x.comment]),relations.map(x=>x.id)]);
   return {
     baseId:base?.id,policyVersion:POLICY.version,evidenceDigest,
+    experimentAudit:{comparisonFamilySize:familySize,correction:'Bonferroni (hypothesis x pre-registered segment)',
+      pairRequirements:'same run, unique material per hypothesis and segment, >=2 runs; user-rated'},
+
     target:{kind:base?.method?.bodyRef?.kind||null,
       id:base?.method?.bodyRef?.location||null,releasedVersion:base?.method?.bodyRef?.versionNumber||null,
       methodVersion:base?.method?.version||null},
