@@ -431,7 +431,7 @@ export function LoopPanel({ loop, baseId, onRate, onRateBatch, busyId }) {
             })}
           </Stack>
           <Typography sx={{fontSize:11.5,color:V.muted,mt:1}}>実力は未見素材の事前登録済み課題でのみ測定。旧評価は移し替えません。</Typography>
-          {(loop.capabilityHealth?.comparisons||[]).map(c=><Typography key={c.benchmarkKey} sx={{fontSize:12,mt:.5}}>{c.benchmarkKey}：{c.current.rated}件 / 前版 {c.previous?.rated||0}件 — {c.status==='regression_alert'?'悪化の可能性':c.status==='improvement_signal'?'改善の兆候':'比較未確定'}</Typography>)}
+          {(loop.capabilityHealth?.comparisons||[]).map(c=><Typography key={c.benchmarkKey+':'+(c.protocolDigest||'')} sx={{fontSize:12,mt:.5}}>{c.benchmarkKey}：{c.current.rated}件 / 前版 {c.previous?.rated||0}件 — {c.status==='regression_alert'?'悪化の可能性':c.status==='improvement_signal'?'改善の兆候':'比較未確定'}</Typography>)}
           {(loop.metaLearning||[]).map(m=><Typography key={m.version} sx={{fontSize:12,mt:.5}}>研究メタSkill v{m.version}：{m.runCount} run / {m.rated}件評価（因果未確定）</Typography>)}
         </Box>
       )}
@@ -658,6 +658,13 @@ function SkillEvidenceGraph({ baseId }) {
               次の研究runで対象Hの反例・条件を横断比較して、各枝の維持／分割／修正／統合／引退と反証条件を記録してください。
               {graph.stewardship.feedbackReview.overflowCount>0?' 履歴レビュー待ちが上限を超えています。':''}
             </Alert>
+          )}
+          {!!graph.stewardship?.downstreamMetaLearning&&(
+            <Box sx={{border:'1px solid',borderColor:'divider',borderRadius:2,p:1.5,mb:2}}>
+              <Typography sx={{fontWeight:900,fontSize:13.5}}>研究メタSkillの各道場への適用</Typography>
+              {graph.stewardship.downstreamMetaLearning.bases.map(b=><Typography key={b.baseId} sx={{fontSize:12,mt:.5}}>{b.title}：{b.uses.length?b.uses.map(u=>'v'+u.version+' / '+u.rated+'件評価').join('、'):'適用結果未記録'}</Typography>)}
+              <Typography sx={{fontSize:11.5,color:V.muted}}>道場間の観測値。合否を合算せず、対照検証で研究手法を改善します。</Typography>
+            </Box>
           )}
           {!!graph.stewardship?.pruning&&(
             <Box sx={{border:'1px solid',borderColor:'divider',borderRadius:2,p:1.5,mb:2}}>
