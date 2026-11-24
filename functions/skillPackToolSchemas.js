@@ -38,6 +38,7 @@ const TOOL_DEFINITIONS=[
       resolve:{type:'boolean',description:'Load approved entry Skill and selected member Skills.'},
       intent:{type:'string',enum:['character_ideation','serious_creation','technical_edit','humor_ideation','personal_voice','distribution']},
       consumerModelId:{type:'string',maxLength:64,description:'Explicit target consumer model; never infer a segment.'},
+      topic:{type:'string',maxLength:500,description:'Current task for relevant positive/negative case retrieval.'},
       consumerModelVersion:{type:'string',maxLength:12,description:'Optional frozen model version for comparing human-rated outcomes.'},
       stages:{type:'array',items:{type:'string',maxLength:80},maxItems:20,uniqueItems:true,
         description:'Optional stage IDs from the Pack definition.'},
