@@ -417,10 +417,24 @@ export function LoopPanel({ loop, baseId, onRate, onRateBatch, busyId }) {
   const calibration = loop.calibration;
   const negativeLearning = loop.negativeLearning;
   const refinement = loop.refinement;
-  if (!versions.length && !awaiting.length) return null;
+  if (!versions.length && !awaiting.length && !loop.lanes) return null;
   return (
     <Box sx={{ mt: 2.5 }}>
-      <Heading aside={<Small>見本への一言と、潜水艦の成果への評価を、作った版ごとに数えています</Small>}>合格率（版ごと）</Heading>
+      <Heading aside={<Small>探索・検証・過去の混合評価は実力測定とは別です</Small>}>合格率（版ごと・混合）</Heading>
+      {loop.lanes?.current&&(
+        <Box sx={{my:1.5,p:1.5,border:'1px solid '+V.rule,borderRadius:1.5}}>
+          <Typography sx={{fontSize:13.5,fontWeight:850,mb:1}}>承認版の学習・実力測定</Typography>
+          <Stack direction="row" flexWrap="wrap" gap={2}>
+            {Object.entries({capability:'実力測定',exploration:'探索',validation:'仮説の対照検証',legacy_unclassified:'過去・分類なし'}).map(([key,label])=>{
+              const lane=loop.lanes.current[key];
+              return <Box key={key} sx={{minWidth:100}}><Typography sx={{fontSize:12,color:V.muted}}>{label}</Typography><Typography sx={{fontSize:18,fontWeight:850}}>{lane?.rated?percent(lane.passRate):'未測定'}</Typography><Typography sx={{fontSize:11.5,color:V.faint}}>{lane?.rated||0}件評価</Typography></Box>;
+            })}
+          </Stack>
+          <Typography sx={{fontSize:11.5,color:V.muted,mt:1}}>実力は未見素材の事前登録済み課題でのみ測定。旧評価は移し替えません。</Typography>
+          {(loop.capabilityHealth?.comparisons||[]).map(c=><Typography key={c.benchmarkKey} sx={{fontSize:12,mt:.5}}>{c.benchmarkKey}：{c.current.rated}件 / 前版 {c.previous?.rated||0}件 — {c.status==='regression_alert'?'悪化の可能性':c.status==='improvement_signal'?'改善の兆候':'比較未確定'}</Typography>)}
+          {(loop.metaLearning||[]).map(m=><Typography key={m.version} sx={{fontSize:12,mt:.5}}>研究メタSkill v{m.version}：{m.runCount} run / {m.rated}件評価（因果未確定）</Typography>)}
+        </Box>
+      )}
       {versions.map((g) => (
         <Stack key={g.version} direction="row" gap={1.5} alignItems="baseline" flexWrap="wrap" sx={{ py: 1, borderBottom: '1px solid ' + V.rule }}>
           <Typography sx={{ fontSize: 14.5, fontWeight: 850, minWidth: 150 }}>{g.version}{g.released ? '（いまの版）' : ''}</Typography>
@@ -644,6 +658,25 @@ function SkillEvidenceGraph({ baseId }) {
               次の研究runで対象Hの反例・条件を横断比較して、各枝の維持／分割／修正／統合／引退と反証条件を記録してください。
               {graph.stewardship.feedbackReview.overflowCount>0?' 履歴レビュー待ちが上限を超えています。':''}
             </Alert>
+          )}
+          {!!graph.stewardship?.pruning&&(
+            <Box sx={{border:'1px solid',borderColor:'divider',borderRadius:2,p:1.5,mb:2}}>
+              <Typography sx={{fontWeight:900,fontSize:13.5}}>規則の剪定・圧縮</Typography>
+              <Typography sx={{fontSize:12,color:V.muted}}>{graph.stewardship.pruning.bodyCharacters}字 / 目安 {graph.stewardship.pruning.softBudgetCharacters}字 · 完全重複候補 {graph.stewardship.pruning.duplicateGroupCount}群</Typography>
+              {graph.stewardship.pruning.exactDuplicates.map((g,i)=><Typography key={i} sx={{fontSize:11.5,mt:.5}}>{g.ruleIds.join(' / ')}（{g.sections.join(' / ')}）</Typography>)}
+              <Typography sx={{fontSize:11.5,color:V.muted,mt:.5}}>固有のニュアンスと根拠を保持し、比較検証なしの自動削除はしません。</Typography>
+            </Box>
+          )}
+          {!!graph.stewardship?.fieldObservations?.length&&(
+            <Box sx={{border:'1px solid',borderColor:'divider',borderRadius:2,p:1.5,mb:2}}>
+              <Typography sx={{fontWeight:900,fontSize:13.5}}>実戦観測（本人評価とは別）</Typography>
+              {graph.stewardship.fieldObservations.slice(0,12).map(o=><Box key={o.id} sx={{py:.8,borderBottom:'1px solid',borderColor:'divider'}}>
+                <Typography sx={{fontSize:12,fontWeight:800}}>{o.id} · {o.title}</Typography>
+                <Typography sx={{fontSize:11.5}}>{Object.entries(o.metrics||{}).map(([k,v])=>k+': '+v).join(' / ')}</Typography>
+                <Typography sx={{fontSize:11.5,color:V.muted}}>{o.observedAt} · {o.window} · {o.skillVersion?'版 '+o.skillVersion+'（申告）':'版帰属不明'}</Typography>
+                <Typography sx={{fontSize:11.5,color:V.muted}}>{o.comparison}</Typography>
+              </Box>)}
+            </Box>
           )}
           {!!graph.skillRules?.inventory?.count&&(
             <Box sx={{border:'1px solid',borderColor:'divider',borderRadius:2,p:1.5,mb:2}}>
