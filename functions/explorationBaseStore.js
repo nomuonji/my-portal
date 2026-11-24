@@ -1856,6 +1856,23 @@ function createStore(options) {
       const base = await loadBase(tx, id);
       const runId = requireOpenRun(base, text(input.runId, 20, 'runId', false));
       const run = runId ? value(await tx.get(runRef(id, runId))) : null;
+      // An explicit user-owned submission hold is not a forecast threshold.
+      // Neither a new run, a revised Skill, nor an agent's screening packet
+      // can reopen submission. Existing ratings and research remain usable.
+      // Read the current constraint inside the transaction before any writes.
+      if (!backfill && input.trials.some(raw => {
+        const ref = text(raw?.ref, 600, 'trial.ref', false);
+        return !ref || !existing.some(t => t.ref === ref);
+      })) {
+        const holdIds = items.filter(k => k.kind === 'constraint'
+          && (k.legacyIds || []).includes('buzz-user-submission-hold')).map(k => k.id);
+        for (const holdId of holdIds) {
+          const hold = value(await tx.get(itemRef(id, holdId)));
+          if (hold?.owner === 'user' && hold.status === 'active') {
+            throw new Error('User-owned submission HOLD (' + holdId + '): new user-facing trials are blocked. Research and internal drafts may continue; do not show unregistered drafts or treat a new run, forecast, or self-review as release. Only explicit user authorization can relax this constraint.');
+          }
+        }
+      }
       const fresh = input.trials.map((raw) => plain(raw, 'trial')).filter((raw) => {
         const ref = text(raw.ref, 600, 'trial.ref', false);
         const duplicate = ref && existing.find((t) => t.ref === ref);
