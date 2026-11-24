@@ -140,12 +140,16 @@ async function get(input={}){
     consumerModelVersion:input.consumerModelVersion,includeRelations:true,
   }):null;
   result.execution={entry:entry?{id:entry.id,title:entry.title,revision:entry.revision,
-      versionPolicy:entry.versionPolicy,body:entry.body}:null,
+      versionPolicy:entry.versionPolicy,body:entry.body,qualitativeEvidence:entry.qualitativeEvidence||[]}:null,
+    qualitativeEvidence:await Promise.all(release.map(async d=>{
+      try{return await require('./explorationBaseStore').skillCasebook({baseId:d.baseId,releasedVersion:d.releasedVersion,limit:2});}
+      catch(error){return {baseId:d.baseId,status:'unavailable',reason:String(error.message||error).slice(0,300)};}
+    })),
     resourceDependencies:resourceView?.resourceDependencies||[],
     selectedConsumerModel:resourceView?.selectedConsumerModel||null,
     requiredResourcesNotYetUsed:resourceView?.requiredResourcesNotYetUsed||[],
     members:members.map((s,i)=>({...selected[i],title:s.title,
-      revision:s.revision,versionPolicy:s.versionPolicy,body:s.body})),
+      revision:s.revision,versionPolicy:s.versionPolicy,body:s.body,qualitativeEvidence:s.qualitativeEvidence||[]})),
     supportingPacks:(definition.intelligenceIds||[]).map(id=>({id,registry:'skillPacks',resolver:'skill_pack_get'})),
     intelligenceReferences:(definition.intelligenceIds||[]).map(id=>({id,registry:'intelligencePacks',
       resolver:'intelligence_pack_get (legacy compatibility)'})),
@@ -210,15 +214,19 @@ async function getLegacyPack(input={}){
     consumerModelVersion:input.consumerModelVersion,includeRelations:true,
   }):null;
   result.execution={
+    qualitativeEvidence:await Promise.all((release.dojos||[]).map(async d=>{
+      try{return await require('./explorationBaseStore').skillCasebook({baseId:d.baseId,releasedVersion:d.releasedVersion,limit:2});}
+      catch(error){return {baseId:d.baseId,status:'unavailable',reason:String(error.message||error).slice(0,300)};}
+    })),
     resourceDependencies:resourceView?.resourceDependencies||[],
     selectedConsumerModel:resourceView?.selectedConsumerModel||null,
     requiredResourcesNotYetUsed:resourceView?.requiredResourcesNotYetUsed||[],
     instructions:result.definition.instructions,
     stages,
     entry:actualEntry?{id:actualEntry.id,title:actualEntry.title,revision:actualEntry.revision,
-      versionPolicy:actualEntry.versionPolicy,body:actualEntry.body}:null,
+      versionPolicy:actualEntry.versionPolicy,body:actualEntry.body,qualitativeEvidence:actualEntry.qualitativeEvidence||[]}:null,
     members:actualMembers.map(s=>({id:s.id,skillId:s.id,title:s.title,revision:s.revision,
-      versionPolicy:s.versionPolicy,body:s.body})),
+      versionPolicy:s.versionPolicy,body:s.body,qualitativeEvidence:s.qualitativeEvidence||[]})),
     versionNumber:result.definition.versionNumber,
     source:'Legacy immutable version served through Skill Pack; no copied mutable Intelligence record',
   };
