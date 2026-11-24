@@ -383,3 +383,34 @@ test('unlinked edits and ambiguous repeated text never inherit proof',()=>{
   assert.ok(result.entries.every(r=>r.hypothesisIds.length===0));
   assert.ok(result.changes.every(x=>x.proposalId===null));
 });
+
+
+test('texture casebook retains the actual original and prioritizes linked contrast without inventing causal support',()=>{
+ const {selectCasebook,validateTextureReview}=require('../functions/dojoTextureEvidence');
+ const base={id:'sample',method:{version:'v2',bodyRef:{versionNumber:2}},
+   ruleInventory:{methodVersion:'v2',entries:[{id:'SR-1',supportingTrialIds:['T-001'],counterexampleTrialIds:['T-002']}]}};
+ const trial=(id,verdict,body,at)=>({id,status:'rated',verdict,body,ratedAt:at,methodVersion:'v2',hypothesisIds:['H-001'],userWords:verdict});
+ const trials=[trial('T-001','pass','Actually...\n\n  one more word.','2026-01-01'),
+   trial('T-002','fail','Actually, one more word.','2026-01-02'),
+   trial('T-003','pass','Another recent example.','2026-01-03')];
+ const review={cases:[
+   {caseId:'T-001',anchor:'Actually...\n\n  one more word.',observation:'A pause and extra indentation separate the final phrase.',context:'The original wording and line spacing are preserved.'},
+   {caseId:'T-002',anchor:'Actually, one more word.',observation:'The comma keeps the sentence in a single steady phrase.',context:'The near-neighbor example lacks the abrupt visual pause.'}
+ ],distinction:'Line spacing and punctuation create a different reading rhythm.',
+ transfer:'Test the pause without copying the wording on an independent artifact.',
+ boundary:'Extra whitespace could become artificial when the speaker would not pause.',
+ uncertainty:'This contrast is not proof of the reason for the human rating.'};
+ const textureReview=validateTextureReview(review,{trials});
+ assert.equal(textureReview.cases[0].anchor,review.cases[0].anchor);
+ assert.equal(textureReview.cases[0].provenance,'agent_observation_not_user_reason');
+ assert.throws(()=>validateTextureReview({...review,cases:[review.cases[0],{...review.cases[1],anchor:'unrecorded text'}]},{trials}),/anchor must quote exact/);
+ const items=[{id:'H-001',kind:'hypothesis',statement:'Pausing may matter',textureReview}];
+ const book=selectCasebook({base,items,trials,limit:2});
+ assert.deepEqual(book.cases.map(x=>x.id),['T-001','T-002']);
+ assert.equal(book.cases[0].body,trials[0].body);
+ assert.deepEqual(book.cases[1].ruleIds,['SR-1']);
+ assert.equal(book.hypotheses[0].textureReview.distinction,review.distinction);
+ const legacy=selectCasebook({base:{id:'sample',method:{version:'v2'}},items,trials,limit:2});
+ assert.ok(legacy.cases.every(c=>c.role==='observational_human_feedback'));
+ assert.equal(selectCasebook({base,items,trials:[],limit:2}).cases.length,0);
+});
