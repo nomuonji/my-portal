@@ -12,6 +12,10 @@ const MAX_WINDOW_MINUTES = 120;
 const EARLY_WAKE_GRACE_MINUTES = 10;
 const RUNNER_SLOTS = Object.freeze(['04:30','08:30','10:30','14:30','16:30','20:30']);
 const MAX_JOBS_PER_TICK = 3;
+// A claimed routine job that never called finish must not remain "running" forever.
+// Reconciliation only records an execution failure; it never assumes the outcome
+// of any asynchronous work in the specialist Operator.
+const STALLED_RUN_MS = 3 * 60 * 60 * 1000;
 const PRIORITIES = Object.freeze({critical:0,normal:1,background:2});
 
 function db() { return getDocumentDb(DATABASE); }
@@ -134,8 +138,44 @@ function candidate(job, local) {
   if (!slot) return null;
   return { slotKey: local.day + '@' + slot, runId: job.id + '--' + local.day.replace(/-/g, '') + '--' + slot.replace(':', '') };
 }
+function isStalledRun(run, nowMs) {
+  const started = Date.parse(String(run?.startedAt ?? ''));
+  return run?.status === 'running' && Number.isFinite(started) &&
+    nowMs - started > STALLED_RUN_MS;
+}
+async function reconcileStalledRuns(nowMs = Date.now()) {
+  const database = db();
+  const snapshot = await database.collection(RUNS).where('status', '==', 'running').limit(50).get();
+  let reconciled = 0;
+  for (const item of snapshot.docs) {
+    if (!isStalledRun(item.data(), nowMs)) continue;
+    // Re-read inside a transaction: a legitimate finish always wins the race.
+    const changed = await database.runTransaction(async (tx) => {
+      const current = await tx.get(item.ref);
+      if (!current.exists || !isStalledRun(current.data(), nowMs)) return false;
+      tx.update(item.ref, {
+        status: 'failed',
+        resultSummary: 'RUNNER_DID_NOT_FINISH: claimed routine run exceeded 3h without routine_job_finish. Execution outcome is unverified; no specialist artifacts were inferred.',
+        validation: 'Watchdog reconciliation only: specialist-system draft/brief IDs and counts were not read back. This is NOT a confirmed zero-save outcome.',
+        result: { blockers: [{ code: 'RUNNER_DID_NOT_FINISH', runId: item.id }], reconciledAfterStall: true },
+        finishedAt: new Date(nowMs).toISOString(),
+      });
+      return true;
+    });
+    if (changed) reconciled += 1;
+  }
+  return reconciled;
+}
 async function due(input = {}) {
   const now = input.at ? new Date(input.at).getTime() : Date.now();
+  // Reconcile abandoned claims during the existing wake, without creating
+  // another timer or interfering with due job discovery if cleanup fails.
+  let reconciledStalledRuns = 0;
+  try {
+    reconciledStalledRuns = await reconcileStalledRuns(now);
+  } catch (error) {
+    console.error('[Routine Jobs] stale run reconciliation failed:', error);
+  }
   const local = jst(now), state = await list();
   const candidates = state.items.map(job=>({job,slot:candidate(job,local)})).filter(item=>item.slot);
   // Fetch slot claims concurrently; ordering by priority avoids starving stock refills
@@ -148,6 +188,7 @@ async function due(input = {}) {
     .map(({job,slot})=>({...job,...slot}));
   return { generatedAt:new Date(now).toISOString(),timeZone:'Asia/Tokyo',items,
     slotLoads:state.slotLoads,capacity:MAX_JOBS_PER_TICK,
+    reconciledStalledRuns,
     totalActive:state.items.filter(j=>j.status==='active').length };
 }
 async function claim(input = {}) {
@@ -220,4 +261,4 @@ async function remove(input = {}) {
   await ref.delete();
   return { id, title: job.title, preservedRunHistory: history.docs.length, deleted: true };
 }
-module.exports = { list, upsert, remove, due, claim, finish, runs, RUNNER_SLOTS, MAX_JOBS_PER_TICK, EARLY_WAKE_GRACE_MINUTES, validatedInstructions, candidate, validateSlots, validateCapacity, slotLoadsFor, jst };
+module.exports = { list, upsert, remove, due, claim, finish, runs, RUNNER_SLOTS, MAX_JOBS_PER_TICK, EARLY_WAKE_GRACE_MINUTES, STALLED_RUN_MS, isStalledRun, validatedInstructions, candidate, validateSlots, validateCapacity, slotLoadsFor, jst };
