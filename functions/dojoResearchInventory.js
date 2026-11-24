@@ -6,15 +6,18 @@
 // human-rated results.
 const { createHash } = require('node:crypto');
 const { ratedEntries } = require('./explorationLoop');
+const {artifact}=require('./dojoTextureEvidence');
 
 const HYPOTHESES_PER_PAGE = 12;
-const FEEDBACK_PER_PAGE = 25;
+const FEEDBACK_PER_PAGE = 10; // original artifacts are included; keep pages readable
 
 function buildResearchInventory(hypotheses = [], trials = [], feedbackLog = [], runs = []) {
+  const originals=new Map(trials.map(t=>[t.id,artifact(t)]));
   const ratings = ratedEntries(trials, feedbackLog).map(e => ({
     id: e.id, kind: e.kind, verdict: e.verdict, userWords: e.userWords || '',
     failStage: e.failStage || '', label: e.label || '', at: e.at || '',
     version: e.version || null, hypothesisIds: e.hypothesisIds || [],
+    originalArtifact:e.kind==='trial'?(originals.get(e.id)||null):null,
   }));
   const byHypothesis = new Map();
   for (const e of ratings) for (const id of new Set(e.hypothesisIds)) {
@@ -29,7 +32,7 @@ function buildResearchInventory(hypotheses = [], trials = [], feedbackLog = [], 
       status: h.status || 'open', stage: h.stage || 'conjecture',
       pipelineStage: h.pipelineStage || 'unknown',
       statement: h.statement || '', mechanism: h.mechanism || '',
-      limits: h.limits || '', evidence: (h.evidence || []).map(e => ({
+      limits: h.limits || '', textureReview:h.textureReview||null, researchProtocol:h.researchProtocol||null, formationReview:h.formationReview||null, evidence: (h.evidence || []).map(e => ({
         type: e.type, ref: e.ref || '', source: e.source || '', date: e.date || '',
       })),
       counterexamples: h.counterexamples || [],
