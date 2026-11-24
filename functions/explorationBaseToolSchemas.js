@@ -181,6 +181,7 @@ const tools = [
         action:{type:'string',enum:['add','replace','retire']},
         moduleId:{type:'string',enum:['root','source','selection','transform','voice','gate','audience']},
         sourceMethodVersion:string('Exact method version label currently pinned by this dojo.',80),
+        existingRuleId:string('Optional current SR-... rule ID from graph.skillRules.inventory. For replace/retire, the server resolves its exact text; longer rules also require a unique quote.',40),
         existingRuleAnchor:string('For replace/retire: exact unique 16-600 character quote from the pinned Skill or Pack body. Not inferred by LLM.',600),
         replacementText:string('For add/replace: proposed 16-1200 character new rule. Never auto-adopted.',1200),
         hypothesisIds:strings('1-4 real positive H-nnn hypotheses governing this rule.',4),
