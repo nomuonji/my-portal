@@ -571,8 +571,18 @@ function createStore(options) {
       const target=await resolveTarget({kind:bodyRef.kind,id:bodyRef.location,versionNumber:bodyRef.versionNumber});
       targetBody=target.body||'';
     }
-    const proposal=makeRuleProposal(input?.proposal,{method:base.method,body:targetBody,hypotheses:items,trials});
     const inventory=inventoryView(targetBody,base.method?.version||'',base.ruleInventory,true);
+    const raw={...input?.proposal};
+    if(raw.existingRuleId){
+      if(raw.action==='add')throw Error('Add does not target an existing rule ID');
+      const rule=inventory.rules.find(r=>r.id===raw.existingRuleId);
+      if(!rule)throw Error('Unknown rule ID in the pinned Skill version; reread its inventory');
+      if(raw.existingRuleAnchor&&!rule.text.includes(raw.existingRuleAnchor))
+        throw Error('Rule ID and quoted passage do not match');
+      if(!raw.existingRuleAnchor)raw.existingRuleAnchor=rule.text.trim();
+      if(raw.existingRuleAnchor.length>600)throw Error('Rule is longer than 600 characters; also supply a unique exact passage of the rule');
+    }
+    const proposal=makeRuleProposal(raw,{method:base.method,body:targetBody,hypotheses:items,trials});
     const matches=proposal.existingRuleAnchor?inventory.rules.filter(r=>r.text.includes(proposal.existingRuleAnchor)):[];
     proposal.inventoryRuleId=matches.length===1?matches[0].id:null;
     const ref=ruleProposalRef(id,proposal.id);
@@ -1073,7 +1083,7 @@ function createStore(options) {
           replaced:ruleInventory.changes.filter(x=>x.action==='replace').length,
           retired:ruleInventory.changes.filter(x=>x.action==='retire').length,
           linked:ruleInventory.changes.filter(x=>x.proposalId).length,
-          changes:ruleInventory.changes},
+          changes:ruleInventory.changes.slice(0,100),omittedChanges:Math.max(0,ruleInventory.changes.length-100)},
         replaced: base.method ? { version: loop.current.version, rated: loop.current.rated, pass: loop.current.pass, passRate: loop.current.passRate } : null,
         ...(userDirected ? { authorizationNote: userDirected } : {}),
       }].slice(-100);
