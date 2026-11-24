@@ -666,6 +666,26 @@ test('buzz dojo blocks low-confidence, one-shot, invented-reference or unscreene
     riskResolution: 'Its wording depicts the action and unexpected additional consequence.',
     bodyAnchor: '予想外の二段目が', decision: 'submit',
   };
+  // A real user hold overrides an otherwise valid candidate, including a
+  // perfect self-forecast. It is not cleared by the agent's completed research.
+  const hold = await store.upsertItems({ baseId, kind: 'constraint', ...auth, items: [{
+    owner: 'user', statement: 'Hold new submissions until expressly released.',
+    legacyIds: ['buzz-user-submission-hold'],
+  }] });
+  const holdId = hold.changed[0].id;
+  await assert.rejects(store.recordTrials({ baseId, runId, trials: [{
+    ...trial, predictedPass: 1, editorialScreen: audit, learningAudit: transferAudit,
+  }] }), /User-owned submission HOLD/);
+  await assert.rejects(store.upsertItems({ baseId, kind: 'constraint', items: [{
+    id: holdId, status: 'relaxed',
+  }] }), /owned by the user/);
+  const held = await store.get({ id: baseId, view: 'full' });
+  assert.equal(held.full.trials.length, 3, 'the refused candidate must not create a trial');
+  // Explicit owner authorization releases the hold without altering prior
+  // ratings or replacing the ordinary quality gates.
+  await store.upsertItems({ baseId, kind: 'constraint', ...auth, items: [{
+    id: holdId, status: 'relaxed',
+  }] });
   const accepted = await store.recordTrials({ baseId, runId, trials: [{
     ...trial, predictedPass: 0.35, editorialScreen: audit, learningAudit: transferAudit,
   }] });
