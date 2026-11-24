@@ -3,6 +3,7 @@
 const { refinementView } = require('./hypothesisRefinement');
 const { negativeLearning: negativeLearningView } = require('./dojoNegativeReview');
 const { learningView } = require('./dojoLearning');
+const {laneView,capabilityComparison,metaUsage}=require('./dojoLearningEfficiency');
 
 // The improvement loop of a スキル錬成道場, as numbers. A trial is one sample shown to the user, registered
 // with the hypotheses it tests and the predicted chance of passing before the user rates it. The pass rate
@@ -98,7 +99,10 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
   const current = byVersion.find((g) => g.released) || { version: currentKey, released: true, ...tally([]) };
   // The version to beat: the most recently rated earlier version with enough ratings to compare.
   const previous = byVersion.find((g) => !g.released && g.rated >= LIMITS.minRatedPerVersion) || null;
-  const releaseHealth=releaseRegressionHealth(current,previous,base?.outcome?.confirmedBy==='measurement');
+  const mixedReleaseHealth=releaseRegressionHealth(current,previous,base?.outcome?.confirmedBy==='measurement');
+  const lanes=laneView(trials||[],base);
+  const capabilityHealth=capabilityComparison(trials||[],base,releaseRegressionHealth);
+  const releaseHealth={...mixedReleaseHealth,scope:'mixed_historical_ratings_not_capability',advisoryOnly:true};
 
   const { measureCalibration } = require('./dojoCalibration');
   const calibration = measureCalibration(entries);
@@ -169,17 +173,18 @@ function loopView({ trials, feedbackLog, base, hypotheses }) {
     .forEach((h) => nextActions.push(h.id + ' は ' + h.rated + ' 回試して合格 0。棄却する（exploration_item_upsert status=rejected）。'));
   scoreboard.filter((h) => h.status === 'open' && h.rated >= LIMITS.hypothesisMinTrials && h.passRate >= 0.6)
     .forEach((h) => nextActions.push(h.id + ' は合格率 ' + Math.round(h.passRate * 100) + '%（' + h.rated + ' 回）。勝ち筋の候補。本文に入れるなら、既存の規則を書き換え・統合して入れる（末尾への追記はしない）。'));
-  if(releaseHealth.status==='regression_alert') nextActions.push('現行版の合格率が前版より統計的に悪化している可能性。規則差分・素材と評価条件を監査し、根拠のない昇格を止め、独立の差戻し案を審査する。');
+  if(capabilityHealth.comparisons.some(c=>c.status==='regression_alert')) nextActions.push('同一ベンチマークの実力測定で悪化の可能性。規則差分・素材条件を監査し、独立した差戻し案を審査する。');
+  if(!measurementMode&&!lanes.current.capability.rated)nextActions.push('承認版の実力は未測定。次回の適切な周回で新規素材を事前登録し、探索と別に capability を測る。');
   if (usesTrials && !canRelease) nextActions.push('いまの版の評価は ' + current.rated + ' 件。' + LIMITS.minRatedPerVersion + ' 件たまるまで版を上げない。');
   if (previous && current.rated >= LIMITS.minRatedPerVersion && current.passRate < previous.passRate) {
-    nextActions.push('いまの版の合格率 ' + Math.round(current.passRate * 100) + '% は、前の版 ' + previous.version + ' の ' + Math.round(previous.passRate * 100) + '% を下回っている。増やした規則を疑う。');
+    nextActions.push('探索も含む混合評価の合格率 ' + Math.round(current.passRate * 100) + '% は、前の版 ' + previous.version + ' の ' + Math.round(previous.passRate * 100) + '% を下回っている。実力の悪化とは断定せず、比較可能な実力測定と規則差分を点検する。');
   }
 
   return {
     metric: measurementMode ? 'measured_outcome' : 'pass_rate',
     overall: tally(entries),
     recent: tally(entries.slice(-10)),
-    current, previous, byVersion, releaseHealth,
+    current, previous, byVersion, releaseHealth, lanes, capabilityHealth, metaLearning:metaUsage(trials||[]),
     awaiting: awaiting.map((t) => ({ id: t.id, label: t.label, body: t.body || '',
       ref: t.ref || '', imageUrl: t.imageUrl || '', mediaUrl: t.mediaUrl || '',
       reviewStatus: trialArtifactStatus(t).status, reviewReason: trialArtifactStatus(t).reason,
@@ -199,6 +204,10 @@ function loopSummary(view) {
     currentVersion: view.current.version, currentRated: view.current.rated, currentPassRate: view.current.passRate,
     previousVersion: view.previous?.version || null, previousPassRate: view.previous?.passRate ?? null,
     awaiting: view.awaiting.length, failStreak: view.failStreak,
+    capabilityRated:view.lanes.current.capability.rated,capabilityPassRate:view.lanes.current.capability.passRate,
+    explorationRated:view.lanes.current.exploration.rated,explorationPassRate:view.lanes.current.exploration.passRate,
+    validationRated:view.lanes.current.validation.rated,validationPassRate:view.lanes.current.validation.passRate,
+    metaLearning:view.metaLearning||[],
     hitRate: view.calibration?.hitRate ?? null,
     screening: view.screening,
     negativeLearning: { status: view.negativeLearning.status,

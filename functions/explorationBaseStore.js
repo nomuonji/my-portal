@@ -16,6 +16,7 @@ const { checkBuzzSubmissionRecovery, unreliableNegativeReviews } = require('./do
 const { makeRuleProposal, assessRuleProposal } = require('./dojoRuleMerge');
 const { buildInventory, inventoryView } = require('./dojoRuleInventory');
 const {validateTextureReview,selectCasebook}=require('./dojoTextureEvidence');
+const efficiency=require('./dojoLearningEfficiency');
 const { planSkillTransfers } = require('./dojoSkillTransfer');
 const { enqueueFeedback, validateReview, applyReviews, cyclePreflight, assertCyclePrepared } = require('./dojoSkillFeedbackQueue');
 
@@ -517,6 +518,13 @@ function createStore(options) {
       hypothesisIds:p.hypothesisIds,
       eligibility:assessRuleProposal(p,{method:base.method,graph,trials}),
     })),note:'Exact released text inventory and evidence-linked change proposals. Legacy block boundaries are projections; neither a block nor a proposal implies empirical validation.'};
+    graph.stewardship.pruning=efficiency.pruningView(inventory,ruleBody,proposals);
+    graph.stewardship.fieldObservations=items.filter(s=>s.kind==='source'&&s.fieldObservation).map(s=>({id:s.id,title:s.title,...s.fieldObservation}));
+    graph.stewardship.metaLearning=efficiency.metaUsage(trials);
+    if(id===efficiency.META_SKILL_ID){
+      const others=await listBases({});
+      graph.stewardship.downstreamMetaLearning={status:'observational_only',bases:others.items.filter(b=>b.id!==id).map(b=>({baseId:b.id,title:b.title,methodVersion:b.methodVersion,uses:b.loop?.metaLearning||[]})),instructions:'Read actual source dojo runs and original human-rated cases before proposing changes. Do not pool domains or attribute downstream ratings to the research Skill without controlled comparisons.'};
+    }
     return graph;
   }
 
@@ -662,6 +670,13 @@ function createStore(options) {
       if (run.researchReview.digest !== inventory.hash) throw new Error('Historical evidence changed after reading; restart research review');
       const synthesis = validateResearchSynthesis(input?.synthesis, inventory);
       if(input.textureReview) synthesis.textureReview=validateTextureReview(input.textureReview,{trials,items});
+      if(input.metaSkillVersion!==undefined){
+        const v=Number(input.metaSkillVersion);
+        const meta=value(await tx.get(baseRef(efficiency.META_SKILL_ID)));
+        if(!Number.isInteger(v)||v<1||meta?.method?.bodyRef?.location!==efficiency.META_SKILL_ID||meta.method.bodyRef.versionNumber!==v)
+          throw Error('Read the current approved hypothesis-formation-analysis Skill before recording metaSkillVersion');
+        synthesis.metaSkillVersion=v;
+      }
       synthesis.textureReviewStatus=synthesis.textureReview?'grounded_observations':'legacy_analysis_without_structured_texture';
       const pending=base.treeMaintenance?.pendingTrialIds||[];
       const pendingExternal=base.treeMaintenance?.pendingExternalRefs||[];
@@ -1179,6 +1194,10 @@ function createStore(options) {
       if (raw.statement !== undefined) item.statement = text(raw.statement, 1500, 'source.statement', false);
       if (raw.sourceRole !== undefined) item.sourceRole = oneOf(raw.sourceRole, ['source','observation','idea'], 'source.sourceRole');
       if (creating) item.sourceRole = item.sourceRole || 'source';
+      if(raw.fieldObservation!==undefined){
+        if(item.sourceRole!=='observation')throw Error('fieldObservation requires sourceRole=observation');
+        item.fieldObservation=efficiency.fieldObservation(raw.fieldObservation);
+      }
       if (raw.originalProof !== undefined) {
         const p=plain(raw.originalProof,'source.originalProof');
         const originalUrl=text(p.originalUrl,1000,'originalProof.originalUrl',true);
@@ -1494,6 +1513,7 @@ function createStore(options) {
         objective: text(input.objective, 800, 'objective', true),
         methodVersion: base.method.version, outcomeRevision: base.outcome.revision,
         targets: cleanTargets, ...(negativeTargets.length ? { negativeTargets, negativeTargetOrigin } : {}), unknownTerritoryProbe: probe, ...(experimentDesign ? { experimentDesign } : {}),
+        ...(input.capabilityPlan?{capabilityPlan:efficiency.capabilityPlan(input.capabilityPlan)}:{}),
         ...(crossDojoEvidence.length ? { crossDojoEvidence } : {}),
       };
       put(tx, runRef(id, runId), run);
@@ -1959,6 +1979,7 @@ function createStore(options) {
             throw new Error('User feedback changed since the historical synthesis; open a new run and re-read all hypotheses and feedback before another trial');
           }
         }
+        const capabilityEvidence=backfill?null:efficiency.checkCapability(raw,run,existing,fresh,base);
         base.counters.T = (base.counters.T || 0) + 1;
         const at = now();
         const trial = {
@@ -1970,6 +1991,8 @@ function createStore(options) {
           mediaUrl: publicMediaUrl(raw.mediaUrl), hypothesisIds, sourceIds: list(raw.sourceIds, 10, 20),
           executionResources: require('./dojoResourceEvidence').cleanExecutionResources(raw.executionResources),
           ...cleanGraphTrialMetadata(raw),
+          ...(!backfill&&!raw.evaluationPhase?{evaluationPhase:'exploration'}:{}),
+          ...(capabilityEvidence?{capabilityEvidence}:{}),
           predictedPass: predicted, predictionNote: text(raw.predictionNote, 600, 'trial.predictionNote', false),
           ...(editorialScreen ? { format: editorialScreen.format, editorialScreen } : {}),
           ...(qualityRecovery?.recoveryRequired ? { qualityRecovery } : {}),
@@ -1979,7 +2002,8 @@ function createStore(options) {
             pagesRead:run.researchReview.pages, totalHypotheses:run.researchReview.totalHypotheses,
             totalFeedback:run.researchReview.totalFeedback, action:run.researchReview.synthesis.action,
             thesisId:run.researchReview.synthesis.thesisId, antithesisId:run.researchReview.synthesis.antithesisId,
-            synthesizedAt:run.researchReview.synthesizedAt, } } : {}),
+            synthesizedAt:run.researchReview.synthesizedAt,
+            ...(run.researchReview.synthesis.metaSkillVersion?{metaSkillVersion:run.researchReview.synthesis.metaSkillVersion}:{}), } } : {}),
           ...(run?.recallProbe?.status === 'passed' ? { recallEvidence: {
             runId, correct: run.recallProbe.correct, total: run.recallProbe.total,
             studyCaseIds: run.recallProbe.studyCaseIds, challengeCaseIds: run.recallProbe.challengeCaseIds,
@@ -2007,7 +2031,7 @@ function createStore(options) {
 
   function cleanGraphTrialMetadata(raw) {
     const phase = raw.evaluationPhase === undefined ? null :
-      oneOf(raw.evaluationPhase,['exploration','validation'],'trial.evaluationPhase');
+      oneOf(raw.evaluationPhase,efficiency.PHASES,'trial.evaluationPhase');
     const segmentKey=text(raw.segmentKey,120,'trial.segmentKey',false);
     const materialKey=text(raw.materialKey,120,'trial.materialKey',false);
     const comparisonKey=text(raw.comparisonKey,120,'trial.comparisonKey',false);
@@ -2221,7 +2245,7 @@ function createStore(options) {
     if(!base||Number(base.method?.bodyRef?.versionNumber)!==Number(input.releasedVersion))
       throw Error('Skill casebook release changed; resolve the approved version again');
     const [items,trials]=await Promise.all([loadItems(id),loadTrials(id)]);
-    return selectCasebook({base,items,trials,limit:input.limit===2?2:4});
+    return selectCasebook({base,items,trials,limit:input.limit===2?2:4,topic:input.topic,hypothesisIds:input.hypothesisIds});
   }
 
   // Retarget a released legacy Intelligence workflow to its equivalent Skill Pack

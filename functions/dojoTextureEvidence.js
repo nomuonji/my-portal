@@ -40,7 +40,21 @@ function validateTextureReview(raw,{trials=[],items=[]}={}){
 }
 // Prefer explicit released rule evidence, then a relevant same-branch contrast
 // and current/recent real human examples. Never imply recent cases are approved rules.
-function selectCasebook({base,items=[],trials=[],limit=4}){
+// Small lexical retrieval baseline; Japanese character bigrams preserve
+// terminology without requiring a paid embedding service. Relevance is not quality.
+function tokens(s){
+ const clean=String(s||'').toLowerCase().normalize('NFKC');
+ const words=clean.match(/[a-z0-9_]{2,}/g)||[];
+ const japanese=clean.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}ー]{2,}/gu)||[];
+ for(const word of japanese)for(let i=0;i<word.length-1;i++)words.push(word.slice(i,i+2));
+ return new Set(words);
+}
+function relevance(query,body){
+ const a=tokens(query),b=tokens(body);
+ if(!a.size)return 0;
+ return [...a].filter(x=>b.has(x)).length/a.size;
+}
+function selectCasebook({base,items=[],trials=[],limit=4,topic='',hypothesisIds=[]}){
   const rated=trials.filter(t=>t.status==='rated'&&['pass','partial','fail'].includes(t.verdict)&&(t.body||t.imageUrl||t.mediaUrl||t.ref))
     .sort((a,b)=>String(b.ratedAt||b.createdAt||'').localeCompare(String(a.ratedAt||a.createdAt||'')));
   const rules=base.ruleInventory?.methodVersion===base.method?.version?base.ruleInventory.entries||[]:[];
@@ -49,22 +63,37 @@ function selectCasebook({base,items=[],trials=[],limit=4}){
     if(!linked.has(id))linked.set(id,[]);
     linked.get(id).push(r.id);
   }
+  const requested=new Set(Array.isArray(hypothesisIds)?hypothesisIds:[]);
+  const itemById=new Map(items.map(h=>[h.id,h]));
+  const score=t=>{
+    const h=(t.hypothesisIds||[]).map(id=>itemById.get(id)).filter(Boolean);
+    const refs=(t.sourceIds||[]).map(id=>itemById.get(id)).filter(Boolean);
+    return 3*(t.hypothesisIds||[]).filter(id=>requested.has(id)).length+
+      relevance(topic,[t.label,t.body,...h.flatMap(x=>[x.title,x.statement,x.textureReview?.distinction]),
+        ...refs.flatMap(x=>[x.title,x.originalProof?.excerpt])].join(' '));
+  };
+  const relevant=Boolean(topic||requested.size);
+  if(relevant)rated.sort((a,b)=>score(b)-score(a));
   const chosen=[];
   const add=t=>{if(t&&chosen.length<limit&&!chosen.includes(t))chosen.push(t);};
   const by=(pass)=>rated.filter(t=>(t.verdict==='pass')===pass);
   const sameBranch=(a,b)=>(a?.hypothesisIds||[]).some(h=>(b?.hypothesisIds||[]).includes(h));
-  const first=by(true).find(t=>linked.has(t.id))||by(true).find(t=>t.methodVersion===base.method?.version)||by(true)[0];
+  const first=(relevant?by(true).find(t=>score(t)>0):null)||by(true).find(t=>linked.has(t.id))||by(true).find(t=>t.methodVersion===base.method?.version)||by(true)[0];
   add(first);
-  add(by(false).find(t=>linked.has(t.id)&&sameBranch(first,t))||by(false).find(t=>sameBranch(first,t))||by(false).find(t=>linked.has(t.id))||by(false)[0]);
-  for(const pass of [true,false])add(by(pass).find(t=>!chosen.includes(t)&&linked.has(t.id))||by(pass).find(t=>!chosen.includes(t)&&t.methodVersion===base.method?.version)||by(pass).find(t=>!chosen.includes(t)));
+  add((relevant?by(false).find(t=>score(t)>0&&sameBranch(first,t))||by(false).find(t=>score(t)>0):null)||by(false).find(t=>linked.has(t.id)&&sameBranch(first,t))||by(false).find(t=>sameBranch(first,t))||by(false).find(t=>linked.has(t.id))||by(false)[0]);
+  for(const pass of [true,false])add((relevant?by(pass).find(t=>!chosen.includes(t)&&score(t)>0):null)||by(pass).find(t=>!chosen.includes(t)&&linked.has(t.id))||by(pass).find(t=>!chosen.includes(t)&&t.methodVersion===base.method?.version)||by(pass).find(t=>!chosen.includes(t)));
   const hids=new Set(chosen.flatMap(t=>t.hypothesisIds||[]));
   const hypotheses=items.filter(h=>h.kind==='hypothesis'&&hids.has(h.id)&&h.textureReview).slice(0,4)
     .map(h=>({id:h.id,statement:h.statement,textureReview:h.textureReview}));
   const sourceIds=new Set(chosen.flatMap(t=>t.sourceIds||[]));
-  const sources=items.filter(s=>s.kind==='source'&&sourceIds.has(s.id)&&s.originalProof).slice(0,4).map(sourceArtifact);
+  const sourcePool=items.filter(s=>s.kind==='source'&&s.sourceRole==='observation'&&(s.originalProof||s.fieldObservation));
+  const sourceScore=s=> (sourceIds.has(s.id)?2:0)+relevance(topic,[s.title,s.coverage,s.originalProof?.excerpt,s.fieldObservation?.context].join(' '));
+  const sources=sourcePool.filter(s=>sourceScore(s)>0).sort((a,b)=>sourceScore(b)-sourceScore(a)).slice(0,4)
+    .map(s=>({...sourceArtifact(s),...(s.fieldObservation?{fieldObservation:s.fieldObservation}:{}),
+      relevance:sourceScore(s)}));
   return {baseId:base.id,methodVersion:base.method?.version||null,releasedVersion:base.method?.bodyRef?.versionNumber??null,
-    cases:chosen.map(t=>({...artifact(t),ruleIds:linked.get(t.id)||[],role:linked.has(t.id)?'release_linked_case':'observational_human_feedback'})),
-    hypotheses,sources,coverage:{ratedWithArtifacts:rated.length,selected:chosen.length},
+    cases:chosen.map(t=>({...artifact(t),relevance:score(t),ruleIds:linked.get(t.id)||[],role:linked.has(t.id)?'release_linked_case':'observational_human_feedback'})),
+    hypotheses,sources,retrieval:{mode:relevant?'task_conditioned_lexical_and_hypothesis':'released_rule_and_recent_contrast',topic:String(topic||'').slice(0,500),hypothesisIds:[...requested],warning:'Lexical relevance is advisory; inspect actual media, context and counterexamples. No matching case does not prove absence.'},coverage:{ratedWithArtifacts:rated.length,selected:chosen.length},
     instructions:'Read whole original cases, not just labels; inspect referenced visual/audio material where relevant. Compare positive and negative features (specific wording, rhythm, density, register, emotional temperature, visual texture or domain-specific subtle distinctions); human verdict does not identify its cause. Transfer the mechanism, not wording or surface style. Keep contextual exceptions and uncertainty. These are evidence, not new executable rules or permission to publish.'};
 }
-module.exports={artifact,sourceArtifact,validateTextureReview,selectCasebook};
+module.exports={artifact,sourceArtifact,validateTextureReview,selectCasebook,relevance};
