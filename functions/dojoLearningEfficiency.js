@@ -61,14 +61,69 @@ function capabilityComparison(trials,base,health){
     comparisons,minimumRatedPerVersion:MIN_CAPABILITY,automaticRollback:false,
     nextAction:'Compare preregistered fresh samples under the same benchmark key and acceptance; do not infer release improvement from mixed legacy or exploratory ratings.'};
 }
+// Older MCP schemas could not supply researchEvidence.metaSkillVersion. Use
+// explicit execution receipts as a separately identified observational fallback,
+// never infer use from a timestamp, default Skill version, or prose alone.
+function metaAttribution(t){
+  if(t.backfilled)return null;
+  const structured=Number(t.researchEvidence?.metaSkillVersion);
+  const receipts=[...new Set((t.executionResources||[]).filter(r=>r.kind==='skill'&&r.id===META_SKILL_ID&&
+    typeof r.receiptRef==='string'&&r.receiptRef.length>=8&&/^\\d+$/.test(String(r.version||'')))
+    .map(r=>Number(r.version)).filter(v=>Number.isInteger(v)&&v>0))];
+  if(Number.isInteger(structured)&&structured>0){
+    if(receipts.some(v=>v!==structured))return null;
+    return {version:structured,provenance:'research_synthesis'};
+  }
+  return receipts.length===1?{version:receipts[0],provenance:'execution_resource_fallback'}:null;
+}
+function metaComparisons(rows){
+  // Only explicit pre-rating research-operation contrasts. Domain trial ratings
+  // stay in their own dojo. A tag is agent-reported, never causal proof.
+  const groups=new Map();
+  for(const t of rows){
+    const f=t.plannedFactors||{};
+    if(!actual(t)||t.evaluationPhase!=='validation'||!t.runId||!t.materialKey||!t.comparisonKey||
+      !/^H-\\d+$/.test(f.meta_hypothesis_id||'')||!f.meta_scope||
+      !['control','treatment'].includes(f.meta_arm)||f.meta_arm!==t.experimentArm)continue;
+    const key=JSON.stringify([f.meta_hypothesis_id,f.meta_scope,t.runId,t.comparisonKey,t.materialKey,t.segmentKey]);
+    const g=groups.get(key)||{control:[],treatment:[]};
+    g[f.meta_arm].push(t);groups.set(key,g);
+  }
+  const scopes=new Map(),seen=new Set();
+  for(const [key,g] of groups){
+    if(g.control.length!==1||g.treatment.length!==1)continue;
+    const [hypothesisId,scope,runId,,materialKey]=JSON.parse(key);
+    const k=JSON.stringify([hypothesisId,scope]),m=JSON.stringify([k,materialKey]);
+    if(seen.has(m))continue;
+    seen.add(m);
+    const v=scopes.get(k)||{hypothesisId,scope,pairs:0,treatmentBetter:0,controlBetter:0,ties:0,runs:new Set(),evidence:[]};
+    const c=g.control[0],t=g.treatment[0];
+    v.pairs++;v.runs.add(runId);
+    if(t.verdict==='pass'&&c.verdict!=='pass')v.treatmentBetter++;
+    else if(c.verdict==='pass'&&t.verdict!=='pass')v.controlBetter++;
+    else v.ties++;
+    if(v.evidence.length<20)v.evidence.push({runId,materialKey,controlTrialId:c.id,treatmentTrialId:t.id});
+    scopes.set(k,v);
+  }
+  return [...scopes.values()].map(({runs,...v})=>({...v,runCount:runs.size,
+    status:'agent_declared_downstream_comparison_not_release_evidence'}));
+}
 function metaUsage(trials){
   const groups=new Map();
-  for(const t of trials){if(t.backfilled||!t.researchEvidence?.metaSkillVersion)continue;
-    const v=t.researchEvidence.metaSkillVersion;
-    const rows=groups.get(v)||[];rows.push(t);groups.set(v,rows);}
-  return [...groups.entries()].map(([version,rows])=>({version,...stats(rows),capability:stats(rows.filter(t=>lane(t)==='capability')),
-    runCount:new Set(rows.map(t=>t.runId).filter(Boolean)).size,
-    note:'Agent-reported use of the immutable meta Skill version; downstream association, not causal attribution.'}));
+  for(const t of trials){
+    const a=metaAttribution(t);if(!a)continue;
+    const g=groups.get(a.version)||{rows:[],researchSynthesis:0,executionResourceFallback:0};
+    g.rows.push(t);
+    if(a.provenance==='research_synthesis')g.researchSynthesis++;
+    else g.executionResourceFallback++;
+    groups.set(a.version,g);
+  }
+  return [...groups.entries()].map(([version,g])=>({version,...stats(g.rows),
+    capability:stats(g.rows.filter(t=>lane(t)==='capability')),
+    runCount:new Set(g.rows.map(t=>t.runId).filter(Boolean)).size,
+    provenance:{researchSynthesis:g.researchSynthesis,executionResourceFallback:g.executionResourceFallback},
+    researchComparisons:metaComparisons(g.rows),
+    note:'Explicit agent-reported use, including separately identified legacy resource receipts. No historical rating rewrite, independent verification or causal attribution.'}));
 }
 function pruningView(inventory,body,proposals=[]){
   const groups=new Map();
