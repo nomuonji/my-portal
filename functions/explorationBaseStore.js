@@ -521,6 +521,10 @@ function createStore(options) {
     graph.stewardship.pruning=efficiency.pruningView(inventory,ruleBody,proposals);
     graph.stewardship.fieldObservations=items.filter(s=>s.kind==='source'&&s.fieldObservation).map(s=>({id:s.id,title:s.title,...s.fieldObservation}));
     graph.stewardship.metaLearning=efficiency.metaUsage(trials);
+    if(id===efficiency.META_SKILL_ID){
+      const others=await listBases({});
+      graph.stewardship.downstreamMetaLearning={status:'observational_only',bases:others.items.filter(b=>b.id!==id).map(b=>({baseId:b.id,title:b.title,methodVersion:b.methodVersion,uses:b.loop?.metaLearning||[]})),instructions:'Read actual source dojo runs and original human-rated cases before proposing changes. Do not pool domains or attribute downstream ratings to the research Skill without controlled comparisons.'};
+    }
     return graph;
   }
 
@@ -1987,6 +1991,7 @@ function createStore(options) {
           mediaUrl: publicMediaUrl(raw.mediaUrl), hypothesisIds, sourceIds: list(raw.sourceIds, 10, 20),
           executionResources: require('./dojoResourceEvidence').cleanExecutionResources(raw.executionResources),
           ...cleanGraphTrialMetadata(raw),
+          ...(!backfill&&!raw.evaluationPhase?{evaluationPhase:'exploration'}:{}),
           ...(capabilityEvidence?{capabilityEvidence}:{}),
           predictedPass: predicted, predictionNote: text(raw.predictionNote, 600, 'trial.predictionNote', false),
           ...(editorialScreen ? { format: editorialScreen.format, editorialScreen } : {}),
