@@ -58,7 +58,7 @@ function planTreeStewardship({hypotheses=[],trials=[],hypothesisEdges=[],base}={
   // opening another branch. Never treat this advisory plan as approval.
   const validationScopes=hypotheses.filter(h=>h.status==='open'&&h.polarity!=='negative'
     &&!h.promotion?.eligibleForMerge).flatMap(h=>(h.promotion?.segments||[])
-      .filter(s=>s.pairs>0&&!s.validated&&s.treatmentBetter>=s.controlBetter)
+      .filter(s=>s.pairs>0&&!s.validated&&s.treatmentBetter>0&&s.treatmentBetter>=s.controlBetter)
       .map(s=>({hypothesisId:h.id,segmentKey:s.segmentKey,pairs:s.pairs,pairRuns:s.pairRuns,
         treatmentBetter:s.treatmentBetter,controlBetter:s.controlBetter})))
     .sort((a,b)=>b.treatmentBetter-a.treatmentBetter||b.pairs-a.pairs||
@@ -72,15 +72,21 @@ function planTreeStewardship({hypotheses=[],trials=[],hypothesisEdges=[],base}={
   const validationPlan=headroom<2?null:ongoing?{...ongoing,action:'continue_matched_scope',reservedArtifacts:2}:
     newScope?{hypothesisId:newScope.hypothesisId,segmentKey:null,action:'preregister_matched_scope',reservedArtifacts:2}:null;
   const selection=[],visited=new Set(),modules=new Set();
+  // The paired arm consumes two visible artifacts but represents one branch.
+  const branchBudget=validationPlan?Math.min(headroom-1,MAX_USER_BATCH-1):MAX_USER_BATCH;
+  if(validationPlan){
+    const target=active.find(h=>h.hypothesisId===validationPlan.hypothesisId);
+    if(target){selection.push(target);visited.add(target.hypothesisId);modules.add(target.moduleId);}
+  }
   // First allocate to different Skill modules, then to a second non-identical
   // hypothesis arm if capacity remains. Keeps the agent from polishing a single twig.
   for(const candidate of active){
-    if(selection.length>=MAX_USER_BATCH)break;
-    if(modules.has(candidate.moduleId))continue;
+    if(selection.length>=branchBudget)break;
+    if(visited.has(candidate.hypothesisId)||modules.has(candidate.moduleId))continue;
     selection.push(candidate);visited.add(candidate.hypothesisId);modules.add(candidate.moduleId);
   }
   for(const candidate of active){
-    if(selection.length>=MAX_USER_BATCH)break;
+    if(selection.length>=branchBudget)break;
     if(visited.has(candidate.hypothesisId))continue;
     selection.push(candidate);visited.add(candidate.hypothesisId);
   }
@@ -114,7 +120,7 @@ function planTreeStewardship({hypotheses=[],trials=[],hypothesisEdges=[],base}={
     policyVersion:'tree-steward-v2',
     rootSkillId:base?.method?.bodyRef?.location||null,
     userReview:{awaiting:waiting,conservativeCapacity:headroom,
-      suggestedVisibleBatchSize:Math.min(headroom,selection.length,MAX_USER_BATCH),
+      suggestedVisibleBatchSize:Math.min(headroom,selection.length+(validationPlan?1:0),MAX_USER_BATCH),
       constraint:waiting>=CONSERVATIVE_AWAITING_LIMIT?'review_existing_before_creating_more':'respect_existing_submission_gates'},
     portfolio:{activeHypotheses:active.length,selectedBranches:selection,
       distinctModules:branchCoverage,untestedBranches:staleBranches,
