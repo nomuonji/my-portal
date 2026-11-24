@@ -7,6 +7,23 @@ const actor = string('Who is writing (agent/host name). Optional.', 120);
 const userAuthorized = { type: 'boolean', description: 'True only when the user explicitly approved this exact change.' };
 const authorizationNote = string('Where/how the user approved it (quote or chat reference). Required with userAuthorized.', 600);
 
+const textureReview = {
+  type:'object',
+  description:'Preserve qualitative observations before abstraction: actual artifact wording, rhythm, register, emotional temperature, visual/audio texture, contextual exceptions. Compare 2-4 actual S/T cases; quote exact body or stored media/ref, never invent evidence or human motives.',
+  properties:{
+    cases:{type:'array',minItems:2,maxItems:4,items:{type:'object',properties:{
+      caseId:string('Actual rated T-nnn or observed S-nnn.',20),
+      anchor:string('Exact 4-1000 chars from stored original body, or its exact stored image/media/ref URL.',1000),
+      observation:string('Concrete sensory/stylistic/semantic feature in the original; for media include where/when observed. Do not substitute generic adjectives.',900),
+      context:string('Speaker, audience, situation, medium and/or preceding/following details needed to understand this feature.',900),
+    },required:['caseId','anchor','observation','context'],additionalProperties:false}},
+    distinction:string('Explain the subtle differences between cases at the level of concrete expression, rhythm, context, texture or analogous domain-specific features; do not infer user motives from verdicts.',1200),
+    transfer:string('Reproducible way to transfer the quality into another case without copying the surface.',1200),
+    boundary:string('Near-miss, exception, or when a superficially similar technique fails.',1200),
+    uncertainty:string('What is directly observed, what remains interpretation, what is unavailable or not yet verified.',900),
+  },required:['cases','distinction','transfer','boundary','uncertainty'],additionalProperties:false,
+};
+
 const outcome = {
   type: 'object',
   description: 'Outcome contract of the exploration. Owned by the user.',
@@ -94,6 +111,7 @@ const item = {
       required: ['acquisition','selection','transformation','control','prediction','falsification'],
       additionalProperties: false,
     },
+    textureReview,
     formationReview: {
       type: 'object',
       description: 'Required on NEW Skill/Pack H. One-off examples and ideas belong to source S-nnn instead. Server checks case IDs and evidence state, not causal truth.',
@@ -404,9 +422,10 @@ const tools = [
   },
   {
     name:'exploration_research_synthesize',
-    description:'After ALL hypothesis/feedback pages are read, register a dialectical proposal and, if new human ratings await maintenance, treeReview must cover all rated cases and every touched hypothesis branch. Then it can propose refinements, splits, or merges; all agent interpretations remain hypotheses. Prior flow: cite a real prior thesis and competing hypothesis (if at least 2 exist), quote their actual claims, cite real human pass and fail feedback, explain tension, propose a testable synthesis/revision and its falsifying observation. Required before existing recall tests and trial recording. Does not itself change hypotheses or certify user acceptance.',
+    description:'After ALL hypothesis/feedback pages including original artifact bodies are read, preserve concrete qualitative distinctions in textureReview (or existing comparison/tension fields on legacy clients), and register a dialectical proposal and, if new human ratings await maintenance, treeReview must cover all rated cases and every touched hypothesis branch. Then it can propose refinements, splits, or merges; all agent interpretations remain hypotheses. Prior flow: cite a real prior thesis and competing hypothesis (if at least 2 exist), quote their actual claims, cite real human pass and fail feedback, explain tension, propose a testable synthesis/revision and its falsifying observation. Required before existing recall tests and trial recording. Does not itself change hypotheses or certify user acceptance.',
     inputSchema: { type:'object', properties: {
       baseId,runId:string('Open run ID with completed research reading.',20),
+      textureReview,
       synthesis:{type:'object',properties:{
         thesisId:string('Existing historical hypothesis ID.',20),
         antithesisId:string('A second actual existing hypothesis ID when it truly competes or complements the first; omit if no meaningful contrast exists.',20),
