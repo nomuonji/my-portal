@@ -645,6 +645,40 @@ function SkillEvidenceGraph({ baseId }) {
               {graph.stewardship.feedbackReview.overflowCount>0?' 履歴レビュー待ちが上限を超えています。':''}
             </Alert>
           )}
+          {!!graph.skillRules?.inventory?.count&&(
+            <Box sx={{border:'1px solid',borderColor:'divider',borderRadius:2,p:1.5,mb:2}}>
+              <Typography sx={{fontWeight:900,fontSize:13.5}}>実行中のSkill規則台帳 · {graph.skillRules.inventory.count}件</Typography>
+              <Typography sx={{fontSize:11.5,color:V.muted,mb:1}}>
+                {graph.skillRules.inventory.methodVersion} · {graph.skillRules.inventory.status==='versioned'?'版管理済み':'既存本文の暫定区分'}。
+                本文の規則IDと根拠を追跡します。区分自体は効果の実証ではありません。
+              </Typography>
+              {!!graph.skillRules.inventory.changes?.length&&(
+                <Typography sx={{fontSize:12,mb:1}}>
+                  今版：追加 {graph.skillRules.inventory.changes.filter(x=>x.action==='add').length} /
+                  置換 {graph.skillRules.inventory.changes.filter(x=>x.action==='replace').length} /
+                  廃止 {graph.skillRules.inventory.changes.filter(x=>x.action==='retire').length}
+                </Typography>
+              )}
+              <Box sx={{maxHeight:420,overflowY:'auto'}}>
+                {graph.skillRules.inventory.rules.map((rule,index,all)=>(
+                  <React.Fragment key={rule.id}>
+                    {(index===0||all[index-1].section!==rule.section)&&(
+                      <Typography sx={{fontSize:12.5,fontWeight:900,mt:1.2,mb:0.5}}>{rule.section||'共通'}</Typography>
+                    )}
+                    <Box sx={{p:0.9,borderBottom:'1px solid',borderColor:'divider'}}>
+                      <Typography sx={{fontSize:11,color:V.muted}}>
+                        {rule.id} · rev.{rule.revision}{rule.moduleId?' · '+rule.moduleId:''}
+                      </Typography>
+                      <Typography sx={{fontSize:12.2,whiteSpace:'pre-wrap'}}>{rule.text||rule.preview}</Typography>
+                      {!!rule.hypothesisIds?.length&&<Typography sx={{fontSize:11,color:V.muted}}>
+                        根拠候補：{rule.hypothesisIds.join(', ')} / 合格 {rule.supportingTrialIds.join(', ')} / 反例 {rule.counterexampleTrialIds.join(', ')}
+                      </Typography>}
+                    </Box>
+                  </React.Fragment>
+                ))}
+              </Box>
+            </Box>
+          )}
           {!!graph.skillRules?.rules?.length&&(
             <Box sx={{border:'1px solid',borderColor:'divider',borderRadius:2,p:1.5,mb:2}}>
               <Typography sx={{fontWeight:900,fontSize:13.5}}>Skill規則の変更候補と機械審査</Typography>

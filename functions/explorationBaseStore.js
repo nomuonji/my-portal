@@ -14,6 +14,7 @@ const { trialArtifactStatus, publicMediaUrl } = require('./dojoArtifactReadiness
 const { projectGraph, graphEdges, validateEdges, MODULE_IDS } = require('./dojoEvidenceGraph');
 const { checkBuzzSubmissionRecovery, unreliableNegativeReviews } = require('./dojoBuzzRecovery');
 const { makeRuleProposal, assessRuleProposal } = require('./dojoRuleMerge');
+const { buildInventory, inventoryView } = require('./dojoRuleInventory');
 const { planSkillTransfers } = require('./dojoSkillTransfer');
 const { enqueueFeedback, validateReview, applyReviews, cyclePreflight, assertCyclePrepared } = require('./dojoSkillFeedbackQueue');
 
@@ -499,14 +500,21 @@ function createStore(options) {
     graph.stewardship.skillImprovement.inbox=(base.skillImprovementInbox||[]).map(x=>({...x}));
     graph.stewardship.skillImprovement.recentReviews=(base.skillImprovementReviews||[]).slice(0,20);
     const proposals=ruleSnap.docs.map(doc=>doc.data());
-    graph.skillRules={status:proposals.length?'candidate_rule_mapping':'unmapped_legacy_skill_body',rules:proposals.map(p=>({
-      id:p.id,sourceRuleId:p.sourceRuleId,action:p.action,moduleId:p.moduleId,
+    const bodyRef=base.method?.bodyRef||{};
+    let ruleBody=base.method?.body||'';
+    if(TARGET_KINDS.has(bodyRef.kind)){
+      const resolved=await resolveTarget({kind:bodyRef.kind,id:bodyRef.location,versionNumber:bodyRef.versionNumber});
+      ruleBody=resolved.body||'';
+    }
+    const inventory=inventoryView(ruleBody,base.method?.version||'',base.ruleInventory,view==='full');
+    graph.skillRules={status:proposals.length?'candidate_rule_mapping':'unmapped_legacy_skill_body',inventory,rules:proposals.map(p=>({
+      id:p.id,sourceRuleId:p.sourceRuleId,inventoryRuleId:p.inventoryRuleId||null,action:p.action,moduleId:p.moduleId,
       sourceMethodVersion:p.sourceMethodVersion,
       existingRuleAnchor:view==='full'?p.existingRuleAnchor:undefined,
       replacementText:view==='full'?p.replacementText:undefined,
       hypothesisIds:p.hypothesisIds,
       eligibility:assessRuleProposal(p,{method:base.method,graph,trials}),
-    })),note:'Explicit rule anchors and adoption proposals only. No historic Skill text has been silently split into rules; none is automatically released.'};
+    })),note:'Exact released text inventory and evidence-linked change proposals. Legacy block boundaries are projections; neither a block nor a proposal implies empirical validation.'};
     return graph;
   }
 
@@ -563,7 +571,20 @@ function createStore(options) {
       const target=await resolveTarget({kind:bodyRef.kind,id:bodyRef.location,versionNumber:bodyRef.versionNumber});
       targetBody=target.body||'';
     }
-    const proposal=makeRuleProposal(input?.proposal,{method:base.method,body:targetBody,hypotheses:items,trials});
+    const inventory=inventoryView(targetBody,base.method?.version||'',base.ruleInventory,true);
+    const raw={...input?.proposal};
+    if(raw.existingRuleId){
+      if(raw.action==='add')throw Error('Add does not target an existing rule ID');
+      const rule=inventory.rules.find(r=>r.id===raw.existingRuleId);
+      if(!rule)throw Error('Unknown rule ID in the pinned Skill version; reread its inventory');
+      if(raw.existingRuleAnchor&&!rule.text.includes(raw.existingRuleAnchor))
+        throw Error('Rule ID and quoted passage do not match');
+      if(!raw.existingRuleAnchor)raw.existingRuleAnchor=rule.text.trim();
+      if(raw.existingRuleAnchor.length>600)throw Error('Rule is longer than 600 characters; also supply a unique exact passage of the rule');
+    }
+    const proposal=makeRuleProposal(raw,{method:base.method,body:targetBody,hypotheses:items,trials});
+    const matches=proposal.existingRuleAnchor?inventory.rules.filter(r=>r.text.includes(proposal.existingRuleAnchor)):[];
+    proposal.inventoryRuleId=matches.length===1?matches[0].id:null;
     const ref=ruleProposalRef(id,proposal.id);
     let outcome;
     await db().runTransaction(async tx=>{
@@ -1021,7 +1042,7 @@ function createStore(options) {
       // not actually implement the proposed change. The legacy unlinked
       // release path remains unchanged for existing dojos.
       const ruleProposalIds=list(input.ruleProposalIds,12,40);
-      const linkedRuleReviews=[];
+      const linkedRuleReviews=[],linkedProposals=[];
       if(ruleProposalIds.length){
         const graph=projectGraph({base,items,trials,feedbackLog:base.feedbackLog||[]});
         for(const proposalId of ruleProposalIds){
@@ -1036,16 +1057,33 @@ function createStore(options) {
           }
           if(proposal.action!=='retire'&&!targetBody.includes(proposal.replacementText))
             throw Error('Released Skill body does not contain the exact proposed replacement rule: '+proposalId);
+          linkedProposals.push({...proposal,evidenceEligible:eligibility.evidenceEligible});
           linkedRuleReviews.push({proposalId,evidenceEligible:eligibility.evidenceEligible,
             overrideByDirectUserInstruction:Boolean(userDirected&&!eligibility.evidenceEligible),
             sourceMethodVersion:proposal.sourceMethodVersion});
         }
       }
+      const previousMethod=base.method;
+      const previousRef=previousMethod?.bodyRef||{};
+      let priorBody=previousMethod?.body||'';
+      if(TARGET_KINDS.has(previousRef.kind)){
+        const resolved=await resolveTarget({kind:previousRef.kind,id:previousRef.location,versionNumber:previousRef.versionNumber});
+        priorBody=resolved.body||'';
+      }
+      const ruleInventory=buildInventory({body:targetBody,version:method.version,priorBody,
+        prior:base.ruleInventory,priorVersion:previousMethod?.version||'',proposals:linkedProposals});
+      base.ruleInventory=ruleInventory;
       const at = now();
       base.method = { ...method, setAt: at };
       base.methodHistory = [...(base.methodHistory || []), {
         version: method.version, summary: method.summary, setAt: at, motivatingRunIds: motivating, benchmark,
         ...(linkedRuleReviews.length?{ruleMergeReview:linkedRuleReviews}:{}),
+        ruleInventoryDelta:{bodyDigest:ruleInventory.bodyDigest,ruleCount:ruleInventory.entries.length,
+          added:ruleInventory.changes.filter(x=>x.action==='add').length,
+          replaced:ruleInventory.changes.filter(x=>x.action==='replace').length,
+          retired:ruleInventory.changes.filter(x=>x.action==='retire').length,
+          linked:ruleInventory.changes.filter(x=>x.proposalId).length,
+          changes:ruleInventory.changes.slice(0,40),omittedChanges:Math.max(0,ruleInventory.changes.length-40)},
         replaced: base.method ? { version: loop.current.version, rated: loop.current.rated, pass: loop.current.pass, passRate: loop.current.passRate } : null,
         ...(userDirected ? { authorizationNote: userDirected } : {}),
       }].slice(-100);
