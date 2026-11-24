@@ -157,7 +157,7 @@ async function getExecutableSkill(input={}) {
  if(dojos.length){
   const store=require('./explorationBaseStore');
   executable.qualitativeEvidence=await Promise.all(dojos.map(async d=>{
-    try{return await store.skillCasebook({baseId:d.baseId,releasedVersion:d.releasedVersion,limit:input.includeRelations===false?2:4});}
+    try{return await store.skillCasebook({baseId:d.baseId,releasedVersion:d.releasedVersion,limit:input.includeRelations===false?2:4,topic:input.topic,hypothesisIds:input.hypothesisIds});}
     catch(error){return {baseId:d.baseId,status:'unavailable',reason:String(error.message||error).slice(0,300)};}
   }));
  }
@@ -168,7 +168,7 @@ async function getExecutableSkill(input={}) {
    root:executable,intent:input.intent,
    getPolicy:async id=>relationStore.ensureMigrated({id}),
    decorate:relationStore.decorate,
-   getApprovedSkill:async id=>getExecutableSkill({id,includeRelations:false}),
+   getApprovedSkill:async id=>getExecutableSkill({id,includeRelations:false,topic:input.topic}),
    maxDepth:3,maxRelated:10,
  });
  const policy=resolved.relationPolicy;
