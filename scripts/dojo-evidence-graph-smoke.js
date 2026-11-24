@@ -340,3 +340,46 @@ test('the evidence graph retains operational protocols without upgrading legacy 
   assert.equal(graph.hypotheses.find(x => x.id === 'H-101').promotion.historical.fail, 1);
   assert.equal(graph.hypotheses.find(x => x.id === 'H-101').promotion.eligibleForMerge, false);
 });
+
+
+test('rule inventory preserves exact Markdown including fenced code and nested prose',()=>{
+  const {partition,inventoryView}=require('../functions/dojoRuleInventory');
+  const body='# Heading\r\n\r\n- First rule.\r\n  continued.\r\n- Second rule.\n\n```js\n# not a heading\n- not a list item\n```\n\nFinal text';
+  assert.equal(partition(body).map(x=>x.text).join(''),body);
+  const view=inventoryView(body,'v1',null,true);
+  assert.equal(view.status,'legacy_projection');
+  assert.equal(view.count,4);
+  assert.equal(view.rules[2].text,'```js\n# not a heading\n- not a list item\n```\n');
+});
+
+test('stable rule IDs survive metadata releases; explicit replacement carries human evidence',()=>{
+  const {buildInventory,inventoryView}=require('../functions/dojoRuleInventory');
+  const old='# Source\n- Collect a real observed source.\n- Reject a source with no original evidence.\n';
+  const revised='# Source\n- Collect two independent real observed sources.\n- Reject a source with no original evidence.\n';
+  const legacy=inventoryView(old,'v1',null,true);
+  const p={id:'MR-1',action:'replace',moduleId:'source',existingRuleAnchor:'Collect a real observed source.',
+    replacementText:'Collect two independent real observed sources.',hypothesisIds:['H-001'],supportingTrialIds:['T-001'],counterexampleTrialIds:['T-002']};
+  const inv=buildInventory({body:revised,version:'v2',priorBody:old,priorVersion:'v1',proposals:[p]});
+  assert.equal(inv.entries[0].id,legacy.rules[0].id);
+  assert.equal(inv.entries[0].revision,2);
+  assert.deepEqual(inv.entries[0].supportingTrialIds,['T-001']);
+  assert.equal(inv.entries[1].id,legacy.rules[1].id);
+  assert.deepEqual(inv.changes,[{id:legacy.rules[0].id,action:'replace',proposalId:'MR-1'}]);
+  const next=buildInventory({body:revised,version:'v3',priorBody:revised,priorVersion:'v2',prior:inv});
+  assert.deepEqual(next.entries,inv.entries);
+  assert.deepEqual(next.changes,[]);
+  const removed=buildInventory({body:'# Source\n- Reject a source with no original evidence.\n',version:'v4',
+    priorBody:revised,priorVersion:'v3',prior:next});
+  assert.equal(removed.entries[0].id,legacy.rules[1].id);
+  assert.deepEqual(removed.changes,[{id:legacy.rules[0].id,action:'retire',proposalId:null}]);
+});
+
+test('unlinked edits and ambiguous repeated text never inherit proof',()=>{
+  const {buildInventory}=require('../functions/dojoRuleInventory');
+  const old='- Identical old rule.\n- Identical old rule.\n';
+  const prior=buildInventory({body:old,version:'v1'});
+  prior.entries[0].hypothesisIds=['H-001'];
+  const result=buildInventory({body:'- Identical old rule.\n- A new text rule.\n',version:'v2',priorBody:old,priorVersion:'v1',prior});
+  assert.ok(result.entries.every(r=>r.hypothesisIds.length===0));
+  assert.ok(result.changes.every(x=>x.proposalId===null));
+});
