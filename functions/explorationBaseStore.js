@@ -523,7 +523,11 @@ function createStore(options) {
     graph.stewardship.metaLearning=efficiency.metaUsage(trials);
     if(id===efficiency.META_SKILL_ID){
       const others=await listBases({});
-      graph.stewardship.downstreamMetaLearning={status:'observational_only',bases:others.items.filter(b=>b.id!==id).map(b=>({baseId:b.id,title:b.title,methodVersion:b.methodVersion,uses:b.loop?.metaLearning||[]})),instructions:'Read actual source dojo runs and original human-rated cases before proposing changes. Do not pool domains or attribute downstream ratings to the research Skill without controlled comparisons.'};
+      const bases=await Promise.all(others.items.filter(b=>b.id!==id).map(async b=>({
+        baseId:b.id,title:b.title,methodVersion:b.methodVersion,
+        uses:b.loop?.metaLearningProjectionVersion===2?b.loop.metaLearning||[]:efficiency.metaUsage(await loadTrials(b.id)),
+      })));
+      graph.stewardship.downstreamMetaLearning={status:'observational_only',bases,instructions:'Read actual source dojo runs and original human-rated cases before proposing changes. Use the explicit researchComparisons by domain and scope, keep the underlying human verdicts in their original dojo, and never infer causality from usage alone.'};
     }
     return graph;
   }
