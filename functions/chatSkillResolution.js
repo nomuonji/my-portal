@@ -43,7 +43,7 @@ async function resolveRelatedSkills({
               throw new Error('Resolved Skill lacks approved executable data');
             seen.set(skill.id,skill);
             relatedSkills.push({id:skill.id,title:skill.title,revision:skill.revision,
-              versionPolicy:skill.versionPolicy,body:skill.body,
+              versionPolicy:skill.versionPolicy,body:skill.body,...(skill.qualitativeEvidence?{qualitativeEvidence:skill.qualitativeEvidence}:{}),
               via:source.id,depth:depth+1});
             relation.loadState='loaded';
             relation.resolvedVersion=skill.revision;

@@ -152,6 +152,15 @@ async function getExecutableSkill(input={}) {
     registryRevision:current.revision,versionPolicy:'latest_dojo_release',dojos,
     dojoNotice:dojoNotice(dojos,current.id,current.revision)};
  }
+ // Casebooks supplement approved text, and never silently authorize a new
+ // method or treat observed user examples as general rules.
+ if(dojos.length){
+  const store=require('./explorationBaseStore');
+  executable.qualitativeEvidence=await Promise.all(dojos.map(async d=>{
+    try{return await store.skillCasebook({baseId:d.baseId,releasedVersion:d.releasedVersion,limit:input.includeRelations===false?2:4});}
+    catch(error){return {baseId:d.baseId,status:'unavailable',reason:String(error.message||error).slice(0,300)};}
+  }));
+ }
  if(input.includeRelations===false)return executable;
  const relationStore=require('./chatSkillRelationsStore');
  const {resolveRelatedSkills}=require('./chatSkillResolution');

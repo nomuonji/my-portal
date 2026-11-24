@@ -1262,7 +1262,8 @@ test('all historical hypotheses and user feedback must be read; dialectical synt
   assert.equal(first.totalFeedback,30);
   assert.equal(first.pages,3);
   assert.equal(first.hypotheses.length,12);
-  assert.equal(first.feedback.length,25);
+  assert.equal(first.feedback.length,10);
+  assert.equal(first.feedback[0].originalArtifact.body,sampleRows[0].body,'research must expose full original evaluated artifact');
   assert.ok(first.feedback[0].userWords,'the original user evaluation must be exposed');
   await assert.rejects(store.researchRead({baseId:'test-base',runId,page:2}),/without skipped or repeated pages/);
   await assert.rejects(store.researchSynthesize({baseId:'test-base',runId,synthesis:{}}),/Read all prior/);
@@ -1290,7 +1291,17 @@ test('all historical hypotheses and user feedback must be read; dialectical synt
     ...synthesis,passFeedbackId:'T-888'}}),/real historical accepted feedback/);
   await assert.rejects(store.researchSynthesize({baseId:'test-base',runId,synthesis:{
     ...synthesis,passFeedbackAnchor:'invented feedback'}}),/must quote the actual human feedback/);
-  const done=await store.researchSynthesize({baseId:'test-base',runId,synthesis});
+  const pass=allF.find(x=>x.verdict==='pass'),fail=allF.find(x=>x.verdict==='fail');
+  const textureReview={cases:[
+    {caseId:pass.id,anchor:pass.originalArtifact.body,observation:'The customer response is stated as an unusual action in the scene.',context:'A customer reacts to a specific concern rather than to an abstract topic.'},
+    {caseId:fail.id,anchor:fail.originalArtifact.body,observation:'The case uses similar phrasing, with no identifiable change in actual action.',context:'The case is a near neighbor but the user rejected it for a weak change.'}
+  ],distinction:'The examples are almost identical; the labels alone do not explain the different outcomes.',
+    transfer:'Test a concrete changed action using the same setting and preserve the original tone.',
+    boundary:'Changing only the case number does not establish a transferable mechanism.',
+    uncertainty:'The user verdict is observed but the causal difference is not established.'};
+  await assert.rejects(store.researchSynthesize({baseId:'test-base',runId,synthesis,textureReview:{
+    ...textureReview,cases:[{...textureReview.cases[0],anchor:'invented original'},textureReview.cases[1]]}}),/anchor must quote exact/);
+  const done=await store.researchSynthesize({baseId:'test-base',runId,synthesis,textureReview});
   assert.equal(done.totalHypotheses,26);
   assert.equal(done.totalFeedback,30);
   assert.equal(done.status,'synthesized');

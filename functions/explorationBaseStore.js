@@ -15,6 +15,7 @@ const { projectGraph, graphEdges, validateEdges, MODULE_IDS } = require('./dojoE
 const { checkBuzzSubmissionRecovery, unreliableNegativeReviews } = require('./dojoBuzzRecovery');
 const { makeRuleProposal, assessRuleProposal } = require('./dojoRuleMerge');
 const { buildInventory, inventoryView } = require('./dojoRuleInventory');
+const {validateTextureReview,selectCasebook}=require('./dojoTextureEvidence');
 const { planSkillTransfers } = require('./dojoSkillTransfer');
 const { enqueueFeedback, validateReview, applyReviews, cyclePreflight, assertCyclePrepared } = require('./dojoSkillFeedbackQueue');
 
@@ -59,6 +60,7 @@ const PROTOCOL = [
   'When the method is a chat_skill, skill_pack or legacy intelligence_pack target, use exactly the released version (method.target.releasedVersion, body included here), not the latest one. A newer version made outside this base is unverified until it is released here.',
   'Sources (where candidates come from) are a ledger too: record which source a candidate came from (evidence on the source, sourceIds on the achievement) and reject sources that yield nothing, so the next run starts from proven ones.',
   'When a submarine (Project Submarine) carries this skill/pack, its sortie opens and closes the run here. What it finds is the submarine\'s haul; a haul the user confirms comes back here as an achievement.',
+  'Qualitative learning: inspect original artifacts (text, image, media) and their context before abstracting. Preserve exact anchors, texture, register, rhythm, temperature, subtle distinctions, boundary cases and uncertainty in textureReview; no generic stylistic labels or inferred user motives. Use matched contrasts, not only verdicts. If the client has not refreshed its schema, record the same concrete observations in existing comparison and formation fields.',
   'The measure of a 道場 is the pass rate of what its released version produces, by version (loop). There is no count target. Read loop.nextActions first.',
   'Before new trials in any dojo with rated feedback, open a research run, read EVERY page of exploration_research_read: every prior hypothesis (including failed/retired/negative) plus EVERY human-rating word and history, then call exploration_research_synthesize with an evidenced comparison of competing explanations, thesis/antithesis references, accepted/rejected user feedback, new or revised claim, controls and a falsifying observation. The server blocks trials and recall if pages were skipped or synthesis lacks grounded references.',
   'Before new trials in a dojo with at least four real passes and four fails, exploration_recall_prepare retrieves related old case texts AND the content, counterexamples and results of historically tested hypotheses. exploration_recall_check must check four held-back verdicts and explicitly compare every retrieved hypothesis against its linked real pass/fail cases, limits and transfer/refutation conditions. Neither step proves causal understanding. An incomplete check blocks submissions in that run.',
@@ -659,6 +661,8 @@ function createStore(options) {
       const inventory = buildResearchInventory(items, trials, base.feedbackLog || [], runDocs.docs.map(doc => doc.data()));
       if (run.researchReview.digest !== inventory.hash) throw new Error('Historical evidence changed after reading; restart research review');
       const synthesis = validateResearchSynthesis(input?.synthesis, inventory);
+      if(input.textureReview) synthesis.textureReview=validateTextureReview(input.textureReview,{trials,items});
+      synthesis.textureReviewStatus=synthesis.textureReview?'grounded_observations':'legacy_analysis_without_structured_texture';
       const pending=base.treeMaintenance?.pendingTrialIds||[];
       const pendingExternal=base.treeMaintenance?.pendingExternalRefs||[];
       const touched=base.treeMaintenance?.touchedHypothesisIds||[];
@@ -1153,6 +1157,7 @@ function createStore(options) {
         throw new Error('Buzz hypothesis recovery: choose a non-unknown pipelineStage and explicit Skill targetModuleIds for a new H.');
 
       if (raw.formationReview !== undefined) item.formationReview = cleanFormationReview(raw.formationReview);
+      if(raw.textureReview!==undefined)item.textureReview=raw.textureReview; // already validated against canonical originals by upsertItems
       if (creating && needsFormationGate(base) && !item.formationReview)
         throw new Error('New Skill/Pack hypothesis requires formationReview with real cases, reusable method change, rival explanation, transfer test, and prior-art decision. Store a single observation or idea as a source S-nnn instead.');
       if (raw.polarity !== undefined) item.polarity = oneOf(raw.polarity, ['positive', NEGATIVE], 'hypothesis.polarity');
@@ -1219,7 +1224,7 @@ function createStore(options) {
     // Preserve actual changes to a hypothesis, not just its latest wording. A rating/evidence
     // append is not a hypothesis revision, and does not erase earlier versions of the claim.
     if (!creating && kind === 'hypothesis') {
-      const fields = ['title', 'statement', 'mechanism', 'limits', 'researchProtocol', 'pipelineStage', 'polarity', 'stage', 'status', 'targetModuleIds'];
+      const fields = ['title', 'statement', 'mechanism', 'limits', 'researchProtocol', 'textureReview', 'pipelineStage', 'polarity', 'stage', 'status', 'targetModuleIds'];
       const modified = fields.filter((field) => JSON.stringify(item[field] || '') !== JSON.stringify(prior[field] || ''));
       if (modified.length) {
         item.revisionHistory = [...(prior.revisionHistory || []), {
@@ -1293,6 +1298,18 @@ function createStore(options) {
                 throw new Error('hypothesis.formationReview: ' + caseId + ' is not a real human-rated trial.');
             }
           }
+        }
+        if(kind==='hypothesis'&&raw.textureReview!==undefined){
+          const cases=Array.isArray(raw.textureReview?.cases)?raw.textureReview.cases:[];
+          if(cases.length<2||cases.length>4)throw Error('textureReview requires 2-4 distinct cases');
+          const sourceRecords=[],trialRecords=[];
+          for(const c of cases){
+            const cid=text(c?.caseId,20,'textureReview.caseId',true);
+            if(/^T-\d+$/.test(cid))trialRecords.push(value(await tx.get(trialRef(id,cid))));
+            else if(/^S-\d+$/.test(cid))sourceRecords.push(value(await tx.get(itemRef(id,cid))));
+            else throw Error('textureReview case ID must identify an actual S/T record');
+          }
+          raw.textureReview=validateTextureReview(raw.textureReview,{trials:trialRecords.filter(Boolean),items:sourceRecords.filter(Boolean)});
         }
         loaded.push({ raw, prior });
       }
@@ -2196,6 +2213,17 @@ function createStore(options) {
       .map((base) => ({ baseId: base.id, title: base.title, releasedVersion: base.method.bodyRef.versionNumber || null }));
   }
 
+  // Execution evidence is a read-only supplemental casebook, not a change to
+  // approved method text. Pin to the exact release seen by the caller.
+  async function skillCasebook(input){
+    const id=requireBaseId(input?.baseId);
+    const snap=await baseRef(id).get(),base=value(snap);
+    if(!base||Number(base.method?.bodyRef?.versionNumber)!==Number(input.releasedVersion))
+      throw Error('Skill casebook release changed; resolve the approved version again');
+    const [items,trials]=await Promise.all([loadItems(id),loadTrials(id)]);
+    return selectCasebook({base,items,trials,limit:input.limit===2?2:4});
+  }
+
   // Retarget a released legacy Intelligence workflow to its equivalent Skill Pack
   // without creating a fake release, changing the approved version or resetting H/T history.
   async function migrateLegacyPackTarget(input) {
@@ -2329,7 +2357,7 @@ function createStore(options) {
   // Compact summary used by the Agent Intelligence bundle resolver.
   async function brief(input) { return get({ id: input?.id, view: 'brief' }); }
 
-  return { create, list: listBases, get, remove, brief, graphGet, graphRelationUpsert, ruleProposalUpsert, seedSkillImprovementInbox, reviewSkillImprovement, setOutcome, setMethodVersion, migrateLegacyPackTarget, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, researchRead, researchSynthesize, prepareRecall, checkRecall, recordTrials, rateTrials, awaitingTrials, refreshLoop, trainersOf };
+  return { create, list: listBases, get, remove, brief, graphGet, graphRelationUpsert, ruleProposalUpsert, seedSkillImprovementInbox, reviewSkillImprovement, setOutcome, setMethodVersion, migrateLegacyPackTarget, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, researchRead, researchSynthesize, prepareRecall, checkRecall, recordTrials, rateTrials, awaitingTrials, refreshLoop, trainersOf, skillCasebook };
 }
 
 const store = createStore();
