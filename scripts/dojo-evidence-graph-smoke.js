@@ -414,3 +414,47 @@ test('texture casebook retains the actual original and prioritizes linked contra
  assert.ok(legacy.cases.every(c=>c.role==='observational_human_feedback'));
  assert.equal(selectCasebook({base,items,trials:[],limit:2}).cases.length,0);
 });
+
+
+test('capability is preregistered, protocol-matched and never reconstructed from old ratings',()=>{
+ const e=require('../functions/dojoLearningEfficiency');
+ const base={method:{version:'v2',bodyRef:{versionNumber:2}},outcome:{confirmedBy:'user'}};
+ const plan=e.capabilityPlan({benchmarkKey:'same-task',materialKeys:['material-a','material-b'],task:'Compose a standalone social post',sampling:'Choose unused original observations without looking at outcome',controls:'Keep medium, audience and production resources identical',acceptance:'Same human acceptance criterion across both released methods'});
+ const run={id:'R-001',methodVersion:'v2',capabilityPlan:plan};
+ const raw={evaluationPhase:'capability',materialKey:'material-a',segmentKey:'same-task'};
+ const ev=e.checkCapability(raw,run,[],[raw],base);
+ assert.throws(()=>e.checkCapability(raw,run,[{materialKey:'material-a'}],[raw],base),/fresh/);
+ assert.throws(()=>e.checkCapability(raw,{...run,capabilityPlan:null},[],[raw],base),/preregistered/);
+ const trial=(id,version,evaluationPhase,extra={})=>({id,version,evaluationPhase,status:'rated',verdict:'pass',...extra});
+ const trials=[trial('T-1',2,'capability',{capabilityEvidence:ev}),trial('T-2',2,'exploration'),trial('T-3',2,'validation'),trial('T-4',2,'capability'),trial('T-5',2,'capability',{backfilled:true,capabilityEvidence:ev}),trial('T-6',1,'capability',{capabilityEvidence:{...ev,protocolDigest:'different'}})];
+ const lanes=e.laneView(trials,base);
+ assert.equal(lanes.current.capability.rated,1);
+ assert.equal(lanes.current.exploration.rated,1);
+ assert.equal(lanes.current.validation.rated,1);
+ assert.equal(lanes.current.legacy_unclassified.rated,2);
+ const compare=e.capabilityComparison(trials,base,(current,previous)=>({status:previous?'comparison':'no_prior'}));
+ assert.equal(compare.comparisons[0].previous,null);
+ assert.equal(e.metaUsage(trials).length,0);
+});
+
+test('field observations and task-related original cases remain distinct from user verdicts',()=>{
+ const {fieldObservation,pruningView}=require('../functions/dojoLearningEfficiency');
+ const {selectCasebook}=require('../functions/dojoTextureEvidence');
+ const o=fieldObservation({artifactRef:'post:1',sourceRef:'operator:post:1',observedAt:'2026-11-24T00:00:00Z',window:'24h',metrics:{views:400,likes:0},context:'Observed on one account, exposure unknown',comparison:'No comparable baseline is yet available'});
+ assert.equal(o.skillVersion,null);
+ assert.equal(o.metrics.likes,0);
+ assert.equal(o.attribution,'unknown');
+ assert.throws(()=>fieldObservation({...o,skillVersion:2}),/execution record/);
+ const base={id:'sample',method:{version:'v1'}};
+ const trials=[
+  {id:'T-1',status:'rated',verdict:'pass',body:'電車の通勤風景',ratedAt:'2026-01-01'},
+  {id:'T-2',status:'rated',verdict:'fail',body:'通勤風景の説明文',ratedAt:'2026-01-01'},
+  {id:'T-3',status:'rated',verdict:'pass',body:'新しい商品紹介',ratedAt:'2026-01-02'},
+ ];
+ const book=selectCasebook({base,trials,topic:'電車の通勤風景',limit:2});
+ assert.deepEqual(book.cases.map(x=>x.id),['T-1','T-2']);
+ assert.equal(book.cases[0].body,trials[0].body);
+ const p=pruningView({count:2,methodVersion:'v1',rules:[{id:'r1',digest:'same',section:'A'},{id:'r2',digest:'same',section:'B'}]},'text');
+ assert.equal(p.duplicateGroupCount,1);
+ assert.deepEqual(p.exactDuplicates[0].ruleIds,['r1','r2']);
+});
