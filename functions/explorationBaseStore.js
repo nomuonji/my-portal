@@ -2221,7 +2221,7 @@ function createStore(options) {
     if(!base||Number(base.method?.bodyRef?.versionNumber)!==Number(input.releasedVersion))
       throw Error('Skill casebook release changed; resolve the approved version again');
     const [items,trials]=await Promise.all([loadItems(id),loadTrials(id)]);
-    return selectCasebook({base,items,trials,limit:4});
+    return selectCasebook({base,items,trials,limit:input.limit===2?2:4});
   }
 
   // Retarget a released legacy Intelligence workflow to its equivalent Skill Pack
