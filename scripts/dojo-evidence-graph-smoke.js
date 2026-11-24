@@ -489,3 +489,36 @@ test('tree steward reserves a matched pair for a started scope instead of spread
   assert.equal(twoSlots.portfolio.selectedBranches.length,1);
   assert.equal(twoSlots.userReview.suggestedVisibleBatchSize,2);
 });
+
+
+test('meta dojo reports explicitly recorded legacy Skill usage and only unique matched downstream contrasts',()=>{
+  const {metaUsage}=require('../functions/dojoLearningEfficiency');
+  const receipt={kind:'skill',id:'hypothesis-formation-analysis',version:'1',receiptRef:'chat_skill_get:meta R-001'};
+  const row=(id,verdict,arm,extra={})=>rated(id,verdict,['H-001'],{
+    evaluationPhase:'validation',experimentArm:arm,comparisonKey:'meta-1',materialKey:'m1',segmentKey:'research_scope',
+    plannedFactors:{meta_hypothesis_id:'H-002',meta_scope:'original_contrast',meta_arm:arm},
+    executionResources:[receipt],...extra});
+  const a=row('T-001','pass','treatment');
+  const b=row('T-002','fail','control',{researchEvidence:{metaSkillVersion:1}});
+  const noReceipt=row('T-003','pass','treatment',{executionResources:[]});
+  const conflict=row('T-004','pass','treatment',{researchEvidence:{metaSkillVersion:2}});
+  const old=row('T-005','pass','treatment',{backfilled:true});
+  const duplicate=[row('T-006','pass','treatment',{comparisonKey:'meta-2'}),
+    row('T-007','fail','control',{comparisonKey:'meta-2'})];
+  const crossRun=[row('T-008','pass','treatment',{comparisonKey:'meta-3',materialKey:'m2'}),
+    row('T-009','fail','control',{comparisonKey:'meta-3',materialKey:'m2',runId:'R-002'})];
+  const untagged=row('T-010','pass','treatment',{plannedFactors:{}});
+  const trials=[a,b,noReceipt,conflict,old,...duplicate,...crossRun,untagged];
+  const snapshot=JSON.stringify(trials);
+  const report=metaUsage(trials);
+  assert.equal(JSON.stringify(trials),snapshot);
+  assert.equal(report.length,1);
+  assert.equal(report[0].version,1);
+  assert.equal(report[0].rated,7);
+  assert.deepEqual(report[0].provenance,{researchSynthesis:1,executionResourceFallback:6});
+  assert.equal(report[0].researchComparisons.length,1);
+  assert.equal(report[0].researchComparisons[0].pairs,1);
+  assert.equal(report[0].researchComparisons[0].treatmentBetter,1);
+  assert.equal(report[0].researchComparisons[0].hypothesisId,'H-002');
+  assert.equal(report[0].researchComparisons[0].evidence[0].treatmentTrialId,'T-001');
+});
