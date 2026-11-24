@@ -207,6 +207,7 @@ function loopSummary(view) {
     capabilityRated:view.lanes.current.capability.rated,capabilityPassRate:view.lanes.current.capability.passRate,
     explorationRated:view.lanes.current.exploration.rated,explorationPassRate:view.lanes.current.exploration.passRate,
     validationRated:view.lanes.current.validation.rated,validationPassRate:view.lanes.current.validation.passRate,
+    metaLearning:view.metaLearning||[],
     hitRate: view.calibration?.hitRate ?? null,
     screening: view.screening,
     negativeLearning: { status: view.negativeLearning.status,
