@@ -507,7 +507,7 @@ function createStore(options) {
       ruleBody=resolved.body||'';
     }
     const inventory=inventoryView(ruleBody,base.method?.version||'',base.ruleInventory,view==='full');
-    graph.skillRules={status:inventory.status,inventory,rules:proposals.map(p=>({
+    graph.skillRules={status:proposals.length?'candidate_rule_mapping':'unmapped_legacy_skill_body',inventory,rules:proposals.map(p=>({
       id:p.id,sourceRuleId:p.sourceRuleId,inventoryRuleId:p.inventoryRuleId||null,action:p.action,moduleId:p.moduleId,
       sourceMethodVersion:p.sourceMethodVersion,
       existingRuleAnchor:view==='full'?p.existingRuleAnchor:undefined,
@@ -1057,7 +1057,7 @@ function createStore(options) {
           }
           if(proposal.action!=='retire'&&!targetBody.includes(proposal.replacementText))
             throw Error('Released Skill body does not contain the exact proposed replacement rule: '+proposalId);
-          linkedProposals.push(proposal);
+          linkedProposals.push({...proposal,evidenceEligible:eligibility.evidenceEligible});
           linkedRuleReviews.push({proposalId,evidenceEligible:eligibility.evidenceEligible,
             overrideByDirectUserInstruction:Boolean(userDirected&&!eligibility.evidenceEligible),
             sourceMethodVersion:proposal.sourceMethodVersion});
@@ -1083,7 +1083,7 @@ function createStore(options) {
           replaced:ruleInventory.changes.filter(x=>x.action==='replace').length,
           retired:ruleInventory.changes.filter(x=>x.action==='retire').length,
           linked:ruleInventory.changes.filter(x=>x.proposalId).length,
-          changes:ruleInventory.changes.slice(0,100),omittedChanges:Math.max(0,ruleInventory.changes.length-100)},
+          changes:ruleInventory.changes.slice(0,40),omittedChanges:Math.max(0,ruleInventory.changes.length-40)},
         replaced: base.method ? { version: loop.current.version, rated: loop.current.rated, pass: loop.current.pass, passRate: loop.current.passRate } : null,
         ...(userDirected ? { authorizationNote: userDirected } : {}),
       }].slice(-100);
