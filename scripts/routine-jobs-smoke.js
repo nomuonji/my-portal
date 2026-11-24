@@ -1,9 +1,21 @@
 'use strict';
 const assert=require('node:assert/strict');
 const {test}=require('node:test');
-const {RUNNER_SLOTS,MAX_JOBS_PER_TICK,candidate,validateSlots,validateCapacity,slotLoadsFor,jst,validatedInstructions}
+const {RUNNER_SLOTS,MAX_JOBS_PER_TICK,candidate,validateSlots,validateCapacity,slotLoadsFor,jst,validatedInstructions,isStalledRun,STALLED_RUN_MS}
  =require('../functions/routineJobStore');
 
+test('abandoned claims are identified without treating their artifacts as proven failed',()=>{
+ const startedAt='2026-11-24T11:30:42.390Z';
+ const now=Date.parse(startedAt);
+ const running={status:'running',startedAt};
+ assert.equal(STALLED_RUN_MS,3*60*60*1000);
+ assert.equal(isStalledRun(running,now+STALLED_RUN_MS),false);
+ assert.equal(isStalledRun(running,now+STALLED_RUN_MS+1),true);
+ assert.equal(isStalledRun({...running,status:'completed'},now+STALLED_RUN_MS+1),false);
+ assert.equal(isStalledRun({...running,status:'failed'},now+STALLED_RUN_MS+1),false);
+ assert.equal(isStalledRun({...running,startedAt:'invalid'},now+STALLED_RUN_MS+1),false);
+ assert.equal(isStalledRun({...running,startedAt:'2026-11-25T11:30:42.390Z'},now+STALLED_RUN_MS+1),false);
+});
 test('oversized routine instructions fail closed rather than truncating finish/readback rules',()=>{
  assert.equal(validatedInstructions('  finish verified  '),'finish verified');
  assert.equal(validatedInstructions('x'.repeat(12000)).length,12000);
