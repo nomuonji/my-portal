@@ -458,3 +458,34 @@ test('field observations and task-related original cases remain distinct from us
  assert.equal(p.duplicateGroupCount,1);
  assert.deepEqual(p.exactDuplicates[0].ruleIds,['r1','r2']);
 });
+
+
+test('tree steward reserves a matched pair for a started scope instead of spreading across new branches',()=>{
+  const items=[h('H-001','voice'),h('H-002','source'),h('H-003','transform')];
+  const trials=[
+    rated('T-001','pass',['H-001'],{evaluationPhase:'validation',experimentArm:'treatment',segmentKey:'voice_fixed',materialKey:'m1',comparisonKey:'c1'}),
+    rated('T-002','fail',['H-002'],{evaluationPhase:'validation',experimentArm:'control',segmentKey:'voice_fixed',materialKey:'m1',comparisonKey:'c1'}),
+    ...Array.from({length:6},(_,i)=>rated('T-other-'+i,'pass',['H-003'],{runId:'R-'+i,segmentKey:'different_'+i})),
+  ];
+  const stewardship=projectGraph({base,items,trials}).stewardship;
+  const plan=stewardship.portfolio.validationPlan;
+  assert.equal(stewardship.portfolio.selectedBranches[0].hypothesisId,'H-001');
+  assert.equal(stewardship.portfolio.selectedBranches.length,2);
+  assert.equal(stewardship.userReview.suggestedVisibleBatchSize,3);
+  assert.equal(plan.hypothesisId,'H-001');
+  assert.equal(plan.segmentKey,'voice_fixed');
+  assert.equal(plan.action,'continue_matched_scope');
+  assert.equal(plan.reservedArtifacts,2);
+  assert.equal(plan.pairs,1);
+  const pending=Array.from({length:4},(_,i)=>({id:'T-await-'+i,status:'awaiting',hypothesisIds:['H-003']}));
+  assert.equal(projectGraph({base,items,trials:[...trials,...pending]}).stewardship.portfolio.validationPlan,null);
+  const reversed=trials.map(t=>t.id==='T-001'?{...t,verdict:'fail'}:t.id==='T-002'?{...t,verdict:'pass'}:t);
+  const alternative=projectGraph({base,items,trials:reversed}).stewardship.portfolio.validationPlan;
+  assert.equal(alternative.hypothesisId,'H-003');
+  assert.equal(alternative.action,'preregister_matched_scope');
+  const winless=trials.map(t=>t.id==='T-001'?{...t,verdict:'partial'}:t);
+  assert.equal(projectGraph({base,items,trials:winless}).stewardship.portfolio.validationPlan.hypothesisId,'H-003');
+  const twoSlots=projectGraph({base,items,trials:[...trials,...pending.slice(0,3)]}).stewardship;
+  assert.equal(twoSlots.portfolio.selectedBranches.length,1);
+  assert.equal(twoSlots.userReview.suggestedVisibleBatchSize,2);
+});
