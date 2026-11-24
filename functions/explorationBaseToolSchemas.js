@@ -131,6 +131,13 @@ const item = {
     locator: string('Source: URL, search query or tool call that reaches it (required on create).', 600),
     coverage: string('Source: what it yields for this outcome and why it is worth trying (required on create).', 1500),
     sourceRole: {type:'string',enum:['source','observation','idea'],description:'S-nnn: acquisition channel, observed case, or unvalidated idea. Idea records cannot be formation evidence.'},
+    fieldObservation:{type:'object',description:'Optional external outcome snapshot on sourceRole=observation. Not a human rating; omit Skill version if execution attribution is absent. Update existing S by ID for an already recorded snapshot.',properties:{
+      artifactRef:string('Canonical published artifact ID/URL.',600),sourceRef:string('Operator or archive record ID/URL carrying these measured values.',600),
+      observedAt:string('Actual observation timestamp (ISO).',40),window:string('Measurement window or explicitly unknown snapshot window.',120),
+      metrics:{type:'object',additionalProperties:{type:'number'},description:'Measured metrics only; omit missing values, never replace them with zero.'},
+      context:string('Audience, platform, exposure and measurement context.',1500),comparison:string('Comparable baseline or clearly state why comparison is unavailable.',1200),
+      skillVersion:{type:'integer',minimum:1},attributionRef:string('Actual execution record linking artifact to version, required with skillVersion.',600),
+    },required:['artifactRef','sourceRef','observedAt','window','metrics','context','comparison'],additionalProperties:false},
     originalProof:{type:'object',description:'Optional direct-original citation with an exact excerpt observed by the agent. Needed for Buzz recovery after persistent user rejections. The server verifies format and link within source metadata, but cannot independently attest that the external text is real.',properties:{
       originalUrl:string('Direct original post/page permalink, HTTPS; not a search result/summary feed.',1000),
       excerpt:string('At least 16 exact characters from the original text, not a summary of it.',1100),
@@ -302,6 +309,11 @@ const tools = [
       type: 'object',
       properties: {
         baseId, objective: string('What this run is for.', 800),
+        capabilityPlan:{type:'object',description:'Declare before drafting approved-method performance samples on fresh materials. Never retrospectively classify a trial.',properties:{
+          benchmarkKey:string('Stable same-task comparison key, also trial.segmentKey.',120),materialKeys:strings('Distinct unused material identifiers to test, fixed before drafting.',6),
+          task:string('Target task and audience.',900),sampling:string('How unseen independent material is chosen without cherry-picking.',900),
+          controls:string('Fixed media, output conditions, resource limits and rating setup.',900),acceptance:string('Same existing human acceptance criterion across releases.',900),
+        },required:['benchmarkKey','materialKeys','task','sampling','controls','acceptance'],additionalProperties:false},
         targets: {
           type: 'array', maxItems: 12,
           items: { type: 'object', properties: { hypothesisId: string('H-nnn.', 20), prediction: string('Expected measurement, stated before measuring.', 800) }, required: ['hypothesisId', 'prediction'], additionalProperties: false },
@@ -425,6 +437,7 @@ const tools = [
     description:'After ALL hypothesis/feedback pages including original artifact bodies are read, preserve concrete qualitative distinctions in textureReview (or existing comparison/tension fields on legacy clients), and register a dialectical proposal and, if new human ratings await maintenance, treeReview must cover all rated cases and every touched hypothesis branch. Then it can propose refinements, splits, or merges; all agent interpretations remain hypotheses. Prior flow: cite a real prior thesis and competing hypothesis (if at least 2 exist), quote their actual claims, cite real human pass and fail feedback, explain tension, propose a testable synthesis/revision and its falsifying observation. Required before existing recall tests and trial recording. Does not itself change hypotheses or certify user acceptance.',
     inputSchema: { type:'object', properties: {
       baseId,runId:string('Open run ID with completed research reading.',20),
+      metaSkillVersion:{type:'integer',minimum:1,description:'Version of hypothesis-formation-analysis actually read and applied during this synthesis. Server checks approved version, not proof of use.'},
       textureReview,
       synthesis:{type:'object',properties:{
         thesisId:string('Existing historical hypothesis ID.',20),
@@ -528,7 +541,7 @@ const tools = [
                   purpose:string('How this resource influenced the actual sample.',500),
                 },required:['kind','id','receiptRef','purpose'],additionalProperties:false,
               }},
-              evaluationPhase:{type:'string',enum:['exploration','validation'],description:'Optional experiment phase fixed before user sees the trial; old ratings remain legacy_unclassified.'},
+              evaluationPhase:{type:'string',enum:['exploration','validation','capability'],description:'Fixed before user sees the trial: exploration, matched hypothesis validation, or approved-method capability on a preregistered fresh material; old ratings remain legacy_unclassified.'},
               segmentKey:string('Condition or subhypothesis segment, assigned BEFORE human evaluation; historical trials without this field are not retrospectively relabeled.',120),
               materialKey:string('Optional source identity for de-duplication and matched comparisons; not proof of randomization.',120),
               comparisonKey:string('Validation comparison ID; paired treatment/control samples must use the same ID and materialKey.',120),
