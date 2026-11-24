@@ -33,7 +33,7 @@ function findRule(blocks,anchor){
 }
 function buildInventory({body='',version='',priorBody='',prior=null,priorVersion='',proposals=[]}={}){
   const before=ruleBlocks(priorBody),after=ruleBlocks(body);
-  const metadata=prior?.methodVersion===priorVersion?prior.entries||[]:[];
+  const metadata=prior?.methodVersion===priorVersion&&prior.bodyDigest===digest(priorBody)?prior.entries||[]:[];
   const old=before.map((b,i)=>({...b,...(metadata[i]?.digest===b.digest?metadata[i]:{
     id:'SR-'+digest(JSON.stringify([priorVersion,b.digest,i])),revision:1,firstVersion:priorVersion,proposalIds:[],hypothesisIds:[],supportingTrialIds:[],counterexampleTrialIds:[],moduleId:null
   })}));
@@ -44,12 +44,13 @@ function buildInventory({body='',version='',priorBody='',prior=null,priorVersion
     if(entries[i]||previous&&used.has(previous.id))return false;
     if(previous)used.add(previous.id);
     const id=previous?.id||'SR-'+digest(JSON.stringify([version,b.digest,i]));
-    const merge=(key)=>[...new Set([...(previous?.[key]||[]),...(p?.[key]||[])])].slice(-40);
+    const evidence=(key)=>[...new Set((p?p[key]:previous?.[key])||[])].slice(-40);
     entries[i]={id,digest:b.digest,revision:(previous?.revision||0)+(previous?.digest===b.digest?0:1),
       firstVersion:previous?.firstVersion||version,lastChangedVersion:previous?.digest===b.digest?(previous.lastChangedVersion||priorVersion):version,
       moduleId:p?.moduleId||previous?.moduleId||null,
       proposalIds:[...new Set([...(previous?.proposalIds||[]),...(p?[p.id]:[])])].slice(-20),
-      hypothesisIds:merge('hypothesisIds'),supportingTrialIds:merge('supportingTrialIds'),counterexampleTrialIds:merge('counterexampleTrialIds')};
+      hypothesisIds:evidence('hypothesisIds'),supportingTrialIds:evidence('supportingTrialIds'),counterexampleTrialIds:evidence('counterexampleTrialIds'),
+      evidenceStatus:p?(p.evidenceEligible?'eligible_at_release':'linked_unvalidated'):previous?.evidenceStatus||'unlinked'};
     if(action)changes.push({id,action,proposalId:p?.id||null});
     return true;
   }
