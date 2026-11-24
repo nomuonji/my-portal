@@ -1,4 +1,5 @@
 'use strict';
+const {createHash}=require('node:crypto');
 const META_SKILL_ID='hypothesis-formation-analysis';
 const PHASES=['exploration','validation','capability'];
 const MIN_CAPABILITY=8;
@@ -9,7 +10,7 @@ function stats(rows){
   return {submitted:rows.length,rated:rated.length,pass,fail:rated.filter(t=>t.verdict==='fail').length,
     partial:rated.filter(t=>t.verdict==='partial').length,passRate:ratio(pass,rated.length)};
 }
-function lane(t){return !t.backfilled&&PHASES.includes(t.evaluationPhase)?t.evaluationPhase:'legacy_unclassified';}
+function lane(t){return !t.backfilled&&PHASES.includes(t.evaluationPhase)&&(t.evaluationPhase!=='capability'||t.capabilityEvidence)?t.evaluationPhase:'legacy_unclassified';}
 function laneView(trials,base){
   const version=t=>t.version!=null?'v'+t.version:t.methodVersion||'unknown';
   const currentKey=base?.method?.bodyRef?.versionNumber!=null?'v'+base.method.bodyRef.versionNumber:base?.method?.version||'unknown';
@@ -38,7 +39,7 @@ function checkCapability(raw,run,existing,fresh,base){
   if(existing.some(t=>t.materialKey===raw.materialKey)||fresh.filter(t=>t.materialKey===raw.materialKey).length!==1)
     throw Error('Capability material must be fresh and used once');
   if(!raw.segmentKey||raw.segmentKey!==p.benchmarkKey)throw Error('Capability segmentKey must match the preregistered benchmarkKey');
-  return {benchmarkKey:p.benchmarkKey,task:p.task,materialKey:raw.materialKey,runId:run.id,
+  return {benchmarkKey:p.benchmarkKey,protocolDigest:createHash('sha256').update(JSON.stringify([p.task,p.sampling,p.controls,p.acceptance])).digest('hex'),task:p.task,materialKey:raw.materialKey,runId:run.id,
     provenance:'agent_declared_fresh_material_not_independently_verified'};
 }
 function capabilityComparison(trials,base,health){
@@ -46,13 +47,14 @@ function capabilityComparison(trials,base,health){
   const currentVersion=base?.method?.bodyRef?.versionNumber??base?.method?.version;
   const key=t=>t.version??t.methodVersion;
   const current=eligible.filter(t=>key(t)===currentVersion&&actual(t));
-  const scopes=[...new Set(current.map(t=>t.capabilityEvidence.benchmarkKey))];
+  const scopeOf=t=>JSON.stringify([t.capabilityEvidence.benchmarkKey,t.capabilityEvidence.protocolDigest||null]);
+  const scopes=[...new Set(current.map(scopeOf))];
   const comparisons=scopes.map(scope=>{
-    const c=current.filter(t=>t.capabilityEvidence.benchmarkKey===scope);
-    const prior=eligible.filter(t=>actual(t)&&key(t)!==currentVersion&&t.capabilityEvidence.benchmarkKey===scope);
+    const c=current.filter(t=>scopeOf(t)===scope);
+    const prior=eligible.filter(t=>actual(t)&&key(t)!==currentVersion&&scopeOf(t)===scope);
     const previousKey=prior.slice().sort((a,b)=>String(b.ratedAt||'').localeCompare(String(a.ratedAt||'')))[0];
     const p=prior.filter(t=>key(t)===key(previousKey||{}));
-    return {benchmarkKey:scope,current:stats(c),previous:previousKey?{version:key(previousKey),...stats(p)}:null,
+    return {benchmarkKey:JSON.parse(scope)[0],protocolDigest:JSON.parse(scope)[1],current:stats(c),previous:previousKey?{version:key(previousKey),...stats(p)}:null,
       ...health(stats(c),previousKey?stats(p):null,base?.outcome?.confirmedBy==='measurement')};
   });
   return {status:base?.outcome?.confirmedBy==='measurement'?'measurement_mode_requires_operator_data':comparisons.length?'capability_comparisons':'no_capability_ratings',
