@@ -68,7 +68,7 @@ function metaAttribution(t){
   if(t.backfilled)return null;
   const structured=Number(t.researchEvidence?.metaSkillVersion);
   const receipts=[...new Set((t.executionResources||[]).filter(r=>r.kind==='skill'&&r.id===META_SKILL_ID&&
-    typeof r.receiptRef==='string'&&r.receiptRef.length>=8&&/^\\d+$/.test(String(r.version||'')))
+    typeof r.receiptRef==='string'&&r.receiptRef.length>=8&&/^\d+$/.test(String(r.version||'')))
     .map(r=>Number(r.version)).filter(v=>Number.isInteger(v)&&v>0))];
   if(Number.isInteger(structured)&&structured>0){
     if(receipts.some(v=>v!==structured))return null;
@@ -83,7 +83,7 @@ function metaComparisons(rows){
   for(const t of rows){
     const f=t.plannedFactors||{};
     if(!actual(t)||t.evaluationPhase!=='validation'||!t.runId||!t.materialKey||!t.comparisonKey||
-      !/^H-\\d+$/.test(f.meta_hypothesis_id||'')||!f.meta_scope||
+      !/^H-\d+$/.test(f.meta_hypothesis_id||'')||!f.meta_scope||
       !['control','treatment'].includes(f.meta_arm)||f.meta_arm!==t.experimentArm)continue;
     const key=JSON.stringify([f.meta_hypothesis_id,f.meta_scope,t.runId,t.comparisonKey,t.materialKey,t.segmentKey]);
     const g=groups.get(key)||{control:[],treatment:[]};
