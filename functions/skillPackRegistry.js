@@ -131,7 +131,7 @@ async function get(input={}){
   if(input.resolve!==true)return result;
   const selected=selectMemberSkills(definition,input.stages);
   const resolved=await Promise.all([definition.entrySkillId,...selected.map(s=>s.skillId)]
-    .filter(Boolean).map(id=>chatSkills.getExecutableSkill({id,includeRelations:false})));
+    .filter(Boolean).map(id=>chatSkills.getExecutableSkill({id,includeRelations:false,topic:input.topic})));
   const hasEntry=Boolean(definition.entrySkillId);
   const entry=hasEntry?resolved[0]:null;
   const members=hasEntry?resolved.slice(1):resolved;
@@ -142,7 +142,7 @@ async function get(input={}){
   result.execution={entry:entry?{id:entry.id,title:entry.title,revision:entry.revision,
       versionPolicy:entry.versionPolicy,body:entry.body,qualitativeEvidence:entry.qualitativeEvidence||[]}:null,
     qualitativeEvidence:await Promise.all(release.map(async d=>{
-      try{return await require('./explorationBaseStore').skillCasebook({baseId:d.baseId,releasedVersion:d.releasedVersion,limit:2});}
+      try{return await require('./explorationBaseStore').skillCasebook({baseId:d.baseId,releasedVersion:d.releasedVersion,limit:2,topic:input.topic});}
       catch(error){return {baseId:d.baseId,status:'unavailable',reason:String(error.message||error).slice(0,300)};}
     })),
     resourceDependencies:resourceView?.resourceDependencies||[],
@@ -205,7 +205,7 @@ async function getLegacyPack(input={}){
   const [entry,...members]=await Promise.all([
     result.definition.entrySkillId,
     ...ids,
-  ].filter(Boolean).map(skillId=>chatSkills.getExecutableSkill({id:skillId,includeRelations:false})));
+  ].filter(Boolean).map(skillId=>chatSkills.getExecutableSkill({id:skillId,includeRelations:false,topic:input.topic})));
   const hasEntry=Boolean(result.definition.entrySkillId);
   const actualEntry=hasEntry?entry:null;
   const actualMembers=hasEntry?members:[entry,...members].filter(Boolean);
@@ -215,7 +215,7 @@ async function getLegacyPack(input={}){
   }):null;
   result.execution={
     qualitativeEvidence:await Promise.all((release.dojos||[]).map(async d=>{
-      try{return await require('./explorationBaseStore').skillCasebook({baseId:d.baseId,releasedVersion:d.releasedVersion,limit:2});}
+      try{return await require('./explorationBaseStore').skillCasebook({baseId:d.baseId,releasedVersion:d.releasedVersion,limit:2,topic:input.topic});}
       catch(error){return {baseId:d.baseId,status:'unavailable',reason:String(error.message||error).slice(0,300)};}
     })),
     resourceDependencies:resourceView?.resourceDependencies||[],
