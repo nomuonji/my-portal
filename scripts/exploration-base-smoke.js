@@ -716,9 +716,11 @@ test('buzz dojo blocks low-confidence, one-shot, invented-reference or unscreene
   const compared=await store.recordComparison({baseId,runId,rows:pairRows});
   assert.equal(compared.draftCount,6);
   await assert.rejects(store.recordComparison({baseId,runId,rows:pairRows}),/already recorded/);
-  await assert.rejects(store.recordTrials({baseId,runId,trials:[{...trial,body:body+' Extra unsaved sentence.',editorialScreen:audit,learningAudit:transferAudit}]}),/exactly match/);
+  await assert.rejects(store.recordTrials({baseId,runId,trials:[{...trial,editorialScreen:audit,learningAudit:transferAudit}]}),/every editorial pool entry/);
+  const boundAudit={...audit,pool:audit.pool.map((entry,i)=>({...entry,branchId:i===2?'B2':'B1',comparisonArm:i===0?'treatment':'control'}))};
+  await assert.rejects(store.recordTrials({baseId,runId,trials:[{...trial,body:body+' Extra unsaved sentence.',editorialScreen:boundAudit,learningAudit:transferAudit}]}),/exactly match/);
   const accepted = await store.recordTrials({ baseId, runId, trials: [{
-    ...trial, predictedPass: 0.35, editorialScreen: audit, learningAudit: transferAudit,
+    ...trial, predictedPass: 0.35, editorialScreen: boundAudit, learningAudit: transferAudit,
   }] });
   assert.equal(accepted.created.length, 1);
   assert.equal(accepted.loop.screening.considered, 3);
@@ -731,7 +733,7 @@ test('buzz dojo blocks low-confidence, one-shot, invented-reference or unscreene
   assert.equal(t.predictedPass, 0.35, 'an honest low forecast is no longer refused');
   assert.equal(t.comparisonEvidence.branchId,'B1');
   assert.equal(t.comparisonEvidence.status,'agent_comparison_unverified');
-  await assert.rejects(store.recordTrials({baseId,runId,trials:[{...trial,ref:'another-output',editorialScreen:audit,learningAudit:transferAudit}]}),/already been registered/);
+  await assert.rejects(store.recordTrials({baseId,runId,trials:[{...trial,ref:'another-output',editorialScreen:boundAudit,learningAudit:transferAudit}]}),/already been registered/);
   await store.rateTrials({ baseId, ratings: [{ id: t.id, verdict: 'fail', userWords: 'ボツ' }] });
   const finished=await store.finishRun({baseId,runId,summary:'One submitted comparison',verdicts:[{hypothesisId:'H-001',result:'contradicted',observed:'The user rejected the selected draft.'}]});
   assert.equal(finished.run.comparisonStatus,'compared_submitted');
