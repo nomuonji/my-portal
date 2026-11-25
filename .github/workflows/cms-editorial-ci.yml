@@ -9,6 +9,7 @@ on:
       - 'functions/dojoSkillFeedbackQueue.js'
       - 'scripts/dojo-skill-feedback-queue-smoke.js'
       - 'functions/dojoEvidenceGraph.js'
+      - 'functions/dojoComparisonWork.js'
       - 'functions/dojoLearningEfficiency.js'
       - 'functions/dojoTreeStewardship.js'
       - 'scripts/dojo-evidence-graph-smoke.js'
@@ -69,6 +70,7 @@ on:
       - 'functions/dojoSkillFeedbackQueue.js'
       - 'scripts/dojo-skill-feedback-queue-smoke.js'
       - 'functions/dojoEvidenceGraph.js'
+      - 'functions/dojoComparisonWork.js'
       - 'functions/dojoLearningEfficiency.js'
       - 'functions/dojoTreeStewardship.js'
       - 'scripts/dojo-evidence-graph-smoke.js'
@@ -130,6 +132,7 @@ jobs:
       - run: node --check functions/explorationBaseStore.js
       - run: node --check functions/explorationBaseToolSchemas.js
       - run: node --check functions/dojoEvidenceGraph.js
+      - run: node --check functions/dojoComparisonWork.js
       - run: npm run test:exploration-base
       - run: node scripts/turso-transaction-smoke.js
       - run: node --check scripts/dojo-skill-first-review.js # mirror Netlify build prerequisite

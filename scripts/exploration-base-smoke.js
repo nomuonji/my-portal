@@ -621,9 +621,10 @@ test('buzz dojo blocks low-confidence, one-shot, invented-reference or unscreene
   await store.upsertItems({
     baseId, kind: 'source', items: [
       { title: 'Real world source', locator: 'https://example.com/source-a',
-        coverage: 'Observed everyday event', stage: 'observed', addEvidence: [{ type: 'observation', ref: 'real confirmed case' }] },
+        coverage: 'Observed everyday event', stage: 'observed', originalProof:{originalUrl:'https://example.com/source-a',excerpt:'Mocked primary source of sufficient length for provenance.',verification:'direct_original'}, addEvidence: [{ type: 'observation', ref: 'real confirmed case' }] },
       { title: 'Different source', locator: 'https://example.com/source-b',
-        coverage: 'Observed forum anecdotes', stage: 'observed', addEvidence: [{ type: 'observation', ref: 'different observed source' }] },
+        coverage: 'Observed forum anecdotes', stage: 'observed', originalProof:{originalUrl:'https://example.com/source-b',excerpt:'Mocked independent second primary source for the fixture.',verification:'direct_original'}, addEvidence: [{ type: 'observation', ref: 'different observed source' }] },
+      { title:'Third source',locator:'https://example.com/source-c',coverage:'Third observed material',stage:'observed',originalProof:{originalUrl:'https://example.com/source-c',excerpt:'Mocked independent third primary source for the fixture.',verification:'direct_original'},addEvidence:[{type:'observation',ref:'third source'}] },
     ],
   });
   await store.upsertItems({ baseId, kind: 'hypothesis', items: [hypothesis] });
@@ -637,9 +638,11 @@ test('buzz dojo blocks low-confidence, one-shot, invented-reference or unscreene
         rating: { verdict: 'fail', userWords: 'つまらない' } },
     ],
   });
+  const comparisonPlan=['causal_sequence','language','perspective'].map((operation,i)=>({hypothesisId:'H-001',operation,intervention:'Apply the specific operation '+operation+' on its own observed material.',control:'Use ordinary standalone copy preserving all the same facts.',expectedDifference:'The reader notices a different specific consequence in the treatment.',falsifier:'Reject if the reader gains no additional value compared with the control.',historicalContrast:{positiveCaseId:'T-001',negativeCaseId:i===1?'T-003':'T-002',positiveAnchor:'genuinely different accepted',negativeAnchor:i===1?'too dry and easy to predict':'explanation did not work',transfer:'Transfer the concrete feature of the accepted example, not its wording.',failureContrast:'Compare the actual failed example and avoid mere explanations.'}}));
+  await assert.rejects(store.startRun({baseId,objective:'A nominally different plan',targets:[{hypothesisId:'H-001',prediction:'Compare drafts'}],comparisonPlan:comparisonPlan.map(r=>({...r,operation:'language'}))}),/three different operations/);
   const { runId } = await store.startRun({
     baseId, objective: 'Compare multiple upstream sources before producing the next standalone post',
-    targets: [{ hypothesisId: 'H-001', prediction: 'One evaluated post could be accepted' }],
+    targets: [{ hypothesisId: 'H-001', prediction: 'One evaluated post could be accepted' }], comparisonPlan,
   });
   await completePriorResearch(store, baseId, runId);
   const body = '当事者だけが気づく小さな面倒に、予想外の二段目が突然出てくる。だからそこが笑える。';
@@ -700,8 +703,24 @@ test('buzz dojo blocks low-confidence, one-shot, invented-reference or unscreene
   await store.upsertItems({ baseId, kind: 'constraint', ...auth, items: [{
     id: holdId, status: 'relaxed',
   }] });
+  await assert.rejects(store.recordTrials({baseId,runId,trials:[{...trial,editorialScreen:audit,learningAudit:transferAudit}]}),/Comparison work required/);
+  const pairRows=[
+    {branchId:'B1',sourceId:'S-001',controlBody:'当事者だけが気づく小さな面倒に、いつもの対処方法を順に説明するだけの原稿です。',treatmentBody:body,controlAnchor:'いつもの対処方法',treatmentAnchor:'予想外の二段目が',selection:'treatment'},
+    {branchId:'B2',sourceId:'S-002',controlBody:'A quiet shop has a customer who checks the ordinary price list and goes home.',treatmentBody:'The shopkeeper memorized the customer’s hesitation but never learned the customer’s name.',controlAnchor:'ordinary price list',treatmentAnchor:'memorized the customer',selection:'neither'},
+    {branchId:'B3',sourceId:'S-003',controlBody:'The bus driver had a long day and everyone left the bus without saying anything.',treatmentBody:'The passenger checks the last seat on the bus because a glove is still sitting there.',controlAnchor:'long day',treatmentAnchor:'a glove is still sitting there',selection:'neither'},
+  ].map(row=>({...row,observedDifference:'The actual alternative text changes the reader’s observation of the concrete event.',reason:'Compare the visible consequences and keep weaker examples internal.'}));
+  await assert.rejects(store.recordComparison({baseId,runId,rows:pairRows.slice(0,1)}),/cover every pinned branch/);
+  await assert.rejects(store.recordComparison({baseId,runId,rows:pairRows.map(r=>({...r,sourceId:'S-001'}))}),/different original materials/);
+  await assert.rejects(store.recordComparison({baseId,runId,rows:pairRows.map((r,i)=>i===1?{...r,treatmentBody:r.controlBody}:r)}),/duplicate or historical draft/);
+  await assert.rejects(store.recordComparison({baseId,runId,rows:pairRows.map((r,i)=>i===0?{...r,treatmentAnchor:'not in the actual text'}:r)}),/anchors must quote/);
+  const compared=await store.recordComparison({baseId,runId,rows:pairRows});
+  assert.equal(compared.draftCount,6);
+  await assert.rejects(store.recordComparison({baseId,runId,rows:pairRows}),/already recorded/);
+  await assert.rejects(store.recordTrials({baseId,runId,trials:[{...trial,editorialScreen:audit,learningAudit:transferAudit}]}),/every editorial pool entry/);
+  const boundAudit={...audit,pool:audit.pool.map((entry,i)=>({...entry,branchId:i===2?'B2':'B1',comparisonArm:i===0?'treatment':'control'}))};
+  await assert.rejects(store.recordTrials({baseId,runId,trials:[{...trial,body:body+' Extra unsaved sentence.',editorialScreen:boundAudit,learningAudit:transferAudit}]}),/exactly match/);
   const accepted = await store.recordTrials({ baseId, runId, trials: [{
-    ...trial, predictedPass: 0.35, editorialScreen: audit, learningAudit: transferAudit,
+    ...trial, predictedPass: 0.35, editorialScreen: boundAudit, learningAudit: transferAudit,
   }] });
   assert.equal(accepted.created.length, 1);
   assert.equal(accepted.loop.screening.considered, 3);
@@ -712,7 +731,17 @@ test('buzz dojo blocks low-confidence, one-shot, invented-reference or unscreene
   assert.equal(t.editorialScreen.reviewer, 'agent_screen_only_unverified');
   assert.equal(t.editorialScreen.closingType, 'derived_consequence');
   assert.equal(t.predictedPass, 0.35, 'an honest low forecast is no longer refused');
+  assert.equal(t.comparisonEvidence.branchId,'B1');
+  assert.equal(t.comparisonEvidence.status,'agent_comparison_unverified');
+  await assert.rejects(store.recordTrials({baseId,runId,trials:[{...trial,ref:'another-output',editorialScreen:boundAudit,learningAudit:transferAudit}]}),/already been registered/);
   await store.rateTrials({ baseId, ratings: [{ id: t.id, verdict: 'fail', userWords: 'ボツ' }] });
+  const finished=await store.finishRun({baseId,runId,summary:'One submitted comparison',verdicts:[{hypothesisId:'H-001',result:'contradicted',observed:'The user rejected the selected draft.'}]});
+  assert.equal(finished.run.comparisonStatus,'compared_submitted');
+  assert.equal(finished.run.comparisonDraftCount,6);
+  const researchRun=await store.startRun({baseId,objective:'Research only, no artifact',unknownTerritoryProbe:'Read new primary material'});
+  const researchOnly=await store.finishRun({baseId,runId:researchRun.runId,summary:'Research only',notMovedReason:'No fixed point changed'});
+  assert.equal(researchOnly.run.comparisonStatus,'research_only');
+  assert.equal(researchOnly.run.comparisonDraftCount,0);
   const after = await store.get({ id: baseId });
   assert.deepEqual(after.loop.screening, {
     submitted: 1, considered: 3, rejectedBeforeUser: 2,

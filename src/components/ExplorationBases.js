@@ -75,6 +75,12 @@ function methodUrl(bodyRef) {
   return '';
 }
 
+const COMPARISON_STATUS = {
+  research_only: '研究のみ・実作比較なし',
+  incomplete_comparison: '実作比較未完了',
+  compared_no_submission: '実作比較済み・提出なし',
+  compared_submitted: '実作比較済み・評価物登録済み',
+};
 // One sentence for "where does this stand", shared by the list and the detail page.
 export function statusOf(state) {
   if (state.status === 'paused') return { text: '一時停止中です', color: V.faint };
@@ -87,6 +93,10 @@ export function statusOf(state) {
   if (state.openRunId) return { text: 'いま探索を実行しています', color: V.blue };
   if (!state.runCount) return { text: 'まだ一度も実行していません', color: V.faint };
   const last = state.lastRun;
+  if (COMPARISON_STATUS[last?.comparisonStatus]) return {
+    text: '最後の実行は ' + shortDate(last.finishedAt) + '（' + COMPARISON_STATUS[last.comparisonStatus] + '）',
+    color: last.comparisonStatus.startsWith('compared_') ? V.blue : V.amber,
+  };
   return {
     text: '最後の実行は ' + shortDate(last?.finishedAt) + '（' + (last?.moved === false ? '空振り' : '進展あり') + '）',
     color: last?.moved === false ? V.amber : V.green,
@@ -256,12 +266,13 @@ function Ledger({ items, stages, empty, closedLabel, closedNote }) {
 
 function Run({ run, hypotheses }) {
   const stalled = run.status === 'finished' && run.moved === false;
+  const comparisonStatus = run.status === 'finished' ? COMPARISON_STATUS[run.comparisonStatus] : null;
   return (
     <Box sx={{ py: 1.1, borderBottom: '1px solid ' + V.rule }}>
       <Stack direction="row" gap={1} alignItems="baseline" flexWrap="wrap">
         <Small>{shortDate(run.startedAt)}</Small>
-        <Typography component="span" sx={{ fontSize: 12, fontWeight: 800, color: run.status === 'open' ? V.blue : stalled ? V.pink : run.status === 'abandoned' ? V.faint : V.green }}>
-          {run.status === 'open' ? '実行中' : stalled ? '空振り' : run.status === 'abandoned' ? '中断' : '進展あり'}
+        <Typography component="span" sx={{ fontSize: 12, fontWeight: 800, color: run.status === 'open' ? V.blue : comparisonStatus ? (run.comparisonStatus.startsWith('compared_') ? V.blue : V.amber) : stalled ? V.pink : run.status === 'abandoned' ? V.faint : V.green }}>
+          {run.status === 'open' ? '実行中' : comparisonStatus || (stalled ? '空振り' : run.status === 'abandoned' ? '中断' : '進展あり')}
         </Typography>
         <Typography sx={{ fontSize: 14, fontWeight: 700 }}>{run.objective}</Typography>
       </Stack>
@@ -273,6 +284,23 @@ function Run({ run, hypotheses }) {
             return title + '：' + (VERDICT[verdict.result] || verdict.result);
           }).join('　')}
         </Typography>
+      )}
+      {!!run.comparisonWork?.rows?.length && (
+        <Box component="details" sx={{ mt: 1, fontSize: 13, color: V.muted }}>
+          <Box component="summary" sx={{ cursor: 'pointer', fontWeight: 700 }}>内部比較稿 {run.comparisonWork.rows.length * 2}件（人間による品質評価ではない）</Box>
+          {run.comparisonWork.rows.map(row => (
+            <Box key={row.branchId} sx={{ py: 1, borderBottom: '1px solid ' + V.rule }}>
+              <Typography sx={{ fontWeight: 700, fontSize: 13 }}>{row.branchId} · {row.operation} · {row.hypothesisId} · {row.sourceId}</Typography>
+              <Typography sx={{ fontSize: 12 }}>{row.intervention}</Typography>
+              <Typography sx={{ fontSize: 12, fontWeight: 700, mt: .6 }}>対照稿</Typography>
+              <Typography sx={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>{row.controlBody}</Typography>
+              <Typography sx={{ fontSize: 12, fontWeight: 700, mt: .6 }}>改善稿</Typography>
+              <Typography sx={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>{row.treatmentBody}</Typography>
+              <Typography sx={{ fontSize: 12, mt: .5 }}>差分：{row.observedDifference}</Typography>
+              <Typography sx={{ fontSize: 12 }}>選別：{({ control: '対照稿', treatment: '改善稿', neither: '両方棄却', both: '両方・対照評価用' })[row.selection]} — {row.reason}</Typography>
+            </Box>
+          ))}
+        </Box>
       )}
       {run.nextStep && <Typography sx={{ fontSize: 12, color: V.muted, mt: 0.3 }}>次の一手：{run.nextStep}</Typography>}
     </Box>
