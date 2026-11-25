@@ -1,6 +1,6 @@
 'use strict';
 const crypto = require('node:crypto');
-const { getDocumentDb, FieldValue } = require('./documentDb');
+const { getDocumentDb, FieldValue, FieldPath } = require('./documentDb');
 const CONTEXT_ID = 'W1Ezf9gmcFe7nwYePmd0';
 const db = () => getDocumentDb(process.env.AGENT_IDEAS_DATABASE_ID || '(default)');
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
@@ -87,7 +87,14 @@ async function receive(input={}) {
 }
 async function materials(input={}) {
   const limit=Math.min(Math.max(Math.floor(Number(input.limit)||10),1),30);
-  const s=await db().collection('learningMaterials').orderBy('receivedAt','desc').limit(limit).get();
+  const d=db();
+  let q=d.collection('learningMaterials').orderBy('receivedAt','desc').orderBy(FieldPath.documentId(),'desc');
+  if(input.before){
+    const cursor=await materialRef(d,validId(input.before)).get();
+    if(!cursor.exists) throw fail('Cursor not found',404);
+    q=q.startAfter(cursor.data().receivedAt,cursor.id);
+  }
+  const s=await q.limit(limit).get();
   return {items:s.docs.map(doc=>{const v=doc.data();return {id:doc.id,postKey:v.postKey,sourceUrl:v.sourceUrl,truncated:v.truncated,learningStatus:v.learningStatus,receivedAt:v.receivedAt?.toDate?.()?.toISOString()||v.receivedAt};}),count:s.docs.length};
 }
 async function getMaterial(input={}) {
