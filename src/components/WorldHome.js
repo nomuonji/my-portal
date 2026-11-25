@@ -26,6 +26,7 @@ import {
 } from '@mui/icons-material';
 import { Link as RouterLink } from 'react-router-dom';
 import ContextPanel from './ContextPanel';
+import AgentMemoryPanel from './AgentMemoryPanel';
 import AgentGuidePanel from './AgentGuidePanel';
 import { auth } from '../firebase';
 import { fonts } from '../theme';
@@ -56,7 +57,7 @@ const EMPTY = { routes: [], projects: [], spaces: [], methods: [], chatSkills: [
 const SEARCH_TABS = [
   { id: 'all', label: 'すべて' }, { id: 'guide', label: 'Agent Guide' }, { id: 'routes', label: '分野・入口' },
   { id: 'projects', label: 'Projects' }, { id: 'skills', label: 'Skills' },
-  { id: 'contexts', label: 'Contexts' },
+  { id: 'memory', label: 'Agent Memory' }, { id: 'contexts', label: 'Contexts' },
 ];
 function searchable(item) {
   return JSON.stringify(item || {}).toLocaleLowerCase();
@@ -494,6 +495,8 @@ export default function WorldHome() {
           {skills.length===0&&<Typography color="text.secondary">登録済みSkillがありません。</Typography>}
         </section>
       )}
+
+      {!loading && show('memory') && <AgentMemoryPanel api={fetchPortalWorld}/>}
 
       {!loading && show('contexts') && (
         <section aria-label="Contexts — ProjectとDomainに結びつくコンテクスト">

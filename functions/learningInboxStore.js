@@ -1,12 +1,10 @@
 'use strict';
 const crypto = require('node:crypto');
 const { getDocumentDb, FieldValue, FieldPath } = require('./documentDb');
-const CONTEXT_ID = 'W1Ezf9gmcFe7nwYePmd0';
 const db = () => getDocumentDb(process.env.AGENT_IDEAS_DATABASE_ID || '(default)');
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const configRef = d => d.collection('learningInboxConfig').doc('sender');
 const itemRef = (d,id) => d.collection('learningInbox').doc(id);
-const eventRef = (d,id) => d.collection('contextEvents').doc(id);
 const materialRef = (d,id) => d.collection('learningMaterials').doc(id);
 const fail = (message,status=400) => Object.assign(new Error(message),{status});
 async function setKey(input={}) {
@@ -57,32 +55,24 @@ function validId(id) {
 }
 async function receive(input={}) {
   const d=db(), id=validId(input.id);
-  const ref=itemRef(d,id), context=d.collection('contexts').doc(CONTEXT_ID);
-  const material=materialRef(d,id), event=eventRef(d,'learning-inbox-'+id);
+  const ref=itemRef(d,id), material=materialRef(d,id);
   return d.runTransaction(async tx=>{
-    const [pending,parent,saved,note]=await Promise.all([tx.get(ref),tx.get(context),tx.get(material),tx.get(event)]);
-    if(!parent.exists||parent.data().status!=='active') throw fail('Learning Context is not active',409);
+    const [pending,saved]=await Promise.all([tx.get(ref),tx.get(material)]);
     if(saved.exists){
       const v=saved.data();
-      if(hash(v.raw)!==id||v.contextId!==CONTEXT_ID||!note.exists||note.data().learningMaterialId!==id) throw fail('Receipt integrity conflict',409);
+      if(hash(v.raw)!==id) throw fail('Receipt integrity conflict',409);
       if(pending.exists){
         if(pending.data().raw!==v.raw) throw fail('Inbox payload integrity conflict',409);
         tx.delete(ref);
       }
-      return {id,status:'received',eventId:event.id};
+      return {id,status:'received'};
     }
     if(!pending.exists) throw fail('Inbox item not found',404);
-    if(note.exists) throw fail('Receipt integrity conflict',409);
     const v=pending.data();
     if(hash(v.raw)!==id||v.id!==id) throw fail('Inbox payload integrity failure',409);
-    const post=JSON.parse(v.raw);
-    const preview=Array.from(post.text).slice(0,400).join('');
-    tx.set(material,{...v,contextId:CONTEXT_ID,learningStatus:'unverified',receivedAt:FieldValue.serverTimestamp()});
-    tx.set(event,{contextId:CONTEXT_ID,kind:'finding',summary:'指導学習・未検証｜'+v.postKey,
-      detail:'原典は learning_material_get で取得: '+id+'\n'+preview,
-      source:'本人提供SNS・学習Inbox',sourceUrl:v.sourceUrl,learningMaterialId:id,learningStatus:'unverified',createdAt:FieldValue.serverTimestamp()});
+    tx.set(material,{...v,space:'agent-memory',learningStatus:'unverified',receivedAt:FieldValue.serverTimestamp()});
     tx.delete(ref);
-    return {id,status:'received',eventId:event.id};
+    return {id,status:'received'};
   });
 }
 async function materials(input={}) {
@@ -101,7 +91,7 @@ async function getMaterial(input={}) {
   const id=validId(input.id), s=await materialRef(db(),id).get();
   if(!s.exists) throw fail('Learning material not found',404);
   const v=s.data();
-  if(hash(v.raw)!==id||v.contextId!==CONTEXT_ID) throw fail('Material integrity failure',409);
-  return {id,contextId:CONTEXT_ID,learningStatus:v.learningStatus,sourceUrl:v.sourceUrl,post:JSON.parse(v.raw)};
+  if(hash(v.raw)!==id) throw fail('Material integrity failure',409);
+  return {id,space:'agent-memory',learningStatus:v.learningStatus,sourceUrl:v.sourceUrl,post:JSON.parse(v.raw)};
 }
-module.exports={setKey,authorized,normalize,enqueue,list,receive,materials,getMaterial,CONTEXT_ID};
+module.exports={setKey,authorized,normalize,enqueue,list,receive,materials,getMaterial};

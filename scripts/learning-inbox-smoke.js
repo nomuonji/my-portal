@@ -16,13 +16,14 @@ const db = {
  }
 };
 const old=Module._load;
-let store;
+let store, memory;
 try {
  Module._load=function(name,parent,isMain){
-   if(name==='./documentDb'&&parent.filename.endsWith('learningInboxStore.js'))return {getDocumentDb:()=>db,FieldValue:{serverTimestamp:()=>new Date()},FieldPath:{documentId:()=> '__name__'}};
+   if(name==='./documentDb'&&['learningInboxStore.js','agentMemoryStore.js'].some(name=>parent.filename.endsWith(name)))return {getDocumentDb:()=>db,FieldValue:{serverTimestamp:()=>new Date()},FieldPath:{documentId:()=> '__name__'}};
    return old.call(this,name,parent,isMain);
  };
  store=require('../functions/learningInboxStore');
+ memory=require('../functions/agentMemoryStore');
 } finally {Module._load=old;}
 test('submission-only key, input validation, lossless atomic receipt and retry',async()=>{
  assert.equal(await store.authorized('anything'),false);
@@ -38,9 +39,6 @@ test('submission-only key, input validation, lossless atomic receipt and retry',
  assert.deepEqual(again,first);
  assert.equal(first.status,'pending');
  const path='learningInbox/'+first.id;
- await assert.rejects(store.receive({id:first.id}),/not active/);
- assert.equal(docs.has(path),true);
- docs.set('contexts/'+store.CONTEXT_ID,{status:'active'});
  failCommit=true;
  await assert.rejects(store.receive({id:first.id}),/simulated commit failure/);
  failCommit=false;
@@ -49,7 +47,8 @@ test('submission-only key, input validation, lossless atomic receipt and retry',
  const received=await store.receive({id:first.id});
  assert.equal(received.status,'received');
  assert.equal(docs.has(path),false);
- assert.equal(docs.has('contextEvents/'+received.eventId),true);
+ assert.equal([...docs.keys()].some(k=>k.startsWith('contextEvents/')),false);
+ assert.equal(docs.get('learningMaterials/'+first.id).space,'agent-memory');
  const saved=await store.getMaterial({id:first.id});
  assert.equal(saved.post.text,post.text);
  assert.deepEqual(saved.post.media,post.media);
@@ -61,4 +60,17 @@ test('submission-only key, input validation, lossless atomic receipt and retry',
  const modified=await store.enqueue({...post,text:'new evidence'});
  assert.notEqual(modified.id,first.id);
  assert.equal(docs.has('learningInbox/'+modified.id),true);
+});
+
+test('research memory retains evidence link and cannot self-promote',async()=>{
+ const item=await store.enqueue({platform:'x',postId:'456',url:'https://x.com/example/status/456',text:'source observation'});
+ await store.receive({id:item.id});
+ const entry={kind:'research',title:'Evidence',observation:'Observed',inference:'Hypothesis',domains:['marketing'],materialIds:[item.id],status:'adopted',confirm:true};
+ const first=await memory.save(entry);
+ assert.equal(first.status,'candidate');
+ assert.deepEqual(first.materialIds,[item.id]);
+ assert.equal((await memory.save(entry)).id,first.id);
+ assert.equal((await memory.get({id:first.id})).observation,'Observed');
+ await assert.rejects(memory.save({...entry,materialIds:['a'.repeat(64)]}),/not found/);
+ await assert.rejects(memory.save({...entry,materialIds:[]}),/requires source/);
 });
