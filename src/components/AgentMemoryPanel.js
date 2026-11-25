@@ -62,7 +62,7 @@ export default function AgentMemoryPanel({api}){
    {items.map(item=><Paper key={item.id} variant="outlined" sx={{p:1.5,overflowWrap:'anywhere'}}>
     <Stack direction="row" alignItems="start" justifyContent="space-between" spacing={1}>
       <Typography fontWeight={700}>{item.title||item.postKey||item.id}</Typography>
-      <Chip size="small" variant="outlined" label={tab==='inbox'?'未受領':item.learningStatus==='unverified'?'未検証':item.status==='candidate'?'候補':item.status||'記録'}/>
+      <Chip size="small" variant="outlined" label={tab==='inbox'?'未受領':item.learningStatus==='incomplete'||item.status==='incomplete-source'?'本文不完全・学習対象外':item.learningStatus==='unverified'?'未検証':item.status==='candidate'?'候補':item.status||'記録'}/>
     </Stack>
     {item.sourceUrl&&<Typography variant="body2" component="a" href={item.sourceUrl} target="_blank" rel="noreferrer">{item.sourceUrl}</Typography>}
     {item.truncated&&<Typography variant="caption" color="text.secondary" display="block">元投稿の省略あり</Typography>}

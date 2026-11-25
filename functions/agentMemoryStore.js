@@ -37,9 +37,10 @@ async function save(input={}){
   const id=hash(JSON.stringify(entry)),d=db(),ref=d.collection('agentMemories').doc(id);
   await d.runTransaction(async tx=>{
     const existing=await tx.get(ref);
-    if(existing.exists)return;
     const sources=await Promise.all(entry.materialIds.map(id=>tx.get(d.collection('learningMaterials').doc(id))));
     if(sources.some(x=>!x.exists))throw fail('Source material not found',409);
+    if(sources.some(x=>x.data().truncated!==false))throw fail('Incomplete source material; retrieve the full post before learning',422);
+    if(existing.exists)return;
     tx.set(ref,{...entry,createdAt:FieldValue.serverTimestamp()});
   });
   return serialize(await ref.get());
@@ -48,7 +49,13 @@ async function get(input={}){
   if(!idValid(input.id))throw fail('Invalid memory ID');
   const snap=await db().collection('agentMemories').doc(input.id).get();
   if(!snap.exists)throw fail('Memory not found',404);
-  return serialize(snap);
+  return withCompleteness(serialize(snap));
+}
+async function withCompleteness(entry){
+  if(!entry.materialIds?.length)return entry;
+  const d=db();
+  const sources=await Promise.all(entry.materialIds.map(id=>d.collection('learningMaterials').doc(id).get()));
+  return sources.some(s=>!s.exists||s.data().truncated!==false)?{...entry,status:'incomplete-source'}:entry;
 }
 async function list(input={}){
   const limit=Math.min(Math.max(Math.floor(Number(input.limit)||20),1),50),d=db();
@@ -64,8 +71,9 @@ async function list(input={}){
   }
   const snap=await q.limit(limit).get();
   const search=String(input.query||'').toLowerCase().trim();
-  const items=snap.docs.map(serialize).filter(v=>(!domain||v.domains.includes(domain))&&(!search||[v.title,v.observation,v.inference,v.application,...v.domains].join(' ').toLowerCase().includes(search)))
-    .map(({id,kind,title,domains,status,createdAt,materialIds,sourceUrls})=>({id,kind,title,domains,status,createdAt,materialIds,sourceUrls}));
+  const matched=snap.docs.map(serialize).filter(v=>(!domain||v.domains.includes(domain))&&(!search||[v.title,v.observation,v.inference,v.application,...v.domains].join(' ').toLowerCase().includes(search)))
+    ;
+  const items=(await Promise.all(matched.map(withCompleteness))).map(({id,kind,title,domains,status,createdAt,materialIds,sourceUrls})=>({id,kind,title,domains,status,createdAt,materialIds,sourceUrls}));
   return {items,count:items.length,nextCursor:snap.docs.length===limit?snap.docs.at(-1).id:null};
 }
 module.exports={save,get,list};
