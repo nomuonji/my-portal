@@ -38,9 +38,6 @@ test('submission-only key, input validation, lossless atomic receipt and retry',
  assert.deepEqual(again,first);
  assert.equal(first.status,'pending');
  const path='learningInbox/'+first.id;
- await assert.rejects(store.receive({id:first.id}),/not active/);
- assert.equal(docs.has(path),true);
- docs.set('contexts/'+store.CONTEXT_ID,{status:'active'});
  failCommit=true;
  await assert.rejects(store.receive({id:first.id}),/simulated commit failure/);
  failCommit=false;
@@ -49,7 +46,8 @@ test('submission-only key, input validation, lossless atomic receipt and retry',
  const received=await store.receive({id:first.id});
  assert.equal(received.status,'received');
  assert.equal(docs.has(path),false);
- assert.equal(docs.has('contextEvents/'+received.eventId),true);
+ assert.equal([...docs.keys()].some(k=>k.startsWith('contextEvents/')),false);
+ assert.equal(docs.get('learningMaterials/'+first.id).space,'agent-memory');
  const saved=await store.getMaterial({id:first.id});
  assert.equal(saved.post.text,post.text);
  assert.deepEqual(saved.post.media,post.media);
