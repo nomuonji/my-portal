@@ -630,7 +630,7 @@ export default async (request: Request) => {
     const message = error instanceof Error ? error.message : String(error);
     if (message === "UNAUTHORIZED") return json({ error: "Unauthorized" }, 401);
     const status = Number((error as any)?.status);
-    return json({ error: status >= 400 && status < 500 ? message : "Server error" }, status >= 400 && status < 500 ? status : 500);
+    return json({ error: message }, status >= 400 && status < 500 ? status : 500);
   }
 };
 
