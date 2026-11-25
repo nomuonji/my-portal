@@ -62,6 +62,7 @@ async function receive(input={}) {
     if(saved.exists){
       const v=saved.data();
       if(hash(v.raw)!==id) throw fail('Receipt integrity conflict',409);
+      if(v.truncated!==false||JSON.parse(v.raw).truncated!==false) throw fail('Incomplete source; resubmit the full post',422);
       if(pending.exists){
         if(pending.data().raw!==v.raw) throw fail('Inbox payload integrity conflict',409);
         tx.delete(ref);
