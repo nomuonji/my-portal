@@ -222,8 +222,11 @@ test('sources are a verified ledger like hypotheses', async () => {
   const full = await store.get({ id: 'test-base', view: 'full' });
   assert.equal(full.full.sources.length, 2);
   // Achievements record which source they came from.
-  const { runId } = await store.startRun({ baseId: 'test-base', objective: 'try', unknownTerritoryProbe: 'new sources' });
+  const { runId, purposeAnchor } = await store.startRun({ baseId: 'test-base', objective: 'try', unknownTerritoryProbe: 'new sources', responseMode: 'compact' });
+  assert.equal(purposeAnchor.phase, 'start');
+  assert.equal(purposeAnchor.purpose, outcome.statement);
   const done = await store.finishRun({ baseId: 'test-base', runId, summary: 'found one', achievements: [{ label: 'item', evidence: 'passed', sourceIds: ['S-001'] }] });
+  assert.equal(done.purposeAnchor.phase, 'finish');
   assert.deepEqual(done.brief.outcome.awaitingConfirmation[0].sourceIds, ['S-001']);
 });
 
@@ -339,8 +342,19 @@ test('a trial names its hypothesis and prediction before the user rates it', asy
   assert.equal(rated.loop.calibration.hitRate, 0.5, 'both were predicted to pass; one did');
   assert.deepEqual(rated.loop.hypotheses.map((h) => [h.id, h.pass, h.fail]), [['H-001', 1, 1], ['H-002', 0, 1]]);
   assert.equal(rated.loop.failStages.transform, 1);
+  assert.equal(recorded.purposeAnchor.phase, 'submission');
+  assert.equal(rated.purposeAnchor.phase, 'feedback');
+  const state = await store.get({ id: 'test-base', view: 'state' });
+  assert.equal(state.purposeAnchor.purpose, outcome.statement);
+  assert.equal(state.purposeAnchor.requiredQuality, outcome.acceptance);
+  assert.deepEqual(state.purposeAnchor.notSuccess, ['search volume']);
+  assert.equal(state.qualityAnchor, undefined, 'state refresh does not resend quality examples');
 
   const full = await store.get({ id: 'test-base', view: 'full' });
+  assert.deepEqual(full.qualityAnchor.cases.map(t => [t.id, t.verdict]), [['T-001','pass'],['T-002','fail']]);
+  assert.equal(full.qualityAnchor.cases[0].excerpt, 'text A');
+  assert.equal(full.qualityAnchor.cases[1].imageUrl, sampleB.imageUrl);
+  assert.equal(full.qualityAnchor.marketObservation, null, 'do not fabricate market evidence');
   const h1 = full.full.hypotheses.find((h) => h.id === 'H-001');
   assert.equal(h1.stage, 'observed', 'a pass is evidence on the hypothesis');
   assert.equal(h1.evidence.at(-1).type, 'candidate');
