@@ -10,6 +10,7 @@ import * as chatContextImport from "../../functions/chatContextRegistry.js";
 import * as skillRelationPoliciesImport from "../../functions/chatSkillRelationsStore.js";
 import * as contextRegistryImport from "../../functions/contextRegistry.js";
 import * as learningInboxImport from "../../functions/learningInboxStore.js";
+import * as agentMemoryImport from "../../functions/agentMemoryStore.js";
 import * as metaStoreImport from "../../functions/metaStrategyStore.js";
 import * as personalFeedImport from "../../functions/personalFeedStore.js";
 import * as discoverReaderImport from "../../functions/discoverReaderStore.js";
@@ -33,6 +34,7 @@ const chatContext: any = (chatContextImport as any).default ?? chatContextImport
 const skillRelationPolicies: any = (skillRelationPoliciesImport as any).default ?? skillRelationPoliciesImport;
 const contextRegistry: any = (contextRegistryImport as any).default ?? contextRegistryImport;
 const learningInbox: any = (learningInboxImport as any).default ?? learningInboxImport;
+const agentMemory: any = (agentMemoryImport as any).default ?? agentMemoryImport;
 const metaStore: any = (metaStoreImport as any).default ?? metaStoreImport;
 const personalFeed: any = (personalFeedImport as any).default ?? personalFeedImport;
 const discoverReader: any = (discoverReaderImport as any).default ?? discoverReaderImport;
@@ -244,6 +246,10 @@ export default async (request: Request) => {
       if (resource === "contexts") return json(await contextRegistry.list({projectId:url.searchParams.get("projectId")||undefined,domain:url.searchParams.get("domain")||undefined,includeArchived:url.searchParams.get("includeArchived")==="true"}));
       if (resource === "context") return json(await contextRegistry.get({id:url.searchParams.get("id")||""}));
       if (resource === "learning_inbox") return json(await learningInbox.list({limit:30}));
+      if (resource === "learning_materials") return json(await learningInbox.materials({limit:30,before:url.searchParams.get("before")||undefined}));
+      if (resource === "learning_material") return json(await learningInbox.getMaterial({id:url.searchParams.get("id")||""}));
+      if (resource === "agent_memories") return json(await agentMemory.list({limit:30,domain:url.searchParams.get("domain")||undefined,query:url.searchParams.get("q")||undefined,before:url.searchParams.get("before")||undefined}));
+      if (resource === "agent_memory") return json(await agentMemory.get({id:url.searchParams.get("id")||""}));
       if (resource === "context_history") return json(await contextRegistry.listEvents({contextId:url.searchParams.get("id")||""}));
       if (resource === "intelligence") return json(await agentIntelligenceRegistry.getPack({id:url.searchParams.get("id")||""}));
       if (resource === "skill_packs") return json(await skillPackRegistry.list());
@@ -490,6 +496,7 @@ export default async (request: Request) => {
       if (action === "chat_skill_relation_policy_publish") return json(await skillRelationPolicies.publish({policy:body.policy,expectedRevision:body.expectedRevision,changeReason:body.changeReason,benchmark:body.benchmark,confirm:body.confirm===true}));
       if (action === "context_save") return json(await contextRegistry.save({id:body.id,context:body.context,expectedRevision:body.expectedRevision,confirm:body.confirm===true}));
       if (action === "learning_inbox_set_key") return json(await learningInbox.setKey({key:body.key}));
+      if (action === "learning_inbox_receive") return json(await learningInbox.receive({id:body.id}));
       if (action === "context_event_create") return json(await contextRegistry.addEvent({contextId:body.contextId,kind:body.kind,summary:body.summary,detail:body.detail,source:body.source||"portal-ui",sourceUrl:body.sourceUrl,idempotencyKey:body.idempotencyKey,confirm:body.confirm===true}));
       if (action === "world_map_update") {
         return json(await worldMap.update({
