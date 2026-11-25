@@ -17,6 +17,7 @@ const { makeRuleProposal, assessRuleProposal } = require('./dojoRuleMerge');
 const { buildInventory, inventoryView } = require('./dojoRuleInventory');
 const {validateTextureReview,selectCasebook}=require('./dojoTextureEvidence');
 const efficiency=require('./dojoLearningEfficiency');
+const comparison=require('./dojoComparisonWork');
 const { planSkillTransfers } = require('./dojoSkillTransfer');
 const { enqueueFeedback, validateReview, applyReviews, cyclePreflight, assertCyclePrepared } = require('./dojoSkillFeedbackQueue');
 
@@ -53,6 +54,7 @@ const PROTOCOL = [
   'All dojos: register falsifiable failure modes as polarity=negative. Every positive-target run with registered open failure hypotheses automatically pins one negative arm (stage-matched if possible); explicitly declared negativeTargets override the automatic choice. Compare genuine accepted/rejected cases via negativeReview before showing a trial, and screen out unresolved risks.',
   'At finishRun, negativeVerdicts report what was observed. screenedOut cases are unverified internal rejections, not user fails or method wins. Read loop.negativeLearning for cleared-but-rejected misses and update the next experiment. Older runs remain readable without evidence of negative testing.',
   'exploration_run_start: declare which hypotheses this run tests and the predicted result before measuring.',
+  'Buzz: before drafting, preregister 3-5 comparisonPlan branches across at least three distinct operations. Save every actual matched control/treatment text, source, exact changed anchors and selection via exploration_comparison_record. Only an exact saved selected text may become a trial. Internal comparisons never count as human approval. Research-only or incomplete runs are explicitly distinguished from compared runs; zero submissions are permitted.',
   'During the run, write every changed fixed point with the runId (exploration_item_upsert).',
   'exploration_run_finish: give a verdict per declared hypothesis. A run that moved no fixed point is recorded as stalled.',
   'Never change the method version during an open run. Bump it only between runs, with the motivating runs and a benchmark result.',
@@ -1566,6 +1568,7 @@ function createStore(options) {
           });
         }
       }
+      const comparisonPlan = input.comparisonPlan === undefined ? null : comparison.cleanPlan(input.comparisonPlan, new Set([...cleanTargets.map(t=>t.hypothesisId), ...(experimentDesign?.contrastedHypothesisIds||[])]));
       base.counters.R = (base.counters.R || 0) + 1;
       runId = seqId('R', base.counters.R);
       const run = {
@@ -1575,6 +1578,7 @@ function createStore(options) {
         targets: cleanTargets, ...(negativeTargets.length ? { negativeTargets, negativeTargetOrigin } : {}), unknownTerritoryProbe: probe, ...(experimentDesign ? { experimentDesign } : {}),
         ...(input.capabilityPlan?{capabilityPlan:efficiency.capabilityPlan(input.capabilityPlan)}:{}),
         ...(crossDojoEvidence.length ? { crossDojoEvidence } : {}),
+        ...(comparisonPlan ? {comparisonPlan} : {}),
       };
       put(tx, runRef(id, runId), run);
       base.openRunId = runId;
@@ -1582,12 +1586,42 @@ function createStore(options) {
         cycle:cyclePreflight(base),
         purposeAnchor: purposeAnchor(base, 'start'),
         crossDojoEvidenceCount: crossDojoEvidence.length, negativeTargetCount: negativeTargets.length,
-        negativeTargetOrigin: negativeTargetOrigin || null };
+        negativeTargetOrigin: negativeTargetOrigin || null, ...(comparisonPlan ? {comparisonPlan} : {}) };
       pushEvent(tx, base, { type: 'run_started', runId, summary: run.objective, actor: input.actor, detail: { targets: cleanTargets, negativeTargets, methodVersion: run.methodVersion } });
       saveBase(tx, base);
     });
     if (responseMode === 'compact') return receipt;
     return { runId, brief: await get({ id }) };
+  }
+
+  // Store actual comparison artifacts before a trial exists. A later trial may
+  // reference these immutable texts, but cannot rewrite the comparison history.
+  async function recordComparison(input) {
+    const id=requireBaseId(input?.baseId);
+    if(id!==comparison.BUZZ_BASE) throw Error('Comparison work is currently enabled for the Buzz dojo.');
+    const runId=text(input?.runId,20,'runId',true);
+    const [items,trials]=await Promise.all([loadItems(id),loadTrials(id)]);
+    let work;
+    await db().runTransaction(async tx=>{
+      const base=await loadBase(tx,id);
+      requireOpenRun(base,runId);
+      const run=value(await tx.get(runRef(id,runId)));
+      if(!run||run.status!=='open')throw Error('Run is not open: '+runId);
+      if(run.comparisonWork || (run.trialIds||[]).length)
+        throw Error('Comparison work is already recorded or trials exist; start another run for a new experiment.');
+      assertCyclePrepared(base);
+      if(trials.some(t=>t.status==='rated'&&t.verdict!=='withdrawn') && run.researchReview?.status!=='synthesized')
+        throw Error('Complete historical research synthesis before recording comparisons.');
+      const rows=comparison.cleanWork({plan:run.comparisonPlan,rows:input.rows,sources:items,previousTrials:trials});
+      work={recordedAt:now(),rows,status:'agent_comparison_unverified'};
+      put(tx,runRef(id,runId),{...run,comparisonWork:work});
+      pushEvent(tx,base,{type:'comparison_work_recorded',runId,actor:input.actor,
+        summary:rows.length+' matched comparisons / '+rows.length*2+' actual draft texts; no human quality verdict',
+        detail:{branches:rows.map(r=>({branchId:r.branchId,operation:r.operation,sourceId:r.sourceId,selection:r.selection}))}});
+      saveBase(tx,base);
+    });
+    return {baseId:id,runId,comparisonWork:work,draftCount:work.rows.length*2,
+      note:'Stored internal artifacts and agent comparisons only. No human approval or publication.'};
   }
 
   async function finishRun(input) {
@@ -1666,6 +1700,7 @@ function createStore(options) {
       base.openRunId = null;
       const finished = {
         ...run, status: 'finished', finishedAt: now(),
+        ...(id===comparison.BUZZ_BASE ? {comparisonStatus:comparison.workStatus(run)} : {}),
         summary: finishData.summary,
         verdicts, negativeVerdicts, screenedOut, achievementIds: achievements.map((a) => a.id), failureAnalysis,
         movedItemIds: [...new Set(itemChanges)], yieldRefs, moved,
@@ -1680,6 +1715,7 @@ function createStore(options) {
         verdicts: verdicts.map((v) => v.hypothesisId + ':' + v.result), negativeVerdicts: negativeVerdicts.map((v) => v.hypothesisId + ':' + v.result), screenedOutUnverifiedCount: screenedOut.length,
         achievementIds: finished.achievementIds, yieldCount: yieldRefs.length,
         failureAnalysisRecorded: Boolean(failureAnalysis),
+        ...(id===comparison.BUZZ_BASE ? {comparisonStatus:finished.comparisonStatus, comparisonDraftCount:(run.comparisonWork?.rows?.length||0)*2} : {}),
         researchSynthesis: run.researchReview?.status === 'synthesized' ? {
           thesisId:run.researchReview.synthesis.thesisId,
           antithesisId:run.researchReview.synthesis.antithesisId,
@@ -1973,6 +2009,7 @@ function createStore(options) {
           throw new Error('The last ' + loop.failStreak + ' rated samples did not pass. Finish the run with a verdict per hypothesis, then finish a run that re-derives the hypotheses from sourcing and selection (not wording) before recording new trials.');
         }
       }
+      const comparedBodies=new Set(existing.filter(t=>t.runId===runId&&t.body).map(t=>t.body));
       fresh.forEach((raw) => {
         const hypothesisIds = list(raw.hypothesisIds, 10, 20);
         hypothesisIds.forEach((hid) => {
@@ -2061,6 +2098,12 @@ function createStore(options) {
             throw new Error('User feedback changed since the historical synthesis; open a new run and re-read all hypotheses and feedback before another trial');
           }
         }
+        const comparisonEvidence=(!backfill&&id===comparison.BUZZ_BASE)?comparison.assertComparedTrial(run,raw,editorialScreen,hypothesisIds):null;
+        if(comparisonEvidence){
+          const body=text(raw.body,4000,'trial.body',false);
+          if(comparedBodies.has(body))throw Error('Comparison work: saved draft has already been registered in this run.');
+          comparedBodies.add(body);
+        }
         const capabilityEvidence=backfill?null:efficiency.checkCapability(raw,run,existing,fresh,base);
         base.counters.T = (base.counters.T || 0) + 1;
         const at = now();
@@ -2075,6 +2118,7 @@ function createStore(options) {
           ...cleanGraphTrialMetadata(raw),
           ...(!backfill&&!raw.evaluationPhase?{evaluationPhase:'exploration'}:{}),
           ...(capabilityEvidence?{capabilityEvidence}:{}),
+          ...(comparisonEvidence?{comparisonEvidence}:{}),
           predictedPass: predicted, predictionNote: text(raw.predictionNote, 600, 'trial.predictionNote', false),
           ...(editorialScreen ? { format: editorialScreen.format, editorialScreen } : {}),
           ...(qualityRecovery?.recoveryRequired ? { qualityRecovery } : {}),
@@ -2465,7 +2509,7 @@ function createStore(options) {
   // Compact summary used by the Agent Intelligence bundle resolver.
   async function brief(input) { return get({ id: input?.id, view: 'brief' }); }
 
-  return { create, list: listBases, get, remove, brief, graphGet, graphRelationUpsert, ruleProposalUpsert, seedSkillImprovementInbox, reviewSkillImprovement, setOutcome, setMethodVersion, migrateLegacyPackTarget, upsertItems, startRun, finishRun, recordUserReaction, recordFeedback, researchRead, researchSynthesize, prepareRecall, checkRecall, recordTrials, rateTrials, awaitingTrials, refreshLoop, trainersOf, skillCasebook };
+  return { create, list: listBases, get, remove, brief, graphGet, graphRelationUpsert, ruleProposalUpsert, seedSkillImprovementInbox, reviewSkillImprovement, setOutcome, setMethodVersion, migrateLegacyPackTarget, upsertItems, startRun, recordComparison, finishRun, recordUserReaction, recordFeedback, researchRead, researchSynthesize, prepareRecall, checkRecall, recordTrials, rateTrials, awaitingTrials, refreshLoop, trainersOf, skillCasebook };
 }
 
 const store = createStore();
