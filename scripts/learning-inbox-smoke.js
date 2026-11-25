@@ -16,13 +16,14 @@ const db = {
  }
 };
 const old=Module._load;
-let store;
+let store, memory;
 try {
  Module._load=function(name,parent,isMain){
-   if(name==='./documentDb'&&parent.filename.endsWith('learningInboxStore.js'))return {getDocumentDb:()=>db,FieldValue:{serverTimestamp:()=>new Date()},FieldPath:{documentId:()=> '__name__'}};
+   if(name==='./documentDb'&&['learningInboxStore.js','agentMemoryStore.js'].some(name=>parent.filename.endsWith(name)))return {getDocumentDb:()=>db,FieldValue:{serverTimestamp:()=>new Date()},FieldPath:{documentId:()=> '__name__'}};
    return old.call(this,name,parent,isMain);
  };
  store=require('../functions/learningInboxStore');
+ memory=require('../functions/agentMemoryStore');
 } finally {Module._load=old;}
 test('submission-only key, input validation, lossless atomic receipt and retry',async()=>{
  assert.equal(await store.authorized('anything'),false);
@@ -59,4 +60,17 @@ test('submission-only key, input validation, lossless atomic receipt and retry',
  const modified=await store.enqueue({...post,text:'new evidence'});
  assert.notEqual(modified.id,first.id);
  assert.equal(docs.has('learningInbox/'+modified.id),true);
+});
+
+test('research memory retains evidence link and cannot self-promote',async()=>{
+ const item=await store.enqueue({platform:'x',postId:'456',url:'https://x.com/example/status/456',text:'source observation'});
+ await store.receive({id:item.id});
+ const entry={kind:'research',title:'Evidence',observation:'Observed',inference:'Hypothesis',domains:['marketing'],materialIds:[item.id],status:'adopted',confirm:true};
+ const first=await memory.save(entry);
+ assert.equal(first.status,'candidate');
+ assert.deepEqual(first.materialIds,[item.id]);
+ assert.equal((await memory.save(entry)).id,first.id);
+ assert.equal((await memory.get({id:first.id})).observation,'Observed');
+ await assert.rejects(memory.save({...entry,materialIds:['a'.repeat(64)]}),/not found/);
+ await assert.rejects(memory.save({...entry,materialIds:[]}),/requires source/);
 });
