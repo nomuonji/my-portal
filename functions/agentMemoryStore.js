@@ -53,7 +53,7 @@ async function get(input={}){
 async function list(input={}){
   const limit=Math.min(Math.max(Math.floor(Number(input.limit)||20),1),50),d=db();
   let q=d.collection('agentMemories');
-  if(input.domain)q=q.where('domains','array-contains',required(input.domain,80,'domain'));
+  const domain=input.domain?required(input.domain,80,'domain'):'';
   // Filter after a bounded page; callers can continue even when the page matches no search terms.
   q=q.orderBy('createdAt','desc').orderBy(FieldPath.documentId(),'desc');
   if(input.before){
@@ -64,7 +64,7 @@ async function list(input={}){
   }
   const snap=await q.limit(limit).get();
   const search=String(input.query||'').toLowerCase().trim();
-  const items=snap.docs.map(serialize).filter(v=>!search||[v.title,v.observation,v.inference,v.application,...v.domains].join(' ').toLowerCase().includes(search))
+  const items=snap.docs.map(serialize).filter(v=>(!domain||v.domains.includes(domain))&&(!search||[v.title,v.observation,v.inference,v.application,...v.domains].join(' ').toLowerCase().includes(search)))
     .map(({id,kind,title,domains,status,createdAt,materialIds,sourceUrls})=>({id,kind,title,domains,status,createdAt,materialIds,sourceUrls}));
   return {items,count:items.length,nextCursor:snap.docs.length===limit?snap.docs.at(-1).id:null};
 }
