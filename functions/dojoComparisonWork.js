@@ -100,15 +100,30 @@ function cleanWork({plan, rows, sources, previousTrials=[]}) {
 function assertComparedTrial(run, raw, editorialScreen, hypothesisIds) {
   if(!run?.comparisonWork?.rows?.length)
     throw Error('Comparison work required: record all preregistered branches with full actual control and treatment drafts via exploration_comparison_record before submitting. A title-only editorial screen cannot replace this.');
+  // Bind the entire screen, not just the winner, to actual saved drafts.
+  // An agent cannot inflate the comparison pool with invented candidate names.
+  const mapped=new Set();
+  for(const entry of editorialScreen?.pool||[]){
+    const pair=run.comparisonWork.rows.find(row=>row.branchId===entry.branchId);
+    const arm=entry.comparisonArm;
+    if(!pair||!['control','treatment'].includes(arm)||pair.sourceId!==entry.sourceId||
+       (entry.hypothesisId&&pair.hypothesisId!==entry.hypothesisId))
+      throw Error('Comparison work: every editorial pool entry must reference an actual saved branch and arm with matching source/H.');
+    const key=pair.branchId+':'+arm;
+    if(mapped.has(key))throw Error('Comparison work: a saved draft cannot appear twice in the screening pool.');
+    mapped.add(key);
+    if(entry.decision==='rejected'&&(pair.selection===arm||pair.selection==='both'))
+      throw Error('Comparison work: a selected comparison draft cannot be mislabeled as a rejected pool entry.');
+  }
   const selected=editorialScreen?.pool?.find(row=>row.decision==='selected');
   const body=String(raw.body||'').trim();
   const pair=run.comparisonWork.rows.find(row=>row.hypothesisId===hypothesisIds[0] &&
-    row.sourceId===selected?.sourceId &&
+    row.sourceId===selected?.sourceId && row.branchId===selected?.branchId &&
     ((row.selection==='control'&&row.controlBody===body) ||
      (row.selection==='treatment'&&row.treatmentBody===body) ||
      (row.selection==='both'&&raw.evaluationPhase==='validation'&&
        ((raw.experimentArm==='control'&&row.controlBody===body)||(raw.experimentArm==='treatment'&&row.treatmentBody===body)))));
-  if(!pair)throw Error('Comparison work: submitted body, primary H and selected source must exactly match a saved selected comparison draft.');
+  if(!pair||selected.comparisonArm!==(pair.controlBody===body?'control':'treatment'))throw Error('Comparison work: submitted body, primary H and selected source must exactly match a saved selected comparison draft.');
   return {branchId:pair.branchId,operation:pair.operation,recordedAt:run.comparisonWork.recordedAt,
     arm:pair.controlBody===body?'control':'treatment',status:'agent_comparison_unverified'};
 }
