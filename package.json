@@ -35,7 +35,7 @@
     "test:intelligence-corpus": "node scripts/intelligence-corpus-smoke.js",
     "test:curation-sources": "node --test scripts/curation-source-smoke.js",
     "test:discover-reader": "node --test scripts/discover-reader-smoke.js scripts/discover-reader-flow-smoke.js",
-    "prebuild": "npm run test:curation-sources && npm run test:job-opportunities && npm run test:discover-reader && npm run test:personal-feed && npm run test:personal-taste && npm run test:taste-sources && npm run test:anilist-integration && npm run test:media-accounts && npm run test:intelligence-corpus && npm run test:agent-intelligence && npm run test:exploration-base && npm run test:chat-skill-size && npm run test:skill-relations && npm run test:skill-relations-db && npm run test:dojo-calibration && npm run test:skill-graph && npm run test:skill-transfer && npm run test:skill-pack && npm run test:workspace-tree && npm run test:submarine && npm run test:partial-edits && npm run test:public-cms && npm run test:organization-lifecycle && npm run test:hq-dispatch && npm run test:hq-outcome && npm run test:character-image && npm run test:world-home && npm run test:meta-strategy && npm run test:routine-jobs && npm run test:filmarks-trakt-migration && npm run test:board-capture && npm run test:consumer-model-migration",
+    "prebuild": "npm run test:curation-sources && npm run test:job-opportunities && npm run test:discover-reader && npm run test:personal-feed && npm run test:personal-taste && npm run test:taste-sources && npm run test:anilist-integration && npm run test:media-accounts && npm run test:intelligence-corpus && npm run test:agent-intelligence && npm run test:exploration-base && npm run test:chat-skill-size && npm run test:skill-relations && npm run test:skill-relations-db && npm run test:dojo-calibration && npm run test:skill-graph && npm run test:skill-transfer && npm run test:skill-pack && npm run test:workspace-tree && npm run test:submarine && npm run test:partial-edits && npm run test:public-cms && npm run test:organization-lifecycle && npm run test:hq-dispatch && npm run test:hq-outcome && npm run test:character-image && npm run test:world-home && npm run test:meta-strategy && npm run test:routine-jobs && npm run test:filmarks-trakt-migration && npm run test:board-capture && npm run test:consumer-model-migration && npm run test:learning-inbox",
     "test:board-capture": "node --test scripts/board-capture-smoke.js",
     "test:chat-skill-size": "node --test scripts/chat-skill-size-smoke.js",
     "test:skill-relations": "node --test scripts/skill-relations-smoke.js",
@@ -64,7 +64,8 @@
     "test:exploration-base": "node --test scripts/exploration-base-smoke.js scripts/hypothesis-refinement-smoke.js scripts/dojo-evidence-graph-smoke.js scripts/workspace-tree-smoke.js scripts/dojo-pack-classification-smoke.js",
     "test:submarine": "node --test scripts/submarine-smoke.js",
     "test:partial-edits": "node --test scripts/partial-edits-smoke.js",
-    "test:consumer-model-migration": "node --test scripts/consumer-model-migration-smoke.js"
+    "test:consumer-model-migration": "node --test scripts/consumer-model-migration-smoke.js",
+    "test:learning-inbox": "node --test scripts/learning-inbox-smoke.js"
   },
   "eslintConfig": {
     "extends": [
