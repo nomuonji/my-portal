@@ -15,7 +15,23 @@ function exactKeys(rows, expected, name) {
       rows.some(row => !expected.includes(row?.branchId)))
     throw Error('Comparison work: '+name+' must cover every pinned branch exactly once.');
 }
-function cleanPlan(raw, allowedHypotheses) {
+function cleanHistoricalContrast(raw, previousTrials, name) {
+  const accepted=previousTrials.filter(t=>t.status==='rated'&&t.verdict==='pass'&&t.body);
+  const rejected=previousTrials.filter(t=>t.status==='rated'&&['fail','partial'].includes(t.verdict)&&t.body);
+  if(!accepted.length||!rejected.length)return null;
+  const positiveCaseId=required(raw?.positiveCaseId,name+'.positiveCaseId',3,20);
+  const negativeCaseId=required(raw?.negativeCaseId,name+'.negativeCaseId',3,20);
+  const positiveAnchor=required(raw?.positiveAnchor,name+'.positiveAnchor',8,160);
+  const negativeAnchor=required(raw?.negativeAnchor,name+'.negativeAnchor',8,160);
+  const positive=accepted.find(t=>t.id===positiveCaseId);
+  const negative=rejected.find(t=>t.id===negativeCaseId);
+  if(!positive?.body.includes(positiveAnchor)||!negative?.body.includes(negativeAnchor))
+    throw Error('Comparison work: every branch must cite exact passages from real human-rated pass and non-pass texts.');
+  return {positiveCaseId,negativeCaseId,positiveAnchor,negativeAnchor,
+    transfer:required(raw.transfer,name+'.transfer',20,700),
+    failureContrast:required(raw.failureContrast,name+'.failureContrast',20,700)};
+}
+function cleanPlan(raw, allowedHypotheses, previousTrials=[]) {
   if (!Array.isArray(raw) || raw.length < 3 || raw.length > 5)
     throw Error('Comparison work: preregister 3-5 independent branches before drafting.');
   const plan=raw.map((row,i)=>{
@@ -23,8 +39,10 @@ function cleanPlan(raw, allowedHypotheses) {
     if(!allowedHypotheses.has(hypothesisId))
       throw Error('Comparison work: branch hypothesis must be a declared target or contrast: '+hypothesisId);
     if(!OPERATIONS.includes(row.operation))throw Error('Comparison work: unknown operation.');
+    const historicalContrast=cleanHistoricalContrast(row.historicalContrast,previousTrials,'historicalContrast');
     return {
       branchId:'B'+(i+1), hypothesisId, operation:row.operation,
+      ...(historicalContrast?{historicalContrast}:{}),
       intervention:required(row.intervention,'intervention',20,600),
       control:required(row.control,'control',20,600),
       expectedDifference:required(row.expectedDifference,'expectedDifference',20,600),
@@ -33,6 +51,13 @@ function cleanPlan(raw, allowedHypotheses) {
   });
   if(new Set(plan.map(x=>x.operation)).size<3 || new Set(plan.map(x=>normalized(x.intervention))).size!==plan.length)
     throw Error('Comparison work: at least three different operations and distinct interventions are required; a different H ID or topic is not enough.');
+  const contrast=plan.map(x=>x.historicalContrast).filter(Boolean);
+  if(contrast.length){
+    const count=verdicts=>previousTrials.filter(t=>t.status==='rated'&&verdicts.includes(t.verdict)&&t.body).length;
+    if(new Set(contrast.map(x=>x.positiveCaseId)).size<Math.min(3,count(['pass'])) ||
+       new Set(contrast.map(x=>x.negativeCaseId)).size<Math.min(3,count(['fail','partial'])))
+      throw Error('Comparison work: contrast several distinct actual historical passes and non-passes across branches when available.');
+  }
   return plan;
 }
 function cleanWork({plan, rows, sources, previousTrials=[]}) {
