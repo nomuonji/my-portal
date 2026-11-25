@@ -28,6 +28,7 @@ function normalize(post) {
   const host=platform==='x'?'x.com':'www.threads.com';
   const prefix=platform==='x'?'/status/':'/post/';
   if(url.protocol!=='https:'||url.hostname!==host||!url.pathname.endsWith(prefix+postId)||url.username||url.password||url.port) throw fail('Invalid post URL');
+  if(post.truncated!==false) throw fail('Full post text required; expand the original post and resubmit',422);
   if(typeof post.text!=='string'||(!post.text.trim()&&!post.media?.length)) throw fail('Empty post');
   // Preserve the observed source fields; never store credentials or arbitrary extra fields.
   const raw=JSON.stringify({platform,postId,url:url.href,author:post.author||{},text:post.text,rawText:post.rawText||'',createdAt:post.createdAt||null,lang:post.lang||'',metrics:post.metrics||{},media:post.media||[],links:post.links||[],quoted:post.quoted||null,context:post.context||'',truncated:Boolean(post.truncated)});
@@ -70,6 +71,7 @@ async function receive(input={}) {
     if(!pending.exists) throw fail('Inbox item not found',404);
     const v=pending.data();
     if(hash(v.raw)!==id||v.id!==id) throw fail('Inbox payload integrity failure',409);
+    if(v.truncated!==false||JSON.parse(v.raw).truncated!==false) throw fail('Incomplete source; resubmit the full post',422);
     tx.set(material,{...v,space:'agent-memory',learningStatus:'unverified',receivedAt:FieldValue.serverTimestamp()});
     tx.delete(ref);
     return {id,status:'received'};
@@ -85,13 +87,13 @@ async function materials(input={}) {
     q=q.startAfter(cursor.data().receivedAt,cursor.id);
   }
   const s=await q.limit(limit).get();
-  return {items:s.docs.map(doc=>{const v=doc.data();return {id:doc.id,postKey:v.postKey,sourceUrl:v.sourceUrl,truncated:v.truncated,learningStatus:v.learningStatus,receivedAt:v.receivedAt?.toDate?.()?.toISOString()||v.receivedAt};}),count:s.docs.length};
+  return {items:s.docs.map(doc=>{const v=doc.data();return {id:doc.id,postKey:v.postKey,sourceUrl:v.sourceUrl,truncated:v.truncated,learningStatus:v.truncated!==false?'incomplete':v.learningStatus,receivedAt:v.receivedAt?.toDate?.()?.toISOString()||v.receivedAt};}),count:s.docs.length};
 }
 async function getMaterial(input={}) {
   const id=validId(input.id), s=await materialRef(db(),id).get();
   if(!s.exists) throw fail('Learning material not found',404);
   const v=s.data();
   if(hash(v.raw)!==id) throw fail('Material integrity failure',409);
-  return {id,space:'agent-memory',learningStatus:v.learningStatus,sourceUrl:v.sourceUrl,post:JSON.parse(v.raw)};
+  return {id,space:'agent-memory',learningStatus:v.truncated!==false?'incomplete':v.learningStatus,sourceUrl:v.sourceUrl,post:JSON.parse(v.raw)};
 }
 module.exports={setKey,authorized,normalize,enqueue,list,receive,materials,getMaterial};
