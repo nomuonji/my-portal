@@ -32,17 +32,6 @@ export default function ContextPanel({contexts=[],projects=[],query='',api,after
  const [eventSummary,setEventSummary]=useState('');
  const [eventDetail,setEventDetail]=useState('');
  const [history,setHistory]=useState([]);
- const [learningKey,setLearningKey]=useState('');
- const [learningMessage,setLearningMessage]=useState('');
- const saveLearningKey=async()=>{
-   setSaving(true);setError('');setLearningMessage('');
-   try{
-     const result=await api('',{method:'POST',body:JSON.stringify({action:'learning_inbox_set_key',key:learningKey})});
-     if(!result.configured)throw Error('設定を確認できませんでした');
-     setLearningKey('');setLearningMessage('学習送信キーを設定しました。Violentmonkeyにも同じキーを設定してください。');
-   }catch(e){setError(e.message);}
-   finally{setSaving(false);}
- };
  const [projectFilter,setProjectFilter]=useState('all');
  const [domainFilter,setDomainFilter]=useState('all');
  const map = useMemo(()=>new Map(projects.map(x=>[x.id,x.name])),[projects]);
@@ -184,16 +173,6 @@ export default function ContextPanel({contexts=[],projects=[],query='',api,after
             {(detail?.domains||[]).map(d=><Chip key={d} size="small" label={d} variant="outlined"/>)}
           </Stack>
         </>}
-        {detail?.id==='W1Ezf9gmcFe7nwYePmd0'&&<Paper variant="outlined" sx={{p:1.5}}>
-          <Stack spacing={1}>
-            <Typography variant="subtitle2" fontWeight={850}>学習受け渡し — 送信キー</Typography>
-            <Typography variant="body2" color="text.secondary">投稿送信専用。既存キーは新しい設定で無効になります。</Typography>
-            <TextField type="password" size="small" label="学習送信キー" value={learningKey}
-              onChange={e=>setLearningKey(e.target.value)} autoComplete="new-password"/>
-            <Button disabled={saving||!/^learn-[A-Za-z0-9-]{12,80}$/.test(learningKey)} onClick={saveLearningKey} variant="outlined">送信キーを設定</Button>
-            {learningMessage&&<Alert severity="success">{learningMessage}</Alert>}
-          </Stack>
-        </Paper>}
         <Divider/>
         <Stack direction="row" spacing={1} alignItems="center">
           <HistoryIcon color="action"/><Typography variant="subtitle1" fontWeight={850}>判断と訂正の履歴</Typography>
