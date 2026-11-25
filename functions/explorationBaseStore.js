@@ -1886,7 +1886,9 @@ function createStore(options) {
       }
       sourceIds.add(sourceId);
       (decision === 'selected' ? selected : rejected).push(title);
-      return { title, sourceId, ...(hypothesisId?{hypothesisId}:{}), decision, reason };
+      const branchId=text(row.branchId,20,'candidate.branchId',false);
+      const comparisonArm=row.comparisonArm===undefined?'':oneOf(row.comparisonArm,['control','treatment'],'candidate.comparisonArm');
+      return { title, sourceId, ...(hypothesisId?{hypothesisId}:{}), ...(branchId?{branchId}:{}), ...(comparisonArm?{comparisonArm}:{}), decision, reason };
     });
     if (selected.length !== 1 || rejected.length < 2 || sourceIds.size < 2) {
       throw new Error('Buzz 道場: exactly one selected candidate, at least two rejected candidates and at least two observed source lanes are required.');
