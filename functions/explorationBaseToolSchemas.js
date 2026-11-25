@@ -629,6 +629,8 @@ const tools = [
                   format: { type: 'string', enum: ['standalone'] },
                   pool: { type: 'array', minItems: 3, maxItems: 12, items: { type: 'object', properties: {
                     title: string('Candidate premise (short, distinct).', 100),
+                    branchId:string('Required for new Buzz samples: B-n branch in persisted comparisonWork.',20),
+                    comparisonArm:{type:'string',enum:['control','treatment'],description:'Required actual saved candidate arm, including rejected drafts.'},
                     sourceId: string('Observed source S-nnn from this dojo.', 20),
                     hypothesisId: string('Hypothesis H-nnn for this candidate. Mandatory in prolonged Buzz recovery, with >=2 distinct conceptual arms in the pool.',20),
                     decision: { type: 'string', enum: ['selected', 'rejected'] },
