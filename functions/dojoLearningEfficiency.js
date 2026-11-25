@@ -11,6 +11,52 @@ function stats(rows){
     partial:rated.filter(t=>t.verdict==='partial').length,passRate:ratio(pass,rated.length)};
 }
 function lane(t){return !t.backfilled&&PHASES.includes(t.evaluationPhase)&&(t.evaluationPhase!=='capability'||t.capabilityEvidence)?t.evaluationPhase:'legacy_unclassified';}
+// The trial version pins the approved method, not necessarily the Skill that
+// generated the text. Candidate and rollback trials must not be credited to it.
+// Explicit receipts are observational, not independent execution verification.
+function productionVersion(t,skillId){
+  if(!skillId||t.backfilled)return null;
+  const versions=[...new Set((Array.isArray(t.executionResources)?t.executionResources:[])
+    .filter(r=>r&&r.kind==='skill'&&r.id===skillId&&typeof r.receiptRef==='string'&&r.receiptRef.length>=8&&/^\d+$/.test(String(r.version||'')))
+    .map(r=>Number(r.version)).filter(v=>Number.isSafeInteger(v)&&v>0))];
+  return versions.length===1?versions[0]:null;
+}
+function productionView(trials,base){
+  const ref=base?.method?.bodyRef;
+  if(ref?.kind!=='chat_skill'||!ref.location)return null;
+  const skillId=ref.location, groups=new Map(), unknown=[], mismatched=[];
+  for(const t of trials){
+    const v=productionVersion(t,skillId);
+    if(v===null){unknown.push(t);continue;}
+    if(t.version!=null&&t.version!==v)mismatched.push(t);
+    const rows=groups.get(v)||[];rows.push(t);groups.set(v,rows);
+  }
+  const pairs=new Map();
+  for(const t of trials){
+    if(!actual(t)||lane(t)!=='validation'||!t.runId||!t.materialKey||!t.comparisonKey||!t.segmentKey||
+      !['control','treatment'].includes(t.experimentArm))continue;
+    const k=JSON.stringify([t.runId,t.comparisonKey,t.materialKey,t.segmentKey]);
+    const g=pairs.get(k)||{control:[],treatment:[]};g[t.experimentArm].push(t);pairs.set(k,g);
+  }
+  const comparisons=new Map(), seen=new Set();
+  for(const [key,g] of pairs){
+    if(g.control.length!==1||g.treatment.length!==1)continue;
+    const c=g.control[0],t=g.treatment[0];
+    const cv=productionVersion(c,skillId),tv=productionVersion(t,skillId);
+    if(cv===null||tv===null||cv===tv)continue;
+    const [, ,materialKey,segmentKey]=JSON.parse(key);
+    const lo=Math.min(cv,tv),hi=Math.max(cv,tv),scope=JSON.stringify([lo,hi,segmentKey]);
+    const material=JSON.stringify([scope,materialKey]);if(seen.has(material))continue;seen.add(material);
+    const row=comparisons.get(scope)||{versions:[lo,hi],segmentKey,pairs:0,lowerVersionWins:0,higherVersionWins:0,bothPass:0,neitherPass:0,evidence:[]};
+    const low=(cv===lo?c:t).verdict==='pass',high=(cv===hi?c:t).verdict==='pass';
+    row.pairs++;row[low?(high?'bothPass':'lowerVersionWins'):(high?'higherVersionWins':'neitherPass')]++;
+    if(row.evidence.length<20)row.evidence.push({materialKey,controlTrialId:c.id,treatmentTrialId:t.id,controlVersion:cv,treatmentVersion:tv});
+    comparisons.set(scope,row);
+  }
+  return {skillId,byActualVersion:[...groups.entries()].sort((a,b)=>b[0]-a[0]).map(([version,rows])=>({version,...stats(rows)})),
+    unknown:stats(unknown),differentFromPinned:stats(mismatched),matchedComparisons:[...comparisons.values()],
+    note:'Explicit agent-reported producing Skill receipts only. Unknown/conflicting versions are excluded from actual-version groups. Pinned release history is unchanged; matched comparisons are descriptive, not causal proof.'};
+}
 function laneView(trials,base){
   const version=t=>t.version!=null?'v'+t.version:t.methodVersion||'unknown';
   const currentKey=base?.method?.bodyRef?.versionNumber!=null?'v'+base.method.bodyRef.versionNumber:base?.method?.version||'unknown';
@@ -19,7 +65,7 @@ function laneView(trials,base){
   const keys=[...new Set([currentKey,...trials.map(version)])];
   const byVersion=keys.map(v=>({version:v,released:v===currentKey,
     ...Object.fromEntries(phases.map(p=>[p,stats(trials.filter(t=>version(t)===v&&lane(t)===p))]))}));
-  return {current:byVersion[0],overall:grouped,byVersion,
+  return {current:byVersion[0],overall:grouped,byVersion,production:productionView(trials,base),
     note:'Capability is the approved method on predeclared fresh material. Exploration/validation/legacy are not capability results. Counts are descriptive, not causal estimates.'};
 }
 function capabilityPlan(raw){
@@ -35,6 +81,9 @@ function checkCapability(raw,run,existing,fresh,base){
   if(raw.evaluationPhase!=='capability')return null;
   const p=run?.capabilityPlan;
   if(!p||run.methodVersion!==base.method?.version)throw Error('Capability trial needs a preregistered plan on the pinned approved method');
+  const ref=base?.method?.bodyRef;
+  if(ref?.kind==='chat_skill'&&ref.location&&productionVersion(raw,ref.location)!==ref.versionNumber)
+    throw Error('Capability trial requires a receipt for the pinned producing Skill version; test candidate/old versions in validation instead');
   if(!p.materialKeys.includes(raw.materialKey))throw Error('Capability material must be declared before drafting');
   if(existing.some(t=>t.materialKey===raw.materialKey)||fresh.filter(t=>t.materialKey===raw.materialKey).length!==1)
     throw Error('Capability material must be fresh and used once');
@@ -43,7 +92,9 @@ function checkCapability(raw,run,existing,fresh,base){
     provenance:'agent_declared_fresh_material_not_independently_verified'};
 }
 function capabilityComparison(trials,base,health){
-  const eligible=trials.filter(t=>lane(t)==='capability'&&t.capabilityEvidence);
+  const ref=base?.method?.bodyRef;
+  const eligible=trials.filter(t=>lane(t)==='capability'&&t.capabilityEvidence&&
+    (ref?.kind!=='chat_skill'||!ref.location||productionVersion(t,ref.location)===(t.version??null)));
   const currentVersion=base?.method?.bodyRef?.versionNumber??base?.method?.version;
   const key=t=>t.version??t.methodVersion;
   const current=eligible.filter(t=>key(t)===currentVersion&&actual(t));

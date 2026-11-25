@@ -522,3 +522,34 @@ test('meta dojo reports explicitly recorded legacy Skill usage and only unique m
   assert.equal(report[0].researchComparisons[0].hypothesisId,'H-002');
   assert.equal(report[0].researchComparisons[0].evidence[0].treatmentTrialId,'T-001');
 });
+
+test('actual Skill revisions remain separate from pinned releases and only unique matched pairs count',()=>{
+ const e=require('../functions/dojoLearningEfficiency');
+ const base={method:{version:'v72',bodyRef:{kind:'chat_skill',location:'buzz-content-ideation',versionNumber:72}},outcome:{confirmedBy:'user'}};
+ const resource=v=>({kind:'skill',id:'buzz-content-ideation',version:String(v),receiptRef:'artifact-version-'+v});
+ const row=(id,verdict,versions,extra={})=>({id,version:72,status:'rated',verdict,evaluationPhase:'exploration',executionResources:versions.map(resource),...extra});
+ const pair={evaluationPhase:'validation',runId:'R-001',comparisonKey:'cmp-1',materialKey:'material-a',segmentKey:'same-task'};
+ const a=row('T-216','pass',[80]);
+ const b=row('T-217','fail',[]);
+ const c=row('T-control','pass',[65],{...pair,experimentArm:'control'});
+ const d=row('T-treatment','fail',[82],{...pair,experimentArm:'treatment'});
+ const dupC=row('T-dup-c','fail',[65],{...pair,runId:'R-002',comparisonKey:'cmp-2',experimentArm:'control'});
+ const dupT=row('T-dup-t','pass',[82],{...pair,runId:'R-002',comparisonKey:'cmp-2',experimentArm:'treatment'});
+ const conflict=row('T-conflict','pass',[65,82]);
+ const trials=[a,b,c,d,dupC,dupT,conflict];const original=JSON.stringify(trials);
+ const report=e.laneView(trials,base);
+ assert.equal(JSON.stringify(trials),original);
+ assert.equal(report.current.exploration.rated,3,'pinned history remains intact');
+ assert.equal(report.production.byActualVersion.find(x=>x.version===80).pass,1);
+ assert.equal(report.production.unknown.rated,2);
+ assert.equal(report.production.differentFromPinned.rated,5);
+ const m=report.production.matchedComparisons;
+ assert.equal(m.length,1);assert.deepEqual(m[0].versions,[65,82]);
+ assert.equal(m[0].pairs,1);assert.equal(m[0].lowerVersionWins,1);
+ const plan=e.capabilityPlan({benchmarkKey:'same-task',materialKeys:['new-material'],task:'Compose a standalone social post',sampling:'Choose unused original observations without looking at outcome',controls:'Keep medium, audience and production resources identical',acceptance:'Same human acceptance criterion across both released methods'});
+ const run={id:'R-003',methodVersion:'v72',capabilityPlan:plan};
+ const raw={evaluationPhase:'capability',materialKey:'new-material',segmentKey:'same-task'};
+ assert.throws(()=>e.checkCapability({...raw,executionResources:[resource(80)]},run,[],[raw],base),/pinned producing Skill/);
+ assert.throws(()=>e.checkCapability(raw,run,[],[raw],base),/pinned producing Skill/);
+ assert.ok(e.checkCapability({...raw,executionResources:[resource(72)]},run,[],[raw],base));
+});
