@@ -14,6 +14,11 @@ const comparisonPlan = {
     control:string('Baseline on the same material, with other conditions held constant.',600),
     expectedDifference:string('Observable expected improvement.',600),
     falsifier:string('Observable outcome against the intervention.',600),
+    historicalContrast:{type:'object',description:'Required when prior human-rated accepted and non-pass texts exist. Across branches contrast at least three distinct cases per verdict group when available.',additionalProperties:false,properties:{
+      positiveCaseId:string('Real user-rated pass T-nnn.',20),negativeCaseId:string('Real user-rated fail/partial T-nnn.',20),
+      positiveAnchor:string('Exact 8+ character span in the accepted body.',160),negativeAnchor:string('Exact 8+ character span in the non-pass body.',160),
+      transfer:string('Concrete applicable mechanism, not just a label.',700),failureContrast:string('Concrete failure contrast and changed condition.',700),
+    },required:['positiveCaseId','negativeCaseId','positiveAnchor','negativeAnchor','transfer','failureContrast']},
   },required:['hypothesisId','operation','intervention','control','expectedDifference','falsifier']},
 };
 const userAuthorized = { type: 'boolean', description: 'True only when the user explicitly approved this exact change.' };
