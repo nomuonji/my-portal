@@ -4,6 +4,18 @@ const string = (description, maxLength) => ({ type: 'string', description, ...(m
 const strings = (description, maxItems) => ({ type: 'array', description, items: { type: 'string' }, maxItems });
 const baseId = string('Exploration Base ID (lowercase kebab-case).', 80);
 const actor = string('Who is writing (agent/host name). Optional.', 120);
+const comparisonPlan = {
+  type:'array', minItems:3,maxItems:5,
+  description:'Buzz submission prerequisite. Pin 3-5 actual independent comparison branches before drafting, at least 3 different operations. Each branch will require two distinct complete internal drafts on its own observed original material. No user-facing quota.',
+  items:{type:'object',additionalProperties:false,properties:{
+    hypothesisId:string('Declared target or contrast H-nnn.',20),
+    operation:{type:'string',enum:['source','selection','causal_sequence','language','perspective','desire','emotion','voice','audience','format']},
+    intervention:string('Specific change to apply before drafting.',600),
+    control:string('Baseline on the same material, with other conditions held constant.',600),
+    expectedDifference:string('Observable expected improvement.',600),
+    falsifier:string('Observable outcome against the intervention.',600),
+  },required:['hypothesisId','operation','intervention','control','expectedDifference','falsifier']},
+};
 const userAuthorized = { type: 'boolean', description: 'True only when the user explicitly approved this exact change.' };
 const authorizationNote = string('Where/how the user approved it (quote or chat reference). Required with userAuthorized.', 600);
 
@@ -304,11 +316,12 @@ const tools = [
   },
   {
     name: 'exploration_run_start',
-    description: 'In persistent-failure Buzz research, create a discriminating experimentDesign before any new user-facing trial, compare several independent candidate mechanisms, and do not reuse quarantined self-clearing negative hypotheses. Open an exploration run and pin its method. Test success and failure hypotheses in parallel: targets plus negativeTargets (the server auto-pins one open failure hypothesis for positive runs when omitted). Optional crossDojoEvidence validates a real user-rated source-dojo pass/fail pair and stores the unproven transfer mechanism with a controlled receiver experimentDesign. Receiver pass/fail remains exclusively based on its own later human feedback. Prefer responseMode=compact after loading the base.',
+    description: 'Buzz user-facing work requires comparisonPlan at start and actual comparisons saved via exploration_comparison_record. Research-only runs can omit it. In persistent-failure Buzz research, create a discriminating experimentDesign before any new user-facing trial, compare several independent candidate mechanisms, and do not reuse quarantined self-clearing negative hypotheses. Open an exploration run and pin its method. Test success and failure hypotheses in parallel: targets plus negativeTargets (the server auto-pins one open failure hypothesis for positive runs when omitted). Optional crossDojoEvidence validates a real user-rated source-dojo pass/fail pair and stores the unproven transfer mechanism with a controlled receiver experimentDesign. Receiver pass/fail remains exclusively based on its own later human feedback. Prefer responseMode=compact after loading the base.',
     inputSchema: {
       type: 'object',
       properties: {
         baseId, objective: string('What this run is for.', 800),
+        comparisonPlan,
         capabilityPlan:{type:'object',description:'Declare before drafting approved-method performance samples on fresh materials. Never retrospectively classify a trial.',properties:{
           benchmarkKey:string('Stable same-task comparison key, also trial.segmentKey.',120),materialKeys:strings('Distinct unused material identifiers to test, fixed before drafting.',6),
           task:string('Target task and audience.',900),sampling:string('How unseen independent material is chosen without cherry-picking.',900),
@@ -361,6 +374,26 @@ const tools = [
         actor,
       },
       required: ['baseId', 'objective'], additionalProperties: false,
+    },
+  },
+  {
+    name: 'exploration_comparison_record',
+    description:'Buzz only. Record actual complete matched control and treatment texts for ALL pinned comparison branches, at least three different operations and independent direct-original sources. Must be recorded before any trial; immutable. Neither draft needs to be shown. Selection is agent screening, not user approval. No submission quota; research-only or incomplete runs are separately classified.',
+    inputSchema:{
+      type:'object',additionalProperties:false,properties:{
+        baseId,runId:string('Open R-nnn.',20),actor,
+        rows:{type:'array',minItems:3,maxItems:5,items:{type:'object',additionalProperties:false,properties:{
+          branchId:string('Server-assigned B1, B2, etc. from comparisonPlan.',20),
+          sourceId:string('Independent observed source S-nnn with direct original proof; same source for both drafts.',20),
+          controlBody:string('Full actual baseline draft, not a title or a description.',4000),
+          treatmentBody:string('Full actual changed draft, not a title or a description.',4000),
+          controlAnchor:string('Exact changed passage unique to the control text.',160),
+          treatmentAnchor:string('Exact changed passage unique to the treatment text.',160),
+          selection:{type:'string',enum:['control','treatment','neither','both'],description:'Both only for matched validation trials. Neither preserves rejected drafts internally.'},
+          observedDifference:string('Concrete difference visible in the actual drafts.',900),
+          reason:string('Why this draft is selected or both are rejected, including limitations.',900)
+        },required:['branchId','sourceId','controlBody','treatmentBody','controlAnchor','treatmentAnchor','selection','observedDifference','reason']}}
+      },required:['baseId','runId','rows']
     },
   },
   {
@@ -515,7 +548,7 @@ const tools = [
   },
   {
     name: 'exploration_trial_record',
-    description: 'BUZZ RECOVERY: after 8+ consecutive real human non-passes, the server rejects a Buzz sample lacking a precommitted discriminating experimentDesign, a selected source with direct originalProof, or an independently identifiable single positive primary hypothesis. Repeatedly self-cleared negative reviews with >=3 human rejects and 0 passes are quarantined; use a newly tested negative arm. Model forecast below the human base rate is a one-way veto, NEVER proof of quality when it is high. All historical H/T stay unchanged. Record user-facing trials before presenting. If historical user ratings exist, full paginated exploration_research_read plus grounded exploration_research_synthesize are mandatory, including ALL prior hypotheses (not just the best two) and all user feedback words. For human-rated dojos with >=4 accepted and >=4 rejected historical texts, a run must have passed exploration_recall_prepare + exploration_recall_check (>=3 of 4) first. This is in addition to the existing learningAudit. ALL trial-based dojos with 3+ rated results and both an accepted and rejected case require learningAudit with exact quotes from both human-rated case texts, plus the claimed transfer mechanism and counterexample. Old clients can use learning:v1:<compact JSON> in predictionNote (<=600 characters). The Buzz screen alone no longer satisfies the learning review. Buzz-post dojo adds an enforced early rejection screen: 3+ candidate pool, 2+ rejected, 2+ observed sourcing lanes, accepted/rejected human-rated precedent, exact passage from the proposed copy, concrete hostile objection, and a pre-registered closingType (derived_consequence = the last beat follows directly from the material; author_added = the author added an analogy, counterfactual, title or similar). predictedPass is an honest forecast and no longer gates submission. Native quote practice is retired. Use editorialScreen or, from clients with the older MCP schema, screen:v1:<compact JSON> inside predictionNote (up to 600 characters). Other dojos are unchanged. A screen is an AI-only gate, NOT independent approval or a promise of engagement.',
+    description: 'Buzz submission requires exploration_comparison_record first, with full actual paired texts for all preregistered branches; the exact selected body, source and primary H must match. BUZZ RECOVERY: after 8+ consecutive real human non-passes, the server rejects a Buzz sample lacking a precommitted discriminating experimentDesign, a selected source with direct originalProof, or an independently identifiable single positive primary hypothesis. Repeatedly self-cleared negative reviews with >=3 human rejects and 0 passes are quarantined; use a newly tested negative arm. Model forecast below the human base rate is a one-way veto, NEVER proof of quality when it is high. All historical H/T stay unchanged. Record user-facing trials before presenting. If historical user ratings exist, full paginated exploration_research_read plus grounded exploration_research_synthesize are mandatory, including ALL prior hypotheses (not just the best two) and all user feedback words. For human-rated dojos with >=4 accepted and >=4 rejected historical texts, a run must have passed exploration_recall_prepare + exploration_recall_check (>=3 of 4) first. This is in addition to the existing learningAudit. ALL trial-based dojos with 3+ rated results and both an accepted and rejected case require learningAudit with exact quotes from both human-rated case texts, plus the claimed transfer mechanism and counterexample. Old clients can use learning:v1:<compact JSON> in predictionNote (<=600 characters). The Buzz screen alone no longer satisfies the learning review. Buzz-post dojo adds an enforced early rejection screen: 3+ candidate pool, 2+ rejected, 2+ observed sourcing lanes, accepted/rejected human-rated precedent, exact passage from the proposed copy, concrete hostile objection, and a pre-registered closingType (derived_consequence = the last beat follows directly from the material; author_added = the author added an analogy, counterfactual, title or similar). predictedPass is an honest forecast and no longer gates submission. Native quote practice is retired. Use editorialScreen or, from clients with the older MCP schema, screen:v1:<compact JSON> inside predictionNote (up to 600 characters). Other dojos are unchanged. A screen is an AI-only gate, NOT independent approval or a promise of engagement.',
     inputSchema: {
       type: 'object',
       properties: {
