@@ -37,10 +37,10 @@ async function save(input={}){
   const id=hash(JSON.stringify(entry)),d=db(),ref=d.collection('agentMemories').doc(id);
   await d.runTransaction(async tx=>{
     const existing=await tx.get(ref);
-    if(existing.exists)return;
     const sources=await Promise.all(entry.materialIds.map(id=>tx.get(d.collection('learningMaterials').doc(id))));
     if(sources.some(x=>!x.exists))throw fail('Source material not found',409);
     if(sources.some(x=>x.data().truncated!==false))throw fail('Incomplete source material; retrieve the full post before learning',422);
+    if(existing.exists)return;
     tx.set(ref,{...entry,createdAt:FieldValue.serverTimestamp()});
   });
   return serialize(await ref.get());
