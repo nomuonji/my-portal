@@ -9,6 +9,7 @@ import * as worldMapImport from "../../functions/worldMap.js";
 import * as chatContextImport from "../../functions/chatContextRegistry.js";
 import * as skillRelationPoliciesImport from "../../functions/chatSkillRelationsStore.js";
 import * as contextRegistryImport from "../../functions/contextRegistry.js";
+import * as learningInboxImport from "../../functions/learningInboxStore.js";
 import * as metaStoreImport from "../../functions/metaStrategyStore.js";
 import * as personalFeedImport from "../../functions/personalFeedStore.js";
 import * as discoverReaderImport from "../../functions/discoverReaderStore.js";
@@ -31,6 +32,7 @@ const worldMap: any = (worldMapImport as any).default ?? worldMapImport;
 const chatContext: any = (chatContextImport as any).default ?? chatContextImport;
 const skillRelationPolicies: any = (skillRelationPoliciesImport as any).default ?? skillRelationPoliciesImport;
 const contextRegistry: any = (contextRegistryImport as any).default ?? contextRegistryImport;
+const learningInbox: any = (learningInboxImport as any).default ?? learningInboxImport;
 const metaStore: any = (metaStoreImport as any).default ?? metaStoreImport;
 const personalFeed: any = (personalFeedImport as any).default ?? personalFeedImport;
 const discoverReader: any = (discoverReaderImport as any).default ?? discoverReaderImport;
@@ -136,8 +138,22 @@ export default async (request: Request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204 });
 
   try {
-    const user = await requireFirebaseUser(request);
     const url = new URL(request.url);
+    // The clipper credential grants POST submission only, never access to the
+    // general authenticated API or the receipt/administration operations.
+    if (url.pathname === "/api/agent-ideas/learning-inbox") {
+      if (request.method !== "POST") return json({error:"Method not allowed"},405);
+      ensureFirebaseAdmin();
+      const key = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i,"");
+      if (!(await learningInbox.authorized(key))) return json({error:"Unauthorized"},401);
+      const body = await request.text();
+      if (Buffer.byteLength(body) > 150000) return json({error:"Payload too large"},413);
+      let post;
+      try { post = JSON.parse(body); } catch { return json({error:"Invalid JSON"},400); }
+      if (post?.ping === true) return json({ok:true,scope:"learning-inbox-submit"});
+      return json(await learningInbox.enqueue(post));
+    }
+    const user = await requireFirebaseUser(request);
 
     if (request.method === "GET") {
       const resource = url.searchParams.get("resource") || "status";
@@ -227,6 +243,7 @@ export default async (request: Request) => {
       if (resource === "chat_skill_relation_policy") return json(await skillRelationPolicies.get({id:url.searchParams.get("id")||""}));
       if (resource === "contexts") return json(await contextRegistry.list({projectId:url.searchParams.get("projectId")||undefined,domain:url.searchParams.get("domain")||undefined,includeArchived:url.searchParams.get("includeArchived")==="true"}));
       if (resource === "context") return json(await contextRegistry.get({id:url.searchParams.get("id")||""}));
+      if (resource === "learning_inbox") return json(await learningInbox.list({limit:30}));
       if (resource === "context_history") return json(await contextRegistry.listEvents({contextId:url.searchParams.get("id")||""}));
       if (resource === "intelligence") return json(await agentIntelligenceRegistry.getPack({id:url.searchParams.get("id")||""}));
       if (resource === "skill_packs") return json(await skillPackRegistry.list());
@@ -472,6 +489,7 @@ export default async (request: Request) => {
       if (action === "chat_skill_upsert") return json(await chatContext.upsertSkill({skill:body.skill,expectedRevision:body.expectedRevision,changeReason:body.changeReason,confirm:body.confirm===true}));
       if (action === "chat_skill_relation_policy_publish") return json(await skillRelationPolicies.publish({policy:body.policy,expectedRevision:body.expectedRevision,changeReason:body.changeReason,benchmark:body.benchmark,confirm:body.confirm===true}));
       if (action === "context_save") return json(await contextRegistry.save({id:body.id,context:body.context,expectedRevision:body.expectedRevision,confirm:body.confirm===true}));
+      if (action === "learning_inbox_set_key") return json(await learningInbox.setKey({key:body.key}));
       if (action === "context_event_create") return json(await contextRegistry.addEvent({contextId:body.contextId,kind:body.kind,summary:body.summary,detail:body.detail,source:body.source||"portal-ui",sourceUrl:body.sourceUrl,idempotencyKey:body.idempotencyKey,confirm:body.confirm===true}));
       if (action === "world_map_update") {
         return json(await worldMap.update({
@@ -612,7 +630,8 @@ export default async (request: Request) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (message === "UNAUTHORIZED") return json({ error: "Unauthorized" }, 401);
-    return json({ error: message }, 500);
+    const status = Number((error as any)?.status);
+    return json({ error: message }, status >= 400 && status < 500 ? status : 500);
   }
 };
 

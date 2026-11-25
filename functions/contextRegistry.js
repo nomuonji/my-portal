@@ -87,7 +87,7 @@ async function listEvents(input={}) {
  if(!contextId)throw new Error('contextId required');
  const cap=Math.min(Math.max(Number(input.limit)||75,1),100);
  const [newSnap,legacySnap,decisionsSnap]=await Promise.all([
-   db().collection(EVENTS).limit(250).get(),
+   db().collection(EVENTS).where('contextId','==',contextId).limit(1000).get(),
    db().collection(LEGACY_NOTES).limit(250).get(),
    db().collection('decisions').limit(250).get()
  ]);
