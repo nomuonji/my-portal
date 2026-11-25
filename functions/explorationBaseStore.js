@@ -86,6 +86,16 @@ const ANCHOR_PROMPTS = {
   feedback: '本人評価は実物への結果。失敗理由を断定せず、能力・手法・道具・評価器を疑い直す。',
   finish: '手続完了ではなく実力の変化と未検証事項を報告する。劣化時は方法や文脈を見直す。',
 };
+// Phase-specific skepticism prompts, not a new workflow or self-certification gate.
+const CRITICAL_REFLECTION_PROMPTS = {
+  start: '依頼者と自分の前提は本当に正しいか。目的を保ったまま、より良い手段や不足する能力・ツールはないか。',
+  research: '期待する結論に都合の良い事例だけを選んでいないか。最強の反証・別の説明・観測漏れは何か。',
+  synthesis: '本人の反応に合わせた後付けの説明になっていないか。何が観測されれば自説を捨てるか。',
+  production: '今の仮説やルール自体が品質を下げていないか。従来手法以外の有力な選択肢はないか。',
+  submission: '本人に喜ばれたい、自分の成果を正当化したいという理由で判定を甘くしていないか。',
+  feedback: '本人の評価という事実と、その原因についての推測を分けよ。迎合で仮説を変更せず、独立の根拠で判断する。',
+  finish: '成功宣言の根拠は何か。自分の判断・評価器・道具・環境の欠陥を見落としていないか。',
+};
 function purposeAnchor(base, phase) {
   const o = base.outcome || {};
   const excerpt = (value, max) => {
@@ -99,6 +109,10 @@ function purposeAnchor(base, phase) {
     notSuccess: (o.proxies || []).slice(0, 4).map(x => excerpt(x, 90)),
     fullContract: { tool: 'exploration_base_get', args: { id: base.id, view: 'brief' } },
     reminder: ANCHOR_PROMPTS[phase],
+    criticalReflection: {
+      question: CRITICAL_REFLECTION_PROMPTS[phase],
+      instruction: '重要な異論・反証・代替案は根拠と限界を添えて本人に伝える。無理な逆張りは不要。本人が決める目的・採否・権限と検証可能な主張を区別する。',
+    },
     boundary: '補助的な再確認。既存の制約・承認・研究・評価ゲートは変更しない。',
   };
 }
