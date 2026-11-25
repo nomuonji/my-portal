@@ -701,7 +701,7 @@ function createStore(options) {
       if (page === 0 || progress.status === 'ready_to_synthesize') output.purposeAnchor = purposeAnchor(base, 'research');
       output.status = progress.status;
       output.nextPage = progress.status === 'reading' ? progress.nextPage : null;
-      output.note = 'Inspect EVERY listed historical hypothesis, human feedback quote and opposing case. No model-authored conclusion is a human rating.';
+      output.note = 'Pages are delivered by the server, not proof of model comprehension. Inspect EVERY listed historical hypothesis, human feedback quote and opposing case. Buzz comparisonPlan also requires real anchored pass/non-pass contrasts across branches. No model-authored conclusion is a human rating.';
     });
     return output;
   }
@@ -1455,6 +1455,7 @@ function createStore(options) {
     // newer MCP clients or an agent remembering an extra field. A transaction then
     // verifies the selected item is still open before persisting the run.
     let automaticNegativeCandidates = [];
+    const comparisonPriorTrials=input.comparisonPlan===undefined?[]:await loadTrials(id);
     if (Array.isArray(input.targets) && input.targets.length
       && (!Array.isArray(input.negativeTargets) || input.negativeTargets.length===0)){
       const [allItems,priorTrials]=await Promise.all([loadItems(id),id==='viral-post-method-discovery'?loadTrials(id):Promise.resolve([])]);
@@ -1568,7 +1569,7 @@ function createStore(options) {
           });
         }
       }
-      const comparisonPlan = input.comparisonPlan === undefined ? null : comparison.cleanPlan(input.comparisonPlan, new Set([...cleanTargets.map(t=>t.hypothesisId), ...(experimentDesign?.contrastedHypothesisIds||[])]));
+      const comparisonPlan = input.comparisonPlan === undefined ? null : comparison.cleanPlan(input.comparisonPlan, new Set([...cleanTargets.map(t=>t.hypothesisId), ...(experimentDesign?.contrastedHypothesisIds||[])]),comparisonPriorTrials);
       base.counters.R = (base.counters.R || 0) + 1;
       runId = seqId('R', base.counters.R);
       const run = {
