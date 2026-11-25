@@ -150,6 +150,7 @@ export default async (request: Request) => {
       if (Buffer.byteLength(body) > 150000) return json({error:"Payload too large"},413);
       let post;
       try { post = JSON.parse(body); } catch { return json({error:"Invalid JSON"},400); }
+      if (post?.ping === true) return json({ok:true,scope:"learning-inbox-submit"});
       return json(await learningInbox.enqueue(post));
     }
     const user = await requireFirebaseUser(request);
