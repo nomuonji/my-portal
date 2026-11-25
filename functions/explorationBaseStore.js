@@ -76,6 +76,54 @@ const PROTOCOL = [
   'Skill rule merges are not automatic: agent may draft explicit changed rules with evidence chains, but until SkillRule mapping and Merge Controller are implemented, preserve the existing method-version, release and user-owned gates. Do not change Skill text as a side effect of merely proposing an edge.',
 ];
 
+// Read-only reminders derived from the existing user-owned outcome and evidence.
+const ANCHOR_PROMPTS = {
+  start: '成果から逆算し、手続ではなく今回改善する能力を特定する。',
+  research: 'この比較は成果の質を上げるか。説明ではなく反証可能な改善を選ぶ。',
+  synthesis: '研究は手段。改善操作を新しい素材で検証し、実物の品質と照合する。',
+  production: '作者の説明を外して実物を比較する。審査項目を満たすだけで高品質と判断しない。',
+  submission: '提出数・自己PASSは成功ではない。実物が要求品質を満たすか確認する。',
+  feedback: '本人評価は実物への結果。失敗理由を断定せず、能力・手法・道具・評価器を疑い直す。',
+  finish: '手続完了ではなく実力の変化と未検証事項を報告する。劣化時は方法や文脈を見直す。',
+};
+function purposeAnchor(base, phase) {
+  const o = base.outcome || {};
+  const excerpt = (value, max) => {
+    const s = String(value || '');
+    return s.length > max ? s.slice(0, max) + '…' : s;
+  };
+  return {
+    phase, outcomeRevision: o.revision ?? null,
+    purpose: excerpt(o.statement, 420), requiredQuality: excerpt(o.acceptance, 420),
+    finalIndicator: excerpt(o.finalIndicator, 200),
+    notSuccess: (o.proxies || []).slice(0, 4).map(x => excerpt(x, 90)),
+    fullContract: { tool: 'exploration_base_get', args: { id: base.id, view: 'brief' } },
+    reminder: ANCHOR_PROMPTS[phase],
+    boundary: '補助的な再確認。既存の制約・承認・研究・評価ゲートは変更しない。',
+  };
+}
+function qualityAnchor(base, trials, items, topic = '', hypothesisIds = []) {
+  const sample = selectCasebook({ base, trials, items, limit: 2, topic, hypothesisIds });
+  const cases = sample.cases.map(t => ({
+    id: t.id, verdict: t.verdict, label: t.label,
+    excerpt: t.body.slice(0, 480), truncated: t.body.length > 480,
+    ref: t.ref, imageUrl: t.imageUrl, mediaUrl: t.mediaUrl,
+    userWords: t.userWords.slice(0, 180), role: 'human_rated_example',
+  }));
+  const observed = sample.sources.find(s => s.fieldObservation && Object.keys(s.fieldObservation.metrics || {}).length);
+  return {
+    cases,
+    marketObservation: observed ? {
+      id: observed.id, ref: observed.fieldObservation.artifactRef,
+      sourceRef: observed.fieldObservation.sourceRef,
+      observedAt: observed.fieldObservation.observedAt, window: observed.fieldObservation.window,
+      metrics: observed.fieldObservation.metrics, excerpt: observed.body.slice(0, 360),
+      comparison: String(observed.fieldObservation.comparison || '').slice(0, 240),
+    } : null,
+    instruction: '実物の品質を再較正する対照例。必要時に原文・メディア・文脈を確認し表層模倣しない。本人採否と市場指標は別物。市場観測は高品質や因果の証明ではない。不足する対照は未取得と扱う。',
+  };
+}
+
 function database() { return getDocumentDb(DEFAULT_DATABASE_ID); }
 function now() { return new Date().toISOString(); }
 function text(value, max, label, required) {
@@ -648,6 +696,7 @@ function createStore(options) {
       if (progress.nextPage === progress.pages) progress.status = 'ready_to_synthesize';
       run.researchReview = progress;
       put(tx, runRef(id, runId), run);
+      if (page === 0 || progress.status === 'ready_to_synthesize') output.purposeAnchor = purposeAnchor(base, 'research');
       output.status = progress.status;
       output.nextPage = progress.status === 'reading' ? progress.nextPage : null;
       output.note = 'Inspect EVERY listed historical hypothesis, human feedback quote and opposing case. No model-authored conclusion is a human rating.';
@@ -724,6 +773,7 @@ function createStore(options) {
         feedbackDigest:inventory.feedbackDigest, synthesis };
       put(tx, runRef(id, runId), run);
       result = { baseId:id, runId, status:'synthesized', inventoryDigest:inventory.hash,
+        purposeAnchor: purposeAnchor(base, 'synthesis'),
         pagesRead:run.researchReview.pages, totalHypotheses:inventory.hypothesisCount,
         totalFeedback:inventory.feedbackCount, thesisId:synthesis.thesisId, antithesisId:synthesis.antithesisId,
         action:synthesis.action, nextAction:'Proceed to casebook recall (when required) and then trial recording. This is an agent hypothesis, not a user-confirmed improvement.' };
@@ -763,7 +813,8 @@ function createStore(options) {
       const probe = buildRecallProbe(trials, base.feedbackLog || [], topic, relevanceIds);
       const historicalHypotheses = buildHistoricalHypotheses(items, trials, historicalRuns, topic, relevanceIds);
       if (!probe.required || base.outcome?.confirmedBy === 'measurement') {
-        payload = { required: false, reason: 'insufficient_human_contrast_or_measurement', runId };
+        payload = { required: false, reason: 'insufficient_human_contrast_or_measurement', runId,
+          purposeAnchor: purposeAnchor(base, 'production'), qualityAnchor: qualityAnchor(base, trials, items, topic, relevanceIds) };
         return;
       }
       run.recallProbe = {
@@ -798,6 +849,8 @@ function createStore(options) {
       run.recallProbe = { ...run.recallProbe, ...graded, hypothesisReviews, checkedAt: now() };
       put(tx, runRef(id, runId), run);
       result = { runId, status: graded.status, correct: graded.correct, total: graded.total,
+        purposeAnchor: purposeAnchor(base, graded.status === 'passed' ? 'production' : 'research'),
+        ...(graded.status === 'passed' ? { qualityAnchor: qualityAnchor(base, trials, [], run.recallProbe.topic, run.recallProbe.hypothesisIds) } : {}),
         nextAction: graded.status === 'passed' ? 'Proceed to trial recording with the existing learningAudit and negativeReview gates' : 'This run cannot submit trials: revise the explanation with historical counterexamples and open a new research run',
         note: graded.note };
     });
@@ -846,6 +899,7 @@ function createStore(options) {
       return {
         base: { id: base.id, title: base.title, status: base.status, revision: base.revision, updatedAt: base.updatedAt },
         method: base.method ? { version: base.method.version, bodyRef: ref } : null,
+        purposeAnchor: purposeAnchor(base, 'start'),
         outcome: { revision: base.outcome?.revision, confirmedCount: confirmed, awaitingConfirmation: (base.progress?.achievements || []).filter((a) => a.status === 'candidate').map(({ id, label, ref }) => ({ id, label, ref })) },
         position: { runCount: base.runCount || 0, stalledRuns: base.stalledRuns || 0, openRunId: base.openRunId || null, lastRuns: (base.lastRuns || []).slice(0, 1) },
         loop: loopView({ trials, feedbackLog: base.feedbackLog, base, hypotheses }),
@@ -875,6 +929,8 @@ function createStore(options) {
     }
     if ((base.proposals || []).some((p) => p.status === 'pending')) warnings.push('There are pending proposals waiting for the user.');
     const result = {
+      purposeAnchor: purposeAnchor(base, 'start'),
+      qualityAnchor: qualityAnchor(base, trials, items),
       cycle:cyclePreflight(base),
       base: {
         id: base.id, title: base.title, summary: base.summary, status: base.status, revision: base.revision,
@@ -1524,6 +1580,7 @@ function createStore(options) {
       base.openRunId = runId;
       receipt = { runId, methodVersion: run.methodVersion, outcomeRevision: run.outcomeRevision,
         cycle:cyclePreflight(base),
+        purposeAnchor: purposeAnchor(base, 'start'),
         crossDojoEvidenceCount: crossDojoEvidence.length, negativeTargetCount: negativeTargets.length,
         negativeTargetOrigin: negativeTargetOrigin || null };
       pushEvent(tx, base, { type: 'run_started', runId, summary: run.objective, actor: input.actor, detail: { targets: cleanTargets, negativeTargets, methodVersion: run.methodVersion } });
@@ -1539,6 +1596,7 @@ function createStore(options) {
     const responseMode = oneOf(input?.responseMode, ['brief', 'compact'], 'responseMode', 'brief');
     const finishData = unpackFailureAnalysis(input);
     let summary;
+    let anchor;
     const [trials, items] = await Promise.all([loadTrials(id), loadItems(id)]);
     const hypotheses = new Map(items.filter(item => item.kind === 'hypothesis').map(item => [item.id, item]));
     await db().runTransaction(async (tx) => {
@@ -1634,13 +1692,14 @@ function createStore(options) {
         } : null,
         nextStep: finished.nextStep,
       };
+      anchor = purposeAnchor(base, 'finish');
       base.lastRuns = [summary, ...(base.lastRuns || [])].slice(0, 5);
       pushEvent(tx, base, { type: moved ? 'run_finished' : 'run_stalled', runId, summary: summary.summary, actor: input.actor, detail: { verdicts: summary.verdicts, achievementIds: summary.achievementIds } });
       saveBase(tx, base);
     });
     const loop = await refreshLoop(id);
-    if (responseMode === 'compact') return { run: summary, loop };
-    return { run: summary, brief: await get({ id }) };
+    if (responseMode === 'compact') return { run: summary, loop, purposeAnchor: anchor };
+    return { run: summary, purposeAnchor: anchor, brief: await get({ id }) };
   }
 
   // A user's own reaction in an app (e.g. 好き in Discover) is the confirmation itself: liking records a
@@ -1852,8 +1911,10 @@ function createStore(options) {
     const created = [];
     const skipped = [];
     const imaged = [];
+    let anchor;
     await db().runTransaction(async (tx) => {
       const base = await loadBase(tx, id);
+      anchor = purposeAnchor(base, 'submission');
       const runId = requireOpenRun(base, text(input.runId, 20, 'runId', false));
       const run = runId ? value(await tx.get(runRef(id, runId))) : null;
       // An explicit user-owned submission hold is not a forecast threshold.
@@ -2047,7 +2108,7 @@ function createStore(options) {
       saveBase(tx, base);
     });
     const loop = created.length ? await refreshLoop(id) : null;
-    return { baseId: id, created, skipped, imaged, loop: loop ? loopSummary(loop) : undefined };
+    return { baseId: id, created, skipped, imaged, purposeAnchor: anchor, loop: loop ? loopSummary(loop) : undefined };
   }
 
   function cleanGraphTrialMetadata(raw) {
@@ -2103,8 +2164,10 @@ function createStore(options) {
     const rated = [];
     let queuedSkillReviews=[];
     let postRatingCycle=null;
+    let anchor;
     await db().runTransaction(async (tx) => {
       const base = await loadBase(tx, id);
+      anchor = purposeAnchor(base, 'feedback');
       // Firestore transactions read first: load every trial and every hypothesis they touch, then write.
       const loaded = [];
       for (const rawRating of input.ratings) {
@@ -2176,7 +2239,7 @@ function createStore(options) {
     // Return a concrete post-rating handoff; a human verdict is not a
     // diagnosis. The next agent must compare cases and review the specific
     // TARGET Skill before suggesting a tested body edit and dojo release.
-    return { baseId: id, rated, loop,cycle:postRatingCycle,
+    return { baseId: id, rated, loop,cycle:postRatingCycle, purposeAnchor: anchor,
       pendingSpecialistSkillReviews:queuedSkillReviews.map(({id,targetSkillId,moduleId,pendingTrialIds})=>({id,targetSkillId,moduleId,pendingTrialIds})),
       skillImprovementReview: rated.some(x=>x.verdict!=='withdrawn')
         ? {state:'required_after_human_rating',tool:'exploration_skill_graph_get',
