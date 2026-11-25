@@ -166,6 +166,18 @@ Case IDs are validated against **real past verdicts of the same dojo**. Positive
 
 The contract is shared by all domains (social, SEO, keywords, video, products, monetization, work, Discover), but **what constitutes an accepted outcome** remains domain-specific and user-owned. Nothing authorizes changing the mission, relaxing constraints, scheduling jobs, publishing, or creating new versions without the existing release gates.
 
+## Buzz: actual comparison work, not title-only screening
+
+For new Buzz submissions, use this sequence:
+
+1. Read the graph, recent ratings and historical artifacts. Start a run with `comparisonPlan`: 3–5 branches, at least three genuinely different operations, with a declared target/contrast H, intervention, baseline, expected difference, and falsifier. Each branch cites real human-rated pass/non-pass text anchors when they exist; compare several different cases across branches.
+2. Complete the existing historical research synthesis and feedback metabolism. A page-fetch receipt means the server delivered a page, not that a model understood it.
+3. On a different direct-original material for each branch, write two actual standalone drafts on the same material: a control and treatment. Save all pairs with `exploration_comparison_record` before registering any trial. Include exact changed spans, observed differences, and the selection/rejection reason. The comparison is immutable once recorded. Weak drafts stay internal.
+4. For any user-facing trial, cite actual saved branch/arm references in every editorialScreen pool row. The selected draft body, source and primary H must match the saved work exactly. Existing research, recall, negative-hypothesis, user-owned HOLD, quality, and release restrictions still apply.
+5. Finish the run. The history distinguishes `research_only`, `incomplete_comparison`, `compared_no_submission`, and `compared_submitted`. None of these means the method improved; only subsequent real human ratings/measurement can establish that. Zero submissions are allowed; no quantity target for user-facing output.
+
+The server validates artifact presence, provenance metadata, actual textual anchors and consistency, **not** semantic independence, source authenticity, reasoning effort, humor, or causal improvement. The three-branch minimum is a work-evidence floor, not a proxy for quality. Old records are unchanged. Older clients must refresh the MCP schema for the new fields/tool; no legacy title-only escape hatch.
+
 ## MCP operations
 
 `exploration_base_list`, `exploration_base_get`, `exploration_base_create`, `exploration_outcome_set`, `exploration_method_version_set`, `exploration_item_upsert`, `exploration_run_start`, `exploration_run_finish`, `exploration_research_read`, `exploration_research_synthesize`, `exploration_recall_prepare`, `exploration_recall_check`, `exploration_trial_record`, `exploration_trial_rate`.
