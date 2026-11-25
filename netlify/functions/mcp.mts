@@ -47,6 +47,7 @@ import * as workspaceAppImport from "../../functions/mcpWorkspaceApp.js";
 import * as chatContextImport from "../../functions/chatContextRegistry.js";
 import * as skillRelationPoliciesImport from "../../functions/chatSkillRelationsStore.js";
 import * as contextRegistryImport from "../../functions/contextRegistry.js";
+import * as learningInboxImport from "../../functions/learningInboxStore.js";
 import * as contextRegistryToolsImport from "../../functions/contextRegistryToolSchemas.js";
 import * as chatContextToolsImport from "../../functions/chatContextToolSchemas.js";
 import * as worldMapToolsImport from "../../functions/worldMapToolSchemas.js";
@@ -98,6 +99,7 @@ const workspaceApp: any = (workspaceAppImport as any).default ?? workspaceAppImp
 const chatContext: any = (chatContextImport as any).default ?? chatContextImport;
 const skillRelationPolicies: any = (skillRelationPoliciesImport as any).default ?? skillRelationPoliciesImport;
 const contextRegistry: any = (contextRegistryImport as any).default ?? contextRegistryImport;
+const learningInbox: any = (learningInboxImport as any).default ?? learningInboxImport;
 const contextRegistryTools: any = (contextRegistryToolsImport as any).default ?? contextRegistryToolsImport;
 const chatContextTools: any = (chatContextToolsImport as any).default ?? chatContextToolsImport;
 const worldMapTools: any = (worldMapToolsImport as any).default ?? worldMapToolsImport;
@@ -807,6 +809,8 @@ async function invokeTool(name: string, args: Record<string, any> = {}): Promise
   }
   if (name === "context_history") return structured(await contextRegistry.listEvents(args));
   if (name === "context_event_create") return structured(await contextRegistry.addEvent(args));
+  if (name === "learning_inbox_list") return structured(await learningInbox.list(args));
+  if (name === "learning_inbox_receive") return structured(await learningInbox.receive(args));
   if (name === "chat_skill_list") return structured(await chatContext.listSkills());
   if (name === "chat_skill_get") return structured(args.mode === "edit" ? await chatContext.getSkill(args) : await chatContext.getExecutableSkill(args));
   if (name === "chat_skill_versions") return structured(await chatContext.skillVersions(args));
