@@ -31,8 +31,10 @@ test('submission-only key, input validation, lossless atomic receipt and retry',
  await store.setKey({key:'learn-test-only-012345'});
  assert.equal(await store.authorized('learn-test-only-012345'),true);
  assert.equal(await store.authorized('learn-test-only-012346'),false);
- const post={platform:'x',postId:'123',url:'https://x.com/example/status/123',text:'観測原典🙂'.repeat(1800),author:{handle:'@example'},media:[{type:'image',url:'https://pbs.twimg.com/media/example'}],quoted:{text:'quote'},truncated:true};
+ const post={platform:'x',postId:'123',url:'https://x.com/example/status/123',text:'観測原典🙂'.repeat(1800),author:{handle:'@example'},media:[{type:'image',url:'https://pbs.twimg.com/media/example'}],quoted:{text:'quote'},truncated:false};
  assert.throws(()=>store.normalize({...post,url:'https://example.com/status/123'}));
+ await assert.rejects(store.enqueue({...post,truncated:true}),/Full post text required/);
+ await assert.rejects(store.enqueue({...post,truncated:undefined}),/Full post text required/);
  assert.throws(()=>store.normalize({...post,text:'x'.repeat(150000)}));
  const first=await store.enqueue(post);
  const again=await store.enqueue(post);
@@ -63,7 +65,7 @@ test('submission-only key, input validation, lossless atomic receipt and retry',
 });
 
 test('research memory retains evidence link and cannot self-promote',async()=>{
- const item=await store.enqueue({platform:'x',postId:'456',url:'https://x.com/example/status/456',text:'source observation'});
+ const item=await store.enqueue({platform:'x',postId:'456',url:'https://x.com/example/status/456',text:'source observation',truncated:false});
  await store.receive({id:item.id});
  const entry={kind:'research',title:'Evidence',observation:'Observed',inference:'Hypothesis',domains:['marketing'],materialIds:[item.id],status:'adopted',confirm:true};
  const first=await memory.save(entry);
@@ -73,4 +75,7 @@ test('research memory retains evidence link and cannot self-promote',async()=>{
  assert.equal((await memory.get({id:first.id})).observation,'Observed');
  await assert.rejects(memory.save({...entry,materialIds:['a'.repeat(64)]}),/not found/);
  await assert.rejects(memory.save({...entry,materialIds:[]}),/requires source/);
+ docs.get('learningMaterials/'+item.id).truncated=true;
+ assert.equal((await memory.get({id:first.id})).status,'incomplete-source');
+ await assert.rejects(memory.save({...entry,title:'new analysis'}),/Incomplete source material/);
 });
