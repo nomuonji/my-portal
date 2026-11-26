@@ -1,0 +1,23 @@
+name: Native submarine execution
+on:
+  pull_request:
+    paths:
+      - 'functions/submarineExecution*'
+      - 'functions/submarineStore.js'
+      - 'scripts/submarine-execution-smoke.js'
+      - 'netlify/functions/mcp.mts'
+      - 'netlify/functions/agent-ideas-api.mts'
+      - '.github/workflows/submarine-native-ci.yml'
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check functions/submarineExecutionStore.js
+      - run: node --check functions/submarineExecutionToolSchemas.js
+      - run: node --test scripts/submarine-execution-smoke.js
