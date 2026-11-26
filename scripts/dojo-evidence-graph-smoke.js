@@ -553,3 +553,20 @@ test('actual Skill revisions remain separate from pinned releases and only uniqu
  assert.throws(()=>e.checkCapability(raw,run,[],[raw],base),/pinned producing Skill/);
  assert.ok(e.checkCapability({...raw,executionResources:[resource(72)]},run,[],[raw],base));
 });
+
+test('learning budget preserves scarce capacity for capability evidence and a matched pair',()=>{
+  const {learningBudget}=require('../functions/dojoLearningBudget');
+  const base={method:{bodyRef:{versionNumber:9}}};
+  const exploration=Array.from({length:12},(_,i)=>({id:'T-'+i,status:'rated',verdict:'fail',version:9,evaluationPhase:'exploration',materialKey:'m'+i,hypothesisIds:['H-001']}));
+  const hypotheses=[{id:'H-001',status:'open'}];
+  const plan=headroom=>learningBudget({base,hypotheses,trials:exploration,headroom,validationPlan:headroom>=2?{}:null});
+  assert.deepEqual(plan(3).suggestedAllocation,{validation:2,capability:1,exploration:0});
+  assert.deepEqual(plan(1).suggestedAllocation,{validation:0,capability:1,exploration:0});
+  assert.deepEqual(plan(0).suggestedAllocation,{validation:0,capability:0,exploration:0});
+  assert.equal(plan(3).directionMemory[0].direction,'change_operation_not_wording');
+  const duplicate=exploration.map(t=>({...t,materialKey:'same'}));
+  assert.notEqual(learningBudget({base,hypotheses,trials:duplicate,headroom:1}).directionMemory[0].direction,'change_operation_not_wording');
+  const pending=[...exploration,{status:'awaiting',version:9,evaluationPhase:'capability'}];
+  assert.equal(learningBudget({base,hypotheses,trials:pending,headroom:1}).suggestedAllocation.capability,0);
+  assert.equal(learningBudget({base:{...base,outcome:{confirmedBy:'measurement'}},hypotheses,trials:exploration,headroom:1}).suggestedAllocation.capability,0);
+});
