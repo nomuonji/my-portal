@@ -17,6 +17,8 @@ const { makeRuleProposal, assessRuleProposal } = require('./dojoRuleMerge');
 const { buildInventory, inventoryView } = require('./dojoRuleInventory');
 const {validateTextureReview,selectCasebook}=require('./dojoTextureEvidence');
 const efficiency=require('./dojoLearningEfficiency');
+const prospective=require('./dojoProspectiveReview');
+const {evolutionPlan}=require('./dojoEvolutionPlan');
 const comparison=require('./dojoComparisonWork');
 const { planSkillTransfers } = require('./dojoSkillTransfer');
 const { enqueueFeedback, validateReview, applyReviews, cyclePreflight, assertCyclePrepared } = require('./dojoSkillFeedbackQueue');
@@ -72,6 +74,7 @@ const PROTOCOL = [
   'A new version waits until the released one has enough ratings to be compared (loop.gates). Three consecutive non-passes require a research run with a structured failureAnalysis: two actual failed examples, a confirmed pass or externally verifiable positive contrast, two competing causes with contradictory evidence and falsification, uncertainty, and a discriminating next test. A mere finished run or agent self-score never clears the gate.',
   'feedback holds what the user said about each thing the gear produced (action and comment), grouped by the version that produced it. Read it before proposing a new version and cite it as the reason; a version is better only if the user said so more often, not if self-scores rose.',
   'The Skill-Hypothesis-Evidence graph is an additive view of canonical H/T/user-feedback records. Read exploration_skill_graph_get for module relationships and mechanically computed evidence states. Proposed edges and historical AI verdicts never by themselves certify a causal claim or authorize Skill release.',
+  'Read graph.stewardship.evolution: compare prospective reviewer protocols on still-unrated text artifacts using exploration_prospective_review_queue/record when a separate reviewer context is available; skip rather than pretend independence. Use actual archived producing versions, specific research-component contrasts, breakthrough alternatives and system diagnosis before proposing changes. These are advisory and never override existing gates.',
   'Tree stewardship is the agents recurring research task, not a one-trial linear workflow: read graph.stewardship.portfolio and maintain hypotheses across several Skill modules, including under-tested, partially supported, negative and contradictory branches. Select the next comparison based on actual human evidence and falsification, not only on the most recent accepted sample.',
   'Use the agent to formulate/split/synthesize/retire hypotheses and proposed edges, register discriminating tests and create as many distinct completed artifacts as are justified by the research (often 2-3 across branches). Do not invent a minimum quota, flood the user, exceed awaiting capacity or bypass research/learning/recall/negative-review gates.',
   'After each real rating: refresh the graph, compare passes and counterexamples across all affected branches, update claims and proposed relations via existing item_upsert/research_synthesize and hypothesis_relation_upsert, and precommit the next independent validation. Partial verdict on an artifact is not partial support for a hypothesis. Algorithmic evidence states are advisory; do not self-certify causality, user acceptance or Skill-rule merge.',
@@ -571,6 +574,7 @@ function createStore(options) {
     graph.stewardship.pruning=efficiency.pruningView(inventory,ruleBody,proposals);
     graph.stewardship.fieldObservations=items.filter(s=>s.kind==='source'&&s.fieldObservation).map(s=>({id:s.id,title:s.title,...s.fieldObservation}));
     graph.stewardship.metaLearning=efficiency.metaUsage(trials);
+    graph.stewardship.evolution=evolutionPlan({base,hypotheses:items,trials,graph});
     if(id===efficiency.META_SKILL_ID){
       const others=await listBases({});
       const bases=await Promise.all(others.items.filter(b=>b.id!==id).map(async b=>({
@@ -2204,6 +2208,28 @@ function createStore(options) {
     };
   }
 
+  async function prospectiveReviewQueue(input) {
+    const id=requireBaseId(input?.baseId);
+    const base=value(await baseRef(id).get());
+    if(!base||base.status==='closed')throw Error('Active Exploration Base required');
+    if(base.outcome?.confirmedBy==='measurement')return {baseId:id,items:[],note:'Measurement-mode dojo'};
+    return {baseId:id,protocolId:input.protocolId,items:prospective.packet(await loadTrials(id),input.protocolId),
+      instruction:'Use a separate reviewer context/model without producer analysis, H IDs, predictions or historical verdicts. Judge every offered artifact before actual human feedback; record exactly once. Identity and contextual independence are agent-reported.'};
+  }
+  async function prospectiveReviewRecord(input) {
+    const id=requireBaseId(input?.baseId),trialId=text(input?.trialId,20,'trialId',true);
+    let result;
+    await db().runTransaction(async tx=>{
+      const base=await loadBase(tx,id);
+      if(base.outcome?.confirmedBy==='measurement')throw Error('Measurement-mode dojo');
+      const ref=trialRef(id,trialId),trial=value(await tx.get(ref));
+      if(!trial)throw Error('Trial not found');
+      const next=prospective.record(trial,input,input.protocolId,now());
+      put(tx,ref,next);
+      result={baseId:id,trialId,protocolId:input.protocolId,recordedAt:next.prospectiveReviews.at(-1).recordedAt,status:'committed_before_recorded_human_rating'};
+    });
+    return result;
+  }
   async function rateTrials(input) {
     const id = requireBaseId(input?.baseId);
     if (!Array.isArray(input.ratings) || !input.ratings.length) throw new Error('ratings must be a non-empty array');
@@ -2512,7 +2538,7 @@ function createStore(options) {
   // Compact summary used by the Agent Intelligence bundle resolver.
   async function brief(input) { return get({ id: input?.id, view: 'brief' }); }
 
-  return { create, list: listBases, get, remove, brief, graphGet, graphRelationUpsert, ruleProposalUpsert, seedSkillImprovementInbox, reviewSkillImprovement, setOutcome, setMethodVersion, migrateLegacyPackTarget, upsertItems, startRun, recordComparison, finishRun, recordUserReaction, recordFeedback, researchRead, researchSynthesize, prepareRecall, checkRecall, recordTrials, rateTrials, awaitingTrials, refreshLoop, trainersOf, skillCasebook };
+  return { create, list: listBases, get, remove, brief, graphGet, graphRelationUpsert, ruleProposalUpsert, seedSkillImprovementInbox, reviewSkillImprovement, setOutcome, setMethodVersion, migrateLegacyPackTarget, upsertItems, startRun, recordComparison, finishRun, recordUserReaction, recordFeedback, researchRead, researchSynthesize, prepareRecall, checkRecall, prospectiveReviewQueue, prospectiveReviewRecord, recordTrials, rateTrials, awaitingTrials, refreshLoop, trainersOf, skillCasebook };
 }
 
 const store = createStore();
