@@ -1720,3 +1720,33 @@ test('Skill/Pack dojos reject one-off examples as new H without real formation e
   // Legacy H edits need not invent a formation history they never had.
   await store.upsertItems({ baseId: id, kind: 'hypothesis', items: [{ id: hId, limits: 'Unproven before matched human comparison.' }] });
 });
+
+
+test('prospective judge commits exact unseen text once, before rating; graph computes human comparison', async()=>{
+  const store=await setup();
+  await store.upsertItems({baseId:'test-base',kind:'hypothesis',items:[hypothesis]});
+  const {runId}=await store.startRun({baseId:'test-base',objective:'Test prospective judge',targets:[{hypothesisId:'H-001',prediction:'the sample passes'}]});
+  await store.recordTrials({baseId:'test-base',runId,trials:[{label:'Sample',body:'A sufficiently concrete sample text.',hypothesisIds:['H-001'],predictedPass:0.7}]});
+  const p={baseId:'test-base',protocolId:'editorial-v1'};
+  const q=await store.prospectiveReviewQueue(p);
+  assert.equal(q.items.length,1);
+  assert.deepEqual(Object.keys(q.items[0]).sort(),['artifactDigest','body','trialId']);
+  const entry={...p,trialId:q.items[0].trialId,artifactDigest:q.items[0].artifactDigest,quote:'concrete sample',reason:'The concrete sample gives a clear reason for its judgment.',reviewer:'test reviewer context',predictedPass:0.9};
+  await assert.rejects(store.prospectiveReviewRecord({...entry,artifactDigest:'fake'}),/digest/);
+  await store.prospectiveReviewRecord(entry);
+  await assert.rejects(store.prospectiveReviewRecord(entry),/already committed/);
+  assert.equal((await store.prospectiveReviewQueue(p)).items.length,0);
+  await store.prospectiveReviewRecord({...entry,protocolId:'editorial-v2',predictedPass:0.1});
+  // Ensure timestamp order rather than relying on millisecond timing in the fake DB.
+  await new Promise(resolve=>setTimeout(resolve,5));
+  await store.rateTrials({baseId:'test-base',ratings:[{id:entry.trialId,verdict:'pass',userWords:'合格'}]});
+  await assert.rejects(store.prospectiveReviewRecord({...entry,protocolId:'editorial-v3'}),/still-unrated/);
+  const g=await store.graphGet({baseId:'test-base'});
+  const v=g.stewardship.evolution;
+  assert.equal(v.policyVersion,'dojo-evolution-v2');
+  assert.equal(v.reviewer.protocols[0].rated,1);
+  assert.deepEqual(v.reviewer.matchedProtocolComparisons[0].brier,[0.01,0.81]);
+  assert.equal(v.researchComponents.length,5);
+  await store.rateTrials({baseId:'test-base',ratings:[{id:entry.trialId,verdict:'fail',userWords:'訂正、ボツ'}]});
+  assert.equal((await store.graphGet({baseId:'test-base'})).stewardship.evolution.reviewer.protocols[0].excluded,1);
+});

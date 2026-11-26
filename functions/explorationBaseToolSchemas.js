@@ -201,6 +201,16 @@ const tools = [
     },required:['baseId'],additionalProperties:false},
   },
   {
+    name:'exploration_prospective_review_queue',
+    description:'Return only still-unrated text artifacts and content digests, without producer analysis, scores or hypothesis metadata. Pass a fixed reviewer protocol ID. Use a separate context/model without access to the author reasoning or human verdicts; independence cannot be verified by this API. No additional user rating.',
+    inputSchema:{type:'object',properties:{baseId,protocolId:string('Stable versioned review protocol (e.g. editorial-v1).',80)},required:['baseId','protocolId'],additionalProperties:false},
+  },
+  {
+    name:'exploration_prospective_review_record',
+    description:'Commit a once-only review of an exact still-unrated text artifact before recorded human feedback. Scores later appear in graph.stewardship.evolution.reviewer. No approval, publication, user rating or release authority.',
+    inputSchema:{type:'object',properties:{baseId,trialId:string('T-nnn from queue.',20),protocolId:string('Same stable protocol ID.',80),artifactDigest:string('Exact digest from queue.',64),predictedPass:{type:'number',minimum:0,maximum:1},quote:string('Exact body substring 4-160 chars.',160),reason:string('Observable reason, 20-1000 chars.',1000),reviewer:string('Actual reviewer model/context label, not invented.',120)},required:['baseId','trialId','protocolId','artifactDigest','predictedPass','quote','reason','reviewer'],additionalProperties:false},
+  },
+  {
     name:'exploration_hypothesis_relation_upsert',
     description:'Create 1-12 additional proposed hypothesis connections between existing H-nnn IDs: derivation, narrowing, contradiction, complement, synthesis, supersession. Append-only proposals: confirmed/causal status cannot be self-declared. Directed lineage cycles are rejected. Existing hypotheses, trial IDs and ratings remain unchanged.',
     inputSchema:{type:'object',properties:{
