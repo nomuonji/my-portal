@@ -62,7 +62,7 @@
     "test:job-opportunities": "node --test scripts/job-opportunities-smoke.js",
     "test:agent-intelligence": "node --test scripts/agent-intelligence-registry-smoke.js",
     "test:exploration-base": "node --test scripts/exploration-base-smoke.js scripts/hypothesis-refinement-smoke.js scripts/dojo-evidence-graph-smoke.js scripts/workspace-tree-smoke.js scripts/dojo-pack-classification-smoke.js",
-    "test:submarine": "node --test scripts/submarine-smoke.js",
+    "test:submarine": "node --test scripts/submarine-smoke.js scripts/submarine-execution-smoke.js",
     "test:partial-edits": "node --test scripts/partial-edits-smoke.js",
     "test:consumer-model-migration": "node --test scripts/consumer-model-migration-smoke.js",
     "test:learning-inbox": "node --test scripts/learning-inbox-smoke.js"

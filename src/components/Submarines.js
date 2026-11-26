@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Alert, Box, Button, CircularProgress, Collapse, Link, Stack, Tab, Tabs, Typography,
+  Alert, Box, Button, Checkbox, CircularProgress, Collapse, FormControlLabel, Link, MenuItem, Stack, Tab, Tabs, TextField, Typography,
 } from '@mui/material';
 import { ArrowBack, Refresh } from '@mui/icons-material';
 import { marked } from 'marked';
@@ -414,6 +414,76 @@ function Schedule({ schedule }) {
   ));
 }
 
+function NativeExecutionPanel({ submarineId }) {
+  const [registry, setRegistry] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [variant, setVariant] = useState('');
+  const [task, setTask] = useState('日本語の単独投稿を1本作成して');
+  const [sourceUrl, setSourceUrl] = useState('');
+  const [excerpt, setExcerpt] = useState('');
+  const [retrievedAt, setRetrievedAt] = useState('');
+  const [consent, setConsent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [requestKey, setRequestKey] = useState('');
+  const reload = useCallback(async () => {
+    try {
+      const q = '&id=' + encodeURIComponent(submarineId);
+      const [v, h] = await Promise.all([api('?resource=submarine_variants' + q), api('?resource=submarine_executions' + q)]);
+      setRegistry(v); setHistory(h.items || []);
+      setVariant(prev => v.items.some(i => i.versionId === prev) ? prev : v.items[0]?.versionId || '');
+    } catch (err) { setError(err.message); }
+  }, [submarineId]);
+  useEffect(() => { reload(); }, [reload]);
+  const change = setter => event => { setter(event.target.value); setRequestKey(''); };
+  const run = async () => {
+    setBusy(true); setError('');
+    const key = requestKey || window.crypto.randomUUID();
+    setRequestKey(key);
+    try {
+      const result = await api('', {
+        action: 'submarine_execute', submarineId, versionId: variant, requestKey: key, task,
+        sources: [{url: sourceUrl.trim(), excerpt, retrievedAt: new Date(retrievedAt).toISOString()}],
+        confirm: true, confirmExternalProcessing: consent,
+      });
+      await reload();
+      if (result.run?.status !== 'completed') setError('実行状態: ' + (result.run?.status || 'unknown') + (result.run?.error ? ' — ' + result.run.error : ''));
+    } catch (err) { setError(err.message + '。再送時は同じ実行キーを使用します。'); }
+    finally { setBusy(false); }
+  };
+  if (!registry && !error) return <CircularProgress size={24} />;
+  return (
+    <Stack gap={2}>
+      <Typography variant="subtitle1" fontWeight={800}>仮スキル・直接出航</Typography>
+      <Typography variant="body2" color="text.secondary">完成した仮スキルの固定版で通常の制作依頼を実行します。未公開の試作のみ。本人評価・正式リリースとは別です。</Typography>
+      {error && <Alert severity="warning">{error}</Alert>}
+      <Alert severity={registry?.provider?.configured ? 'info' : 'warning'}>
+        {registry?.provider?.configured ? 'AMD: ' + registry.provider.model + ' / 日次上限 ' + registry.provider.dailyCallLimit + ' 回' : 'AMD未有効化または未設定。既存の定期ランナーは継続可能です。'}
+      </Alert>
+      {!registry?.items?.length && <Typography variant="body2">仮スキルが未登録です。道場からネイティブ登録または既存プールの移行を実行してください。</Typography>}
+      <TextField select size="small" label="仮スキル固定版" value={variant} onChange={change(setVariant)} disabled={busy || !registry?.items?.length}>
+        {(registry?.items || []).map(v => <MenuItem key={v.versionId} value={v.versionId}>{v.variantKey} · v{v.revision}</MenuItem>)}
+      </TextField>
+      <TextField label="通常の制作依頼" multiline minRows={2} value={task} onChange={change(setTask)} disabled={busy}/>
+      <TextField label="確認済み公開原典URL" size="small" value={sourceUrl} onChange={change(setSourceUrl)} disabled={busy}/>
+      <TextField label="実際に取得した原典の抜粋" multiline minRows={3} value={excerpt} onChange={change(setExcerpt)} disabled={busy}/>
+      <TextField label="原典の取得日時" type="datetime-local" size="small" InputLabelProps={{shrink:true}} value={retrievedAt} onChange={change(setRetrievedAt)} disabled={busy}/>
+      <FormControlLabel control={<Checkbox checked={consent} onChange={e=>setConsent(e.target.checked)} disabled={busy}/>} label="仮スキル・依頼・公開原典をAMDへ送信することに同意する（秘密情報は含めない）"/>
+      <Stack direction="row" gap={1} flexWrap="wrap">
+        <Button variant="contained" disabled={busy || !registry?.provider?.configured || !variant || !task.trim() || !sourceUrl.trim() || !excerpt.trim() || !retrievedAt || !consent} onClick={run}>{busy ? '実行中' : requestKey ? '同じ実行結果を確認' : '試作を1件実行'}</Button>
+        <Button disabled={busy || !requestKey} onClick={()=>setRequestKey('')}>別の試作として準備</Button>
+        <Button disabled={busy} onClick={reload}>履歴更新</Button>
+      </Stack>
+      <Typography variant="subtitle2">実行履歴（未公開）</Typography>
+      {history.map(r=><Box key={r.id} sx={{border:'1px solid '+V.rule,borderRadius:1.5,p:1.5}}>
+        <Typography variant="caption" color="text.secondary">{r.variantKey} / {r.status} / {r.actualModel || r.requestedModel || r.engine} / {shortDate(r.createdAt)} / {r.harvestStatus}</Typography>
+        <Typography sx={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',fontSize:14,mt:0.7}}>{r.body || r.error || '結果なし'}</Typography>
+      </Box>)}
+      {!history.length && <Quiet>ネイティブ実行履歴はまだありません。</Quiet>}
+    </Stack>
+  );
+}
+
 const CONSOLE_TABS = [
   { key: 'haul', label: '成果' }, { key: 'mission', label: '任務' }, { key: 'gear', label: '装備' },
   { key: 'log', label: '航海日誌' }, { key: 'chart', label: '海図' },
@@ -462,12 +532,13 @@ function Console({ detail, onDojo, onNotice, onError }) {
 
       <Tabs value={tab} onChange={(_, value) => setTab(value)} variant="scrollable" allowScrollButtonsMobile
         sx={{ mt: 2.5, borderBottom: '1px solid ' + V.rule, minHeight: 42, '& .MuiTab-root': { minHeight: 42, fontSize: 13.5, fontWeight: 700 } }}>
-        {CONSOLE_TABS.map((item) => {
+        {[...CONSOLE_TABS, ...(sub.id === 'viral-post' ? [{key:'execution',label:'試作実行'}] : [])].map((item) => {
           const count = { haul: awaiting.length, gear: loadout.length, log: sorties.length, chart: chart.length }[item.key];
           return <Tab key={item.key} value={item.key} label={item.label + (count ? ' ' + count : '')} />;
         })}
       </Tabs>
       <Box sx={{ pt: 2.5 }}>
+        {tab === 'execution' && <NativeExecutionPanel submarineId={sub.id} />}
         {tab === 'haul' && <HaulTimeline fixedSub={sub.id} onNotice={onNotice} onError={onError} />}
 
         {tab === 'mission' && (<>
