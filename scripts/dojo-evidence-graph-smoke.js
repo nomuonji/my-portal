@@ -570,3 +570,17 @@ test('learning budget preserves scarce capacity for capability evidence and a ma
   assert.equal(learningBudget({base,hypotheses,trials:pending,headroom:1}).suggestedAllocation.capability,0);
   assert.equal(learningBudget({base:{...base,outcome:{confirmedBy:'measurement'}},hypotheses,trials:exploration,headroom:1}).suggestedAllocation.capability,0);
 });
+
+test('evolution breakthrough must select a genuinely different branch and keep domain evidence separate',()=>{
+  const {evolutionPlan,downstreamComponents}=require('../functions/dojoEvolutionPlan');
+  const items=[h('H-001','voice'),h('H-002','source')];
+  const graph=projectGraph({base,items,trials:[]});
+  const v=evolutionPlan({base,hypotheses:items,trials:[],graph});
+  assert.notEqual(v.breakthrough.branchOptions[0].hypothesisId,v.breakthrough.branchOptions[1].hypothesisId);
+  const only=projectGraph({base,items:items.slice(0,1),trials:[]});
+  assert.equal(evolutionPlan({base,hypotheses:items.slice(0,1),trials:[],graph:only}).breakthrough.branchOptions[1].hypothesisId,null);
+  const comparison={scope:'retriever:case_selection',hypothesisId:'H-001',pairs:1,treatmentBetter:1,controlBetter:0,ties:0};
+  const b=downstreamComponents(['humor','buzz'].map(baseId=>({baseId,uses:[{version:1,researchComparisons:[comparison]}]})));
+  assert.deepEqual(b.find(x=>x.component==='retriever').comparisons.map(x=>x.baseId),['humor','buzz']);
+  assert.equal(b.find(x=>x.component==='allocator').status,'unmeasured');
+});

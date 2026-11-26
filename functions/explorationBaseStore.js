@@ -18,7 +18,7 @@ const { buildInventory, inventoryView } = require('./dojoRuleInventory');
 const {validateTextureReview,selectCasebook}=require('./dojoTextureEvidence');
 const efficiency=require('./dojoLearningEfficiency');
 const prospective=require('./dojoProspectiveReview');
-const {evolutionPlan}=require('./dojoEvolutionPlan');
+const {evolutionPlan,downstreamComponents}=require('./dojoEvolutionPlan');
 const comparison=require('./dojoComparisonWork');
 const { planSkillTransfers } = require('./dojoSkillTransfer');
 const { enqueueFeedback, validateReview, applyReviews, cyclePreflight, assertCyclePrepared } = require('./dojoSkillFeedbackQueue');
@@ -581,7 +581,7 @@ function createStore(options) {
         baseId:b.id,title:b.title,methodVersion:b.methodVersion,
         uses:b.loop?.metaLearningProjectionVersion===2?b.loop.metaLearning||[]:efficiency.metaUsage(await loadTrials(b.id)),
       })));
-      graph.stewardship.downstreamMetaLearning={status:'observational_only',bases,instructions:'Read actual source dojo runs and original human-rated cases before proposing changes. Use the explicit researchComparisons by domain and scope, keep the underlying human verdicts in their original dojo, and never infer causality from usage alone.'};
+      graph.stewardship.downstreamMetaLearning={status:'observational_only',bases,components:downstreamComponents(bases),instructions:'Read actual source dojo runs and original human-rated cases before proposing changes. Use the explicit researchComparisons by domain and scope, keep the underlying human verdicts in their original dojo, and never infer causality from usage alone.'};
     }
     return graph;
   }

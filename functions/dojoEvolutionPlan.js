@@ -38,7 +38,11 @@ function evolutionPlan({base,hypotheses,trials,graph}){
   });
   const chosen=graph.stewardship.portfolio.selectedBranches;
   const failed=new Set(failures.map(x=>x.hypothesisId));
-  const alternative=chosen.find(x=>!failed.has(x.hypothesisId)&&x.moduleId!=='root')||chosen.find(x=>!failed.has(x.hypothesisId));
+  const primary=chosen[0];
+  const candidates=hypotheses.filter(h=>h.kind==='hypothesis'&&h.status==='open'&&h.polarity!=='negative'&&!failed.has(h.id)&&h.id!==primary?.hypothesisId)
+    .map(h=>({hypothesisId:h.id,moduleId:h.targetModuleIds?.[0]||h.pipelineStage||'root'}));
+  const alternative=chosen.find(x=>x.hypothesisId!==primary?.hypothesisId&&!failed.has(x.hypothesisId)&&x.moduleId!==primary?.moduleId)
+    ||candidates.find(x=>x.moduleId!==primary?.moduleId);
   return {policyVersion:'dojo-evolution-v2',reviewer:score(trials),memory:{contrasts:memory,
       instruction:'Open actual texts and context; test the retrieval operation itself via a retriever: meta_scope pair. No compression or promotion from labels alone.'},
     regression:{currentApprovedVersion:current??null,currentActual,olderActualCandidates:old,
@@ -54,4 +58,14 @@ function evolutionPlan({base,hypotheses,trials,graph}){
       instruction:'If the bottleneck is the system, reproduce on a fixed fixture, propose an isolated branch, verify unchanged user gates and regression suite, then explicitly review/merge; no automated code or evaluator self-modification.'},
     note:'Planning and prospective measurement only. Existing research, negative-review, human ratings and release gates remain; no new scheduler, automatic release or model calls.'};
 }
-module.exports={evolutionPlan};
+// Keep each domain and meta version separate: a good result in humor does not
+// prove the same operation works in video or marketing.
+function downstreamComponents(bases){
+  return Object.keys(COMPONENTS).map(component=>{
+    const comparisons=bases.flatMap(b=>(b.uses||[]).flatMap(m=>(m.researchComparisons||[])
+      .filter(x=>x.scope.startsWith(component+':')).map(x=>({...x,baseId:b.baseId,metaVersion:m.version}))));
+    return {component,status:comparisons.length?'downstream_comparison_available':'unmeasured',comparisons,
+      instruction:COMPONENTS[component]};
+  });
+}
+module.exports={evolutionPlan,downstreamComponents};
