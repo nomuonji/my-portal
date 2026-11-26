@@ -588,6 +588,8 @@ function createStore(options) {
     let sortieId;
     await db().runTransaction(async (tx) => {
       const sub = await loadSub(tx, id);
+      const nativeLock = value(await tx.get(db().collection("submarineExecutionLocks").doc(id)));
+      if (nativeLock?.runId && Date.parse(nativeLock.expiresAt) > Date.now()) throw new Error("Native execution is at sea");
       if (sub.openSortieId) {
         const open = value(await tx.get(sortieRef(id, sub.openSortieId)));
         if (open && open.status === 'open') put(tx, sortieRef(id, sub.openSortieId), { ...open, status: 'abandoned', finishedAt: now() });

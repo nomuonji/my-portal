@@ -25,6 +25,7 @@ import * as agentIntelligenceRegistryImport from "../../functions/agentIntellige
 import * as skillPackImport from "../../functions/skillPackRegistry.js";
 import * as submarineStoreImport from "../../functions/submarineStore.js";
 import * as submarineFleetImport from "../../functions/submarineFleet.js";
+import * as submarineExecutionImport from "../../functions/submarineExecutionStore.js";
 
 const consumerModels: any = (consumerModelStoreImport as any).default ?? consumerModelStoreImport;
 const store: any = (storeImport as any).default ?? storeImport;
@@ -49,6 +50,7 @@ const agentIntelligenceRegistry: any = (agentIntelligenceRegistryImport as any).
 const skillPackRegistry: any = (skillPackImport as any).default ?? skillPackImport;
 const submarineStore: any = (submarineStoreImport as any).default ?? submarineStoreImport;
 const submarineFleet: any = (submarineFleetImport as any).default ?? submarineFleetImport;
+const submarineExecution: any = (submarineExecutionImport as any).default ?? submarineExecutionImport;
 const documentDb: any = (documentDbImport as any).default ?? documentDbImport;
 const AGENT_DATABASE_ID = "(default)";
 
@@ -224,6 +226,8 @@ export default async (request: Request) => {
         return json(await submarineStore.list({ status: url.searchParams.get("status") || undefined }));
       }
       if (resource === "submarine") return json(await submarineStore.get({ id: url.searchParams.get("id") || "", view: "full" }));
+      if (resource === "submarine_variants") return json(await submarineExecution.list({submarineId:url.searchParams.get("id")||""}));
+      if (resource === "submarine_executions") return json(await submarineExecution.runs({submarineId:url.searchParams.get("id")||"",limit:Number(url.searchParams.get("limit"))||30}));
       if (resource === "submarine_haul") return json(await submarineStore.haulList({ status: url.searchParams.get("status") || undefined, submarineId: url.searchParams.get("sub") || undefined, cursor: url.searchParams.get("cursor") || undefined, limit: Number(url.searchParams.get("limit")) || 15 }));
       if (resource === "meta_proposals") return json(await metaStore.list({limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 150, 1), 200), status: url.searchParams.get("status") || undefined}));
       if (resource === "meta_proposal") return json(await metaStore.get({ id: url.searchParams.get("id") || "" }));
@@ -371,6 +375,9 @@ export default async (request: Request) => {
         }
         return json(updated);
       }
+      if (action === "submarine_variant_import") return json(await submarineExecution.importPool(body));
+      if (action === "submarine_execute") return json(await submarineExecution.execute(body));
+      if (action === "submarine_execution_harvest") return json(await submarineExecution.harvest(body));
       if (action === "submarine_haul_feedback") {
         // The signed-in owner evaluating in the UI is the user's own feedback.
         const day = new Date().toISOString().slice(0, 10);
