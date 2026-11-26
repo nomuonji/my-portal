@@ -4,6 +4,7 @@
 // It never writes hypotheses, manufactures feedback, certifies a merge or schedules work.
 // Every proposed artifact still requires the existing research / trial gates and human rating.
 const { unreliableNegativeReviews,FAILURE_STREAK } = require('./dojoBuzzRecovery');
+const { learningBudget } = require('./dojoLearningBudget');
 const MAX_USER_BATCH = 3;
 const CONSERVATIVE_AWAITING_LIMIT = 5;
 
@@ -71,6 +72,9 @@ function planTreeStewardship({hypotheses=[],trials=[],hypothesisEdges=[],base}={
   const newScope=viable[0];
   const validationPlan=headroom<2?null:ongoing?{...ongoing,action:'continue_matched_scope',reservedArtifacts:2}:
     newScope?{hypothesisId:newScope.hypothesisId,segmentKey:null,action:'preregister_matched_scope',reservedArtifacts:2}:null;
+  const optimization=learningBudget({hypotheses,trials,base,headroom,validationPlan});
+  // Reserve a capability measurement when it is starved, not another speculative branch.
+  // Research can still continue internally on all branches.
   const selection=[],visited=new Set(),modules=new Set();
   // The paired arm consumes two visible artifacts but represents one branch.
   const branchBudget=validationPlan?Math.min(headroom-1,MAX_USER_BATCH-1):MAX_USER_BATCH;
@@ -103,6 +107,8 @@ function planTreeStewardship({hypotheses=[],trials=[],hypothesisEdges=[],base}={
   const branchCoverage=modules.size;
   const eligible=active.filter(h=>h.eligibleForMerge).map(h=>h.hypothesisId);
   const nextActions=[
+    {kind:'allocate_learning_evidence',responsible:'agent',required:optimization.suggestedAllocation.capability>0,
+      instruction:'Use optimization.suggestedAllocation before drafting. Reserve the indicated capability slot for the pinned approved version on preregistered fresh material. Use remaining slots for the existing matched validation and exploration plan. Inspect directionMemory trial IDs and compare exact bodies; repeated failures require a changed operation or a counterexample, not another wording edit. Do not add outputs beyond capacity or lower quality gates.'},
     {kind:'review_all_evidence',responsible:'agent',required:true,
       instruction:'Read the complete past-hypothesis and exact human-feedback casebook before a new run; refresh the graph after every rating.'},
     {kind:'reconcile_hypothesis_tree',responsible:'agent',required:true,
@@ -120,8 +126,9 @@ function planTreeStewardship({hypotheses=[],trials=[],hypothesisEdges=[],base}={
     policyVersion:'tree-steward-v2',
     rootSkillId:base?.method?.bodyRef?.location||null,
     userReview:{awaiting:waiting,conservativeCapacity:headroom,
-      suggestedVisibleBatchSize:Math.min(headroom,selection.length+(validationPlan?1:0),MAX_USER_BATCH),
+      suggestedVisibleBatchSize:Math.min(headroom,Math.max(selection.length+(validationPlan?1:0),optimization.suggestedAllocation.capability),MAX_USER_BATCH),
       constraint:waiting>=CONSERVATIVE_AWAITING_LIMIT?'review_existing_before_creating_more':'respect_existing_submission_gates'},
+    optimization,
     portfolio:{activeHypotheses:active.length,selectedBranches:selection,
       distinctModules:branchCoverage,untestedBranches:staleBranches,
       byState,partialCandidates:byState.exploratory_partial||0,validationPlan,
