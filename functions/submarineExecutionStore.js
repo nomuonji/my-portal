@@ -20,6 +20,8 @@ const slug = (value, name) => {
   return str;
 };
 const read = snap => snap.exists ? snap.data() : null;
+const documentId = (value, name) => { const id = requireText(value, 300, name); if (!/^[A-Za-z0-9_-]+$/.test(id)) throw new Error('Invalid '+name); return id; };
+const publicRun = ({leaseTokenHash,...run}) => run;
 const headId = (sub, key) => sub + '__' + key;
 const verId = (sub, key, n) => headId(sub, key) + '__v' + String(n).padStart(6, '0');
 const env = name => process.env[name] || (() => { try { return globalThis.Netlify?.env?.get(name); } catch { return undefined; } })();
@@ -48,7 +50,7 @@ function normalizeVariant(input) {
   if (new Set(modules.map(m => m.skillId)).size !== modules.length) throw new Error('duplicate frozen module');
   if (body.length + modules.reduce((n,m)=>n+m.body.length,0) > 100000) throw new Error('frozen skill context exceeds 100000 characters');
   const cardIds = Array.isArray(input.cardIds) ? [...new Set(input.cardIds.map(id => slug(id, 'cardId')))].slice(0, 100) : [];
-  const parent = input.parentVersionId ? requireText(input.parentVersionId, 300, 'parentVersionId') : null;
+  const parent = input.parentVersionId ? documentId(input.parentVersionId, 'parentVersionId') : null;
   return { submarineId, baseId, variantKey, body, modules, cardIds, parentVersionId: parent, lineage: input.lineage && typeof input.lineage === 'object' ? JSON.parse(JSON.stringify(input.lineage)) : {}, researchOnly: true };
 }
 function assertShip(ship, baseId) {
@@ -60,6 +62,7 @@ function sourcePacket(value) {
   return value.map(s => {
     const url = requireText(s.url, 2000, 'public source URL');
     const parsed = new URL(url);
+    if (!Number.isFinite(Date.parse(s.retrievedAt))) throw new Error('retrievedAt must be a valid timestamp');
     if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error('public HTTPS source URL without query, credentials or fragment required');
     return { url, excerpt: requireText(s.excerpt, 4000, 'source excerpt'), retrievedAt: requireText(s.retrievedAt, 80, 'retrievedAt') };
   });
@@ -81,7 +84,7 @@ function createStore(options = {}) {
       assertShip(ship,spec.baseId);
       const current = read(await tx.get(h));
       if (current?.fingerprint === fingerprint) return { id: current.versionId, revision: current.revision, unchanged: true };
-      const expected = Number(input.expectedRevision);
+      const expected = input.expectedRevision;
       if (!Number.isInteger(expected) || expected !== (current?.revision || 0)) throw new Error('variant revision conflict');
       if (current && current.baseId !== spec.baseId) throw new Error('dojo cannot change');
       if (spec.parentVersionId) {
@@ -119,7 +122,8 @@ function createStore(options = {}) {
         if (frozen.item.metadata?.submarineId !== meta.submarineId || frozen.item.metadata?.baseId !== meta.baseId) throw new Error('dependency belongs to another ship/dojo');
         deps.push(...JSON.parse(frozen.version.content));
       }
-      const modules = (m.activeModules || []).map(a => {
+      if (!Array.isArray(m.activeModules)) throw new Error('missing module manifest');
+      const modules = m.activeModules.map(a => {
         const d = deps.find(x=>x.skillId===a.skillId && x.revision===a.revision && x.stage===a.stage);
         if (!d) throw new Error('missing immutable dependency ' + a.skillId);
         return d;
@@ -135,7 +139,7 @@ function createStore(options = {}) {
     return {items:snap.docs.map(d=>d.data()).sort((a,b)=>a.variantKey.localeCompare(b.variantKey)),provider:publicConfig()};
   }
   async function get(input) {
-    const id = requireText(input.versionId,300,'versionId');
+    const id = documentId(input.versionId,'versionId');
     const item = read(await ref(COLLECTIONS.versions,id).get());
     if (!item) throw new Error('variant version not found');
     return item;
@@ -143,7 +147,7 @@ function createStore(options = {}) {
   async function reserve(input, engine) {
     if (input.confirm !== true) throw new Error('confirm=true required for an unpublished prototype');
     const submarineId = slug(input.submarineId,'submarineId');
-    const versionId = requireText(input.versionId,300,'versionId');
+    const versionId = documentId(input.versionId,'versionId');
     const task = requireText(input.task,5000,'ordinary production task');
     const sources = sourcePacket(input.sources);
     const requestKey = requireText(input.requestKey,160,'idempotency requestKey');
@@ -158,19 +162,21 @@ function createStore(options = {}) {
       const prior = read(await tx.get(runRef));
       if (prior) {
         if (prior.requestHash !== requestHash) throw new Error('requestKey already used for a different execution');
-        return {run:prior,replayed:true};
+        return {run:publicRun(prior),replayed:true};
       }
       const ship = read(await tx.get(shipRef(submarineId)));
       const variant = read(await tx.get(ref(COLLECTIONS.versions,versionId)));
       if (!variant || variant.submarineId !== submarineId || !variant.researchOnly) throw new Error('exact isolated variant required');
       assertShip(ship,variant.baseId);
       const head = read(await tx.get(ref(COLLECTIONS.heads,headId(submarineId,variant.variantKey))));
-      if (head?.status !== 'ready') throw new Error('variant is not ready');
+      if (head?.status !== 'ready' || head.versionId !== versionId) throw new Error('variant is not the current ready version');
       if (ship.openSortieId) throw new Error('legacy sortie is at sea');
       const lock = read(await tx.get(lockRef));
       if (lock && Date.parse(lock.expiresAt) > Date.now()) throw new Error('native execution already at sea');
       const stale = lock?.runId ? read(await tx.get(ref(COLLECTIONS.runs,lock.runId))) : null;
       const budget = engine === 'amd' ? read(await tx.get(budgetRef)) : null;
+      const history = await tx.get(db().collection(COLLECTIONS.runs).where('submarineId','==',submarineId));
+      if (history.docs.filter(d=>{const r=d.data();return ['completed','partial'].includes(r.status)&&r.harvestStatus==='unreviewed';}).length >= 48) throw new Error('unharvested prototype cap reached (48)');
       if (engine === 'amd' && (budget?.calls || 0) >= cfg.dailyCallLimit) throw new Error('AMD daily call cap reached');
       if (stale?.status === 'running') tx.set(ref(COLLECTIONS.runs,stale.id),{...stale,status:'abandoned',finishedAt:now(),error:'lease expired; no automatic retry'});
       const run = {id,submarineId,baseId:variant.baseId,versionId,variantKey:variant.variantKey,variantFingerprint:variant.fingerprint,requestKey,requestHash,task,sources,engine,requestedModel:cfg?.model||null,status:'running',createdAt:now(),leaseTokenHash:sha(token),harvestStatus:'unreviewed',researchOnly:true,limitations:['source excerpts supplied by caller; not independently retrieved by engine','no browsing or tool execution','internal exploratory result, not a human verdict or production approval']};
@@ -229,7 +235,7 @@ function createStore(options = {}) {
     return {runId:started.run.id,leaseToken:started.token,executionInput:executionInput(started.variant,started.run),versionId:started.variant.id,limitations:started.run.limitations};
   }
   async function record(input) {
-    const id=requireText(input.runId,100,'runId'), token=requireText(input.leaseToken,100,'leaseToken');
+    const id=documentId(input.runId,'runId'), token=requireText(input.leaseToken,100,'leaseToken');
     const body=requireText(input.body,50000,'actual generated body');
     const actualModel=requireText(input.actualModel,160,'actualModel');
     return {run:await finish(id,token,{status:input.partial===true?'partial':'completed',body,actualModel,providerResponseId:null,reportedBy:'external-agent',limitations:['external agent reported execution; independent model/actual prompt use not server verified','internal exploratory result, not a human verdict or production approval']},'agent')};
@@ -243,7 +249,7 @@ function createStore(options = {}) {
   }
   async function harvest(input) {
     if (input.confirm!==true) throw new Error('confirm=true required');
-    const id=requireText(input.runId,100,'runId'), note=requireText(input.note,5000,'research note');
+    const id=documentId(input.runId,'runId'), note=requireText(input.note,5000,'research note');
     const r=ref(COLLECTIONS.runs,id);
     return db().runTransaction(async tx=>{
       const item=read(await tx.get(r));
