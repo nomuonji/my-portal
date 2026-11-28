@@ -95,6 +95,7 @@ import Submarines from './components/Submarines';
 import PageErrorBoundary from './components/PageErrorBoundary';
 import Outputs from './components/Outputs';
 import CleanupCenter from './components/CleanupCenter';
+import SelfImprovement from './components/SelfImprovement';
 
 import getAppTheme, { fonts } from './theme';
 
@@ -172,6 +173,7 @@ function App() {
     if (path === '/') return 'ホーム';
     if (path.startsWith('/boards')) return 'ボード';
     if (path.startsWith('/dashboard')) return 'Agent HQ';
+    if (path.startsWith('/self-improvement')) return '自律自己改善';
     if (path.startsWith('/thinking')) return '思考テーマ';
     if (path.startsWith('/agent-ideas')) return 'Agent Ideas';
     if (path.startsWith('/meta')) return 'プロジェクト提案';
@@ -389,6 +391,7 @@ function App() {
       label: 'エージェント',
       items: [
         { to: '/dashboard', label: 'Agent HQ', hint: '実行キュー / Agents / 再開地点', icon: <DashboardIcon /> },
+        { to: '/self-improvement', label: '自律自己改善', hint: '研究成果 / 実証 / 制作物 / 未解決課題', icon: <PsychologyAltIcon /> },
         { to: '/meta', label: 'プロジェクト提案', hint: '戦略・次の一手', icon: <MetaIcon /> },
         { to: '/consumer-models', label: 'Consumer Models', hint: '消費者の考え方・人物像・市場観測・版履歴', icon: <ExplorationIcon /> },
         { to: '/exploration', label: 'スキル錬成道場', hint: '鍛えているスキルと版 / ゴール / 見立て / 情報源 / 経過', icon: <ExplorationIcon /> },
@@ -614,6 +617,7 @@ function App() {
               <Routes>
                 <Route path="/" element={new URLSearchParams(location.search).has("board") ? <Navigate to={`/boards${location.search}`} replace /> : <WorldHome />} />
                 <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/self-improvement" element={<SelfImprovement />} />
                 <Route path="/memo" element={<Memo />} />
                 <Route path="/memo/:memoId" element={<Memo />} />
                 <Route path="/news" element={<News />} />

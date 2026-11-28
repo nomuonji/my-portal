@@ -32,7 +32,7 @@ import { auth } from '../firebase';
 import { fonts } from '../theme';
 import { onAuthStateChanged } from 'firebase/auth';
 
-async function fetchPortalWorld(path = '?resource=world_map', options = {}) {
+export async function fetchPortalWorld(path = '?resource=world_map', options = {}) {
   let user = auth.currentUser;
   if (!user) {
     user = await new Promise((resolve, reject) => {
@@ -71,6 +71,7 @@ const LAUNCH = [
   { to: '/thinking', label: '思考テーマ', note: '長期テーマとContext', icon: <ThinkingIcon /> },
   { to: '/taste', label: '好みの記録', note: '好き嫌いと訂正の履歴', icon: <TasteIcon /> },
   { to: '/dashboard', label: 'Agent HQ', note: '実行キューと定期ジョブ', icon: <HqIcon /> },
+  { to: '/self-improvement', label: '自律自己改善', note: '研究成果・比較実証・制作物を見る', icon: <ThinkingIcon /> },
   { to: '/meta', label: 'プロジェクト提案', note: '戦略・次の一手', icon: <SparkIcon /> },
 ];
 function greeting() {

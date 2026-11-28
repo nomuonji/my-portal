@@ -65,7 +65,14 @@ async function list(input={}){
   const snap=await q.limit(limit).get();
   const search=String(input.query||'').toLowerCase().trim();
   const items=snap.docs.map(serialize).filter(v=>(!domain||v.domains.includes(domain))&&(!search||[v.title,v.observation,v.inference,v.application,...v.domains].join(' ').toLowerCase().includes(search)))
-    .map(({id,kind,title,domains,status,createdAt,materialIds,sourceUrls})=>({id,kind,title,domains,status,createdAt,materialIds,sourceUrls}));
+    .map(({id,kind,title,domains,status,createdAt,materialIds,sourceUrls,observation,inference,validation})=>({
+      id,kind,title,domains,status,createdAt,materialIds,sourceUrls,
+      ...(input.preview===true?{preview:{
+        observation:String(observation||'').slice(0,360),
+        inference:String(inference||'').slice(0,360),
+        validation:String(validation||'').slice(0,320)
+      }}:{})
+    }));
   return {items,count:items.length,nextCursor:snap.docs.length===limit?snap.docs.at(-1).id:null};
 }
 module.exports={save,get,list};
