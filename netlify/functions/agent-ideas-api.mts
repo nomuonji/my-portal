@@ -252,7 +252,7 @@ export default async (request: Request) => {
       if (resource === "learning_inbox") return json(await learningInbox.list({limit:30}));
       if (resource === "learning_materials") return json(await learningInbox.materials({limit:30,before:url.searchParams.get("before")||undefined}));
       if (resource === "learning_material") return json(await learningInbox.getMaterial({id:url.searchParams.get("id")||""}));
-      if (resource === "agent_memories") return json(await agentMemory.list({limit:30,domain:url.searchParams.get("domain")||undefined,query:url.searchParams.get("q")||undefined,before:url.searchParams.get("before")||undefined}));
+      if (resource === "agent_memories") return json(await agentMemory.list({limit:30,domain:url.searchParams.get("domain")||undefined,query:url.searchParams.get("q")||undefined,before:url.searchParams.get("before")||undefined,preview:url.searchParams.get("preview")==="true"}));
       if (resource === "agent_memory") return json(await agentMemory.get({id:url.searchParams.get("id")||""}));
       if (resource === "context_history") return json(await contextRegistry.listEvents({contextId:url.searchParams.get("id")||""}));
       if (resource === "intelligence") return json(await agentIntelligenceRegistry.getPack({id:url.searchParams.get("id")||""}));
